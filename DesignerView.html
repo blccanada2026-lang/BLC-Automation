@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BLC My Jobs</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f4f8;
+      padding: 20px;
+    }
+
+    .header {
+      background: #5B9EC9;
+      color: white;
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 22px;
+      letter-spacing: 2px;
+    }
+
+    .header p {
+      font-size: 13px;
+      opacity: 0.8;
+      margin-top: 5px;
+    }
+
+    .welcome-bar {
+      background: white;
+      padding: 16px 20px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .welcome-bar .name {
+      color: #5B9EC9;
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    .welcome-bar .role-badge {
+      background: #e3f2fd;
+      color: #1565c0;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+
+    .selector {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .selector label {
+      display: block;
+      color: #5B9EC9;
+      font-weight: bold;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .selector select {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #5B9EC9;
+      border-radius: 8px;
+      font-size: 15px;
+      color: #333;
+      background: white;
+      cursor: pointer;
+    }
+
+    .summary {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .summary-card {
+      flex: 1;
+      min-width: 120px;
+      background: white;
+      padding: 15px;
+      border-radius: 10px;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .summary-card .number {
+      font-size: 28px;
+      font-weight: bold;
+      color: #5B9EC9;
+    }
+
+    .summary-card .label {
+      font-size: 11px;
+      color: #999;
+      margin-top: 4px;
+    }
+
+    .jobs-table {
+      background: white;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .jobs-table table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .jobs-table th {
+      background: #5B9EC9;
+      color: white;
+      padding: 12px 10px;
+      text-align: left;
+      font-size: 12px;
+      letter-spacing: 1px;
+    }
+
+    .jobs-table td {
+      padding: 12px 10px;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 13px;
+      color: #333;
+    }
+
+    .jobs-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .jobs-table tr:hover td {
+      background: #f8fbff;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+
+    .status-completed { background: #e8f5e9; color: #2e7d32; }
+    .status-design { background: #e3f2fd; color: #1565c0; }
+    .status-qc { background: #fff3e0; color: #e65100; }
+    .status-rework { background: #fce4ec; color: #c62828; }
+    .status-picked { background: #f3e5f5; color: #6a1b9a; }
+    .status-default { background: #f5f5f5; color: #616161; }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #999;
+    }
+
+    .empty-state p {
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #5B9EC9;
+      font-size: 16px;
+    }
+
+    .denied {
+      text-align: center;
+      padding: 60px 20px;
+    }
+
+    .denied .icon { font-size: 48px; margin-bottom: 16px; }
+    .denied h2 { color: #d93025; margin-bottom: 12px; }
+    .denied p { color: #666; font-size: 14px; line-height: 1.6; }
+
+    .footer {
+      text-align: center;
+      margin-top: 20px;
+      color: #999;
+      font-size: 11px;
+    }
+
+    @media (max-width: 600px) {
+      .jobs-table th:nth-child(4),
+      .jobs-table td:nth-child(4) { display: none; }
+      .jobs-table th:nth-child(5),
+      .jobs-table td:nth-child(5) { display: none; }
+      .welcome-bar { flex-direction: column; gap: 8px; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>BLUE LOTUS CONSULTING</h1>
+  <p>My Jobs — Live Status View</p>
+</div>
+
+<!-- Shown in secure mode — authenticated user's name -->
+<div id="welcomeBar" class="welcome-bar" style="display:none;">
+  <span class="name" id="welcomeName"></span>
+  <span class="role-badge">Designer</span>
+</div>
+
+<!-- Shown in open/grace mode — dropdown selector -->
+<div id="selectorArea" class="selector" style="display:none;">
+  <label>Select Your Name</label>
+  <select id="designerSelect" onchange="loadJobs()">
+    <option value="">-- Select your name --</option>
+  </select>
+</div>
+
+<div id="summaryArea" class="summary" style="display:none;">
+  <div class="summary-card">
+    <div class="number" id="totalJobs">0</div>
+    <div class="label">Total Jobs</div>
+  </div>
+  <div class="summary-card">
+    <div class="number" id="activeJobs">0</div>
+    <div class="label">Active</div>
+  </div>
+  <div class="summary-card">
+    <div class="number" id="completedJobs">0</div>
+    <div class="label">Completed</div>
+  </div>
+  <div class="summary-card">
+    <div class="number" id="totalHours">0</div>
+    <div class="label">My Hours</div>
+  </div>
+</div>
+
+<div class="jobs-table">
+  <div id="tableArea">
+    <div class="loading">Loading your jobs...</div>
+  </div>
+</div>
+
+<div class="footer">
+  <p>Blue Lotus Consulting Corporation — BLC Job Management System</p>
+</div>
+
+<script>
+  var allJobs = [];
+  var viewMode = "open"; // "open", "secure", or "denied"
+
+  window.onload = function() {
+    google.script.run
+      .withSuccessHandler(function(data) {
+        viewMode = data.mode || "open";
+
+        if (viewMode === "denied") {
+          showDenied(data.error || "Access denied.");
+          return;
+        }
+
+        if (viewMode === "secure") {
+          // Authenticated — show welcome bar, auto-load jobs
+          document.getElementById("welcomeBar").style.display = "flex";
+          document.getElementById("welcomeName").innerText = "Welcome, " + data.userName;
+          document.getElementById("selectorArea").style.display = "none";
+          allJobs = data.jobs;
+          renderTable(allJobs);
+          renderSummary(allJobs);
+        } else {
+          // Grace / open mode — show dropdown
+          document.getElementById("selectorArea").style.display = "block";
+          document.getElementById("welcomeBar").style.display = "none";
+          populateDropdown(data.designers);
+          allJobs = data.jobs;
+          document.getElementById("tableArea").innerHTML =
+            "<div class='empty-state'><p>Select your name above to view your jobs</p></div>";
+        }
+      })
+      .withFailureHandler(function(err) {
+        document.getElementById("tableArea").innerHTML =
+          "<div class='empty-state'><p>Error loading data. Please refresh.</p></div>";
+      })
+      .getMyDesignerData();
+  };
+
+  function showDenied(reason) {
+    document.getElementById("selectorArea").style.display = "none";
+    document.getElementById("welcomeBar").style.display = "none";
+    document.getElementById("summaryArea").style.display = "none";
+    document.getElementById("tableArea").innerHTML =
+      "<div class='denied'>" +
+      "<div class='icon'>&#128274;</div>" +
+      "<h2>Access Denied</h2>" +
+      "<p>" + reason + "</p>" +
+      "<p style='margin-top:16px;font-size:12px;color:#999;'>Contact: Contact@bluelotuscanada.ca</p>" +
+      "</div>";
+  }
+
+  function populateDropdown(designers) {
+    var select = document.getElementById("designerSelect");
+    designers.forEach(function(name) {
+      var option = document.createElement("option");
+      option.value = name;
+      option.text = name;
+      select.appendChild(option);
+    });
+  }
+
+  function loadJobs() {
+    var selected = document.getElementById("designerSelect").value;
+    if (!selected || selected === "") {
+      document.getElementById("tableArea").innerHTML =
+        "<div class='empty-state'><p>Select your name above to view your jobs</p></div>";
+      document.getElementById("summaryArea").style.display = "none";
+      return;
+    }
+
+    var myJobs = allJobs.filter(function(job) {
+      return job.designerName.toLowerCase() === selected.toLowerCase();
+    });
+
+    renderTable(myJobs);
+    renderSummary(myJobs);
+  }
+
+  function renderSummary(jobs) {
+    var active = jobs.filter(function(j) {
+      return j.status !== "Completed - Billable";
+    }).length;
+    var completed = jobs.filter(function(j) {
+      return j.status === "Completed - Billable";
+    }).length;
+    var hours = 0;
+    jobs.forEach(function(j) { hours += j.designHours; });
+
+    document.getElementById("totalJobs").innerText = jobs.length;
+    document.getElementById("activeJobs").innerText = active;
+    document.getElementById("completedJobs").innerText = completed;
+    document.getElementById("totalHours").innerText = hours.toFixed(1);
+    document.getElementById("summaryArea").style.display = "flex";
+  }
+
+  function getStatusClass(status) {
+    if (status === "Completed - Billable") return "status-completed";
+    if (status === "In Design") return "status-design";
+    if (status.indexOf("QC") !== -1) return "status-qc";
+    if (status.indexOf("Rework") !== -1) return "status-rework";
+    if (status === "Picked Up") return "status-picked";
+    return "status-default";
+  }
+
+  function renderTable(jobs) {
+    if (jobs.length === 0) {
+      document.getElementById("tableArea").innerHTML =
+        "<div class='empty-state'><p>No jobs found</p><p style='font-size:13px;'>Jobs will appear here once assigned</p></div>";
+      return;
+    }
+
+    var html = "<table>";
+    html += "<tr>";
+    html += "<th>Job Number</th>";
+    html += "<th>Client</th>";
+    html += "<th>Product</th>";
+    html += "<th>Status</th>";
+    html += "<th>Hours</th>";
+    html += "<th>Expected</th>";
+    html += "</tr>";
+
+    jobs.forEach(function(job) {
+      var statusClass = getStatusClass(job.status);
+      html += "<tr>";
+      html += "<td><b>" + job.jobNumber + "</b></td>";
+      html += "<td>" + (job.clientName || "") + "</td>";
+      html += "<td>" + (job.productType || "") + "</td>";
+      html += "<td><span class='status-badge " + statusClass + "'>" + job.status + "</span></td>";
+      html += "<td>" + job.designHours.toFixed(1) + " hrs</td>";
+      html += "<td>" + (job.expectedCompletion || "") + "</td>";
+      html += "</tr>";
+    });
+
+    html += "</table>";
+    document.getElementById("tableArea").innerHTML = html;
+  }
+</script>
+
+</body>
+</html>
