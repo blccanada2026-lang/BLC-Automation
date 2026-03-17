@@ -513,6 +513,44 @@ function onJobStartSubmit(e) {
           return;
         }
 
+        // ── ALLOCATED PICKUP ──────────────────────────────────────
+        // Normal case: job was pre-allocated (status = "Allocated") and
+        // designer is now picking it up via the Job Start form.
+        // Previously this fell through to DUPLICATE JOB START and was rejected.
+        if (currentStatus === CONFIG.status.allocated) {
+          if (designerName !== sameProductRow.designerName) {
+            logException("WARNING", jobNumber, designerName,
+              "Designer mismatch on allocated pickup. Allocated to: " +
+              sameProductRow.designerName + ", picking up: " + designerName +
+              ". Proceeding — use isReallocation=Yes next time to be explicit.");
+          }
+          master.getRange(existingRow, CONFIG.masterCols.status).setValue(CONFIG.status.pickedUp);
+          master.getRange(existingRow, CONFIG.masterCols.startDate).setValue(timestamp);
+          master.getRange(existingRow, CONFIG.masterCols.expectedCompletion).setValue(expectedCompletion);
+          master.getRange(existingRow, CONFIG.masterCols.sopAcknowledged).setValue(sopAcknowledged);
+          master.getRange(existingRow, CONFIG.masterCols.billingPeriod).setValue(getBillingPeriod(timestamp));
+          master.getRange(existingRow, CONFIG.masterCols.invoiceMonth).setValue(getInvoiceMonth(timestamp));
+          master.getRange(existingRow, CONFIG.masterCols.lastUpdated).setValue(getTimestamp());
+          master.getRange(existingRow, CONFIG.masterCols.lastUpdatedBy).setValue("Job Start Form - Allocated Pickup");
+          SpreadsheetApp.flush();
+
+          // Update ACTIVE_JOBS: Allocated → Picked Up
+          var activeSheet = getSheet(CONFIG.sheets.activeJobs);
+          var activeData  = activeSheet.getDataRange().getValues();
+          for (var a = 1; a < activeData.length; a++) {
+            if (String(activeData[a][0]).trim().toUpperCase() === jobNumber.toUpperCase()) {
+              activeSheet.getRange(a + 1, 6).setValue(CONFIG.status.pickedUp);       // col 6 = Status
+              activeSheet.getRange(a + 1, 10).setValue("Job Start Form - Allocated Pickup"); // col 10 = Last_Updated_By
+              break;
+            }
+          }
+
+          logException("INFO_FORCE", jobNumber, designerName,
+            "Pre-allocated job picked up. Status: Allocated → Picked Up." +
+            " Billing period: " + getBillingPeriod(timestamp));
+          return;
+        }
+
         // ── TRUE DUPLICATE ────────────────────────────────────────
         logException("DUPLICATE JOB START", jobNumber, designerName,
           "Job already exists with status: " + currentStatus + ". Product: " + productType);
@@ -681,7 +719,7 @@ function onDailyLogSubmit(e) {
     var currentStatus = String(master.getRange(jobRow, CONFIG.masterCols.status).getValue()).trim();
     var VALID_STATUSES_FOR_LOGGING = [
       "Picked Up", "In Design", "Rework - Major", "Rework - Minor",
-      "Waiting Re-QC", "Submitted For QC"
+      "Waiting Re-QC", "Submitted For QC", "Revision"
     ];
 
     if (VALID_STATUSES_FOR_LOGGING.indexOf(currentStatus) === -1) {
