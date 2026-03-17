@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLC Debug Test</title>
+<style>
+  body { font-family: monospace; padding: 20px; background: #1a1a2e; color: #fff; }
+  h2 { color: #c9a84c; }
+  .box { background: #0a0a0f; border: 1px solid #333; border-radius: 8px; padding: 16px; margin: 12px 0; }
+  .ok { color: #25a898; }
+  .err { color: #c0392b; }
+  .warn { color: #e67e22; }
+  pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+  button { background: #c9a84c; color: #1a1a2e; border: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; margin: 6px 4px; }
+</style>
+</head>
+<body>
+<h2>BLC CEO Dashboard - Debug Test</h2>
+
+<div class="box">
+  <b>Step 1: Is google.script available?</b><br>
+  <span id="step1">Checking...</span>
+</div>
+
+<div class="box">
+  <b>Step 2: Can we call buildCEODashboardData()?</b><br>
+  <span id="step2">Waiting...</span>
+</div>
+
+<div class="box">
+  <b>Step 3: What data comes back?</b><br>
+  <pre id="step3">Waiting...</pre>
+</div>
+
+<button onclick="runTest()">Run Test</button>
+<button onclick="window.location.reload()">Reload</button>
+
+<script>
+window.onload = function() {
+  // Step 1
+  if (typeof google !== 'undefined' && google.script) {
+    document.getElementById('step1').innerHTML = '<span class="ok">YES - google.script is available</span>';
+    runTest();
+  } else {
+    document.getElementById('step1').innerHTML = '<span class="err">NO - google.script is NOT available. Page is not being served by Apps Script correctly.</span>';
+    document.getElementById('step2').innerHTML = '<span class="err">Cannot test - google.script missing</span>';
+  }
+};
+
+function runTest() {
+  document.getElementById('step2').innerHTML = '<span class="warn">Calling buildCEODashboardData()...</span>';
+
+  google.script.run
+    .withSuccessHandler(function(data) {
+      document.getElementById('step2').innerHTML = '<span class="ok">SUCCESS - function returned data</span>';
+
+      if (!data) {
+        document.getElementById('step3').innerHTML = '<span class="err">Data is NULL or undefined</span>';
+        return;
+      }
+
+      // Show summary of what came back
+      var summary = 'currentPeriod: ' + data.currentPeriod + '\n';
+      summary += 'kpis.totalHours: ' + (data.kpis ? data.kpis.totalHours : 'MISSING') + '\n';
+      summary += 'kpis.completed: ' + (data.kpis ? data.kpis.completed : 'MISSING') + '\n';
+      summary += 'clientHours count: ' + (data.clientHours ? data.clientHours.length : 'MISSING') + '\n';
+      summary += 'designerStats count: ' + (data.designerStats ? data.designerStats.length : 'MISSING') + '\n';
+      summary += 'alerts count: ' + (data.alerts ? data.alerts.length : 'MISSING') + '\n';
+      summary += '\nFULL DATA:\n' + JSON.stringify(data, null, 2);
+
+      document.getElementById('step3').innerHTML = '<span class="ok">' + summary + '</span>';
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('step2').innerHTML = '<span class="err">FAILED - error calling function</span>';
+      document.getElementById('step3').innerHTML = '<span class="err">Error: ' + JSON.stringify(err) + '</span>';
+    })
+    .buildCEODashboardData();
+}
+</script>
+</body>
+</html>
