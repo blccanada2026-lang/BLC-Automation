@@ -130,8 +130,53 @@ global.MailApp = {
   sendEmail: () => {}
 };
 
+// ── MockGmailMessage ──────────────────────────────────────────
+class MockGmailMessage {
+  constructor(opts = {}) {
+    this._from       = opts.from       || 'test@example.com';
+    this._subject    = opts.subject    || 'Test Subject';
+    this._body       = opts.body       || '';
+    this._date       = opts.date       || new Date();
+    this._labels     = [];
+  }
+  getFrom()       { return this._from; }
+  getSubject()    { return this._subject; }
+  getPlainBody()  { return this._body; }
+  getDate()       { return this._date; }
+  addLabel(label) { this._labels.push(label); return this; }
+}
+
+// ── MockGmailThread ───────────────────────────────────────────
+class MockGmailThread {
+  constructor(messages = []) {
+    this._messages = messages;
+    this._labels   = [];
+  }
+  getMessages()          { return this._messages; }
+  addLabel(label)        { this._labels.push(label); return this; }
+  getAppliedLabels()     { return this._labels; }
+}
+
+// ── MockGmailLabel ────────────────────────────────────────────
+class MockGmailLabel {
+  constructor(name) { this._name = name; this._threads = []; }
+  getName()                { return this._name; }
+  addToThread(thread)      { this._threads.push(thread); return this; }
+  getThreads()             { return this._threads; }
+}
+
+// ── GmailApp stub (extended for intake parser tests) ─────────
+let _mockGmailThreads = [];
+let _mockGmailLabels  = {};
+
 global.GmailApp = {
-  sendEmail: () => {}
+  sendEmail:           () => {},
+  search:              (query, start, max) => _mockGmailThreads.slice(0, max || 50),
+  getUserLabelByName:  (name) => _mockGmailLabels[name] || null,
+  createLabel:         (name) => {
+    _mockGmailLabels[name] = new MockGmailLabel(name);
+    return _mockGmailLabels[name];
+  }
 };
 
 global.FormApp = {
@@ -161,6 +206,19 @@ function resetMockSpreadsheet() {
   SpreadsheetApp.getActiveSpreadsheet = () => _mockSpreadsheet;
 }
 
+function resetMockGmail() {
+  _mockGmailThreads = [];
+  _mockGmailLabels  = {};
+  GmailApp.search = (query, start, max) => _mockGmailThreads.slice(0, max || 50);
+}
+
+function addMockEmailThread(opts = {}) {
+  var msg    = new MockGmailMessage(opts);
+  var thread = new MockGmailThread([msg]);
+  _mockGmailThreads.push(thread);
+  return thread;
+}
+
 /**
  * getMockSpreadsheet()
  * Get the current mock spreadsheet so you can inspect its sheets.
@@ -169,4 +227,7 @@ function getMockSpreadsheet() {
   return _mockSpreadsheet;
 }
 
-module.exports = { resetMockSpreadsheet, getMockSpreadsheet, MockSheet, MockSpreadsheet };
+module.exports = {
+  resetMockSpreadsheet, getMockSpreadsheet, MockSheet, MockSpreadsheet,
+  resetMockGmail, addMockEmailThread, MockGmailMessage, MockGmailThread, MockGmailLabel
+};
