@@ -228,6 +228,12 @@ function onOpen() {
     .addItem('Scan Emails Now (manual run)',           'scanForNewJobEmails')
     .addItem('Test Email Parser',                     'testEmailParser')
 
+    // ── JOB INTAKE — ALLOCATION QUEUE ─────────────────────────────────────────
+    .addSeparator()
+    .addItem('📋 Allocate from Intake Queue',          'showIntakeQueue')
+    .addItem('Refresh Intake Queue View Sheet',        'refreshIntakeQueueView')
+    .addItem('Sync Intake → Allocation Form',          'syncIntakeToAllocationForm')
+
     // ── DIAGNOSTICS ───────────────────────────────────────────────────────────
     .addSeparator()
     .addItem('Diagnose Sync Issues',                  'diagnoseSyncIssues')
