@@ -5,39 +5,63 @@
 //
 // WHY MANUAL: MiTek clients give BLC terminal access to their
 // MiTek system (screenshot only — no copy-paste due to server
-// access restrictions). The team reads the MiTek Design Schedule
-// screen and types job details into the BLC intake form.
+// access restrictions). The team reads the MiTek screen and
+// types job details into the BLC intake form.
 //
 // FLOW:
 //   1. Sarty opens the Intake Queue web page (?page=intake)
 //   2. Clicks "Add MiTek Job" button
-//   3. Types job details from the MiTek Design Schedule screen
+//   3. Types job details from the MiTek screen
 //   4. Submits → creates JOB_INTAKE row (status=Pending)
 //   5. Job appears in the queue ready to allocate
 //
-// MITEK JOB NUMBER FORMAT (SBS client):
-//   XXXX-XXXX-[Letter]  e.g.  2601-0883-A, 2512-8644-D
+// CLIENT JOB NUMBER FORMATS:
+//   SBS      — XXXX-XXXX-[Letter]  e.g. 2601-0883-A, 2512-8644-D
+//              Tab: Design Schedule
+//   MATIX-SK — 6-digit numeric     e.g. 160769, 160762
+//              Tab: Open Orders (not Quotes in Progress)
 //
-// MITEK PRODUCT MAPPING:
-//   Roof  → Roof Truss
-//   Floor → Floor Truss
-//   Wall  → Wall Frame
-//   Joist → I-Joist Floor
+// PRODUCT NAME MAPPING (what MiTek shows → BLC canonical):
+//   SBS:
+//     Roof              → Roof Truss
+//     Floor             → Floor Truss
+//     Wall              → Wall Frame
+//     Joist / I-Joist   → I-Joist Floor
+//   MATIX-SK:
+//     Roof Level        → Roof Truss
+//     Main Floor        → Floor Truss
+//     OW Second Floor   → I-Joist Floor  (OW = Open Web)
+//     Garage Truss      → Roof Truss
 // ============================================================
 
 
-// ── MiTek product type mapping ───────────────────────────────
-var MITEK_PRODUCT_MAP = {
-  'roof':    'Roof Truss',
-  'floor':   'Floor Truss',
-  'wall':    'Wall Frame',
-  'joist':   'I-Joist Floor',
-  'i-joist': 'I-Joist Floor'
-};
+// ── MiTek product keyword map ────────────────────────────────
+// Checked in order — more specific phrases first.
+// Covers both SBS and MATIX-SK product column text.
+var MITEK_PRODUCT_KEYWORDS = [
+  { keyword: 'ow second floor',  product: 'I-Joist Floor'    },  // MATIX OW = Open Web
+  { keyword: 'ow floor',         product: 'I-Joist Floor'    },
+  { keyword: 'open web',         product: 'I-Joist Floor'    },
+  { keyword: 'i-joist',          product: 'I-Joist Floor'    },
+  { keyword: 'ijoist',           product: 'I-Joist Floor'    },
+  { keyword: 'main floor',       product: 'Floor Truss'      },  // MATIX main floor
+  { keyword: 'second floor',     product: 'Floor Truss'      },
+  { keyword: 'roof level',       product: 'Roof Truss'       },  // MATIX roof level
+  { keyword: 'garage - truss',   product: 'Roof Truss'       },  // MATIX garage pkg
+  { keyword: 'garage truss',     product: 'Roof Truss'       },
+  { keyword: 'roof',             product: 'Roof Truss'       },  // SBS / generic
+  { keyword: 'floor',            product: 'Floor Truss'      },  // SBS / generic
+  { keyword: 'wall',             product: 'Wall Frame'       },
+  { keyword: 'lumber',           product: 'Lumber Estimation'}
+];
 
-// ── MiTek job number pattern (SBS) ──────────────────────────
-// Matches: 2601-0883-A, 2512-8644-D, 2601-0940-F etc.
-var MITEK_JOB_PATTERN = /^\d{4}-\d{4}-[A-Z]$/;
+// ── Client job number formats ────────────────────────────────
+// SBS:      XXXX-XXXX-[Letter]  e.g. 2601-0883-A
+// MATIX-SK: 6-digit numeric     e.g. 160769
+var MITEK_JOB_PATTERNS = {
+  'SBS':      /^\d{4}-\d{4}-[A-Z]$/,
+  'MATIX-SK': /^\d{6}$/
+};
 
 
 // ============================================================
@@ -81,18 +105,16 @@ function submitMitekJob(payload) {
     }
 
     // ── Map product type ────────────────────────────────────
-    var productType = MITEK_PRODUCT_MAP[productRaw];
-    if (!productType) {
-      // Try partial match
-      for (var key in MITEK_PRODUCT_MAP) {
-        if (productRaw.indexOf(key) !== -1) {
-          productType = MITEK_PRODUCT_MAP[key];
-          break;
-        }
+    // Check keyword list in order (more specific phrases first)
+    var productType = "";
+    for (var ki = 0; ki < MITEK_PRODUCT_KEYWORDS.length; ki++) {
+      if (productRaw.indexOf(MITEK_PRODUCT_KEYWORDS[ki].keyword) !== -1) {
+        productType = MITEK_PRODUCT_KEYWORDS[ki].product;
+        break;
       }
     }
     if (!productType) {
-      // Fall back to the raw value if it's already a canonical type
+      // Fall back: use raw value if it's already a canonical BLC type
       productType = String(payload.product || "").trim();
     }
 
