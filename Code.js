@@ -41,8 +41,10 @@ var CONFIG = {
     dashboard:         "DASHBOARD_VIEW",
     exceptions:        "EXCEPTIONS_LOG",
     activeJobs:        "ACTIVE_JOBS",
-    clientReturn:      "CLIENT_RETURN_LOG",
-    formJobAllocation: "FORM_Job_Allocation"
+    clientReturn:        "CLIENT_RETURN_LOG",
+    formJobAllocation:   "FORM_Job_Allocation",
+    jobIntake:           "JOB_INTAKE",
+    clientIntakeConfig:  "CLIENT_INTAKE_CONFIG"
   },
   allocationFormId: "1QZUh322IGBJLXSb1B0K-mi90MU_maGpPGnSr8lmZXqY",
   jobStartCols: { timestamp:1, jobNumber:2, clientName:3, designerName:4, expectedCompletion:5, isReallocation:6, sopAcknowledged:7, productType:8 },
@@ -218,6 +220,13 @@ function onOpen() {
     .addItem('Generate Client Portal Tokens',         'generateClientPortalTokens')
     .addItem('Rotate Client Portal Token',            'rotateClientPortalToken')
     .addItem('Show Client Portal URLs',               'showClientPortalUrls')
+
+    // ── JOB INTAKE (EMAIL PARSER) ─────────────────────────────────────────────
+    .addSeparator()
+    .addItem('Create Intake Sheets (run once)',        'createIntakeSheets')
+    .addItem('Setup Email Intake Trigger (run once)', 'setupEmailIntakeTrigger')
+    .addItem('Scan Emails Now (manual run)',           'scanForNewJobEmails')
+    .addItem('Test Email Parser',                     'testEmailParser')
 
     // ── DIAGNOSTICS ───────────────────────────────────────────────────────────
     .addSeparator()
