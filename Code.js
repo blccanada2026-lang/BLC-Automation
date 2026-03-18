@@ -1656,20 +1656,33 @@ function populateTLView() {
 
     tlSheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
 
+    // Batch colour formatting using getRangeList — one API call per colour
+    // instead of one per row (row-by-row was timing out on large sheets)
+    var colourGroups = {};
     for (var r = 0; r < rows.length; r++) {
-      var sheetRow = r + 2;
       var rowStatus = rows[r][5], rowOverdue = rows[r][7];
-      var rowRange = tlSheet.getRange(sheetRow, 1, 1, headers.length);
-      if (rowOverdue === "YES") { rowRange.setBackground("#fce4ec"); continue; }
-      if (rowStatus === "Rework - Major" || rowStatus === "Rework - Minor") { rowRange.setBackground("#fff3e0"); continue; }
-      if (rowStatus === "In Design" || rowStatus === "Picked Up") { rowRange.setBackground("#e3f2fd"); }
-      else if (rowStatus.indexOf("QC") !== -1) { rowRange.setBackground("#fff8e1"); }
-      else if (rowStatus === "On Hold") { rowRange.setBackground("#f3e5f5"); }
-      else if (rowStatus === "Allocated") { rowRange.setBackground("#e8f5e9"); }
-      else if (rowStatus.indexOf("Waiting") !== -1 || rowStatus.indexOf("Submitted") !== -1) { rowRange.setBackground("#e0f7fa"); }
+      var colour;
+      if      (rowOverdue === "YES")                                             colour = "#fce4ec";
+      else if (rowStatus === "Rework - Major" || rowStatus === "Rework - Minor") colour = "#fff3e0";
+      else if (rowStatus === "In Design"      || rowStatus === "Picked Up")      colour = "#e3f2fd";
+      else if (rowStatus.indexOf("QC") !== -1)                                  colour = "#fff8e1";
+      else if (rowStatus === "On Hold")                                          colour = "#f3e5f5";
+      else if (rowStatus === "Allocated")                                        colour = "#e8f5e9";
+      else if (rowStatus.indexOf("Waiting")   !== -1 ||
+               rowStatus.indexOf("Submitted") !== -1)                           colour = "#e0f7fa";
+      else                                                                       colour = "#ffffff";
+      if (!colourGroups[colour]) colourGroups[colour] = [];
+      colourGroups[colour].push((r + 2) + ":A" + (r + 2)); // "2:A2" notation
     }
-
-    for (var c = 1; c <= headers.length; c++) { tlSheet.autoResizeColumn(c); }
+    // Apply each colour group in a single getRangeList call
+    for (var bg in colourGroups) {
+      var a1List = colourGroups[bg].map(function(r) {
+        var rowNum = parseInt(r.split(":")[0]);
+        return rowNum + ":" + rowNum; // full row notation e.g. "3:3"
+      });
+      tlSheet.getRangeList(a1List).setBackground(bg);
+    }
+    SpreadsheetApp.flush();
     logException("INFO", "SYSTEM", FUNCTION_NAME, "TL_VIEW populated. Rows: " + rows.length);
   } catch (err) {
     logException("ERROR", "SYSTEM", FUNCTION_NAME, "populateTLView crashed: " + err.message);
