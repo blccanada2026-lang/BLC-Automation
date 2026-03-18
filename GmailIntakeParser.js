@@ -686,6 +686,13 @@ function createIntakeSheets() {
       'MATIX-SK', 'MITEK', '', '\\d{6}',
       '', 'Yes'
     ]);
+    // NORSPAN-MB — Alpine iCommand software, accessed via LogMeIn remote session
+    // BLC logs in as Estimator="Design2". Jobs notified via WhatsApp group.
+    // Job# format: Q + 6 digits + optional letter  e.g. Q260161, Q260145S
+    configSheet.appendRow([
+      'NORSPAN-MB', 'MANUAL', '', 'Q\\d{6}[A-Z]?',
+      '', 'Yes'
+    ]);
     configSheet.setFrozenRows(1);
     logException('INFO', 'SYSTEM', 'createIntakeSheets',
       'CLIENT_INTAKE_CONFIG sheet created with TITAN, SBS, MATIX-SK pre-populated.');

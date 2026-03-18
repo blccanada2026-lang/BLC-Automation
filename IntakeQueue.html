@@ -323,8 +323,8 @@
   <div class="mitek-panel" id="mitekPanel">
     <div class="mitek-panel-header" onclick="toggleMitek()">
       <div>
-        <h3>➕ Add MiTek Job</h3>
-        <div class="hint">Type job details from the MiTek Design Schedule screen</div>
+        <h3>➕ Add Job Manually</h3>
+        <div class="hint">MiTek (SBS / MATIX-SK) · Alpine iCommand (NORSPAN) · WhatsApp</div>
       </div>
       <span id="mitekToggleIcon">▼</span>
     </div>
@@ -332,7 +332,8 @@
       <div class="mitek-grid">
         <div class="form-group">
           <label>Job # <span style="color:#d93025;">*</span></label>
-          <input type="text" id="mk-jobnum" placeholder="e.g. 2601-0883-A"
+          <input type="text" id="mk-jobnum"
+            placeholder="SBS: 2601-0883-A · MATIX: 160769 · NORSPAN: Q260161"
             style="text-transform:uppercase;">
         </div>
         <div class="form-group">
@@ -370,9 +371,19 @@
             <option value="">— Select —</option>
           </select>
         </div>
-        <div class="form-group span3">
-          <label>Notes (from MiTek Notes column)</label>
-          <input type="text" id="mk-notes" placeholder="e.g. FTO Request 3/17, Submittals, Roof truss as much as possible...">
+        <div class="form-group">
+          <label>Source System</label>
+          <select id="mk-source">
+            <option value="MiTek">MiTek (SBS / MATIX-SK)</option>
+            <option value="Alpine">Alpine iCommand (NORSPAN)</option>
+            <option value="WhatsApp">WhatsApp message</option>
+            <option value="Email">Email</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-group span2">
+          <label>Notes</label>
+          <input type="text" id="mk-notes" placeholder="e.g. FTO Request, Submittals, job description...">
         </div>
       </div>
       <div class="mitek-submit-row">
@@ -711,6 +722,7 @@
     var model   = document.getElementById("mk-model").value.trim();
     var notes   = document.getElementById("mk-notes").value.trim();
     var by      = document.getElementById("mk-enteredby").value;
+    var source  = document.getElementById("mk-source").value;
     var urgent  = document.getElementById("mk-urgent").checked;
     var statusEl = document.getElementById("mk-status");
     var btn      = document.getElementById("mk-submit-btn");
@@ -733,6 +745,7 @@
       modelName:   model,
       notes:       notes,
       enteredBy:   by,
+      source:      source,
       urgent:      urgent
     };
 

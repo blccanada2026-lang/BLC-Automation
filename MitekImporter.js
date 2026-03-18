@@ -56,11 +56,13 @@ var MITEK_PRODUCT_KEYWORDS = [
 ];
 
 // ── Client job number formats ────────────────────────────────
-// SBS:      XXXX-XXXX-[Letter]  e.g. 2601-0883-A
-// MATIX-SK: 6-digit numeric     e.g. 160769
+// SBS:        XXXX-XXXX-[Letter]      e.g. 2601-0883-A      (MiTek)
+// MATIX-SK:   6-digit numeric         e.g. 160769            (MiTek)
+// NORSPAN-MB: Q + 6 digits + opt.letter  e.g. Q260161, Q260145S (Alpine/iCommand via LogMeIn)
 var MITEK_JOB_PATTERNS = {
-  'SBS':      /^\d{4}-\d{4}-[A-Z]$/,
-  'MATIX-SK': /^\d{6}$/
+  'SBS':        /^\d{4}-\d{4}-[A-Z]$/,
+  'MATIX-SK':   /^\d{6}$/,
+  'NORSPAN-MB': /^Q\d{6}[A-Z]?$/
 };
 
 
@@ -84,6 +86,7 @@ function submitMitekJob(payload) {
     var modelName   = String(payload.modelName    || "").trim();
     var notes       = String(payload.notes        || "").trim();
     var enteredBy   = String(payload.enteredBy    || "").trim();
+    var source      = String(payload.source       || "MiTek").trim();
     var isUrgent    = payload.urgent === true || payload.urgent === "true";
 
     // ── Validate required fields ────────────────────────────
@@ -154,7 +157,7 @@ function submitMitekJob(payload) {
     newRow[JI.dueDate         - 1] = dueDateObj || "";
     newRow[JI.notes           - 1] = combinedNotes;
     newRow[JI.urgent          - 1] = isUrgent ? "Yes" : "No";
-    newRow[JI.sourceFrom      - 1] = "MiTek/" + (enteredBy || "manual");
+    newRow[JI.sourceFrom      - 1] = source + "/" + (enteredBy || "manual");
     newRow[JI.sourceSubject   - 1] = "MiTek Design Schedule";
     newRow[JI.sourceEmailDate - 1] = now;
     newRow[JI.parsedDate      - 1] = now;
