@@ -126,7 +126,10 @@ function onAllocationSubmit(e) {
       productType, today, expectedComp
     );
 
-    // ── 9. Send notification ───────────────────────────────────
+    // ── 9. Mark matching intake row as Allocated (if came from queue) ──────────
+    postAllocationIntakeSync(jobNumber, productType, allocatedBy);
+
+    // ── 10. Send notification ──────────────────────────────────
     sendAllocationNotification(
       jobNumber, clientName, clientCode, designerName,
       productType, expectedComp, allocatedBy, notes
