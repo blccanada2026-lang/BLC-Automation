@@ -784,6 +784,25 @@ function doGetSecure(e) {
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
+  // ── INTAKE QUEUE — Team Lead / PM / CEO only ────────────────
+  // Sarty and TLs bookmark ?page=intake — shows only pending jobs,
+  // no spreadsheet data visible.
+  if (page === "intake") {
+    var intakeAllowed = ["Team Leader", "Project Manager", "CEO"];
+    if (auth.authenticated && intakeAllowed.indexOf(auth.role) !== -1) {
+      logAccess_("ALLOWED", auth.email, "intake", auth.name + " | " + auth.role);
+      return HtmlService.createHtmlOutputFromFile("IntakeQueue")
+        .setTitle("BLC — Intake Queue")
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+    // Authenticated but wrong role
+    if (auth.authenticated) {
+      return buildAccessDeniedPage_(
+        "The Intake Queue is only accessible to Team Leads and Project Managers."
+      );
+    }
+  }
+
   // ── TEAM LEAD / PM / QC REVIEWER PORTAL ─────────────────────
   var portal = auth.authenticated ? getPortalForRole(auth.role) : page;
 

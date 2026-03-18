@@ -365,6 +365,47 @@ function refreshIntakeQueueView() {
 
 
 // ============================================================
+// 6. WEB APP DATA FUNCTION
+//    Called by IntakeQueue.html via google.script.run
+//    Returns pending jobs + dropdown lists for the web app.
+//    Checks that the caller is a TL, PM, or CEO — not a designer.
+// ============================================================
+
+function getIntakeQueueData() {
+  try {
+    var auth = authenticateInternalUser();
+
+    if (!auth.authenticated) {
+      return { ok: false, error: auth.error };
+    }
+
+    var allowedRoles = ["Team Leader", "Project Manager", "CEO"];
+    if (allowedRoles.indexOf(auth.role) === -1) {
+      return {
+        ok: false,
+        error: "Access denied. The Intake Queue is for Team Leads and Project Managers only."
+      };
+    }
+
+    var tlNames    = getActiveTLNames_();
+    var allocByList = tlNames.length > 0 ? tlNames : getActiveDesigners_();
+
+    return {
+      ok:          true,
+      userName:    auth.name,
+      role:        auth.role,
+      pendingJobs: getIntakePendingJobs_(),
+      designers:   getActiveDesigners_(),
+      allocatedBy: allocByList
+    };
+
+  } catch (err) {
+    return { ok: false, error: "Server error: " + err.message };
+  }
+}
+
+
+// ============================================================
 // PRIVATE HELPERS
 // ============================================================
 
