@@ -765,6 +765,26 @@ function doGetSecure(e) {
       auth.name + " | " + auth.role);
   }
 
+  // ── INTAKE QUEUE — Team Lead / PM / CEO only ────────────────
+  // ?page=intake is checked first so it works for any role including CEO.
+  // Sarty and TLs bookmark ?page=intake — shows only pending jobs,
+  // no spreadsheet data visible.
+  if (page === "intake") {
+    var intakeAllowed = ["Team Leader", "Project Manager", "CEO"];
+    if (auth.authenticated && intakeAllowed.indexOf(auth.role) !== -1) {
+      logAccess_("ALLOWED", auth.email, "intake", auth.name + " | " + auth.role);
+      return HtmlService.createHtmlOutputFromFile("IntakeQueue")
+        .setTitle("BLC — Intake Queue")
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+    // Authenticated but wrong role
+    if (auth.authenticated) {
+      return buildAccessDeniedPage_(
+        "The Intake Queue is only accessible to Team Leads and Project Managers."
+      );
+    }
+  }
+
   // ── CEO PORTAL ──────────────────────────────────────────────
   if (auth.role === "CEO" || (!enforcing && page === "ceo")) {
 
@@ -782,25 +802,6 @@ function doGetSecure(e) {
     return HtmlService.createHtmlOutputFromFile("CEO_Dashboard")
       .setTitle("BLC CEO Dashboard")
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  }
-
-  // ── INTAKE QUEUE — Team Lead / PM / CEO only ────────────────
-  // Sarty and TLs bookmark ?page=intake — shows only pending jobs,
-  // no spreadsheet data visible.
-  if (page === "intake") {
-    var intakeAllowed = ["Team Leader", "Project Manager", "CEO"];
-    if (auth.authenticated && intakeAllowed.indexOf(auth.role) !== -1) {
-      logAccess_("ALLOWED", auth.email, "intake", auth.name + " | " + auth.role);
-      return HtmlService.createHtmlOutputFromFile("IntakeQueue")
-        .setTitle("BLC — Intake Queue")
-        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-    }
-    // Authenticated but wrong role
-    if (auth.authenticated) {
-      return buildAccessDeniedPage_(
-        "The Intake Queue is only accessible to Team Leads and Project Managers."
-      );
-    }
   }
 
   // ── TEAM LEAD / PM / QC REVIEWER PORTAL ─────────────────────
