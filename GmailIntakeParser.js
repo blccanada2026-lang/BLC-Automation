@@ -668,14 +668,27 @@ function createIntakeSheets() {
       'Client Code', 'Intake Method', 'Sender Email Domain',
       'Job Number Pattern (regex)', 'Gmail Label', 'Active'
     ]);
-    // Pre-populate TITAN as the first email client
+    // Pre-populate known clients
+    // TITAN  — small client, emails job details → EMAIL intake method
     configSheet.appendRow([
       'TITAN', 'EMAIL', 'titanmanufacturing.ca', 'B6\\d{5}',
       'BLC-Processed', 'Yes'
     ]);
+    // SBS — big client, MiTek Design Schedule tab
+    // Job# format: XXXX-XXXX-[Letter]  e.g. 2601-0883-A
+    configSheet.appendRow([
+      'SBS', 'MITEK', '', '\\d{4}-\\d{4}-[A-Z]',
+      '', 'Yes'
+    ]);
+    // MATIX-SK — big client, MiTek Quotes/Orders tab
+    // Job# format: 6-digit numeric  e.g. 160769
+    configSheet.appendRow([
+      'MATIX-SK', 'MITEK', '', '\\d{6}',
+      '', 'Yes'
+    ]);
     configSheet.setFrozenRows(1);
     logException('INFO', 'SYSTEM', 'createIntakeSheets',
-      'CLIENT_INTAKE_CONFIG sheet created with TITAN pre-populated.');
+      'CLIENT_INTAKE_CONFIG sheet created with TITAN, SBS, MATIX-SK pre-populated.');
   }
 
   SpreadsheetApp.getUi().alert(
@@ -683,7 +696,8 @@ function createIntakeSheets() {
     'Next steps:\n' +
     '1. Add other clients to CLIENT_INTAKE_CONFIG\n' +
     '2. Run "Setup Email Intake Trigger" from the menu\n' +
-    '3. Run "Test Email Parser" to verify TITAN emails parse correctly'
+    '3. Run "Test Email Parser" to verify TITAN emails parse correctly\n' +
+    '\nClients pre-populated: TITAN (email), SBS (MiTek), MATIX-SK (MiTek)'
   );
 }
 
