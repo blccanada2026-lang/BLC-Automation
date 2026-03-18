@@ -233,6 +233,7 @@ function onOpen() {
     .addItem('📋 Allocate from Intake Queue',          'showIntakeQueue')
     .addItem('Refresh Intake Queue View Sheet',        'refreshIntakeQueueView')
     .addItem('Sync Intake → Allocation Form',          'syncIntakeToAllocationForm')
+    .addItem('Add MiTek Jobs (manual entry)',          'showIntakeQueue')
 
     // ── DIAGNOSTICS ───────────────────────────────────────────────────────────
     .addSeparator()
