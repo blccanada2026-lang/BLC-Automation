@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BLC — Intake Queue</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      background: #f5f5f5;
+      color: #333;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: #1a73e8;
+      color: #fff;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header h1 { font-size: 20px; font-weight: 600; }
+    .header .subtitle { font-size: 13px; opacity: 0.85; margin-top: 2px; }
+    .header .user-badge {
+      background: rgba(255,255,255,0.2);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+    }
+
+    /* ── Loading / Error states ── */
+    .state-box {
+      max-width: 600px;
+      margin: 60px auto;
+      text-align: center;
+      padding: 24px;
+    }
+    .state-box .icon { font-size: 48px; margin-bottom: 12px; }
+    .state-box h2 { font-size: 20px; margin-bottom: 8px; color: #444; }
+    .state-box p { color: #888; font-size: 14px; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 4px solid #e0e0e0;
+      border-top-color: #1a73e8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Content area ── */
+    .content { padding: 20px 24px; }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: bold;
+      color: #555;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      background: #1a73e8;
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: normal;
+    }
+    .badge.urgent { background: #d93025; }
+
+    /* ── Job cards (mobile-first) ── */
+    .job-list { display: flex; flex-direction: column; gap: 16px; }
+
+    .job-card {
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid #e0e0e0;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .job-card.is-urgent { border-left: 4px solid #d93025; }
+    .job-card.is-done { opacity: 0.45; }
+
+    .job-card-header {
+      background: #f8f9fa;
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .job-number { font-size: 18px; font-weight: bold; color: #1a73e8; }
+    .job-name { font-size: 12px; color: #666; margin-top: 2px; }
+    .job-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+    .tag-client  { background: #e8f0fe; color: #1a73e8; }
+    .tag-product { background: #e6f4ea; color: #137333; }
+    .tag-urgent  { background: #fce8e6; color: #d93025; }
+
+    .job-card-body { padding: 12px 16px; }
+
+    .info-row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .info-item { display: flex; flex-direction: column; }
+    .info-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+    .info-value { font-size: 13px; font-weight: 500; margin-top: 2px; }
+    .info-value.due-urgent { color: #d93025; font-weight: bold; }
+
+    .notes-row {
+      background: #fffde7;
+      border: 1px solid #fff9c4;
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: #555;
+      margin-bottom: 12px;
+    }
+    .notes-row strong { color: #333; }
+
+    .alloc-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      align-items: end;
+      margin-top: 8px;
+    }
+    @media (max-width: 600px) {
+      .alloc-row { grid-template-columns: 1fr; }
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      color: #888;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .form-group select,
+    .form-group input[type="date"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      background: #fff;
+    }
+    .form-group select:focus,
+    .form-group input:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(26,115,232,0.15);
+    }
+
+    .btn-allocate {
+      width: 100%;
+      padding: 9px 16px;
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-allocate:hover:not(:disabled) { background: #1557b0; }
+    .btn-allocate:disabled { background: #9e9e9e; cursor: not-allowed; }
+
+    .alloc-status {
+      margin-top: 6px;
+      font-size: 12px;
+      min-height: 16px;
+    }
+    .alloc-status.success { color: #0f9d58; font-weight: bold; }
+    .alloc-status.error   { color: #d93025; }
+
+    /* ── Empty state ── */
+    .empty-state {
+      text-align: center;
+      padding: 48px 24px;
+      color: #888;
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state h3 { font-size: 18px; color: #555; margin-bottom: 8px; }
+    .empty-state p { font-size: 13px; }
+
+    /* ── Refresh button ── */
+    .toolbar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 14px;
+    }
+    .btn-refresh {
+      padding: 7px 16px;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      color: #555;
+    }
+    .btn-refresh:hover { background: #f1f3f4; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div>
+    <div class="h1" style="font-size:20px;font-weight:600;">BLC — Intake Queue</div>
+    <div class="subtitle">Allocate pending jobs from email</div>
+  </div>
+  <div class="user-badge" id="userBadge">Loading…</div>
+</div>
+
+<!-- Loading state -->
+<div class="state-box" id="loadingState">
+  <div class="spinner"></div>
+  <h2>Loading queue…</h2>
+  <p>Fetching pending jobs from the inbox.</p>
+</div>
+
+<!-- Error state -->
+<div class="state-box" id="errorState" style="display:none;">
+  <div class="icon">🔒</div>
+  <h2>Access Denied</h2>
+  <p id="errorMsg">You do not have permission to view this page.</p>
+</div>
+
+<!-- Main content -->
+<div class="content" id="mainContent" style="display:none;">
+  <div class="toolbar">
+    <button class="btn-refresh" onclick="loadQueue()">↻ Refresh</button>
+  </div>
+
+  <div class="section-title">
+    Pending Jobs
+    <span class="badge" id="pendingCount">0</span>
+    <span class="badge urgent" id="urgentCount" style="display:none;">0 URGENT</span>
+  </div>
+
+  <div class="job-list" id="jobList"></div>
+</div>
+
+
+<script>
+  var _designers   = [];
+  var _allocatedBy = [];
+  var _defaultDate = "";
+
+  // Default expected date = today + 14 days
+  (function() {
+    var d = new Date();
+    d.setDate(d.getDate() + 14);
+    _defaultDate = d.toISOString().split("T")[0];
+  })();
+
+  // ── Load queue on page open ─────────────────────────────────
+  function loadQueue() {
+    document.getElementById("loadingState").style.display = "block";
+    document.getElementById("mainContent").style.display  = "none";
+    document.getElementById("errorState").style.display   = "none";
+
+    google.script.run
+      .withSuccessHandler(renderQueue)
+      .withFailureHandler(function(err) {
+        showError("Failed to load: " + err.message);
+      })
+      .getIntakeQueueData();
+  }
+
+  // ── Render the queue ────────────────────────────────────────
+  function renderQueue(data) {
+    document.getElementById("loadingState").style.display = "none";
+
+    if (!data.ok) {
+      showError(data.error || "Unknown error");
+      return;
+    }
+
+    document.getElementById("userBadge").textContent = data.userName + " (" + data.role + ")";
+    _designers   = data.designers   || [];
+    _allocatedBy = data.allocatedBy || [];
+
+    var jobs     = data.pendingJobs || [];
+    var urgent   = jobs.filter(function(j) { return j.urgent === "Yes"; }).length;
+
+    document.getElementById("pendingCount").textContent = jobs.length;
+    if (urgent > 0) {
+      var ub = document.getElementById("urgentCount");
+      ub.textContent = urgent + " URGENT";
+      ub.style.display = "inline-block";
+    }
+
+    document.getElementById("mainContent").style.display = "block";
+
+    var list = document.getElementById("jobList");
+    list.innerHTML = "";
+
+    if (jobs.length === 0) {
+      list.innerHTML =
+        '<div class="empty-state">' +
+          '<div class="icon">✅</div>' +
+          '<h3>Queue is empty</h3>' +
+          '<p>No pending jobs. New jobs appear here automatically when emails arrive.</p>' +
+        '</div>';
+      return;
+    }
+
+    jobs.forEach(function(job, idx) {
+      list.appendChild(buildJobCard(job, idx));
+    });
+  }
+
+  // ── Build a single job card ─────────────────────────────────
+  function buildJobCard(job, idx) {
+    var card = document.createElement("div");
+    card.className = "job-card" + (job.urgent === "Yes" ? " is-urgent" : "");
+    card.id = "card-" + idx;
+
+    var dueDateStr = "";
+    if (job.dueDate) {
+      try { dueDateStr = new Date(job.dueDate).toLocaleDateString("en-CA"); }
+      catch(e) { dueDateStr = String(job.dueDate); }
+    }
+
+    var emailDateStr = "";
+    if (job.sourceEmailDate) {
+      try { emailDateStr = new Date(job.sourceEmailDate).toLocaleDateString("en-CA"); }
+      catch(e) { emailDateStr = String(job.sourceEmailDate); }
+    }
+
+    var designerOpts = _designers.map(function(d) {
+      return '<option value="' + esc(d) + '">' + esc(d) + '</option>';
+    }).join("");
+
+    var allocByOpts = _allocatedBy.map(function(d) {
+      return '<option value="' + esc(d) + '">' + esc(d) + '</option>';
+    }).join("");
+
+    card.innerHTML =
+      // Header
+      '<div class="job-card-header">' +
+        '<div>' +
+          '<div class="job-number">' + esc(job.jobNumber) + '</div>' +
+          (job.jobName ? '<div class="job-name">' + esc(job.jobName) + '</div>' : '') +
+          '<div class="job-badges">' +
+            '<span class="tag tag-client">' + esc(job.clientCode) + '</span>' +
+            '<span class="tag tag-product">' + esc(job.productType) + '</span>' +
+            (job.urgent === "Yes" ? '<span class="tag tag-urgent">URGENT</span>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div style="font-size:11px;color:#888;text-align:right;">' +
+          '<div>ID: ' + esc(job.intakeId) + '</div>' +
+          (emailDateStr ? '<div>Received: ' + emailDateStr + '</div>' : '') +
+        '</div>' +
+      '</div>' +
+
+      // Body
+      '<div class="job-card-body">' +
+
+        // Info row
+        '<div class="info-row">' +
+          (dueDateStr ?
+            '<div class="info-item">' +
+              '<span class="info-label">Due Date</span>' +
+              '<span class="info-value' + (job.urgent === "Yes" ? " due-urgent" : "") + '">' + dueDateStr + '</span>' +
+            '</div>' : '') +
+          (job.sourceFrom ?
+            '<div class="info-item">' +
+              '<span class="info-label">From</span>' +
+              '<span class="info-value">' + esc(job.sourceFrom) + '</span>' +
+            '</div>' : '') +
+        '</div>' +
+
+        // Notes
+        (job.notes ?
+          '<div class="notes-row"><strong>Notes:</strong> ' + esc(job.notes) + '</div>' : '') +
+
+        // Allocation controls
+        '<div class="alloc-row">' +
+          '<div class="form-group">' +
+            '<label>Designer</label>' +
+            '<select id="designer-' + idx + '">' +
+              '<option value="">— Select —</option>' + designerOpts +
+            '</select>' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label>Expected Completion</label>' +
+            '<input type="date" id="expdate-' + idx + '" value="' + (dueDateStr || _defaultDate) + '">' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label>Allocated By</label>' +
+            '<select id="allocby-' + idx + '">' +
+              '<option value="">— Select —</option>' + allocByOpts +
+            '</select>' +
+          '</div>' +
+        '</div>' +
+
+        '<div style="margin-top:12px;">' +
+          '<button class="btn-allocate" id="btn-' + idx + '" ' +
+            'onclick="doAllocate(' + idx + ',\'' + esc(job.intakeId) + '\',\'' +
+              esc(job.jobNumber) + '\',\'' + esc(job.clientCode) + '\',\'' +
+              esc(job.productType) + '\',\'' + escStr(job.notes) + '\')">' +
+            'Allocate Job' +
+          '</button>' +
+          '<div class="alloc-status" id="status-' + idx + '"></div>' +
+        '</div>' +
+
+      '</div>';
+
+    return card;
+  }
+
+  // ── Allocate a job ──────────────────────────────────────────
+  function doAllocate(idx, intakeId, jobNumber, clientCode, productType, notes) {
+    var designer = document.getElementById("designer-" + idx).value;
+    var expDate  = document.getElementById("expdate-"  + idx).value;
+    var allocBy  = document.getElementById("allocby-"  + idx).value;
+    var btn      = document.getElementById("btn-"      + idx);
+    var statusEl = document.getElementById("status-"   + idx);
+
+    if (!designer) { setStatus(statusEl, "error", "Please select a designer."); return; }
+    if (!allocBy)  { setStatus(statusEl, "error", "Please select Allocated By."); return; }
+
+    btn.disabled = true;
+    btn.textContent = "Allocating…";
+    statusEl.className = "alloc-status";
+    statusEl.textContent = "";
+
+    var payload = {
+      intakeId:           intakeId,
+      jobNumber:          jobNumber,
+      clientCode:         clientCode,
+      productType:        productType,
+      designerName:       designer,
+      expectedCompletion: expDate,
+      allocatedBy:        allocBy,
+      notes:              notes
+    };
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.ok) {
+          setStatus(statusEl, "success", result.msg);
+          btn.textContent = "✓ Done";
+          btn.style.background = "#0f9d58";
+          document.getElementById("card-" + idx).classList.add("is-done");
+        } else {
+          setStatus(statusEl, "error", result.msg);
+          btn.disabled = false;
+          btn.textContent = "Allocate Job";
+        }
+      })
+      .withFailureHandler(function(err) {
+        setStatus(statusEl, "error", "Error: " + err.message);
+        btn.disabled = false;
+        btn.textContent = "Allocate Job";
+      })
+      .allocateIntakeJob(payload);
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────
+  function setStatus(el, type, msg) {
+    el.className = "alloc-status " + type;
+    el.textContent = msg;
+  }
+
+  function showError(msg) {
+    document.getElementById("loadingState").style.display = "none";
+    document.getElementById("mainContent").style.display  = "none";
+    var err = document.getElementById("errorState");
+    err.style.display = "block";
+    document.getElementById("errorMsg").textContent = msg;
+  }
+
+  function esc(str) {
+    return String(str || "")
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
+      .replace(/'/g,"&#39;");
+  }
+
+  function escStr(str) {
+    // For use inside JS string literals (single-quoted onclick attributes)
+    return String(str || "").replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+  }
+
+  // ── Auto-load on page open ──────────────────────────────────
+  window.onload = loadQueue;
+</script>
+</body>
+</html>
