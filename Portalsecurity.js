@@ -217,7 +217,7 @@ function getPortalForRole(role) {
     case "CEO":
       return "ceo";
     case "Project Manager":
-      return "teamlead"; // PM sees full TL view (all teams)
+      return "intake"; // PM lands on intake queue by default
     case "Team Leader":
     case "QC Reviewer":
       return "teamlead";
@@ -765,28 +765,16 @@ function doGetSecure(e) {
       auth.name + " | " + auth.role);
   }
 
-  // ── INTAKE QUEUE — Team Lead / PM / CEO only ────────────────
-  // ?page=intake is checked first so it works for any role including CEO.
-  // Sarty and TLs bookmark ?page=intake — shows only pending jobs,
-  // no spreadsheet data visible.
-  if (page === "intake") {
-    var intakeAllowed = ["Team Leader", "Project Manager", "CEO"];
-    if (auth.authenticated && intakeAllowed.indexOf(auth.role) !== -1) {
+  // ── CEO PORTAL ──────────────────────────────────────────────
+  if (auth.role === "CEO" || (!enforcing && page === "ceo")) {
+
+    // CEO explicitly requesting intake queue
+    if (page === "intake") {
       logAccess_("ALLOWED", auth.email, "intake", auth.name + " | " + auth.role);
       return HtmlService.createHtmlOutputFromFile("IntakeQueue")
         .setTitle("BLC — Intake Queue")
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
-    // Authenticated but wrong role
-    if (auth.authenticated) {
-      return buildAccessDeniedPage_(
-        "The Intake Queue is only accessible to Team Leads and Project Managers."
-      );
-    }
-  }
-
-  // ── CEO PORTAL ──────────────────────────────────────────────
-  if (auth.role === "CEO" || (!enforcing && page === "ceo")) {
 
     if (e.parameter.debug === "1") {
       return HtmlService.createHtmlOutputFromFile("CEO_Debug")
@@ -804,9 +792,32 @@ function doGetSecure(e) {
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
-  // ── TEAM LEAD / PM / QC REVIEWER PORTAL ─────────────────────
+  // ── ROUTE BY ROLE (or explicit ?page= for TLs) ───────────────
+  // getPortalForRole: PM → "intake", TL/QC → "teamlead", Designer → "designer"
+  // If user is not authenticated, fall back to the page param (grace mode).
   var portal = auth.authenticated ? getPortalForRole(auth.role) : page;
 
+  // Allow TLs to explicitly request the intake queue via ?page=intake
+  if (page === "intake") portal = "intake";
+
+  // ── INTAKE QUEUE — PM (default) and TL / CEO (explicit) ──────
+  if (portal === "intake") {
+    var intakeAllowed = ["Team Leader", "Project Manager", "CEO"];
+    if (auth.authenticated && intakeAllowed.indexOf(auth.role) !== -1) {
+      logAccess_("ALLOWED", auth.email, "intake", auth.name + " | " + auth.role);
+      return HtmlService.createHtmlOutputFromFile("IntakeQueue")
+        .setTitle("BLC — Intake Queue")
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+    // Authenticated but wrong role (e.g. Designer trying ?page=intake)
+    if (auth.authenticated) {
+      return buildAccessDeniedPage_(
+        "The Intake Queue is only accessible to Team Leads and Project Managers."
+      );
+    }
+  }
+
+  // ── TEAM LEAD / QC REVIEWER PORTAL ───────────────────────────
   if (portal === "teamlead") {
     return HtmlService.createHtmlOutputFromFile("TeamLeadView")
       .setTitle("BLC Team Status")

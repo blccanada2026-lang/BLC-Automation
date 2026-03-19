@@ -138,7 +138,7 @@ function patchOrphanedActiveJobs() {
           continue;
         }
 
-        var newRow = new Array(36).fill("");
+        var newRow = new Array(39).fill("");
         newRow[MJ.jobNumber - 1]          = jobNumber;
         newRow[MJ.clientCode - 1]         = clientCode;
         newRow[MJ.clientName - 1]         = clientName;
@@ -159,9 +159,12 @@ function patchOrphanedActiveJobs() {
         newRow[MJ.onHoldFlag - 1]         = "No";
         newRow[MJ.lastUpdated - 1]        = getTimestamp();
         newRow[MJ.lastUpdatedBy - 1]      = FUNCTION_NAME;
-        newRow[MJ.rowId - 1]              = Utilities.getUuid();
-        newRow[MJ.isTest - 1]             = (jobNumber.indexOf("TEST-") === 0) ? "Yes" : "No";
-        newRow[MJ.isImported - 1]         = "No";
+        newRow[MJ.rowId - 1]                  = Utilities.getUuid();
+        newRow[MJ.isTest - 1]                 = (jobNumber.indexOf("TEST-") === 0) ? "Yes" : "No";
+        newRow[MJ.isImported - 1]             = "No";
+        newRow[MJ.qcExempt - 1]               = "No";
+        newRow[MJ.sopChecklistSubmitted - 1]   = "No";
+        newRow[MJ.qcChecklistSubmitted - 1]    = "No";
 
         masterSheet.appendRow(newRow);
         orphansFixed++;
