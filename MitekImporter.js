@@ -56,13 +56,19 @@ var MITEK_PRODUCT_KEYWORDS = [
 ];
 
 // ── Client job number formats ────────────────────────────────
-// SBS:        XXXX-XXXX-[Letter]      e.g. 2601-0883-A      (MiTek)
-// MATIX-SK:   6-digit numeric         e.g. 160769            (MiTek)
-// NORSPAN-MB: Q + 6 digits + opt.letter  e.g. Q260161, Q260145S (Alpine/iCommand via LogMeIn)
+// SBS:        XXXX-XXXX-[Letter]           e.g. 2601-0883-A        (MiTek, Design Schedule)
+// MATIX-SK:   6-digit numeric              e.g. 160769              (MiTek, Quotes/Orders)
+// NELSON:     6-digit numeric + optional letter                     (MiTek, Parent OT Reference)
+//             e.g. 260337 (Roof), 260337F (Floor)
+//             Login: miteKi01 | Company: Winterburn Truss Inc
+// NORSPAN-MB: Q + 6 digits + opt letter   e.g. Q260161, Q260145S   (Alpine iCommand, LogMeIn)
+// ALBERTA TRUSS: 6-digit + optional -NN  e.g. 261114-01, 255578    (MiTek, login: designer3)
 var MITEK_JOB_PATTERNS = {
   'SBS':        /^\d{4}-\d{4}-[A-Z]$/,
   'MATIX-SK':   /^\d{6}$/,
-  'NORSPAN-MB': /^Q\d{6}[A-Z]?$/
+  'NELSON':        /^\d{6}[A-Z]?$/,      // 6-digit + optional letter  e.g. 260337, 260337F
+  'NORSPAN-MB':    /^Q\d{6}[A-Z]?$/,
+  'ALBERTA TRUSS': /^\d{6}(-\d{2})?$/   // 6-digit + optional -NN suffix  e.g. 261114-01, 255578
 };
 
 

@@ -79,6 +79,7 @@ class MockRange {
   setBackground()  { return this; }
   setFontWeight()  { return this; }
   setFontColor()   { return this; }
+  setFontSize()    { return this; }
   getSheet()       { return this._sheet; }
 }
 
@@ -95,6 +96,14 @@ class MockSpreadsheet {
 
   getSheetByName(name) {
     return this._sheets[name] || null;
+  }
+
+  insertSheet(name) {
+    return this.addSheet(name, []);
+  }
+
+  getSheets() {
+    return Object.values(this._sheets);
   }
 }
 
@@ -226,6 +235,14 @@ function addMockEmailThread(opts = {}) {
 function getMockSpreadsheet() {
   return _mockSpreadsheet;
 }
+
+// ── SopIntegration.js stubs ──────────────────────────────────
+// These functions are defined in SopIntegration.js which is not loaded
+// by every test file. Stub them here so Code.js calls don't throw.
+global.sendSopChecklistEmail_       = () => {};
+global.sendSopReminderEmail_        = () => {};
+global.sendQcChecklistEmail_        = () => {};
+global.sendQcChecklistEmailToTeam_  = () => {};
 
 module.exports = {
   resetMockSpreadsheet, getMockSpreadsheet, MockSheet, MockSpreadsheet,

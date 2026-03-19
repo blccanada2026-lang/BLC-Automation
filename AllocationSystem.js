@@ -17,7 +17,8 @@ var ALLOC_FORM = {
   productType:        4,  // "Product Type" — dropdown
   expectedCompletion: 5,  // "Expected Completion Date" — date field
   notes:              6,  // "Notes / Instructions" — paragraph text
-  allocatedBy:        7   // "Allocated By" — dropdown
+  allocatedBy:        7,  // "Allocated By" — dropdown
+  qcExempt:           8   // "QC Exempt? (FPO job)" — dropdown Yes/No
 };
 
 
@@ -43,6 +44,7 @@ function onAllocationSubmit(e) {
     var expectedComp     = row[ALLOC_FORM.expectedCompletion]            || "";
     var notes            = String(row[ALLOC_FORM.notes]              || "").trim();
     var allocatedBy      = String(row[ALLOC_FORM.allocatedBy]        || "").trim();
+    var qcExempt         = String(row[ALLOC_FORM.qcExempt]           || "No").trim();
 
     // ── 2. Validate required fields ────────────────────────────
     if (!jobNumber) {
@@ -93,7 +95,7 @@ function onAllocationSubmit(e) {
     // ── 6. Build new MASTER row — always 36 cols ───────────────
     var MJ  = CONFIG.masterCols;
     var today = new Date();
-    var newRow = new Array(36).fill("");
+    var newRow = new Array(39).fill("");
 
     newRow[MJ.jobNumber          - 1] = jobNumber;
     newRow[MJ.clientCode         - 1] = clientCode;
@@ -114,7 +116,10 @@ function onAllocationSubmit(e) {
     newRow[MJ.rowId              - 1] = Utilities.getUuid();
     newRow[MJ.isTest             - 1] = (jobNumber.indexOf("TEST-") === 0)
                                         ? "Yes" : "No";
-    newRow[MJ.isImported         - 1] = "No";
+    newRow[MJ.isImported             - 1] = "No";
+    newRow[MJ.qcExempt               - 1] = (qcExempt.toLowerCase() === "yes") ? "Yes" : "No";
+    newRow[MJ.sopChecklistSubmitted  - 1] = "No";
+    newRow[MJ.qcChecklistSubmitted   - 1] = "No";
 
     // ── 7. Append to MASTER_JOB_DATABASE ──────────────────────
     var masterSheet = getSheet(CONFIG.sheets.masterJob);
@@ -129,11 +134,16 @@ function onAllocationSubmit(e) {
     // ── 9. Mark matching intake row as Allocated (if came from queue) ──────────
     postAllocationIntakeSync(jobNumber, productType, allocatedBy);
 
-    // ── 10. Send notification ──────────────────────────────────
+    // ── 10. Send allocation notification ──────────────────────
     sendAllocationNotification(
       jobNumber, clientName, clientCode, designerName,
       productType, expectedComp, allocatedBy, notes
     );
+
+    // ── 11. Send SOP checklist email to designer (unless QC Exempt) ──
+    if (qcExempt.toLowerCase() !== "yes") {
+      sendSopChecklistEmail_(jobNumber, designerName, clientCode);
+    }
 
     logException("INFO", jobNumber, FUNCTION_NAME,
       "Allocated successfully. Designer: " + designerName +
