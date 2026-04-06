@@ -389,4 +389,75 @@ function runAnnualBonus(year) {
   Logger.log('[QuarterlyBonusEngine] Annual bonus ' + year + ': ' + annualRows.length + ' rows written.');
 }
 
+/**
+ * Main entry point. Called from BLC Menu or directly.
+ * Prompts for quarter and year when called interactively (no args).
+ */
+function runQuarterlyBonus(quarter, year) {
+  var ui = getUiSafe_();
+
+  if (!quarter || !year) {
+    if (!ui) {
+      Logger.log('[QuarterlyBonusEngine] runQuarterlyBonus requires quarter and year when called non-interactively.');
+      return;
+    }
+    var qResp = ui.prompt('Quarterly Bonus', 'Enter quarter (Q1/Q2/Q3/Q4):', ui.ButtonSet.OK_CANCEL);
+    if (qResp.getSelectedButton() !== ui.Button.OK) return;
+    quarter = qResp.getResponseText().trim().toUpperCase();
+
+    var yResp = ui.prompt('Quarterly Bonus', 'Enter year (e.g. 2026):', ui.ButtonSet.OK_CANCEL);
+    if (yResp.getSelectedButton() !== ui.Button.OK) return;
+    year = parseInt(yResp.getResponseText().trim(), 10);
+  }
+
+  if (!QB_QUARTERS[quarter]) {
+    Logger.log('[QuarterlyBonusEngine] Invalid quarter: ' + quarter);
+    if (ui) ui.alert('Invalid quarter: ' + quarter + '. Use Q1, Q2, Q3, or Q4.');
+    return;
+  }
+
+  Logger.log('[QuarterlyBonusEngine] Starting ' + quarter + '-' + year + '...');
+
+  var quarterHours = getQuarterHours_(quarter, year);
+  var errorRates   = getErrorRates_(quarter, year);
+  var returnRates  = getClientQcReturnRates_(quarter, year);
+  var inputs       = getBonusInputs_(quarter, year);
+  var profileMap   = buildDesignerProfileMap_();
+
+  var designerResults   = computeDesignerScores_(quarter, year, inputs, errorRates, quarterHours);
+  var supervisorResults = computeSupervisorScores_(quarter, year, inputs, designerResults, returnRates, profileMap);
+
+  // Forced differentiation warnings (warning only -- not a block)
+  inputs.filter(function (r) {
+    return r.role === 'Team Leader' || r.role === 'Project Manager';
+  }).forEach(function (supRow) {
+    var reporteeInputs = inputs.filter(function (r) {
+      var profile = profileMap[normaliseDesignerName(r.personName || '')];
+      return profile && (profile.supId === supRow.personId || profile.pmCode === supRow.personId);
+    });
+    if (checkForcedDifferentiation_(supRow.personName, reporteeInputs)) {
+      Logger.log('[QuarterlyBonusEngine] FORCED DIFF WARNING: ' + supRow.personName +
+                 ' rated >60% of their designers above 4.0 -- please review.');
+      if (ui) ui.alert('Warning: ' + supRow.personName +
+                       ' has rated more than 60% of their designers above 4.0.\nPlease review differentiation before approving.');
+    }
+  });
+
+  var allEntries = [];
+  Object.keys(designerResults).forEach(function (id)   { allEntries.push(designerResults[id]);   });
+  Object.keys(supervisorResults).forEach(function (id) { allEntries.push(supervisorResults[id]); });
+
+  writeBonusLedger_(allEntries, quarter, year);
+
+  if (quarter === 'Q4') {
+    runAnnualBonus(year);
+  }
+
+  var pending = allEntries.filter(function (e) { return e.status === 'Pending'; }).length;
+  var summary = quarter + '-' + year + ' complete. ' + allEntries.length + ' entries written. ' +
+                pending + ' pending.';
+  Logger.log('[QuarterlyBonusEngine] ' + summary);
+  if (ui) ui.alert('Quarterly Bonus Run Complete', summary, ui.ButtonSet.OK);
+}
+
 // Functions added in subsequent tasks.

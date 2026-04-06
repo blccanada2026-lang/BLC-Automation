@@ -513,3 +513,49 @@ describe('runAnnualBonus', function () {
     expect(row.notes).toMatch(/Q2/);
   });
 });
+
+describe('runQuarterlyBonus -- integration', function () {
+  test('end-to-end: computes Draft bonus for a designer with all inputs present', function () {
+    ConfigService.getNumber = jest.fn(function(key, def) { return def; });
+    var masterData = makeMasterSheet([
+      makeMasterRow({ period: 'January 2026',  name: 'Alice', design: 100, rework: 10 }),
+      makeMasterRow({ period: 'February 2026', name: 'Alice', design:  80, rework:  0 }),
+      makeMasterRow({ period: 'March 2026',    name: 'Alice', design:  70, rework:  0 })
+    ]);
+    getMockSpreadsheet().setSheetData('MASTER_JOB_DATABASE', masterData);
+
+    SheetDB.findRows = jest.fn(function (alias, fn) {
+      if (alias === 'QUARTERLY_BONUS_INPUTS') {
+        return [makeQBIRow({
+          personId: 'D001', personName: 'Alice', role: 'Designer', quarter: 'Q1-2026',
+          clientFeedbackAvg: 4.0, tlRatingAvg: 4.0, pmRatingAvg: 4.0
+        })].filter(fn);
+      }
+      return [];
+    });
+    SheetDB.deleteWhere               = jest.fn();
+    SheetDB.insertRows                = jest.fn();
+    global.buildDesignerProfileMap_   = jest.fn(function () { return {}; });
+
+    runQuarterlyBonus('Q1', 2026);
+
+    var inserted = SheetDB.insertRows.mock.calls[0][1];
+    expect(inserted).toEqual(expect.arrayContaining([
+      expect.objectContaining({ personId: 'D001', bonusType: 'QUARTERLY', status: 'Draft' })
+    ]));
+  });
+
+  test('calls runAnnualBonus automatically when quarter is Q4', function () {
+    ConfigService.getNumber = jest.fn(function(key, def) { return def; });
+    SheetDB.getAll                 = jest.fn(function () { return []; });
+    SheetDB.findRows               = jest.fn(function () { return []; });
+    SheetDB.deleteWhere            = jest.fn();
+    SheetDB.insertRows             = jest.fn();
+    global.buildDesignerProfileMap_ = jest.fn(function () { return {}; });
+
+    runQuarterlyBonus('Q4', 2026);
+
+    // insertRows called at least twice: once for quarterly, once for annual
+    expect(SheetDB.insertRows.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+});
