@@ -105,6 +105,16 @@ class MockSpreadsheet {
   getSheets() {
     return Object.values(this._sheets);
   }
+
+  /**
+   * setSheetData(name, data)
+   * Helper for tests: creates (or replaces) a named sheet with pre-loaded 2D data.
+   * The first row of `data` is treated as the header row by SheetDB.
+   */
+  setSheetData(name, data) {
+    this._sheets[name] = new MockSheet(name, data);
+    return this._sheets[name];
+  }
 }
 
 // ── Global GAS stubs ──────────────────────────────────────────
