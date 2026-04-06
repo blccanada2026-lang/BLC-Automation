@@ -161,4 +161,57 @@ function checkForcedDifferentiation_(raterName, inputs) {
   return (aboveFour / inputs.length) > 0.60;
 }
 
+/**
+ * Scores every Designer row in inputs.
+ * @param {string} quarter
+ * @param {number} year
+ * @param {Array}  inputs        All QBI rows for the quarter
+ * @param {Object} errorRates    { normalisedName: rate } from getErrorRates_()
+ * @param {Object} quarterHours  { normalisedName: hours } from getQuarterHours_()
+ * @returns {Object}  { personId: { compositeScore, bonusINR, hours, status, pendingReason, ... } }
+ */
+function computeDesignerScores_(quarter, year, inputs, errorRates, quarterHours) {
+  var rate    = ConfigService.getNumber('quarterly_bonus_rate_inr', 25);
+  var results = {};
+
+  inputs.forEach(function (row) {
+    if (row.role !== 'Designer') return;
+
+    var name  = normaliseDesignerName(row.personName || '');
+    var hours = quarterHours[name] || 0;
+    var eRate = errorRates[name]   || 0;
+
+    var missing = [];
+    if (!(Number(row.clientFeedbackAvg) > 0)) missing.push('client feedback');
+    if (!(Number(row.tlRatingAvg)       > 0)) missing.push('TL rating');
+    if (!(Number(row.pmRatingAvg)       > 0)) missing.push('PM rating');
+
+    if (missing.length > 0) {
+      results[row.personId] = {
+        personId: row.personId, personName: row.personName, role: 'Designer',
+        compositeScore: 0, bonusINR: 0, hours: hours,
+        status: 'Pending', pendingReason: 'Missing: ' + missing.join(', ')
+      };
+      return;
+    }
+
+    var composite = 0.30 * (Number(row.clientFeedbackAvg) / 5)
+                  + 0.30 * (1 - eRate)
+                  + 0.25 * (Number(row.tlRatingAvg) / 5)
+                  + 0.15 * (Number(row.pmRatingAvg) / 5);
+    composite = Math.min(1, Math.max(0, composite));
+
+    results[row.personId] = {
+      personId: row.personId, personName: row.personName, role: 'Designer',
+      compositeScore: composite,
+      bonusINR: Math.round(hours * composite * rate),
+      hours: hours,
+      status: 'Draft',
+      pendingReason: ''
+    };
+  });
+
+  return results;
+}
+
 // Functions added in subsequent tasks.
