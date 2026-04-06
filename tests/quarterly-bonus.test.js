@@ -465,3 +465,51 @@ describe('writeBonusLedger_', function () {
     expect(function () { writeBonusLedger_(entries, 'Q1', 2026); }).not.toThrow();
   });
 });
+
+describe('runAnnualBonus', function () {
+  test('aggregates hours and uses hours-weighted composite across 4 quarters', function () {
+    ConfigService.getNumber = jest.fn(function(key, def) { return def; });
+    SheetDB.findRows    = jest.fn(function (alias, fn) {
+      var ledger = [
+        { bonusType:'QUARTERLY', calculationPeriod:'Q1-2026', personId:'D001', personName:'Alice', role:'Designer', feedbackScore:0.80, hours:100, status:'Draft' },
+        { bonusType:'QUARTERLY', calculationPeriod:'Q2-2026', personId:'D001', personName:'Alice', role:'Designer', feedbackScore:0.90, hours:120, status:'Draft' },
+        { bonusType:'QUARTERLY', calculationPeriod:'Q3-2026', personId:'D001', personName:'Alice', role:'Designer', feedbackScore:0.70, hours:110, status:'Draft' },
+        { bonusType:'QUARTERLY', calculationPeriod:'Q4-2026', personId:'D001', personName:'Alice', role:'Designer', feedbackScore:0.85, hours:130, status:'Draft' }
+      ];
+      return ledger.filter(fn);
+    });
+    SheetDB.deleteWhere = jest.fn();
+    SheetDB.insertRows  = jest.fn();
+
+    runAnnualBonus(2026);
+
+    var rows = SheetDB.insertRows.mock.calls[0][1];
+    var row  = rows.find(function (r) { return r.personId === 'D001'; });
+    expect(row.hours).toBe(460);
+    expect(row.bonusType).toBe('ANNUAL');
+
+    var expectedComposite = (0.80*100 + 0.90*120 + 0.70*110 + 0.85*130) / 460;
+    expect(row.feedbackScore).toBeCloseTo(expectedComposite, 3);
+    expect(row.bonusINR).toBe(Math.round(460 * expectedComposite * 25));
+  });
+
+  test('excludes PENDING quarters and notes them', function () {
+    ConfigService.getNumber = jest.fn(function(key, def) { return def; });
+    SheetDB.findRows    = jest.fn(function (alias, fn) {
+      var ledger = [
+        { bonusType:'QUARTERLY', calculationPeriod:'Q1-2026', personId:'D002', personName:'Bob', role:'Designer', feedbackScore:0.80, hours:100, status:'Draft'   },
+        { bonusType:'QUARTERLY', calculationPeriod:'Q2-2026', personId:'D002', personName:'Bob', role:'Designer', feedbackScore:0,    hours:0,   status:'Pending' }
+      ];
+      return ledger.filter(fn);
+    });
+    SheetDB.deleteWhere = jest.fn();
+    SheetDB.insertRows  = jest.fn();
+
+    runAnnualBonus(2026);
+
+    var rows = SheetDB.insertRows.mock.calls[0][1];
+    var row  = rows.find(function (r) { return r.personId === 'D002'; });
+    expect(row.hours).toBe(100);
+    expect(row.notes).toMatch(/Q2/);
+  });
+});
