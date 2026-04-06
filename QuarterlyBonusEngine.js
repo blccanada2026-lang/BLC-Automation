@@ -133,4 +133,32 @@ function getClientQcReturnRates_(quarter, year) {
   return rates;
 }
 
+/**
+ * Loads all QUARTERLY_BONUS_INPUTS rows for a quarter.
+ * @param  {string} quarter  'Q1'|'Q2'|'Q3'|'Q4'
+ * @param  {number} year     e.g. 2026
+ * @return {Array}           filtered QBI rows
+ */
+function getBonusInputs_(quarter, year) {
+  var quarterKey = quarter + '-' + year;
+  return SheetDB.findRows('QUARTERLY_BONUS_INPUTS', function (row) {
+    return row.quarter === quarterKey;
+  });
+}
+
+/**
+ * Returns true if >60% of the given inputs have tlRatingAvg > 4.0.
+ * Warning flag only -- does not block the run.
+ * @param  {string} raterName  Used for logging only
+ * @param  {Array}  inputs     QBI rows for this rater's reportees
+ * @return {boolean}
+ */
+function checkForcedDifferentiation_(raterName, inputs) {
+  if (!inputs || inputs.length === 0) return false;
+  var aboveFour = inputs.filter(function (r) {
+    return (Number(r.tlRatingAvg) || 0) > 4.0;
+  }).length;
+  return (aboveFour / inputs.length) > 0.60;
+}
+
 // Functions added in subsequent tasks.
