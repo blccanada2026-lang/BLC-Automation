@@ -208,6 +208,18 @@ describe('getBonusInputs_', function () {
     expect(result.length).toBe(1);
     expect(result[0].personId).toBe('D001');
   });
+
+  test('excludes rows from other quarters', function () {
+    var allRows = [
+      makeQBIRow({ personId: 'D001', quarter: 'Q1-2026' }),
+      makeQBIRow({ personId: 'D002', quarter: 'Q2-2026' })
+    ];
+    SheetDB.findRows = jest.fn(function (alias, fn) { return allRows.filter(fn); });
+
+    var result = getBonusInputs_('Q1', 2026);
+
+    expect(result.some(function (r) { return r.quarter === 'Q2-2026'; })).toBe(false);
+  });
 });
 
 describe('checkForcedDifferentiation_', function () {
@@ -243,5 +255,13 @@ describe('checkForcedDifferentiation_', function () {
       makeQBIRow({ tlRatingAvg: 2.0 })
     ];
     expect(checkForcedDifferentiation_('TL Sarty', inputs)).toBe(false);
+  });
+
+  test('returns false for empty inputs array', function () {
+    expect(checkForcedDifferentiation_('TL Sarty', [])).toBe(false);
+  });
+
+  test('returns false for null inputs', function () {
+    expect(checkForcedDifferentiation_('TL Sarty', null)).toBe(false);
   });
 });
