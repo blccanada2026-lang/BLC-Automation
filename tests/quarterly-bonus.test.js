@@ -326,3 +326,68 @@ describe('computeDesignerScores_', function () {
     expect(result['TL001']).toBeUndefined();
   });
 });
+
+describe('computeSupervisorScores_', function () {
+  test('computes TL composite using designer average and CEO rating', function () {
+    ConfigService.getNumber = jest.fn(function(key, def) { return def; });
+    var tlInput = makeQBIRow({
+      personId: 'TL001', personName: 'Sarty', role: 'Team Leader',
+      ceoRatingAvg: 4.0, clientFeedbackAvg: 0, tlRatingAvg: 0, pmRatingAvg: 0
+    });
+
+    // Alice and Bob both report to TL001
+    var designerScores = {
+      'D001': { compositeScore: 0.80, hours: 100, status: 'Draft', personName: 'Alice' },
+      'D002': { compositeScore: 0.60, hours:  80, status: 'Draft', personName: 'Bob'   }
+    };
+    var returnRates = { 'TL001': 0.10 };
+    var profileMap  = {
+      'Alice': { supId: 'TL001', designerId: 'D001', role: 'Designer' },
+      'Bob':   { supId: 'TL001', designerId: 'D002', role: 'Designer' }
+    };
+
+    var result = computeSupervisorScores_(
+      'Q1', 2026, [tlInput], designerScores, returnRates, profileMap
+    );
+
+    // avgDesignerComposite = (0.80 + 0.60) / 2 = 0.70
+    // composite = 0.30*(1-0.10) + 0.40*0.70 + 0.30*(4.0/5)
+    //           = 0.27 + 0.28 + 0.24 = 0.79
+    expect(result['TL001'].compositeScore).toBeCloseTo(0.79, 2);
+    expect(result['TL001'].hours).toBe(180);   // 100 + 80
+    expect(result['TL001'].bonusINR).toBe(Math.round(180 * 0.79 * 25));
+  });
+
+  test('marks PENDING when CEO rating is missing', function () {
+    ConfigService.getNumber = jest.fn(function(key, def) { return def; });
+    var tlInput = makeQBIRow({
+      personId: 'TL002', personName: 'Priya', role: 'Team Leader', ceoRatingAvg: 0
+    });
+    var result = computeSupervisorScores_('Q1', 2026, [tlInput], {}, {}, {});
+
+    expect(result['TL002'].status).toBe('Pending');
+    expect(result['TL002'].pendingReason).toMatch(/CEO/i);
+  });
+
+  test('excludes PENDING designer scores from average', function () {
+    ConfigService.getNumber = jest.fn(function(key, def) { return def; });
+    var tlInput = makeQBIRow({
+      personId: 'TL003', personName: 'Maya', role: 'Team Leader', ceoRatingAvg: 4.0
+    });
+    var designerScores = {
+      'D010': { compositeScore: 0.80, hours: 100, status: 'Draft',   personName: 'Eve'  },
+      'D011': { compositeScore: 0,    hours:  0,  status: 'Pending', personName: 'Frank' }
+    };
+    var profileMap = {
+      'Eve':   { supId: 'TL003', designerId: 'D010', role: 'Designer' },
+      'Frank': { supId: 'TL003', designerId: 'D011', role: 'Designer' }
+    };
+    var result = computeSupervisorScores_('Q1', 2026, [tlInput], designerScores, {}, profileMap);
+
+    // Only Eve (Draft) included in average; Frank (Pending) excluded.
+    // avgDesignerComposite = 0.80
+    // composite = 0.30*(1-0) + 0.40*0.80 + 0.30*(4.0/5) = 0.30 + 0.32 + 0.24 = 0.86
+    expect(result['TL003'].compositeScore).toBeCloseTo(0.86, 2);
+    expect(result['TL003'].hours).toBe(100);  // Frank's hours excluded too
+  });
+});
