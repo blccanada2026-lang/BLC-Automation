@@ -254,6 +254,10 @@ global.sendSopReminderEmail_        = () => {};
 global.sendQcChecklistEmail_        = () => {};
 global.sendQcChecklistEmailToTeam_  = () => {};
 
+// ── PayrollEngine / QuarterlyBonusEngine GAS helpers ─────────
+// getUiSafe_() returns null in test context (no real GAS UI available).
+global.getUiSafe_ = function() { return null; };
+
 module.exports = {
   resetMockSpreadsheet, getMockSpreadsheet, MockSheet, MockSpreadsheet,
   resetMockGmail, addMockEmailThread, MockGmailMessage, MockGmailThread, MockGmailLabel
