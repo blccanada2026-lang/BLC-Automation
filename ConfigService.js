@@ -169,6 +169,7 @@ var CONFIG_MASTER_SEED = [
   { configKey: 'quarterly_bonus_rate_A', configValue: '0.15',                               configGroup: 'BONUS'     },
   { configKey: 'quarterly_bonus_rate_B', configValue: '0.10',                               configGroup: 'BONUS'     },
   { configKey: 'bonus_links_send_direct',  configValue: 'false',                            configGroup: 'BONUS'     },
+  { configKey: 'portal_base_url',          configValue: 'https://script.google.com/macros/s/YOUR_DEPLOY_ID/exec', configGroup: 'SYSTEM' },
   { configKey: 'quarterly_bonus_rate_inr', configValue: '25',                               configGroup: 'BONUS'     },
 
   // ── WORKFLOW ──────────────────────────────────────────────────

@@ -505,3 +505,74 @@ function previewQuarterlyBonus(quarter, year) {
 
   ui.alert('Quarterly Bonus Preview', msg, ui.ButtonSet.OK);
 }
+
+
+/**
+ * Sends quarterly rating reminder emails.
+ * Phase 1 (bonus_links_send_direct=false): all to blccanada2026@gmail.com for manual forwarding.
+ * Phase 2 (bonus_links_send_direct=true):  direct to each recipient.
+ */
+function sendBonusRatingReminders(quarter, year) {
+  var sendDirect   = ConfigService.getBoolean('bonus_links_send_direct', false);
+  var stagingEmail = ConfigService.get('payroll_from_email', 'blccanada2026@gmail.com');
+  var baseUrl      = ConfigService.get('portal_base_url', '');
+  var quarterKey   = quarter + '-' + year;
+
+  function buildRatingUrl(params) {
+    var qs = Object.keys(params).map(function (k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    }).join('&');
+    return baseUrl + '?' + qs;
+  }
+
+  function dispatchEmail(toEmail, subject, body, forLabel) {
+    var actualTo  = sendDirect ? toEmail : stagingEmail;
+    var fullBody  = sendDirect ? body : ('[FOR: ' + forLabel + ']\n\n' + body);
+    GmailApp.sendEmail(actualTo, subject, fullBody);
+  }
+
+  // ── Client rating links (token-secured) ──────────────────────
+  var clients = SheetDB.getAll('CLIENT_MASTER');
+  clients.forEach(function (client) {
+    if (!client.feedbackToken) return;
+    var url  = buildRatingUrl({ page: 'client-rating', token: client.feedbackToken, quarter: quarterKey });
+    var body = 'Dear ' + (client.billingContact || 'Client') + ',\n\n' +
+               'Please rate the designers who worked on your projects this quarter (' + quarterKey + ').\n\n' +
+               'Your rating link:\n' + url + '\n\n' +
+               'This link is unique to your account. Please do not share it.\n\n' +
+               'Thank you,\nBlue Lotus Consulting';
+    dispatchEmail(
+      client.feedbackEmail || '',
+      'BLC Quarterly Rating — ' + quarterKey,
+      body,
+      (client.billingContact || '') + ' <' + (client.feedbackEmail || '') + '>'
+    );
+  });
+
+  // ── Internal rater links (Google session auth) ────────────────
+  var internalRaters = SheetDB.findRows('STAFF_ROSTER', function (r) {
+    return r.status === 'ACTIVE' &&
+           (r.role === 'Team Leader' || r.role === 'Project Manager' || r.role === 'CEO');
+  });
+  internalRaters.forEach(function (rater) {
+    if (!rater.email) {
+      Logger.log('[sendBonusRatingReminders] No email for: ' + rater.name);
+      return;
+    }
+    var url  = buildRatingUrl({ page: 'rating', quarter: quarterKey });
+    var body = 'Hi ' + rater.name + ',\n\n' +
+               'Please submit your quarterly ratings for ' + quarterKey + '.\n\n' +
+               'Rating portal:\n' + url + '\n\n' +
+               'Sign in with your BLC Google account when prompted.\n\n' +
+               'Thank you,\nBlue Lotus Consulting';
+    dispatchEmail(
+      rater.email,
+      'BLC Quarterly Ratings — ' + quarterKey,
+      body,
+      rater.name + ' (' + rater.role + ') <' + rater.email + '>'
+    );
+  });
+
+  Logger.log('[sendBonusRatingReminders] Done for ' + quarterKey +
+             (sendDirect ? ' — direct' : ' — staging to ' + stagingEmail));
+}
