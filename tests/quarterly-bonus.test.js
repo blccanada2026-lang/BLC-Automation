@@ -123,3 +123,40 @@ describe('getErrorRates_', function () {
     expect(getErrorRates_('Q1', 2026)['Carol']).toBe(0);
   });
 });
+
+
+describe('getClientQcReturnRates_', function () {
+  test('computes return rate per supervisor', function () {
+    var masterData = makeMasterSheet([
+      makeMasterRow({ period: 'January 2026', supId: 'TL001', clientReturn: 1 }),
+      makeMasterRow({ period: 'January 2026', supId: 'TL001', clientReturn: 0 }),
+      makeMasterRow({ period: 'January 2026', supId: 'TL001', clientReturn: 0 }),
+      makeMasterRow({ period: 'January 2026', supId: 'TL001', clientReturn: 0 })
+    ]);
+    getMockSpreadsheet().setSheetData('MASTER_JOB_DATABASE', masterData);
+
+    var result = getClientQcReturnRates_('Q1', 2026);
+
+    // 1 return / 4 total = 0.25
+    expect(result['TL001']).toBeCloseTo(0.25);
+  });
+
+  test('returns 0 for supervisor with no returns', function () {
+    var masterData = makeMasterSheet([
+      makeMasterRow({ period: 'January 2026', supId: 'TL002', clientReturn: 0 })
+    ]);
+    getMockSpreadsheet().setSheetData('MASTER_JOB_DATABASE', masterData);
+
+    expect(getClientQcReturnRates_('Q1', 2026)['TL002']).toBe(0);
+  });
+
+  test('ignores rows with no supId', function () {
+    var masterData = makeMasterSheet([
+      makeMasterRow({ period: 'January 2026', supId: '', clientReturn: 1 })
+    ]);
+    getMockSpreadsheet().setSheetData('MASTER_JOB_DATABASE', masterData);
+
+    var result = getClientQcReturnRates_('Q1', 2026);
+    expect(Object.keys(result).length).toBe(0);
+  });
+});

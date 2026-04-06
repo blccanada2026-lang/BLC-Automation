@@ -96,4 +96,41 @@ function getErrorRates_(quarter, year) {
   return rates;
 }
 
+/**
+ * Returns client QC return rate per supervisor ID.
+ * rate = client_returned_jobs / total_jobs for the quarter.
+ * @param  {string} quarter  'Q1'|'Q2'|'Q3'|'Q4'
+ * @param  {number} year     e.g. 2026
+ * @return {Object}          { supId: rate } where rate is 0-1
+ */
+function getClientQcReturnRates_(quarter, year) {
+  var months       = QB_QUARTERS[quarter];
+  var validPeriods = {};
+  months.forEach(function (m) {
+    validPeriods[QB_MONTH_NAMES[m - 1] + ' ' + year] = true;
+  });
+
+  var rows         = SheetDB.getAll('MASTER');
+  var jobCounts    = {};
+  var returnCounts = {};
+
+  rows.forEach(function (row) {
+    if (row.isTest === true) return;
+    var period = String(row.billingPeriod || '');
+    if (!validPeriods[period]) return;
+
+    var supId = String(row.supId || '').trim();
+    if (!supId) return;
+
+    jobCounts[supId]    = (jobCounts[supId] || 0) + 1;
+    returnCounts[supId] = (returnCounts[supId] || 0) + (Number(row.clientReturn) || 0);
+  });
+
+  var rates = {};
+  Object.keys(jobCounts).forEach(function (id) {
+    rates[id] = jobCounts[id] > 0 ? returnCounts[id] / jobCounts[id] : 0;
+  });
+  return rates;
+}
+
 // Functions added in subsequent tasks.
