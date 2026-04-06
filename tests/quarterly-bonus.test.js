@@ -390,4 +390,24 @@ describe('computeSupervisorScores_', function () {
     expect(result['TL003'].compositeScore).toBeCloseTo(0.86, 2);
     expect(result['TL003'].hours).toBe(100);  // Frank's hours excluded too
   });
+
+  test('PM uses pmCode lookup, not supId', function () {
+    ConfigService.getNumber = jest.fn(function(key, def) { return def; });
+    var pmInput = makeQBIRow({
+      personId: 'PM001', personName: 'Raj', role: 'Project Manager', ceoRatingAvg: 5.0
+    });
+    var designerScores = {
+      'D020': { compositeScore: 0.80, hours: 120, status: 'Draft', personName: 'Grace' }
+    };
+    // Grace is linked to PM001 via pmCode, NOT supId
+    var profileMap = {
+      'Grace': { supId: 'TL999', pmCode: 'PM001', designerId: 'D020', role: 'Designer' }
+    };
+
+    var result = computeSupervisorScores_('Q1', 2026, [pmInput], designerScores, {}, profileMap);
+
+    // composite = 0.30*(1-0) + 0.40*0.80 + 0.30*(5.0/5) = 0.30 + 0.32 + 0.30 = 0.92
+    expect(result['PM001'].compositeScore).toBeCloseTo(0.92, 2);
+    expect(result['PM001'].hours).toBe(120);
+  });
 });

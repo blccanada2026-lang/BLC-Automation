@@ -250,8 +250,9 @@ function computeSupervisorScores_(quarter, year, inputs, designerScores, returnR
       var profile = profileMap[normaliseDesignerName(ds.personName || '')];
       if (!profile) return;
 
-      var reportsToThis = (profile.supId  === row.personId) ||
-                          (profile.pmCode === row.personId);
+      var reportsToThis = row.role === 'Team Leader'
+        ? profile.supId  === row.personId
+        : profile.pmCode === row.personId;
       if (!reportsToThis) return;
 
       if (ds.status === 'Draft') {
