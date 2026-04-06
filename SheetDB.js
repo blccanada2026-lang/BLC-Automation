@@ -97,7 +97,7 @@ var SDB_SCHEMAS = {};
 
 
 // ── MASTER_JOB_DATABASE ──────────────────────────────────────────
-// 39 columns (A–AM). Indices derived from CONFIG.masterCols (1-based) − 1.
+// 41 columns (A–AO). Indices derived from CONFIG.masterCols (1-based) − 1.
 SDB_SCHEMAS['MASTER'] = {
   _sheetName       : 'MASTER_JOB_DATABASE',
   _dataStartRow    : 1,
@@ -144,6 +144,8 @@ SDB_SCHEMAS['MASTER'] = {
     qcExempt             : { col: 36, type: SDB_T.STRING,    required: false, default: ''      },
     sopChecklistSubmitted: { col: 37, type: SDB_T.STRING,    required: false, default: ''      },
     qcChecklistSubmitted : { col: 38, type: SDB_T.STRING,    required: false, default: ''      },
+    clientReturn         : { col: 39, type: SDB_T.NUMBER,    required: false, default: 0       },
+    supId                : { col: 40, type: SDB_T.STRING,    required: false, default: ''      },
   }
 };
 
