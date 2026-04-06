@@ -357,7 +357,7 @@ SDB_SCHEMAS['BONUS_LEDGER'] = {
   _idPrefix     : 'BNS',
   columns: {
     bonusId           : { col:  0, type: SDB_T.STRING,    required: false, default: ''      },
-    designerId        : { col:  1, type: SDB_T.STRING,    required: true,  default: ''      },
+    designerId        : { col:  1, type: SDB_T.STRING,    required: false, default: ''      },
     designerName      : { col:  2, type: SDB_T.STRING,    required: false, default: ''      },
     bonusType         : { col:  3, type: SDB_T.STRING,    required: true,  default: ''      },
     calculationPeriod : { col:  4, type: SDB_T.STRING,    required: false, default: ''      },
