@@ -214,4 +214,72 @@ function computeDesignerScores_(quarter, year, inputs, errorRates, quarterHours)
   return results;
 }
 
+/**
+ * Scores every Team Leader and Project Manager.
+ * MUST be called after computeDesignerScores_().
+ * @param {string} quarter
+ * @param {number} year
+ * @param {Array}  inputs          All QBI rows for the quarter
+ * @param {Object} designerScores  Output of computeDesignerScores_()
+ * @param {Object} returnRates     Output of getClientQcReturnRates_() -- keyed by personId
+ * @param {Object} profileMap      From buildDesignerProfileMap_() -- keyed by normalised name
+ * @returns {Object}  { personId: { compositeScore, bonusINR, hours, status, ... } }
+ */
+function computeSupervisorScores_(quarter, year, inputs, designerScores, returnRates, profileMap) {
+  var rate     = ConfigService.getNumber('quarterly_bonus_rate_inr', 25);
+  var results  = {};
+  var supRoles = ['Team Leader', 'Project Manager'];
+
+  inputs.forEach(function (row) {
+    if (supRoles.indexOf(row.role) === -1) return;
+
+    if (!(Number(row.ceoRatingAvg) > 0)) {
+      results[row.personId] = {
+        personId: row.personId, personName: row.personName, role: row.role,
+        compositeScore: 0, bonusINR: 0, hours: 0,
+        status: 'Pending', pendingReason: 'Missing: CEO rating'
+      };
+      return;
+    }
+
+    var reporteeScores = [];
+    var totalHours     = 0;
+
+    Object.keys(designerScores).forEach(function (dId) {
+      var ds      = designerScores[dId];
+      var profile = profileMap[normaliseDesignerName(ds.personName || '')];
+      if (!profile) return;
+
+      var reportsToThis = (profile.supId  === row.personId) ||
+                          (profile.pmCode === row.personId);
+      if (!reportsToThis) return;
+
+      if (ds.status === 'Draft') {
+        reporteeScores.push(ds.compositeScore);
+        totalHours += (ds.hours || 0);
+      }
+    });
+
+    var avgScore     = reporteeScores.length > 0
+      ? reporteeScores.reduce(function (s, v) { return s + v; }, 0) / reporteeScores.length
+      : 0;
+    var qcReturnRate = returnRates[row.personId] || 0;
+    var composite    = 0.30 * (1 - qcReturnRate)
+                     + 0.40 * avgScore
+                     + 0.30 * (Number(row.ceoRatingAvg) / 5);
+    composite = Math.min(1, Math.max(0, composite));
+
+    results[row.personId] = {
+      personId: row.personId, personName: row.personName, role: row.role,
+      compositeScore: composite,
+      bonusINR: Math.round(totalHours * composite * rate),
+      hours: totalHours,
+      status: 'Draft',
+      pendingReason: ''
+    };
+  });
+
+  return results;
+}
+
 // Functions added in subsequent tasks.
