@@ -26,4 +26,39 @@ var QB_QUARTERS = {
   'Q4': [10, 11, 12]
 };
 
+var QB_MONTH_NAMES = ['January','February','March','April','May','June',
+                      'July','August','September','October','November','December'];
+
+/**
+ * Returns total design hours per normalised designer name for a quarter.
+ * @param  {string} quarter  'Q1'|'Q2'|'Q3'|'Q4'
+ * @param  {number} year     e.g. 2026
+ * @return {Object}          { normalisedName: totalHours, … }
+ */
+function getQuarterHours_(quarter, year) {
+  var months       = QB_QUARTERS[quarter];
+  var validPeriods = {};
+  months.forEach(function (m) {
+    validPeriods[QB_MONTH_NAMES[m - 1] + ' ' + year] = true;
+  });
+
+  var rows   = SheetDB.getAll('MASTER');
+  var totals = {};
+
+  rows.forEach(function (row) {
+    // SheetDB coerces BOOLEAN columns: 'Yes' → true
+    if (row.isTest === true) return;
+    var period = typeof row.billingPeriod === 'object' && row.billingPeriod instanceof Date
+      ? Utilities.formatDate(row.billingPeriod, 'Asia/Kolkata', 'MMMM yyyy')
+      : String(row.billingPeriod || '');
+    if (!validPeriods[period]) return;
+
+    var name  = normaliseDesignerName(row.designerName || '');
+    var hours = Number(row.designHours) || 0;
+    totals[name] = (totals[name] || 0) + hours;
+  });
+
+  return totals;
+}
+
 // Functions added in subsequent tasks.

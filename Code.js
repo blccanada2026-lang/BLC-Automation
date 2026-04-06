@@ -61,7 +61,9 @@ var CONFIG = {
     onHoldReason:26, lastUpdated:27, lastUpdatedBy:28, notes:29, rowId:30,
     isTest:31, sqftDesigner:32, sqftVerified:33, boardFootage:34,
     sqftDiscrepancy:35, isImported:36,
-    qcExempt:37, sopChecklistSubmitted:38, qcChecklistSubmitted:39
+    qcExempt:37, sopChecklistSubmitted:38, qcChecklistSubmitted:39,
+    clientReturn:40, supId:41,
+    designHours:11, reworkHours:14
   },
   productTypes: [
     "Roof Truss", "Floor Truss", "Wall Frame",
