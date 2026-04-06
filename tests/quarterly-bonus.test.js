@@ -13,9 +13,13 @@ const path = require('path');
 const codeJs = fs.readFileSync(path.join(__dirname, '../Code.js'), 'utf8');
 eval(codeJs);
 
-// Load SheetDB.js — provides SheetDB, ConfigService, and CONFIG_MASTER schema
+// Load SheetDB.js — provides SheetDB and CONFIG_MASTER schema
 const sheetDbJs = fs.readFileSync(path.join(__dirname, '../SheetDB.js'), 'utf8');
 eval(sheetDbJs);
+
+// Load ConfigService.js — provides ConfigService (reads from CONFIG_MASTER via SheetDB)
+const configServiceJs = fs.readFileSync(path.join(__dirname, '../ConfigService.js'), 'utf8');
+eval(configServiceJs);
 
 // Load QuarterlyBonusEngine.js — provides quarterly bonus functions
 const quarterlyBonusJs = fs.readFileSync(path.join(__dirname, '../QuarterlyBonusEngine.js'), 'utf8');
@@ -263,5 +267,62 @@ describe('checkForcedDifferentiation_', function () {
 
   test('returns false for null inputs', function () {
     expect(checkForcedDifferentiation_('TL Sarty', null)).toBe(false);
+  });
+});
+
+describe('computeDesignerScores_', function () {
+  test('computes composite correctly for a complete input set', function () {
+    var inputs = [
+      makeQBIRow({
+        personId: 'D001', personName: 'Alice', role: 'Designer',
+        clientFeedbackAvg: 5.0, tlRatingAvg: 4.0, pmRatingAvg: 4.0
+      })
+    ];
+    // composite = 0.30*(5/5) + 0.30*(1-0) + 0.25*(4/5) + 0.15*(4/5)
+    //           = 0.30 + 0.30 + 0.20 + 0.12 = 0.92
+    ConfigService.getNumber = jest.fn(function(key, def) { return def; });
+    var result = computeDesignerScores_('Q1', 2026, inputs, { 'Alice': 0.0 }, { 'Alice': 100 });
+
+    expect(result['D001'].compositeScore).toBeCloseTo(0.92);
+    expect(result['D001'].status).toBe('Draft');
+    expect(result['D001'].bonusINR).toBe(Math.round(0.92 * 100 * 25));
+  });
+
+  test('marks PENDING when clientFeedbackAvg is missing (0)', function () {
+    var inputs = [
+      makeQBIRow({
+        personId: 'D002', personName: 'Bob', role: 'Designer',
+        clientFeedbackAvg: 0, tlRatingAvg: 4.0, pmRatingAvg: 4.0
+      })
+    ];
+    ConfigService.getNumber = jest.fn(function(key, def) { return def; });
+    var result = computeDesignerScores_('Q1', 2026, inputs, { 'Bob': 0 }, { 'Bob': 80 });
+
+    expect(result['D002'].status).toBe('Pending');
+    expect(result['D002'].bonusINR).toBe(0);
+    expect(result['D002'].pendingReason).toMatch(/client/i);
+  });
+
+  test('writes zero bonus for designer with zero hours but Draft status', function () {
+    var inputs = [
+      makeQBIRow({
+        personId: 'D003', personName: 'Carol', role: 'Designer',
+        clientFeedbackAvg: 4.0, tlRatingAvg: 4.0, pmRatingAvg: 4.0
+      })
+    ];
+    ConfigService.getNumber = jest.fn(function(key, def) { return def; });
+    var result = computeDesignerScores_('Q1', 2026, inputs, { 'Carol': 0 }, { 'Carol': 0 });
+
+    expect(result['D003'].bonusINR).toBe(0);
+    expect(result['D003'].status).toBe('Draft');
+  });
+
+  test('skips non-Designer roles', function () {
+    var inputs = [
+      makeQBIRow({ personId: 'TL001', role: 'Team Leader' })
+    ];
+    ConfigService.getNumber = jest.fn(function(key, def) { return def; });
+    var result = computeDesignerScores_('Q1', 2026, inputs, {}, {});
+    expect(result['TL001']).toBeUndefined();
   });
 });
