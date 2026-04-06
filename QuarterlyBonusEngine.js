@@ -80,9 +80,7 @@ function getErrorRates_(quarter, year) {
 
   rows.forEach(function (row) {
     if (row.isTest === true) return;
-    var period = typeof row.billingPeriod === 'object' && row.billingPeriod instanceof Date
-      ? Utilities.formatDate(row.billingPeriod, 'Asia/Kolkata', 'MMMM yyyy')
-      : String(row.billingPeriod || '');
+    var period = String(row.billingPeriod || '');
     if (!validPeriods[period]) return;
 
     var name = normaliseDesignerName(row.designerName || '');
