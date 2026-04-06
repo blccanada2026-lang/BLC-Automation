@@ -411,3 +411,44 @@ describe('computeSupervisorScores_', function () {
     expect(result['PM001'].hours).toBe(120);
   });
 });
+
+describe('writeBonusLedger_', function () {
+  test('deletes existing quarterly rows then inserts new ones', function () {
+    SheetDB.deleteWhere = jest.fn();
+    SheetDB.insertRows  = jest.fn();
+
+    var entries = [{
+      personId: 'D001', personName: 'Alice', role: 'Designer',
+      compositeScore: 0.90, bonusINR: 2250, hours: 100,
+      status: 'Draft', pendingReason: ''
+    }];
+
+    writeBonusLedger_(entries, 'Q1', 2026);
+
+    expect(SheetDB.deleteWhere).toHaveBeenCalledWith(
+      'BONUS_LEDGER', expect.any(Function)
+    );
+    expect(SheetDB.insertRows).toHaveBeenCalledWith(
+      'BONUS_LEDGER',
+      expect.arrayContaining([
+        expect.objectContaining({ bonusINR: 2250, bonusType: 'QUARTERLY', status: 'Draft' })
+      ])
+    );
+  });
+
+  test('sets performanceTier correctly', function () {
+    SheetDB.deleteWhere = jest.fn();
+    SheetDB.insertRows  = jest.fn();
+
+    writeBonusLedger_([
+      { personId:'A', personName:'Hi',  role:'Designer', compositeScore:0.85, bonusINR:100, hours:50, status:'Draft', pendingReason:'' },
+      { personId:'B', personName:'Mid', role:'Designer', compositeScore:0.65, bonusINR:80,  hours:50, status:'Draft', pendingReason:'' },
+      { personId:'C', personName:'Low', role:'Designer', compositeScore:0.40, bonusINR:0,   hours:50, status:'Draft', pendingReason:'' }
+    ], 'Q1', 2026);
+
+    var rows = SheetDB.insertRows.mock.calls[0][1];
+    expect(rows[0].performanceTier).toBe('HIGH');
+    expect(rows[1].performanceTier).toBe('AVERAGE');
+    expect(rows[2].performanceTier).toBe('NEEDS_IMPROVEMENT');
+  });
+});
