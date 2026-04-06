@@ -89,3 +89,37 @@ describe('getQuarterHours_', function () {
     expect(result['Bob']).toBe(50);
   });
 });
+
+
+describe('getErrorRates_', function () {
+  test('computes rework/design ratio per designer', function () {
+    var masterData = makeMasterSheet([
+      makeMasterRow({ period: 'January 2026',  name: 'Alice', design: 100, rework: 10 }),
+      makeMasterRow({ period: 'February 2026', name: 'Alice', design: 100, rework: 0  })
+    ]);
+    getMockSpreadsheet().setSheetData('MASTER_JOB_DATABASE', masterData);
+
+    var result = getErrorRates_('Q1', 2026);
+
+    // 10 rework / 200 total design = 0.05
+    expect(result['Alice']).toBeCloseTo(0.05);
+  });
+
+  test('returns 0 when no rework', function () {
+    var masterData = makeMasterSheet([
+      makeMasterRow({ period: 'January 2026', name: 'Bob', design: 80, rework: 0 })
+    ]);
+    getMockSpreadsheet().setSheetData('MASTER_JOB_DATABASE', masterData);
+
+    expect(getErrorRates_('Q1', 2026)['Bob']).toBe(0);
+  });
+
+  test('returns 0 when designer has zero design hours (avoid divide-by-zero)', function () {
+    var masterData = makeMasterSheet([
+      makeMasterRow({ period: 'January 2026', name: 'Carol', design: 0, rework: 0 })
+    ]);
+    getMockSpreadsheet().setSheetData('MASTER_JOB_DATABASE', masterData);
+
+    expect(getErrorRates_('Q1', 2026)['Carol']).toBe(0);
+  });
+});
