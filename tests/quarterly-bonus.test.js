@@ -451,4 +451,17 @@ describe('writeBonusLedger_', function () {
     expect(rows[1].performanceTier).toBe('AVERAGE');
     expect(rows[2].performanceTier).toBe('NEEDS_IMPROVEMENT');
   });
+
+  test('row objects pass SheetDB required-field validation (no designerId needed)', function () {
+    // This test does NOT mock SheetDB.insertRows — it exercises real schema validation.
+    // If designerId were still required: true, SheetDB would throw here.
+    SheetDB.deleteWhere = jest.fn();
+    var entries = [{
+      personId: 'TL001', personName: 'Sarty', role: 'Team Leader',
+      compositeScore: 0.80, bonusINR: 2000, hours: 80,
+      status: 'Draft', pendingReason: ''
+    }];
+    getMockSpreadsheet().setSheetData('BONUS_LEDGER', [new Array(21).fill('header')]);
+    expect(function () { writeBonusLedger_(entries, 'Q1', 2026); }).not.toThrow();
+  });
 });
