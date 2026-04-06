@@ -61,4 +61,41 @@ function getQuarterHours_(quarter, year) {
   return totals;
 }
 
+/**
+ * Returns error rate per normalised designer name: rework_hours / total_design_hours.
+ * @param  {string} quarter  'Q1'|'Q2'|'Q3'|'Q4'
+ * @param  {number} year     e.g. 2026
+ * @return {Object}          { normalisedName: rate } where rate is 0–1
+ */
+function getErrorRates_(quarter, year) {
+  var months       = QB_QUARTERS[quarter];
+  var validPeriods = {};
+  months.forEach(function (m) {
+    validPeriods[QB_MONTH_NAMES[m - 1] + ' ' + year] = true;
+  });
+
+  var rows         = SheetDB.getAll('MASTER');
+  var designTotals = {};
+  var reworkTotals = {};
+
+  rows.forEach(function (row) {
+    if (row.isTest === true) return;
+    var period = typeof row.billingPeriod === 'object' && row.billingPeriod instanceof Date
+      ? Utilities.formatDate(row.billingPeriod, 'Asia/Kolkata', 'MMMM yyyy')
+      : String(row.billingPeriod || '');
+    if (!validPeriods[period]) return;
+
+    var name = normaliseDesignerName(row.designerName || '');
+    designTotals[name] = (designTotals[name] || 0) + (Number(row.designHours)       || 0);
+    reworkTotals[name] = (reworkTotals[name] || 0) + (Number(row.reworkHoursMajor)  || 0);
+  });
+
+  var rates = {};
+  Object.keys(designTotals).forEach(function (name) {
+    var total  = designTotals[name];
+    rates[name] = total > 0 ? (reworkTotals[name] || 0) / total : 0;
+  });
+  return rates;
+}
+
 // Functions added in subsequent tasks.
