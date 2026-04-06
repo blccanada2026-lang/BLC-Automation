@@ -298,6 +298,8 @@ SDB_SCHEMAS['CLIENT_MASTER'] = {
     rateOverride    : { col:  7, type: SDB_T.NUMBER, required: false, default: 0       },
     status          : { col:  8, type: SDB_T.STRING, required: false, default: 'ACTIVE' },
     notes           : { col:  9, type: SDB_T.STRING, required: false, default: ''      },
+    feedbackEmail   : { col: 10, type: SDB_T.STRING, required: false, default: ''      },
+    feedbackToken   : { col: 11, type: SDB_T.STRING, required: false, default: ''      },
   }
 };
 
