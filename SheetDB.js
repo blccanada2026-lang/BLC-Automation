@@ -393,7 +393,7 @@ SDB_SCHEMAS['QUARTERLY_BONUS_INPUTS'] = {
     improvementNote   : { col: 11, type: SDB_T.STRING,    required: false, default: ''      },
     compositeScore    : { col: 12, type: SDB_T.NUMBER,    required: false, default: 0       },
     status            : { col: 13, type: SDB_T.STRING,    required: false, default: 'Draft' },
-    computedAt        : { col: 14, type: SDB_T.TIMESTAMP, required: false, default: null    }
+    computedAt        : { col: 14, type: SDB_T.TIMESTAMP, required: false, default: null    },
   }
 };
 
@@ -1070,6 +1070,12 @@ var SDB_NEW_SHEET_HEADERS = {
   'SOP_CONFIG'     : ['Config_ID','Client_Code','Product_Type','QC_Form_URL','QC_Steps','Required_Attachments','Reviewer_Role','Effective_From','Effective_To'],
   'FEEDBACK_LOG'   : ['Feedback_ID','Client_Code','Job_Number','Designer_ID','Billing_Period','Requested_At','Request_Sent_At','Response_Received_At','Rating_Overall','Rating_Quality','Rating_Timeliness','Comments','HR_Reviewed','HR_Review_At','Used_In_Bonus_Cycle','Bonus_Cycle_ID','Status'],
   'BONUS_LEDGER'   : ['Bonus_ID','Designer_ID','Designer_Name','Bonus_Type','Calculation_Period','Base_Hours','Base_INR','Bonus_Rate','Bonus_INR','Feedback_Score','Performance_Tier','Status','Approved_By','Approved_At','Paid_At'],
+  'QUARTERLY_BONUS_INPUTS' : [
+    'Input_ID','Quarter','Person_ID','Person_Name','Role',
+    'Client_Feedback_Avg','TL_Rating_Avg','PM_Rating_Avg','CEO_Rating_Avg',
+    'Forced_Diff_Flag','Strength_Note','Improvement_Note',
+    'Composite_Score','Status','Computed_At'
+  ],
   'INVOICE_MASTER' : ['Invoice_ID','Client_Code','Billing_Period','Total_Jobs','Total_Design_Hrs','Total_QC_Hrs','Total_Billable_Hrs','Total_Amount_INR','Doc_URL','Generated_At','Sent_At','Status','HR_Approved_By','HR_Approved_At','Notes'],
   'WORKFLOW_QUEUE' : ['Job_ID','Job_Type','Payload','Status','Created_At','Started_At','Completed_At','Error_Message','Retry_Count'],
 };
