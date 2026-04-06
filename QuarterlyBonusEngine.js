@@ -460,4 +460,48 @@ function runQuarterlyBonus(quarter, year) {
   if (ui) ui.alert('Quarterly Bonus Run Complete', summary, ui.ButtonSet.OK);
 }
 
-// Functions added in subsequent tasks.
+/**
+ * Shows a preview summary of the bonus run without writing any rows.
+ * Prompts for quarter and year when called from the menu.
+ */
+function previewQuarterlyBonus(quarter, year) {
+  var ui = getUiSafe_();
+  if (!ui) return;
+
+  if (!quarter || !year) {
+    var qResp = ui.prompt('Preview Bonus', 'Enter quarter (Q1/Q2/Q3/Q4):', ui.ButtonSet.OK_CANCEL);
+    if (qResp.getSelectedButton() !== ui.Button.OK) return;
+    quarter = qResp.getResponseText().trim().toUpperCase();
+    var yResp = ui.prompt('Preview Bonus', 'Enter year:', ui.ButtonSet.OK_CANCEL);
+    if (yResp.getSelectedButton() !== ui.Button.OK) return;
+    year = parseInt(yResp.getResponseText().trim(), 10);
+  }
+
+  var quarterHours    = getQuarterHours_(quarter, year);
+  var errorRates      = getErrorRates_(quarter, year);
+  var returnRates     = getClientQcReturnRates_(quarter, year);
+  var inputs          = getBonusInputs_(quarter, year);
+  var profileMap      = buildDesignerProfileMap_();
+  var designerResults = computeDesignerScores_(quarter, year, inputs, errorRates, quarterHours);
+  var supResults      = computeSupervisorScores_(quarter, year, inputs, designerResults, returnRates, profileMap);
+
+  var all  = Object.keys(designerResults).map(function (id) { return designerResults[id]; })
+             .concat(Object.keys(supResults).map(function (id) { return supResults[id]; }));
+
+  var draft    = all.filter(function (e) { return e.status === 'Draft'; });
+  var pending  = all.filter(function (e) { return e.status === 'Pending'; });
+  var totalINR = draft.reduce(function (s, e) { return s + (e.bonusINR || 0); }, 0);
+
+  var msg = 'PREVIEW — ' + quarter + '-' + year + '\n\n' +
+            'Total staff: ' + all.length + '\n' +
+            'Ready (Draft): ' + draft.length + '\n' +
+            'Pending (missing inputs): ' + pending.length + '\n' +
+            'Total bonus pool: Rs.' + totalINR.toLocaleString();
+
+  if (pending.length > 0) {
+    msg += '\n\nPending staff:\n' +
+           pending.map(function (e) { return '  - ' + e.personName + ': ' + e.pendingReason; }).join('\n');
+  }
+
+  ui.alert('Quarterly Bonus Preview', msg, ui.ButtonSet.OK);
+}
