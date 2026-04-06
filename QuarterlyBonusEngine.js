@@ -324,4 +324,69 @@ function writeBonusLedger_(entries, quarter, year) {
   SheetDB.insertRows('BONUS_LEDGER', rows);
 }
 
+/**
+ * Computes annual bonuses for the full year.
+ * Called automatically in December by runQuarterlyBonus().
+ * Uses hours-weighted composite across included quarters.
+ * @param {number} year  e.g. 2026
+ */
+function runAnnualBonus(year) {
+  var rate    = ConfigService.getNumber('quarterly_bonus_rate_inr', 25);
+  var periods = ['Q1-'+year, 'Q2-'+year, 'Q3-'+year, 'Q4-'+year];
+
+  var qRows = SheetDB.findRows('BONUS_LEDGER', function (row) {
+    return row.bonusType === 'QUARTERLY' &&
+           periods.indexOf(row.calculationPeriod) !== -1;
+  });
+
+  var byPerson = {};
+  qRows.forEach(function (row) {
+    if (!byPerson[row.personId]) byPerson[row.personId] = [];
+    byPerson[row.personId].push(row);
+  });
+
+  SheetDB.deleteWhere('BONUS_LEDGER', function (row) {
+    return row.bonusType === 'ANNUAL' && String(row.calculationPeriod) === String(year);
+  });
+
+  var ts         = new Date();
+  var annualRows = [];
+
+  Object.keys(byPerson).forEach(function (personId) {
+    var rows     = byPerson[personId];
+    var included = rows.filter(function (r) { return r.status !== 'Pending'; });
+    var excluded = rows.filter(function (r) { return r.status === 'Pending'; });
+
+    var totalHours    = 0;
+    var weightedScore = 0;
+    included.forEach(function (r) {
+      totalHours    += (Number(r.hours)        || 0);
+      weightedScore += (Number(r.feedbackScore) || 0) * (Number(r.hours) || 0);
+    });
+
+    var composite   = totalHours > 0 ? weightedScore / totalHours : 0;
+    var excludeNote = excluded.length > 0
+      ? 'Excluded PENDING quarters: ' + excluded.map(function (r) { return r.calculationPeriod; }).join(', ')
+      : '';
+
+    annualRows.push({
+      bonusType         : 'ANNUAL',
+      calculationPeriod : String(year),
+      personId          : personId,
+      personName        : rows[0].personName || '',
+      role              : rows[0].role       || '',
+      hours             : totalHours,
+      feedbackScore     : composite,
+      performanceTier   : toPerformanceTier_(composite),
+      bonusINR          : Math.round(totalHours * composite * rate),
+      status            : 'Draft',
+      notes             : excludeNote,
+      computedAt        : ts
+    });
+  });
+
+  SheetDB.insertRows('BONUS_LEDGER', annualRows);
+  Logger.log('[QuarterlyBonusEngine] Annual bonus ' + year + ': ' + annualRows.length + ' rows written.');
+}
+
 // Functions added in subsequent tasks.
