@@ -258,6 +258,18 @@ global.sendQcChecklistEmailToTeam_  = () => {};
 // getUiSafe_() returns null in test context (no real GAS UI available).
 global.getUiSafe_ = function() { return null; };
 
+// ── LockService stub ──────────────────────────────────────────
+// SheetDB._sdbAcquireLock() calls LockService.getSpreadsheetLock().
+// In test context we return a no-op lock that always succeeds.
+global.LockService = {
+  getSpreadsheetLock: function() {
+    return {
+      tryLock: function() { return true; },
+      releaseLock: function() {}
+    };
+  }
+};
+
 module.exports = {
   resetMockSpreadsheet, getMockSpreadsheet, MockSheet, MockSpreadsheet,
   resetMockGmail, addMockEmailThread, MockGmailMessage, MockGmailThread, MockGmailLabel

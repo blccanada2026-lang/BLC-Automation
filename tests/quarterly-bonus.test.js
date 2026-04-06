@@ -68,12 +68,31 @@ function makeQBIRow(opts) {
 
 // ── Setup ──────────────────────────────────────────────
 
+// Save originals so each afterEach can restore them after tests that assign
+// jest.fn() directly (direct assignment, not jest.spyOn — restoreAllMocks won't help).
+var _origSheetDB = {
+  findRows    : SheetDB.findRows,
+  getAll      : SheetDB.getAll,
+  deleteWhere : SheetDB.deleteWhere,
+  insertRows  : SheetDB.insertRows
+};
+var _origConfigGetNumber = ConfigService.getNumber;
+
 beforeEach(() => {
   resetMockSpreadsheet();
   // Reset SheetDB's cached spreadsheet reference and read cache so each test
   // gets a fresh MockSpreadsheet rather than the one from the previous test.
   _SDB_STATE.ss = null;
   _SDB_STATE.cache = {};
+});
+
+afterEach(() => {
+  SheetDB.findRows    = _origSheetDB.findRows;
+  SheetDB.getAll      = _origSheetDB.getAll;
+  SheetDB.deleteWhere = _origSheetDB.deleteWhere;
+  SheetDB.insertRows  = _origSheetDB.insertRows;
+  ConfigService.getNumber = _origConfigGetNumber;
+  global.buildDesignerProfileMap_ = undefined;
 });
 
 
