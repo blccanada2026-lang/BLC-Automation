@@ -159,4 +159,16 @@ describe('getClientQcReturnRates_', function () {
     var result = getClientQcReturnRates_('Q1', 2026);
     expect(Object.keys(result).length).toBe(0);
   });
+
+  test('excludes isTest rows', function () {
+    var masterData = makeMasterSheet([
+      makeMasterRow({ period: 'January 2026', supId: 'TL003', clientReturn: 1 }),
+      makeMasterRow({ period: 'January 2026', supId: 'TL003', clientReturn: 1, isTest: 'Yes' })
+    ]);
+    getMockSpreadsheet().setSheetData('MASTER_JOB_DATABASE', masterData);
+
+    var result = getClientQcReturnRates_('Q1', 2026);
+    // Only 1 real job with 1 return; the isTest row must be ignored
+    expect(result['TL003']).toBeCloseTo(1.0);
+  });
 });
