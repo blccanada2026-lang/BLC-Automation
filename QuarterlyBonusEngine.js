@@ -283,4 +283,45 @@ function computeSupervisorScores_(quarter, year, inputs, designerScores, returnR
   return results;
 }
 
+function toPerformanceTier_(score) {
+  if (score >= 0.80) return 'HIGH';
+  if (score >= 0.60) return 'AVERAGE';
+  return 'NEEDS_IMPROVEMENT';
+}
+
+/**
+ * Clears BONUS_LEDGER rows for this quarter+QUARTERLY type, then writes new rows.
+ * Safe to re-run: existing rows are deleted first.
+ * @param {Array}  entries  Combined designer + supervisor score entries
+ * @param {string} quarter  'Q1'|'Q2'|'Q3'|'Q4'
+ * @param {number} year     e.g. 2026
+ */
+function writeBonusLedger_(entries, quarter, year) {
+  var periodKey = quarter + '-' + year;
+
+  SheetDB.deleteWhere('BONUS_LEDGER', function (row) {
+    return row.calculationPeriod === periodKey && row.bonusType === 'QUARTERLY';
+  });
+
+  var ts   = new Date();
+  var rows = entries.map(function (e) {
+    return {
+      bonusType         : 'QUARTERLY',
+      calculationPeriod : periodKey,
+      personId          : e.personId,
+      personName        : e.personName,
+      role              : e.role,
+      hours             : e.hours,
+      feedbackScore     : e.compositeScore,
+      performanceTier   : toPerformanceTier_(e.compositeScore),
+      bonusINR          : e.bonusINR,
+      status            : e.status || 'Draft',
+      notes             : e.pendingReason || '',
+      computedAt        : ts
+    };
+  });
+
+  SheetDB.insertRows('BONUS_LEDGER', rows);
+}
+
 // Functions added in subsequent tasks.

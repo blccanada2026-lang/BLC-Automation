@@ -371,6 +371,12 @@ SDB_SCHEMAS['BONUS_LEDGER'] = {
     approvedBy        : { col: 12, type: SDB_T.STRING,    required: false, default: ''      },
     approvedAt        : { col: 13, type: SDB_T.TIMESTAMP, required: false, default: null    },
     paidAt            : { col: 14, type: SDB_T.TIMESTAMP, required: false, default: null    },
+    personId          : { col: 15, type: SDB_T.STRING,    required: false, default: ''   },
+    personName        : { col: 16, type: SDB_T.STRING,    required: false, default: ''   },
+    role              : { col: 17, type: SDB_T.STRING,    required: false, default: ''   },
+    hours             : { col: 18, type: SDB_T.NUMBER,    required: false, default: 0    },
+    notes             : { col: 19, type: SDB_T.STRING,    required: false, default: ''   },
+    computedAt        : { col: 20, type: SDB_T.TIMESTAMP, required: false, default: null },
   }
 };
 
@@ -1071,7 +1077,7 @@ var SDB_NEW_SHEET_HEADERS = {
   'CONFIG_MASTER'  : ['Config_Key','Config_Value','Config_Group','Editable_By','Description','Last_Updated','Updated_By'],
   'SOP_CONFIG'     : ['Config_ID','Client_Code','Product_Type','QC_Form_URL','QC_Steps','Required_Attachments','Reviewer_Role','Effective_From','Effective_To'],
   'FEEDBACK_LOG'   : ['Feedback_ID','Client_Code','Job_Number','Designer_ID','Billing_Period','Requested_At','Request_Sent_At','Response_Received_At','Rating_Overall','Rating_Quality','Rating_Timeliness','Comments','HR_Reviewed','HR_Review_At','Used_In_Bonus_Cycle','Bonus_Cycle_ID','Status'],
-  'BONUS_LEDGER'   : ['Bonus_ID','Designer_ID','Designer_Name','Bonus_Type','Calculation_Period','Base_Hours','Base_INR','Bonus_Rate','Bonus_INR','Feedback_Score','Performance_Tier','Status','Approved_By','Approved_At','Paid_At'],
+  'BONUS_LEDGER'   : ['Bonus_ID','Designer_ID','Designer_Name','Bonus_Type','Calculation_Period','Base_Hours','Base_INR','Bonus_Rate','Bonus_INR','Feedback_Score','Performance_Tier','Status','Approved_By','Approved_At','Paid_At','Person_ID','Person_Name','Role','Hours','Notes','Computed_At'],
   'QUARTERLY_BONUS_INPUTS' : [
     'Input_ID','Quarter','Person_ID','Person_Name','Role',
     'Client_Feedback_Avg','TL_Rating_Avg','PM_Rating_Avg','CEO_Rating_Avg',
