@@ -32,7 +32,8 @@ function makeMasterRow(opts) {
   row[CONFIG.masterCols.billingPeriod - 1] = opts.period       || 'March 2026';
   row[CONFIG.masterCols.designerName  - 1] = opts.name         || 'Alice';
   row[CONFIG.masterCols.designHours   - 1] = opts.design       || 0;
-  row[CONFIG.masterCols.reworkHours   - 1] = opts.rework       || 0;
+  row[CONFIG.masterCols.reworkHoursMajor - 1] = opts.rework      || 0;
+  row[CONFIG.masterCols.reworkHoursMinor - 1] = opts.reworkMinor || 0;
   row[CONFIG.masterCols.isTest        - 1] = opts.isTest       || 'No';
   row[CONFIG.masterCols.clientReturn  - 1] = opts.clientReturn || 0;
   row[CONFIG.masterCols.supId         - 1] = opts.supId        || '';
@@ -147,6 +148,16 @@ describe('getErrorRates_', function () {
 
     // 10 rework / 200 total design = 0.05
     expect(result['Alice']).toBeCloseTo(0.05);
+  });
+
+  test('sums both major and minor rework hours', function () {
+    var masterData = makeMasterSheet([
+      makeMasterRow({ period: 'January 2026', name: 'Dave', design: 100, rework: 6, reworkMinor: 4 })
+    ]);
+    getMockSpreadsheet().setSheetData('MASTER_JOB_DATABASE', masterData);
+
+    // (6 major + 4 minor) / 100 design = 0.10
+    expect(getErrorRates_('Q1', 2026)['Dave']).toBeCloseTo(0.10);
   });
 
   test('returns 0 when no rework', function () {

@@ -85,7 +85,8 @@ function getErrorRates_(quarter, year) {
 
     var name = normaliseDesignerName(row.designerName || '');
     designTotals[name] = (designTotals[name] || 0) + (Number(row.designHours)       || 0);
-    reworkTotals[name] = (reworkTotals[name] || 0) + (Number(row.reworkHoursMajor)  || 0);
+    reworkTotals[name] = (reworkTotals[name] || 0) + (Number(row.reworkHoursMajor) || 0)
+                                                   + (Number(row.reworkHoursMinor) || 0);
   });
 
   var rates = {};
