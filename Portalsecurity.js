@@ -987,3 +987,103 @@ function submitQuarterlyRating(payload) {
 
   return { success: true };
 }
+
+
+/**
+ * Called from ClientRating.html via google.script.run.
+ * Validates the feedbackToken, then returns the designers who worked for this
+ * client in the given quarter (unique by designer name from MASTER).
+ * @param {string} token       The client's feedbackToken from the URL
+ * @param {string} quarterKey  e.g. 'Q1-2026'
+ */
+function getClientRatingData(token, quarterKey) {
+  if (!token) return { error: 'Missing token' };
+
+  var client = SheetDB.findOne('CLIENT_MASTER', function (r) {
+    return r.feedbackToken === token;
+  });
+  if (!client) return { error: 'Invalid or expired link.' };
+
+  // Parse quarterKey e.g. 'Q1-2026'
+  var parts  = quarterKey.split('-');
+  var quarter = parts[0] || '';
+  var year    = parseInt(parts[1] || '0', 10);
+
+  var QUARTER_MONTHS = { Q1:[1,2,3], Q2:[4,5,6], Q3:[7,8,9], Q4:[10,11,12] };
+  var MONTH_NAMES    = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December'];
+  var months         = QUARTER_MONTHS[quarter] || [];
+  var validPeriods   = {};
+  months.forEach(function (m) {
+    validPeriods[MONTH_NAMES[m - 1] + ' ' + year] = true;
+  });
+
+  // Find unique designers who worked for this client in the quarter
+  var rows = SheetDB.getAll('MASTER');
+  var seen = {};
+  var reportees = [];
+  rows.forEach(function (r) {
+    if (!validPeriods[r.billingPeriod]) return;
+    if (r.clientCode !== client.clientCode) return;
+    if (r.isTest === true) return;
+    var name = r.designerName;
+    if (!name || seen[name]) return;
+    seen[name] = true;
+    // Look up the designer's personId from STAFF_ROSTER
+    var sr = SheetDB.findOne('STAFF_ROSTER', function (s) {
+      return s.name === name && s.status === 'ACTIVE';
+    });
+    reportees.push({
+      personId   : sr ? sr.designerId : name,
+      personName : name
+    });
+  });
+
+  return {
+    clientName : client.clientName || client.clientCode,
+    quarterKey : quarterKey,
+    reportees  : reportees
+  };
+}
+
+
+/**
+ * Called from ClientRating.html to save client feedback scores.
+ * Upserts clientFeedbackAvg into QUARTERLY_BONUS_INPUTS for each rated designer.
+ * @param {Object} payload  { token, quarterKey, rateeId, rateeName, scores[], notes }
+ */
+function submitClientRating(payload) {
+  if (!payload.token) return { error: 'Missing token' };
+  var client = SheetDB.findOne('CLIENT_MASTER', function (r) {
+    return r.feedbackToken === payload.token;
+  });
+  if (!client) return { error: 'Invalid token' };
+
+  var scores   = payload.scores || [];
+  var avgScore = scores.length > 0
+    ? scores.reduce(function (s, v) { return s + Number(v); }, 0) / scores.length
+    : 0;
+
+  var existing = SheetDB.findOne('QUARTERLY_BONUS_INPUTS', function (r) {
+    return r.quarter === payload.quarterKey && r.personId === payload.rateeId;
+  });
+
+  if (existing) {
+    var updates = { clientFeedbackAvg: avgScore };
+    if (payload.notes) updates.strengthNote = payload.notes;
+    SheetDB.updateRow('QUARTERLY_BONUS_INPUTS', existing._rowIndex, updates);
+  } else {
+    var newRow = {
+      quarter             : payload.quarterKey,
+      personId            : payload.rateeId,
+      personName          : payload.rateeName,
+      role                : 'Designer',
+      clientFeedbackAvg   : avgScore,
+      status              : 'Draft'
+    };
+    if (payload.notes) newRow.strengthNote = payload.notes;
+    SheetDB.insertRows('QUARTERLY_BONUS_INPUTS', [newRow]);
+  }
+
+  return { success: true };
+}
