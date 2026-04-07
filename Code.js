@@ -259,6 +259,12 @@ function onOpen() {
     .addItem('Correct Job Hours (manual fix)',        'correctJobHours')
     .addItem('Diagnose Missing Job (portal)',         'diagnoseMissingJob')
 
+    // ── QUARTERLY BONUS ───────────────────────────────────────────────────────
+    .addSeparator()
+    .addItem('Run Quarterly Bonus',                   'runQuarterlyBonus')
+    .addItem('Preview Quarterly Bonus',               'previewQuarterlyBonus')
+    .addItem('Send Rating Reminders',                 'sendBonusRatingReminders')
+
     // ── DIAGNOSTICS ───────────────────────────────────────────────────────────
     .addSeparator()
     .addItem('Diagnose Sync Issues',                  'diagnoseSyncIssues')
