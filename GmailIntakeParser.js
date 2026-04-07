@@ -693,20 +693,82 @@ function createIntakeSheets() {
       'NORSPAN-MB', 'MANUAL', '', 'Q\\d{6}[A-Z]?',
       '', 'Yes'
     ]);
+    // NELSON — Winterburn Truss Inc, MiTek system, BLC login: miteKi01
+    // Parent OT Reference: 6-digit + optional letter  e.g. 260337 (roof), 260337F (floor)
+    configSheet.appendRow([
+      'NELSON', 'MITEK', '', '\\d{6}[A-Z]?',
+      '', 'Yes'
+    ]);
     configSheet.setFrozenRows(1);
     logException('INFO', 'SYSTEM', 'createIntakeSheets',
-      'CLIENT_INTAKE_CONFIG sheet created with TITAN, SBS, MATIX-SK pre-populated.');
+      'CLIENT_INTAKE_CONFIG sheet created with TITAN, SBS, MATIX-SK, NORSPAN-MB, NELSON pre-populated.');
   }
 
   SpreadsheetApp.getUi().alert(
     '✅ Intake sheets created.\n\n' +
     'Next steps:\n' +
-    '1. Add other clients to CLIENT_INTAKE_CONFIG\n' +
+    '1. Review CLIENT_INTAKE_CONFIG — all client patterns confirmed\n' +
     '2. Run "Setup Email Intake Trigger" from the menu\n' +
     '3. Run "Test Email Parser" to verify TITAN emails parse correctly\n' +
-    '\nClients pre-populated: TITAN (email), SBS (MiTek), MATIX-SK (MiTek)'
+    '\nClients pre-populated: TITAN (email), SBS (MiTek), MATIX-SK (MiTek), NORSPAN-MB (Manual), NELSON (MiTek)'
   );
 }
+
+/**
+ * syncClientIntakeConfig()
+ * Adds any missing clients to CLIENT_INTAKE_CONFIG without touching
+ * existing rows. Safe to run any time — skips clients already present.
+ * Run from the BLC menu after deploying.
+ */
+function syncClientIntakeConfig() {
+  var ss          = SpreadsheetApp.getActiveSpreadsheet();
+  var configSheet = ss.getSheetByName(CONFIG.sheets.clientIntakeConfig);
+
+  if (!configSheet) {
+    SpreadsheetApp.getUi().alert(
+      '⚠️ CLIENT_INTAKE_CONFIG sheet not found.\nRun "Create Intake Sheets" first.'
+    );
+    return;
+  }
+
+  // Canonical client list — source of truth
+  var CLIENTS = [
+    { code: 'TITAN',      method: 'EMAIL',  domain: 'titanmanufacturing.ca', pattern: 'B6\\d{5}',          label: 'BLC-Processed' },
+    { code: 'SBS',        method: 'MITEK',  domain: '',                      pattern: '\\d{4}-\\d{4}-[A-Z]', label: '' },
+    { code: 'MATIX-SK',   method: 'MITEK',  domain: '',                      pattern: '\\d{6}',             label: '' },
+    { code: 'NORSPAN-MB', method: 'MANUAL', domain: '',                      pattern: 'Q\\d{6}[A-Z]?',      label: '' },
+    { code: 'NELSON',        method: 'MITEK',  domain: '', pattern: '\\d{6}[A-Z]?',     label: '' },
+    { code: 'ALBERTA TRUSS', method: 'MITEK',  domain: '', pattern: '\\d{6}(-\\d{2})?', label: '' }
+  ];
+
+  // Build set of codes already in the sheet (col A, skip header)
+  var data      = configSheet.getDataRange().getValues();
+  var existing  = {};
+  for (var i = 1; i < data.length; i++) {
+    var code = String(data[i][0]).trim().toUpperCase();
+    if (code) existing[code] = true;
+  }
+
+  // Append missing clients
+  var added = [];
+  for (var k = 0; k < CLIENTS.length; k++) {
+    var c = CLIENTS[k];
+    if (existing[c.code]) continue;
+    configSheet.appendRow([c.code, c.method, c.domain, c.pattern, c.label, 'Yes']);
+    added.push(c.code);
+  }
+
+  SpreadsheetApp.flush();
+
+  var msg = added.length > 0
+    ? '✅ Added ' + added.length + ' missing client(s):\n' + added.join(', ') +
+      '\n\nSkipped (already present): ' + Object.keys(existing).join(', ')
+    : '✅ All clients already present — nothing to add.';
+
+  SpreadsheetApp.getUi().alert(msg);
+  logException('INFO', 'SYSTEM', 'syncClientIntakeConfig', msg);
+}
+
 
 /**
  * testEmailParser()
