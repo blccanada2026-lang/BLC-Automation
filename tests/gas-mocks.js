@@ -79,6 +79,7 @@ class MockRange {
   setBackground()  { return this; }
   setFontWeight()  { return this; }
   setFontColor()   { return this; }
+  setFontSize()    { return this; }
   getSheet()       { return this._sheet; }
 }
 
@@ -95,6 +96,24 @@ class MockSpreadsheet {
 
   getSheetByName(name) {
     return this._sheets[name] || null;
+  }
+
+  insertSheet(name) {
+    return this.addSheet(name, []);
+  }
+
+  getSheets() {
+    return Object.values(this._sheets);
+  }
+
+  /**
+   * setSheetData(name, data)
+   * Helper for tests: creates (or replaces) a named sheet with pre-loaded 2D data.
+   * The first row of `data` is treated as the header row by SheetDB.
+   */
+  setSheetData(name, data) {
+    this._sheets[name] = new MockSheet(name, data);
+    return this._sheets[name];
   }
 }
 
@@ -226,6 +245,30 @@ function addMockEmailThread(opts = {}) {
 function getMockSpreadsheet() {
   return _mockSpreadsheet;
 }
+
+// ── SopIntegration.js stubs ──────────────────────────────────
+// These functions are defined in SopIntegration.js which is not loaded
+// by every test file. Stub them here so Code.js calls don't throw.
+global.sendSopChecklistEmail_       = () => {};
+global.sendSopReminderEmail_        = () => {};
+global.sendQcChecklistEmail_        = () => {};
+global.sendQcChecklistEmailToTeam_  = () => {};
+
+// ── PayrollEngine / QuarterlyBonusEngine GAS helpers ─────────
+// getUiSafe_() returns null in test context (no real GAS UI available).
+global.getUiSafe_ = function() { return null; };
+
+// ── LockService stub ──────────────────────────────────────────
+// SheetDB._sdbAcquireLock() calls LockService.getSpreadsheetLock().
+// In test context we return a no-op lock that always succeeds.
+global.LockService = {
+  getSpreadsheetLock: function() {
+    return {
+      tryLock: function() { return true; },
+      releaseLock: function() {}
+    };
+  }
+};
 
 module.exports = {
   resetMockSpreadsheet, getMockSpreadsheet, MockSheet, MockSpreadsheet,

@@ -217,7 +217,7 @@ function getPortalForRole(role) {
     case "CEO":
       return "ceo";
     case "Project Manager":
-      return "teamlead"; // PM sees full TL view (all teams)
+      return "intake"; // PM lands on intake queue by default
     case "Team Leader":
     case "QC Reviewer":
       return "teamlead";
@@ -714,6 +714,38 @@ function doGetSecure(e) {
   var clientToken = e.parameter.token || "";
   var enforcing = isSecurityEnforced();
 
+  // ── Quarterly rating portal (TL, PM, CEO — Google session auth) ──
+  if (page === "rating") {
+    var ratingAuth    = authenticateInternalUser();
+    var ratingAllowed = ['CEO', 'Team Leader', 'Project Manager'];
+    if (!ratingAuth.authenticated || ratingAllowed.indexOf(ratingAuth.role) === -1) {
+      return HtmlService.createHtmlOutput(
+        '<h2>Access denied</h2><p>This portal requires a BLC Google account with a TL, PM, or CEO role.</p>'
+      );
+    }
+    return HtmlService.createHtmlOutputFromFile('QuarterlyRating')
+      .setTitle('BLC — Quarterly Ratings')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
+  // ── Client quarterly rating (feedbackToken, no Google login) ─────
+  if (page === "client-rating") {
+    var feedbackToken    = e.parameter.token || "";
+    var clientRatingAuth = { authenticated: false };
+    if (feedbackToken) {
+      var tokenClient = SheetDB.findOne('CLIENT_MASTER', function (r) {
+        return r.feedbackToken === feedbackToken;
+      });
+      if (tokenClient) clientRatingAuth.authenticated = true;
+    }
+    if (!clientRatingAuth.authenticated) {
+      return HtmlService.createHtmlOutput('<h2>Invalid or expired link.</h2>');
+    }
+    return HtmlService.createHtmlOutputFromFile('ClientRating')
+      .setTitle('BLC — Client Quarterly Rating')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
   // ── CLIENT PORTAL — Token-based auth ────────────────────────
   if (page === "client" && clientCode) {
 
@@ -765,28 +797,16 @@ function doGetSecure(e) {
       auth.name + " | " + auth.role);
   }
 
-  // ── INTAKE QUEUE — Team Lead / PM / CEO only ────────────────
-  // ?page=intake is checked first so it works for any role including CEO.
-  // Sarty and TLs bookmark ?page=intake — shows only pending jobs,
-  // no spreadsheet data visible.
-  if (page === "intake") {
-    var intakeAllowed = ["Team Leader", "Project Manager", "CEO"];
-    if (auth.authenticated && intakeAllowed.indexOf(auth.role) !== -1) {
+  // ── CEO PORTAL ──────────────────────────────────────────────
+  if (auth.role === "CEO" || (!enforcing && page === "ceo")) {
+
+    // CEO explicitly requesting intake queue
+    if (page === "intake") {
       logAccess_("ALLOWED", auth.email, "intake", auth.name + " | " + auth.role);
       return HtmlService.createHtmlOutputFromFile("IntakeQueue")
         .setTitle("BLC — Intake Queue")
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
-    // Authenticated but wrong role
-    if (auth.authenticated) {
-      return buildAccessDeniedPage_(
-        "The Intake Queue is only accessible to Team Leads and Project Managers."
-      );
-    }
-  }
-
-  // ── CEO PORTAL ──────────────────────────────────────────────
-  if (auth.role === "CEO" || (!enforcing && page === "ceo")) {
 
     if (e.parameter.debug === "1") {
       return HtmlService.createHtmlOutputFromFile("CEO_Debug")
@@ -804,9 +824,32 @@ function doGetSecure(e) {
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
-  // ── TEAM LEAD / PM / QC REVIEWER PORTAL ─────────────────────
+  // ── ROUTE BY ROLE (or explicit ?page= for TLs) ───────────────
+  // getPortalForRole: PM → "intake", TL/QC → "teamlead", Designer → "designer"
+  // If user is not authenticated, fall back to the page param (grace mode).
   var portal = auth.authenticated ? getPortalForRole(auth.role) : page;
 
+  // Allow TLs to explicitly request the intake queue via ?page=intake
+  if (page === "intake") portal = "intake";
+
+  // ── INTAKE QUEUE — PM (default) and TL / CEO (explicit) ──────
+  if (portal === "intake") {
+    var intakeAllowed = ["Team Leader", "Project Manager", "CEO"];
+    if (auth.authenticated && intakeAllowed.indexOf(auth.role) !== -1) {
+      logAccess_("ALLOWED", auth.email, "intake", auth.name + " | " + auth.role);
+      return HtmlService.createHtmlOutputFromFile("IntakeQueue")
+        .setTitle("BLC — Intake Queue")
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+    // Authenticated but wrong role (e.g. Designer trying ?page=intake)
+    if (auth.authenticated) {
+      return buildAccessDeniedPage_(
+        "The Intake Queue is only accessible to Team Leads and Project Managers."
+      );
+    }
+  }
+
+  // ── TEAM LEAD / QC REVIEWER PORTAL ───────────────────────────
   if (portal === "teamlead") {
     return HtmlService.createHtmlOutputFromFile("TeamLeadView")
       .setTitle("BLC Team Status")
@@ -844,4 +887,203 @@ function getMyDesignerData() {
   data.mode = "secure";
   data.userName = auth.name;
   return data;
+}
+
+
+/**
+ * Called from QuarterlyRating.html via google.script.run.
+ * Returns the list of staff this internal rater can rate.
+ */
+function getQuarterlyRatingData(quarterKey) {
+  var auth = authenticateInternalUser();
+  if (!auth.authenticated) return { error: 'Not authenticated' };
+
+  // Resolve the rater's own designerId from STAFF_ROSTER (needed for supId lookup).
+  var selfRecord = SheetDB.findOne('STAFF_ROSTER', function (r) {
+    return r.name === auth.name && r.status === 'ACTIVE';
+  });
+  var authDesignerId = selfRecord ? selfRecord.designerId : '';
+
+  var active = SheetDB.findRows('STAFF_ROSTER', function (r) { return r.status === 'ACTIVE'; });
+  var reportees;
+
+  if (auth.role === 'Team Leader') {
+    reportees = active.filter(function (r) {
+      return r.supId === authDesignerId && r.role === 'Designer';
+    });
+  } else if (auth.role === 'Project Manager') {
+    reportees = active.filter(function (r) {
+      return r.supId === authDesignerId && r.role === 'Designer';
+    });
+  } else if (auth.role === 'CEO') {
+    reportees = active.filter(function (r) {
+      return r.role === 'Team Leader' || r.role === 'Project Manager';
+    });
+  } else {
+    return { error: 'Role not permitted to rate' };
+  }
+
+  var existing = SheetDB.findRows('QUARTERLY_BONUS_INPUTS', function (r) {
+    return r.quarter === quarterKey && r.personId === authDesignerId;
+  });
+
+  return {
+    raterName  : auth.name,
+    raterRole  : auth.role,
+    quarterKey : quarterKey,
+    reportees  : reportees.map(function (r) {
+      return { personId: r.designerId, personName: r.name, role: r.role };
+    }),
+    existing   : existing
+  };
+}
+
+
+/**
+ * Called from QuarterlyRating.html to save a completed rating submission.
+ * Upserts one QBI row per ratee (one row per person per quarter).
+ */
+function submitQuarterlyRating(payload) {
+  // payload: { quarterKey, rateeId, rateeName, rateeRole, scores[], strengthNote, improvementNote }
+  var auth = authenticateInternalUser();
+  if (!auth.authenticated) return { error: 'Not authenticated' };
+
+  var fieldMap = {
+    'Team Leader'     : 'tlRatingAvg',
+    'Project Manager' : 'pmRatingAvg',
+    'CEO'             : 'ceoRatingAvg'
+  };
+  var fieldToUpdate = fieldMap[auth.role];
+  if (!fieldToUpdate) return { error: 'Role not permitted to rate' };
+
+  var scores   = payload.scores || [];
+  var avgScore = scores.length > 0
+    ? scores.reduce(function (s, v) { return s + Number(v); }, 0) / scores.length
+    : 0;
+
+  var existing = SheetDB.findOne('QUARTERLY_BONUS_INPUTS', function (r) {
+    return r.quarter === payload.quarterKey && r.personId === payload.rateeId;
+  });
+
+  if (existing) {
+    var updates        = {};
+    updates[fieldToUpdate] = avgScore;
+    if (payload.strengthNote)    updates.strengthNote    = payload.strengthNote;
+    if (payload.improvementNote) updates.improvementNote = payload.improvementNote;
+    SheetDB.updateRow('QUARTERLY_BONUS_INPUTS', existing._rowIndex, updates);
+  } else {
+    var newRow         = {
+      quarter     : payload.quarterKey,
+      personId    : payload.rateeId,
+      personName  : payload.rateeName,
+      role        : payload.rateeRole,
+      status      : 'Draft'
+    };
+    newRow[fieldToUpdate] = avgScore;
+    if (payload.strengthNote)    newRow.strengthNote    = payload.strengthNote;
+    if (payload.improvementNote) newRow.improvementNote = payload.improvementNote;
+    SheetDB.insertRows('QUARTERLY_BONUS_INPUTS', [newRow]);
+  }
+
+  return { success: true };
+}
+
+
+/**
+ * Called from ClientRating.html via google.script.run.
+ * Validates the feedbackToken, then returns the designers who worked for this
+ * client in the given quarter (unique by designer name from MASTER).
+ * @param {string} token       The client's feedbackToken from the URL
+ * @param {string} quarterKey  e.g. 'Q1-2026'
+ */
+function getClientRatingData(token, quarterKey) {
+  if (!token) return { error: 'Missing token' };
+
+  var client = SheetDB.findOne('CLIENT_MASTER', function (r) {
+    return r.feedbackToken === token;
+  });
+  if (!client) return { error: 'Invalid or expired link.' };
+
+  // Parse quarterKey e.g. 'Q1-2026'
+  var parts  = quarterKey.split('-');
+  var quarter = parts[0] || '';
+  var year    = parseInt(parts[1] || '0', 10);
+
+  var QUARTER_MONTHS = { Q1:[1,2,3], Q2:[4,5,6], Q3:[7,8,9], Q4:[10,11,12] };
+  var MONTH_NAMES    = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December'];
+  var months         = QUARTER_MONTHS[quarter] || [];
+  var validPeriods   = {};
+  months.forEach(function (m) {
+    validPeriods[MONTH_NAMES[m - 1] + ' ' + year] = true;
+  });
+
+  // Find unique designers who worked for this client in the quarter
+  var rows = SheetDB.getAll('MASTER');
+  var seen = {};
+  var reportees = [];
+  rows.forEach(function (r) {
+    if (!validPeriods[r.billingPeriod]) return;
+    if (r.clientCode !== client.clientCode) return;
+    if (r.isTest === true) return;
+    var name = r.designerName;
+    if (!name || seen[name]) return;
+    seen[name] = true;
+    // Look up the designer's personId from STAFF_ROSTER
+    var sr = SheetDB.findOne('STAFF_ROSTER', function (s) {
+      return s.name === name && s.status === 'ACTIVE';
+    });
+    reportees.push({
+      personId   : sr ? sr.designerId : name,
+      personName : name
+    });
+  });
+
+  return {
+    clientName : client.clientName || client.clientCode,
+    quarterKey : quarterKey,
+    reportees  : reportees
+  };
+}
+
+
+/**
+ * Called from ClientRating.html to save client feedback scores.
+ * Upserts clientFeedbackAvg into QUARTERLY_BONUS_INPUTS for each rated designer.
+ * @param {Object} payload  { token, quarterKey, rateeId, rateeName, scores[], notes }
+ */
+function submitClientRating(payload) {
+  if (!payload.token) return { error: 'Missing token' };
+  var client = SheetDB.findOne('CLIENT_MASTER', function (r) {
+    return r.feedbackToken === payload.token;
+  });
+  if (!client) return { error: 'Invalid token' };
+
+  var scores   = payload.scores || [];
+  var avgScore = scores.length > 0
+    ? scores.reduce(function (s, v) { return s + Number(v); }, 0) / scores.length
+    : 0;
+
+  var existing = SheetDB.findOne('QUARTERLY_BONUS_INPUTS', function (r) {
+    return r.quarter === payload.quarterKey && r.personId === payload.rateeId;
+  });
+
+  if (existing) {
+    var updates = { clientFeedbackAvg: avgScore };
+    if (payload.notes) updates.strengthNote = payload.notes;
+    SheetDB.updateRow('QUARTERLY_BONUS_INPUTS', existing._rowIndex, updates);
+  } else {
+    var newRow = {
+      quarter             : payload.quarterKey,
+      personId            : payload.rateeId,
+      personName          : payload.rateeName,
+      role                : 'Designer',
+      clientFeedbackAvg   : avgScore,
+      status              : 'Draft'
+    };
+    if (payload.notes) newRow.strengthNote = payload.notes;
+    SheetDB.insertRows('QUARTERLY_BONUS_INPUTS', [newRow]);
+  }
+
+  return { success: true };
 }

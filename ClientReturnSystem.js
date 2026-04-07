@@ -118,22 +118,125 @@ function onClientReturnSubmit(e) {
       now                // Col L — Logged_Timestamp
     ]);
 
-    // ── 5. Send notification to Sarty + TL + Stacey ───────────
+    // ── 5. Re-open job in MASTER + ACTIVE_JOBS ────────────────
+    var reopened = reopenJobFromClientReturn_(jobNumber, severity, returnId);
+
+    // ── 6. Send notification to Sarty + TL + Stacey ───────────
     sendClientReturnNotification(
       returnId, jobNumber, clientCode, clientName,
       designerName, dateIssueNoticed, issueDescription,
-      severity, attachmentLink, submittedBy, now
+      severity, attachmentLink, submittedBy, now, reopened
     );
 
     logException("INFO", jobNumber, FUNCTION_NAME,
       "Client return logged. Return ID: " + returnId +
       " | Client: " + clientName +
       " | Severity: " + severity +
+      " | Re-opened in MASTER: " + (reopened ? "Yes" : "No") +
       " | Submitted By: " + submittedBy);
 
   } catch (err) {
     logException("ERROR", jobNumber, FUNCTION_NAME,
       "onClientReturnSubmit crashed: " + err.message);
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// JOB RE-ENTRY
+// When a client return is submitted, re-opens the job in MASTER
+// and ACTIVE_JOBS so it flows back through the normal workflow.
+// Minor severity → Rework - Minor
+// Major severity → Rework - Major
+// Only re-opens if job is currently in a terminal status
+// (Completed - Billable or Billed). Skips gracefully otherwise.
+// ─────────────────────────────────────────────────────────────
+
+function reopenJobFromClientReturn_(jobNumber, severity, returnId) {
+  var FUNCTION_NAME = "reopenJobFromClientReturn_";
+  try {
+    var MJ          = CONFIG.masterCols;
+    var masterSheet = getSheet(CONFIG.sheets.masterJob);
+    var masterData  = masterSheet.getDataRange().getValues();
+
+    var jobRow     = -1;
+    var clientCode = "";
+    var clientName = "";
+    var designerName = "";
+    var productType  = "";
+
+    for (var i = 1; i < masterData.length; i++) {
+      var rowJob    = String(masterData[i][MJ.jobNumber - 1] || "").trim();
+      var rowStatus = String(masterData[i][MJ.status   - 1] || "").trim();
+      var isTerminal = (rowStatus === CONFIG.status.completed || rowStatus === "Billed");
+
+      if (rowJob.toUpperCase() === jobNumber.toUpperCase() && isTerminal) {
+        jobRow       = i + 1; // 1-based for getRange
+        clientCode   = String(masterData[i][MJ.clientCode   - 1] || "").trim();
+        clientName   = String(masterData[i][MJ.clientName   - 1] || "").trim();
+        designerName = String(masterData[i][MJ.designerName - 1] || "").trim();
+        productType  = String(masterData[i][MJ.productType  - 1] || "").trim();
+        break;
+      }
+    }
+
+    if (jobRow === -1) {
+      logException("WARNING", jobNumber, FUNCTION_NAME,
+        "Job not found in MASTER or not in terminal status — skipping re-open. ReturnId=" + returnId);
+      return false;
+    }
+
+    var newStatus = (severity === "Major")
+      ? CONFIG.status.reworkMajor
+      : CONFIG.status.reworkMinor;
+
+    var currentReworkCount = parseInt(
+      masterSheet.getRange(jobRow, MJ.reworkCount).getValue()) || 0;
+
+    var existingNotes = String(
+      masterSheet.getRange(jobRow, MJ.notes).getValue() || "").trim();
+    var returnNote = "Client Return " + returnId + " (" + severity + ") — " +
+      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
+    var updatedNotes = existingNotes
+      ? existingNotes + " | " + returnNote
+      : returnNote;
+
+    // ── Update MASTER ─────────────────────────────────────────
+    masterSheet.getRange(jobRow, MJ.status       ).setValue(newStatus);
+    masterSheet.getRange(jobRow, MJ.reworkFlag   ).setValue("Yes");
+    masterSheet.getRange(jobRow, MJ.reworkCount  ).setValue(currentReworkCount + 1);
+    masterSheet.getRange(jobRow, MJ.notes        ).setValue(updatedNotes);
+    masterSheet.getRange(jobRow, MJ.lastUpdated  ).setValue(new Date());
+    masterSheet.getRange(jobRow, MJ.lastUpdatedBy).setValue("Client Return — " + returnId);
+    SpreadsheetApp.flush();
+
+    // ── Re-add to ACTIVE_JOBS ─────────────────────────────────
+    var activeSheet = getSheet(CONFIG.sheets.activeJobs);
+    activeSheet.appendRow([
+      jobNumber,
+      clientCode,
+      clientName,
+      designerName,
+      productType,
+      newStatus,
+      new Date(),  // re-opened date
+      "",          // expected completion — TL to set
+      new Date(),
+      "Client Return — " + returnId
+    ]);
+
+    logException("INFO", jobNumber, FUNCTION_NAME,
+      "Job re-opened. Status → " + newStatus +
+      " | Rework count: " + (currentReworkCount + 1) +
+      " | ReturnId: " + returnId +
+      " | Designer: " + designerName);
+
+    return true;
+
+  } catch (err) {
+    logException("ERROR", jobNumber, FUNCTION_NAME,
+      "reopenJobFromClientReturn_ crashed: " + err.message);
+    return false;
   }
 }
 
@@ -147,7 +250,7 @@ function onClientReturnSubmit(e) {
 
 function sendClientReturnNotification(returnId, jobNumber, clientCode,
     clientName, designerName, dateIssueNoticed, issueDescription,
-    severity, attachmentLink, submittedBy, submittedAt) {
+    severity, attachmentLink, submittedBy, submittedAt, reopened) {
 
   var FUNCTION_NAME = "sendClientReturnNotification";
   try {
@@ -228,9 +331,12 @@ function sendClientReturnNotification(returnId, jobNumber, clientCode,
       _retRow("Client",             clientName,                        false) +
       _retRow("Designer",           designerName || "Unknown",         true)  +
       _retRow("Severity",           severityBadge,                     false) +
-      _retRow("Date Issue Noticed", issueDateStr,                      true)  +
-      _retRow("Submitted By",       submittedBy,                       false) +
-      _retRow("Issue Description",  issueDescription,                  true)  +
+      _retRow("Job Re-Opened",      reopened
+        ? "✅ Yes — status set to Rework " + (severity === "Major" ? "(Major)" : "(Minor)")
+        : "⚠️ No — job not found in terminal status or already active",    true)  +
+      _retRow("Date Issue Noticed", issueDateStr,                      false) +
+      _retRow("Submitted By",       submittedBy,                       true)  +
+      _retRow("Issue Description",  issueDescription,                  false) +
       (attachmentLink
         ? _retRow("Attachment",
             "<a href='" + attachmentLink + "'>View Attachment</a>", false)
@@ -611,36 +717,88 @@ function createClientReturnForm_(clientCode, clientName, ss) {
 
 
 /**
- * Creates an onFormSubmit trigger for a specific client return form.
- * Points directly to onClientReturnSubmit() — not via router.
- * Checks for duplicate trigger before creating.
+ * DEPRECATED — no longer creates per-form triggers.
+ *
+ * Client return forms are now handled by the shared onFormSubmitRouter()
+ * via the spreadsheet-level onFormSubmit trigger. All response sheets
+ * named CLIENT_RETURN_RESPONSES_* are automatically routed to
+ * onClientReturnSubmit(). This saves one trigger per client and keeps
+ * us well below Google's 20-trigger project limit.
+ *
+ * To consolidate existing per-form triggers, run setupClientReturnTriggers()
+ * from the BLC Menu → Setup Client Return Triggers.
  */
 function createClientReturnTrigger_(formId) {
-  var FUNCTION_NAME = "createClientReturnTrigger_";
+  logException("INFO", "SYSTEM", "createClientReturnTrigger_",
+    "Skipped — client return forms now handled by onFormSubmitRouter. " +
+    "No per-form trigger needed for form " + formId);
+}
+
+
+/**
+ * Consolidates client return triggers.
+ * Deletes all per-form onClientReturnSubmit triggers (old approach).
+ * Confirms the shared spreadsheet onFormSubmit trigger is in place.
+ * Run once from BLC Menu → Setup Client Return Triggers.
+ */
+function setupClientReturnTriggers() {
+  var FUNCTION_NAME = "setupClientReturnTriggers";
   try {
-    // Check for existing trigger — avoid duplicates
-    var triggers = ScriptApp.getUserTriggers(
-      SpreadsheetApp.getActiveSpreadsheet()
-    );
+    var ss       = SpreadsheetApp.getActiveSpreadsheet();
+    var triggers = ScriptApp.getUserTriggers(ss);
+
+    var deleted  = 0;
+    var routerOk = false;
+
     for (var t = 0; t < triggers.length; t++) {
-      if (triggers[t].getHandlerFunction() === "onClientReturnSubmit" &&
-          triggers[t].getTriggerSourceId()  === formId) {
-        logException("INFO", "SYSTEM", FUNCTION_NAME,
-          "Trigger already exists for form " + formId + " — skipping.");
-        return;
+      var fn  = triggers[t].getHandlerFunction();
+      var src = triggers[t].getTriggerSource();
+
+      // Delete old per-form client return triggers
+      if (fn === "onClientReturnSubmit") {
+        ScriptApp.deleteTrigger(triggers[t]);
+        deleted++;
+        continue;
+      }
+
+      // Confirm shared router trigger exists
+      if (fn === "onFormSubmitRouter" && src === ScriptApp.TriggerSource.SPREADSHEETS) {
+        routerOk = true;
       }
     }
-    var form = FormApp.openById(formId);
-    ScriptApp.newTrigger("onClientReturnSubmit")
-      .forForm(form)
-      .onFormSubmit()
-      .create();
+
+    // Create the router trigger if it is missing
+    if (!routerOk) {
+      ScriptApp.newTrigger("onFormSubmitRouter")
+        .forSpreadsheet(ss)
+        .onFormSubmit()
+        .create();
+      logException("INFO", "SYSTEM", FUNCTION_NAME,
+        "onFormSubmitRouter trigger was missing — created.");
+    }
+
     logException("INFO", "SYSTEM", FUNCTION_NAME,
-      "Trigger created for form " + formId);
+      "Trigger consolidation complete. " +
+      "Per-form triggers deleted: " + deleted +
+      " | Router trigger present: " + (routerOk ? "Yes" : "Created now"));
+
+    SpreadsheetApp.getUi().alert(
+      "✅ Client Return Triggers Consolidated\n\n" +
+      "Per-form triggers deleted : " + deleted + "\n" +
+      "Shared router trigger     : " + (routerOk ? "Already present" : "Created now") + "\n\n" +
+      "All client return form submissions (sheets named\n" +
+      "CLIENT_RETURN_RESPONSES_*) are now handled by the\n" +
+      "shared onFormSubmitRouter — no per-form triggers needed.\n\n" +
+      "You are safe to add new clients without hitting\n" +
+      "Google's 20-trigger limit."
+    );
+
   } catch (err) {
-    logException("WARNING", "SYSTEM", FUNCTION_NAME,
-      "Could not create trigger for form " + formId +
-      ": " + err.message);
+    logException("ERROR", "SYSTEM", FUNCTION_NAME,
+      "setupClientReturnTriggers failed: " + err.message);
+    SpreadsheetApp.getUi().alert(
+      "❌ Error: " + err.message + "\nCheck EXCEPTIONS_LOG for details."
+    );
   }
 }
 

@@ -117,27 +117,30 @@ function allocateIntakeJob(payload) {
     // ── Build MASTER row ───────────────────────────────────
     var MJ     = CONFIG.masterCols;
     var today  = new Date();
-    var newRow = new Array(36).fill("");
+    var newRow = new Array(39).fill("");
 
-    newRow[MJ.jobNumber          - 1] = jobNumber;
-    newRow[MJ.clientCode         - 1] = clientCode;
-    newRow[MJ.clientName         - 1] = clientName;
-    newRow[MJ.designerName       - 1] = designerName;
-    newRow[MJ.productType        - 1] = productType;
-    newRow[MJ.allocatedDate      - 1] = today;
-    newRow[MJ.expectedCompletion - 1] = expectedComp;
-    newRow[MJ.status             - 1] = CONFIG.status.allocated;
-    newRow[MJ.sopAcknowledged    - 1] = "No";
-    newRow[MJ.reallocationFlag   - 1] = "No";
-    newRow[MJ.reworkFlag         - 1] = "No";
-    newRow[MJ.reworkCount        - 1] = 0;
-    newRow[MJ.onHoldFlag         - 1] = "No";
-    newRow[MJ.lastUpdated        - 1] = today;
-    newRow[MJ.lastUpdatedBy      - 1] = "allocateIntakeJob";
-    newRow[MJ.notes              - 1] = notes;
-    newRow[MJ.rowId              - 1] = Utilities.getUuid();
-    newRow[MJ.isTest             - 1] = "No";
-    newRow[MJ.isImported         - 1] = "No";
+    newRow[MJ.jobNumber              - 1] = jobNumber;
+    newRow[MJ.clientCode             - 1] = clientCode;
+    newRow[MJ.clientName             - 1] = clientName;
+    newRow[MJ.designerName           - 1] = designerName;
+    newRow[MJ.productType            - 1] = productType;
+    newRow[MJ.allocatedDate          - 1] = today;
+    newRow[MJ.expectedCompletion     - 1] = expectedComp;
+    newRow[MJ.status                 - 1] = CONFIG.status.allocated;
+    newRow[MJ.sopAcknowledged        - 1] = "No";
+    newRow[MJ.reallocationFlag       - 1] = "No";
+    newRow[MJ.reworkFlag             - 1] = "No";
+    newRow[MJ.reworkCount            - 1] = 0;
+    newRow[MJ.onHoldFlag             - 1] = "No";
+    newRow[MJ.lastUpdated            - 1] = today;
+    newRow[MJ.lastUpdatedBy          - 1] = "allocateIntakeJob";
+    newRow[MJ.notes                  - 1] = notes;
+    newRow[MJ.rowId                  - 1] = Utilities.getUuid();
+    newRow[MJ.isTest                 - 1] = "No";
+    newRow[MJ.isImported             - 1] = "No";
+    newRow[MJ.qcExempt               - 1] = "No";
+    newRow[MJ.sopChecklistSubmitted  - 1] = "No";
+    newRow[MJ.qcChecklistSubmitted   - 1] = "No";
 
     // ── Append to MASTER_JOB_DATABASE ─────────────────────
     var masterSheet = getSheet(CONFIG.sheets.masterJob);
@@ -150,15 +153,16 @@ function allocateIntakeJob(payload) {
     );
 
     // ── Mark intake row as Allocated ───────────────────────
-    if (intakeId) {
-      markIntakeAllocated(intakeId, allocatedBy);
-    }
+    markIntakeAllocated(jobNumber, productType, allocatedBy);
 
     // ── Send notification ──────────────────────────────────
     sendAllocationNotification(
       jobNumber, clientName, clientCode, designerName,
       productType, expectedComp, allocatedBy, notes
     );
+
+    // ── Send SOP checklist email to designer ───────────────
+    sendSopChecklistEmail_(jobNumber, designerName, clientCode);
 
     logException("INFO", jobNumber, FUNCTION_NAME,
       "Allocated from intake queue. IntakeId=" + intakeId +
@@ -272,8 +276,7 @@ function postAllocationIntakeSync(jobNumber, productType, allocatedBy) {
       var isPending    = rowStatus === INTAKE_STATUS_PENDING;
 
       if (jobMatch && productMatch && isPending) {
-        var intakeId = String(data[i][JI.intakeId - 1]).trim();
-        markIntakeAllocated(intakeId, allocatedBy || "Allocation Form");
+        markIntakeAllocated(jobNumber, productType, allocatedBy || "Allocation Form");
         logException("INFO", jobNumber, FUNCTION_NAME,
           "Marked intake row Allocated via form path. IntakeId=" + intakeId);
         break;
