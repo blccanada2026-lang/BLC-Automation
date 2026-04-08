@@ -532,7 +532,7 @@ var QuarterlyBonusEngine = (function () {
         pm_code:         String(row.pm_code         || '').trim(),
         bonus_eligible:  String(row.bonus_eligible  || '').toUpperCase() === 'TRUE',
         active:          String(row.active          || ''),
-        start_date:      String(row.start_date      || '')
+        start_date:      String(row.effective_from   || row.start_date || '')
       };
     }
     return cache;
