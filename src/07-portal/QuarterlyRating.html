@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BLC Quarterly Ratings</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #333; }
+    h1 { font-size: 1.4rem; margin-bottom: 4px; }
+    .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 32px; }
+    .ratee-card { border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+    .ratee-name { font-size: 1.1rem; font-weight: bold; margin-bottom: 16px; }
+    .category { margin-bottom: 12px; }
+    .category label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 4px; }
+    .stars { display: flex; gap: 6px; flex-direction: row-reverse; justify-content: flex-end; }
+    .stars input[type=radio] { display: none; }
+    .stars label { font-size: 1.6rem; cursor: pointer; color: #ccc; user-select: none; }
+    .stars input[type=radio]:checked ~ label { color: #f5a623; }
+    .submit-btn { margin-top: 16px; background: #1a73e8; color: #fff; border: none;
+                  padding: 10px 24px; border-radius: 6px; cursor: pointer; font-size: 0.95rem; }
+    .submit-btn:disabled { background: #aaa; cursor: default; }
+    .status-msg { font-size: 0.85rem; margin-top: 8px; min-height: 20px; }
+    .status-msg.ok  { color: #2e7d32; }
+    .status-msg.err { color: #c62828; }
+    #loading { color: #666; }
+    #no-ratees { color: #666; display: none; }
+  </style>
+</head>
+<body>
+  <h1>Quarterly Performance Ratings</h1>
+  <p class="subtitle" id="period-label">Loading...</p>
+  <div id="loading">Loading your ratees...</div>
+  <div id="no-ratees">No staff to rate this quarter.</div>
+  <div id="cards"></div>
+
+  <script>
+    var QUARTER_PERIOD_ID = (new URLSearchParams(window.location.search)).get('period') || '';
+
+    var CATEGORIES = [
+      { key: 'quality',       label: 'Quality & Accuracy' },
+      { key: 'sop',           label: 'SOP Adherence' },
+      { key: 'communication', label: 'Communication' },
+      { key: 'initiative',    label: 'Initiative' }
+    ];
+
+    function loadRatees() {
+      if (!QUARTER_PERIOD_ID) {
+        document.getElementById('loading').textContent = 'Missing ?period= in URL. Use e.g. ?period=2026-Q1';
+        return;
+      }
+      document.getElementById('period-label').textContent = 'Quarter: ' + QUARTER_PERIOD_ID;
+
+      google.script.run
+        .withSuccessHandler(function(json) {
+          var ratees = JSON.parse(json);
+          document.getElementById('loading').style.display = 'none';
+          if (!ratees.length) {
+            document.getElementById('no-ratees').style.display = 'block';
+            return;
+          }
+          var container = document.getElementById('cards');
+          for (var r = 0; r < ratees.length; r++) {
+            container.appendChild(buildCard(ratees[r]));
+          }
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('loading').textContent = 'Error: ' + err.message;
+        })
+        .portal_getMyRatees(QUARTER_PERIOD_ID);
+    }
+
+    function buildCard(ratee) {
+      var card = document.createElement('div');
+      card.className = 'ratee-card';
+
+      var nameEl = document.createElement('div');
+      nameEl.className = 'ratee-name';
+      nameEl.textContent = ratee.name + ' (' + ratee.role + ')';
+      card.appendChild(nameEl);
+
+      for (var c = 0; c < CATEGORIES.length; c++) {
+        var cat    = CATEGORIES[c];
+        var catDiv = document.createElement('div');
+        catDiv.className = 'category';
+
+        var lbl = document.createElement('label');
+        lbl.textContent = cat.label;
+        catDiv.appendChild(lbl);
+
+        var stars = document.createElement('div');
+        stars.className = 'stars';
+
+        for (var v = 5; v >= 1; v--) {
+          var radio = document.createElement('input');
+          radio.type  = 'radio';
+          radio.name  = ratee.person_code + '_' + cat.key;
+          radio.value = v;
+          radio.id    = ratee.person_code + '_' + cat.key + '_' + v;
+
+          var starLbl = document.createElement('label');
+          starLbl.htmlFor     = radio.id;
+          starLbl.textContent = '\u2605';
+
+          stars.appendChild(radio);
+          stars.appendChild(starLbl);
+        }
+        catDiv.appendChild(stars);
+        card.appendChild(catDiv);
+      }
+
+      var btn = document.createElement('button');
+      btn.className   = 'submit-btn';
+      btn.textContent = 'Submit Rating';
+      btn.onclick     = (function(r, c, b) {
+        return function() { submitCard(r, c, b); };
+      })(ratee, card, btn);
+      card.appendChild(btn);
+
+      var msg = document.createElement('div');
+      msg.className = 'status-msg';
+      card.appendChild(msg);
+
+      return card;
+    }
+
+    function submitCard(ratee, card, btn) {
+      var msg = card.querySelector('.status-msg');
+      msg.textContent = '';
+      msg.className   = 'status-msg';
+
+      function getScore(key) {
+        var sel = card.querySelector('input[name="' + ratee.person_code + '_' + key + '"]:checked');
+        return sel ? parseInt(sel.value, 10) : 0;
+      }
+
+      var payload = {
+        ratee_code:           ratee.person_code,
+        quarter_period_id:    QUARTER_PERIOD_ID,
+        score_quality:        getScore('quality'),
+        score_sop:            getScore('sop'),
+        score_communication:  getScore('communication'),
+        score_initiative:     getScore('initiative')
+      };
+
+      for (var k in payload) {
+        if (k.indexOf('score_') === 0 && payload[k] < 1) {
+          msg.textContent = 'Please rate all 4 categories before submitting.';
+          msg.className   = 'status-msg err';
+          return;
+        }
+      }
+
+      btn.disabled    = true;
+      btn.textContent = 'Saving...';
+
+      google.script.run
+        .withSuccessHandler(function() {
+          msg.textContent = 'Rating saved.';
+          msg.className   = 'status-msg ok';
+          btn.textContent = 'Saved \u2713';
+        })
+        .withFailureHandler(function(err) {
+          msg.textContent = 'Error: ' + err.message;
+          msg.className   = 'status-msg err';
+          btn.disabled    = false;
+          btn.textContent = 'Retry';
+        })
+        .portal_submitRating(JSON.stringify(payload));
+    }
+
+    window.addEventListener('load', loadRatees);
+  </script>
+</body>
+</html>
