@@ -172,7 +172,50 @@ var QuarterlyBonusEngine = (function () {
     }
     return result;
   }
-  function getClientScores_(quarter, year)        { return {}; }
+  /**
+   * Aggregates client feedback scores across all 3 months of the quarter.
+   * avg_normalized is 0–100; divides by 100 to get 0.0–1.0.
+   * Response-count weighted average when a designer has scores in multiple months.
+   * Returns: { person_code: score 0.0–1.0 }
+   */
+  function getClientScores_(quarter, year) {
+    var periodIds = monthPeriodIds_(quarter, year);
+    var accum = {};
+
+    for (var p = 0; p < periodIds.length; p++) {
+      var summary;
+      try {
+        summary = ClientFeedback.getFeedbackSummary(periodIds[p]);
+      } catch (e) {
+        Logger.warn('QB_CLIENT_SCORE_READ_FAIL', { module: MODULE,
+          message: 'Could not read client feedback for period',
+          periodId: periodIds[p], error: e.message });
+        continue;
+      }
+
+      var codes = Object.keys(summary || {});
+      for (var i = 0; i < codes.length; i++) {
+        var code  = codes[i];
+        var entry = summary[code];
+        var count = parseInt(entry.response_count || 0, 10);
+        if (count <= 0) continue;
+        var norm  = parseFloat(entry.avg_normalized || 0);
+        if (!accum[code]) accum[code] = { weightedSum: 0, totalCount: 0 };
+        accum[code].weightedSum += norm * count;
+        accum[code].totalCount  += count;
+      }
+    }
+
+    var result = {};
+    var keys   = Object.keys(accum);
+    for (var j = 0; j < keys.length; j++) {
+      var a = accum[keys[j]];
+      result[keys[j]] = a.totalCount > 0
+        ? Math.round((a.weightedSum / a.totalCount) / 100 * 10000) / 10000
+        : 0;
+    }
+    return result;
+  }
   function getInternalRatings_(qPid)              { return {}; }
 
   // ============================================================
