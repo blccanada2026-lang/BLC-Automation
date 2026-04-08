@@ -93,7 +93,43 @@ var QuarterlyBonusEngine = (function () {
   // SECTION 2: DATA GATHERING (stubs — implemented in Tasks 4-7)
   // ============================================================
 
-  function aggregateQuarterHours_(quarter, year) { return {}; }
+  /**
+   * Sums design_hours from FACT_WORK_LOGS across all 3 months of the quarter.
+   * Returns: { person_code: design_hours_total }
+   * Only design hours (actor_role !== 'QC') are included.
+   */
+  function aggregateQuarterHours_(quarter, year) {
+    var periodIds = monthPeriodIds_(quarter, year);
+    var hoursMap  = {};
+
+    for (var p = 0; p < periodIds.length; p++) {
+      var rows;
+      try {
+        rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+          callerModule: MODULE,
+          periodId:     periodIds[p]
+        });
+      } catch (e) {
+        if (e.code === 'SHEET_NOT_FOUND') continue;
+        throw e;
+      }
+
+      for (var i = 0; i < rows.length; i++) {
+        var row   = rows[i];
+        var code  = String(row.actor_code || '').trim();
+        var role  = String(row.actor_role || '').toUpperCase();
+        var hours = parseFloat(row.hours) || 0;
+        if (!code || hours <= 0 || role === 'QC') continue;
+        hoursMap[code] = (hoursMap[code] || 0) + hours;
+      }
+    }
+
+    var codes = Object.keys(hoursMap);
+    for (var j = 0; j < codes.length; j++) {
+      hoursMap[codes[j]] = Math.round(hoursMap[codes[j]] * 100) / 100;
+    }
+    return hoursMap;
+  }
   function getQcErrorRates_(quarter, year)        { return {}; }
   function getClientScores_(quarter, year)        { return {}; }
   function getInternalRatings_(qPid)              { return {}; }
