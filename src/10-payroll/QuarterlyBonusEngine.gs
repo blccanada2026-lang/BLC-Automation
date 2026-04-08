@@ -216,7 +216,63 @@ var QuarterlyBonusEngine = (function () {
     }
     return result;
   }
-  function getInternalRatings_(qPid)              { return {}; }
+  /**
+   * Reads FACT_PERFORMANCE_RATINGS for the quarter.
+   * Designers need TL + PM scores (both required). TLs/PMs need CEO score.
+   * Returns: { person_code: score 0.0–1.0 | null }
+   *   null = ratings incomplete — caller marks row PENDING
+   */
+  function getInternalRatings_(qPid) {
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_PERFORMANCE_RATINGS, {
+        callerModule: MODULE,
+        periodId:     qPid
+      });
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') return {};
+      throw e;
+    }
+
+    // Group by ratee: { ratee_code: { TEAM_LEAD: score, PM: score, CEO: score } }
+    var byRatee = {};
+    for (var i = 0; i < rows.length; i++) {
+      var row       = rows[i];
+      var rateeCode = String(row.ratee_code  || '').trim();
+      var raterRole = String(row.rater_role  || '').toUpperCase().trim();
+      var score     = parseFloat(row.avg_score_normalized);
+      if (!rateeCode || isNaN(score)) continue;
+      if (!byRatee[rateeCode]) byRatee[rateeCode] = {};
+      byRatee[rateeCode][raterRole] = score;  // last write wins per role
+    }
+
+    var staffCache = buildStaffCache_();
+    var result     = {};
+    var ratees     = Object.keys(byRatee);
+
+    for (var j = 0; j < ratees.length; j++) {
+      var code   = ratees[j];
+      var scores = byRatee[code];
+      var staff  = staffCache[code];
+      var role   = staff ? staff.role : '';
+
+      if (role === 'DESIGNER') {
+        var tlScore = scores['TEAM_LEAD'];
+        var pmScore = scores['PM'];
+        if (tlScore === undefined || pmScore === undefined) {
+          result[code] = null;
+        } else {
+          result[code] = Math.round(((tlScore + pmScore) / 2) * 10000) / 10000;
+        }
+      } else if (role === 'TEAM_LEAD' || role === 'PM') {
+        var ceoScore = scores['CEO'];
+        result[code] = (ceoScore !== undefined) ? ceoScore : null;
+      } else {
+        result[code] = null;
+      }
+    }
+    return result;
+  }
 
   // ============================================================
   // SECTION 3: SCORE COMPUTATION (stub — implemented in Task 8)
