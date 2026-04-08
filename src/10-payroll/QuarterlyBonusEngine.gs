@@ -365,7 +365,62 @@ var QuarterlyBonusEngine = (function () {
   // SECTION 5: LEDGER (stub — implemented in Task 9)
   // ============================================================
 
-  function writeBonusLedger_(bonusRows, actorEmail, qPid) {}
+  /**
+   * Writes bonus rows to FACT_PAYROLL_LEDGER.
+   * Skips SKIPPED rows. Writes CALCULATED and PENDING rows.
+   * Idempotent — existing keys are skipped with a warning.
+   */
+  function writeBonusLedger_(bonusRows, actorEmail, qPid) {
+    DAL.ensurePartition(Config.TABLES.FACT_PAYROLL_LEDGER, qPid, MODULE);
+
+    for (var i = 0; i < bonusRows.length; i++) {
+      var row = bonusRows[i];
+      if (row.status === 'SKIPPED') continue;
+
+      var idempotencyKey = 'QUARTERLY_BONUS|' + row.person_code + '|' + qPid;
+
+      var existing;
+      try {
+        existing = DAL.readWhere(
+          Config.TABLES.FACT_PAYROLL_LEDGER,
+          { idempotency_key: idempotencyKey },
+          { periodId: qPid }
+        );
+      } catch (e) {
+        if (e.code === 'SHEET_NOT_FOUND') existing = [];
+        else throw e;
+      }
+
+      if (existing.length > 0) {
+        Logger.warn('QB_DUPLICATE_SKIP', { module: MODULE,
+          message: 'Quarterly bonus already recorded — skipping',
+          person_code: row.person_code, quarterPeriodId: qPid });
+        continue;
+      }
+
+      DAL.appendRow(Config.TABLES.FACT_PAYROLL_LEDGER, {
+        event_id:        Identifiers.generateId(),
+        event_type:      'QUARTERLY_BONUS',
+        person_code:     row.person_code,
+        period_id:       qPid,
+        amount_inr:      row.bonus_inr,
+        design_hours:    row.design_hours,
+        composite_score: row.composite_score,
+        client_score:    row.client_score    || 0,
+        error_score:     row.error_score     || 0,
+        rating_score:    row.rating_score    || 0,
+        status:          row.status,
+        pending_reason:  row.pending_reason  || '',
+        actor_email:     actorEmail,
+        timestamp:       new Date().toISOString(),
+        idempotency_key: idempotencyKey
+      }, { callerModule: MODULE, periodId: qPid });
+
+      Logger.info('QB_ROW_WRITTEN', { module: MODULE,
+        message: 'Quarterly bonus row written',
+        person_code: row.person_code, status: row.status, amount_inr: row.bonus_inr });
+    }
+  }
 
   // ============================================================
   // SECTION 6: ANNUAL BONUS (stub — implemented in Task 10)
