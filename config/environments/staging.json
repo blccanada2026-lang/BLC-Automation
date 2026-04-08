@@ -1,0 +1,18 @@
+{
+  "environment": "STAGING",
+  "spreadsheet_id": "REPLACE_WITH_STAGING_SPREADSHEET_ID",
+  "trigger_frequencies": {
+    "queue_processor_minutes": 5,
+    "health_monitor_minutes": 15,
+    "archival_hour": 3
+  },
+  "protection_level": "PROTECTED",
+  "logging_level": "INFO",
+  "batch_sizes": {
+    "queue_processor": 15,
+    "payroll_chunk": 10,
+    "billing_chunk": 15
+  },
+  "cache_ttl_seconds": 600,
+  "lock_timeout_ms": 20000
+}
