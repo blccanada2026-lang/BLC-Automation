@@ -406,6 +406,6 @@ function seedStaffImport() {
     written++;
   });
 
-  Logger.log('seedStaffImport: wrote ' + written + ' rows to STG_STAFF_IMPORT.');
-  Logger.log('Next step: run StaffOnboarding.bulkOnboardStaff("raj.nair@bluelotuscanada.ca")');
+  console.log('seedStaffImport: wrote ' + written + ' rows to STG_STAFF_IMPORT.');
+  console.log('Next step: run StaffOnboarding.bulkOnboardStaff("raj.nair@bluelotuscanada.ca")');
 }
