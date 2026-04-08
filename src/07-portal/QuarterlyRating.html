@@ -34,7 +34,7 @@
   <div id="cards"></div>
 
   <script>
-    var QUARTER_PERIOD_ID = (new URLSearchParams(window.location.search)).get('period') || '';
+    var QUARTER_PERIOD_ID = (typeof INJECTED_PERIOD !== 'undefined' ? INJECTED_PERIOD : '') || '';
 
     var CATEGORIES = [
       { key: 'quality',       label: 'Quality & Accuracy' },

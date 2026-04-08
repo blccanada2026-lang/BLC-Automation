@@ -40,11 +40,13 @@
  * @returns {HtmlOutput}
  */
 function doGet(e) {
-  var page = e && e.parameter && e.parameter.page ? e.parameter.page : '';
+  var page   = e && e.parameter && e.parameter.page   ? e.parameter.page   : '';
+  var period = e && e.parameter && e.parameter.period ? e.parameter.period : '';
 
   if (page === 'rate-staff') {
-    return HtmlService
-      .createHtmlOutputFromFile('07-portal/QuarterlyRating')
+    var html    = HtmlService.createHtmlOutputFromFile('07-portal/QuarterlyRating');
+    var content = '<script>var INJECTED_PERIOD = ' + JSON.stringify(period) + ';<\/script>\n' + html.getContent();
+    return HtmlService.createHtmlOutput(content)
       .setTitle('BLC Quarterly Ratings')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
