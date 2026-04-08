@@ -40,6 +40,15 @@
  * @returns {HtmlOutput}
  */
 function doGet(e) {
+  var page = e && e.parameter && e.parameter.page ? e.parameter.page : '';
+
+  if (page === 'rate-staff') {
+    return HtmlService
+      .createHtmlOutputFromFile('07-portal/QuarterlyRating')
+      .setTitle('BLC Quarterly Ratings')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
   return HtmlService
     .createHtmlOutputFromFile('07-portal/PortalView')
     .setTitle('BLC Job Portal')
