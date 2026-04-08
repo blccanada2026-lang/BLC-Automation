@@ -130,7 +130,48 @@ var QuarterlyBonusEngine = (function () {
     }
     return hoursMap;
   }
-  function getQcErrorRates_(quarter, year)        { return {}; }
+  /**
+   * Computes QC error score per designer from VW_JOB_CURRENT_STATE.
+   * error_rate  = count(jobs where rework_cycle > 0) / total_jobs
+   * error_score = 1 - error_rate  (higher is better)
+   * Returns: { person_code: error_score 0.0–1.0 }
+   */
+  function getQcErrorRates_(quarter, year) {
+    var periodIds = monthPeriodIds_(quarter, year);
+    var allRows;
+    try {
+      allRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') return {};
+      throw e;
+    }
+
+    var pidSet = {};
+    for (var p = 0; p < periodIds.length; p++) { pidSet[periodIds[p]] = true; }
+
+    var accum = {};
+    for (var i = 0; i < allRows.length; i++) {
+      var row  = allRows[i];
+      var pid  = String(row.period_id || '').slice(0, 7);
+      if (!pidSet[pid]) continue;
+
+      var code = String(row.allocated_to || '').trim();
+      if (!code) continue;
+
+      if (!accum[code]) accum[code] = { total: 0, reworkCount: 0 };
+      accum[code].total++;
+      if (parseInt(row.rework_cycle || 0, 10) > 0) accum[code].reworkCount++;
+    }
+
+    var result = {};
+    var codes  = Object.keys(accum);
+    for (var j = 0; j < codes.length; j++) {
+      var a         = accum[codes[j]];
+      var errorRate = a.total > 0 ? a.reworkCount / a.total : 0;
+      result[codes[j]] = Math.round((1 - errorRate) * 10000) / 10000;
+    }
+    return result;
+  }
   function getClientScores_(quarter, year)        { return {}; }
   function getInternalRatings_(qPid)              { return {}; }
 
