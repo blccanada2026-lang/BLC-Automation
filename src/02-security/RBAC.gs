@@ -459,12 +459,18 @@ var RBAC = (function () {
     // ── CEO / Founder ────────────────────────────────────────
     'ceo@blclotus.com':                { personCode: 'CEO', role: ROLES.CEO, displayName: 'BLC CEO' },
     'founder@blclotus.com':            { personCode: 'CEO', role: ROLES.CEO, displayName: 'BLC Founder' },
-    'raj.nair@bluelotuscanada.ca':     { personCode: 'RNR', role: ROLES.CEO, displayName: 'Raj Nair' },
+    'raj.nair@bluelotuscanada.ca':     { personCode: 'RAJ', role: ROLES.CEO, displayName: 'Raj Nair' },
+    'blccanada2026@gmail.com':         { personCode: 'RAJ', role: ROLES.CEO, displayName: 'Raj Nair' },
     // ── Project Manager ──────────────────────────────────────
     'pm@blclotus.com':            { personCode: 'PMG', role: ROLES.PM,        displayName: 'Project Manager' },
     'sarty@blclotus.com':         { personCode: 'SGO', role: ROLES.PM,        displayName: 'Sarty Gosh' },
+    'sarthakaespl@gmail.com':     { personCode: 'SGO', role: ROLES.PM,        displayName: 'Sarthak Ghosh' },
     // ── Team Leads ───────────────────────────────────────────
     'teamlead@blclotus.com':      { personCode: 'TL1', role: ROLES.TEAM_LEAD, displayName: 'Team Lead' },
+    'bharathchunarkar121@gmail.com': { personCode: 'BCH', role: ROLES.TEAM_LEAD, displayName: 'Bharath Charles' },
+    'samar.das1995@gmail.com':       { personCode: 'SDA', role: ROLES.TEAM_LEAD, displayName: 'Samar Kumar Das' },
+    'pabitra8846@gmail.com':         { personCode: 'PBG', role: ROLES.TEAM_LEAD, displayName: 'Pabitra Ghosh' },
+    'subonath2018@gmail.com':        { personCode: 'SVN', role: ROLES.TEAM_LEAD, displayName: 'Savvy Nath' },
     // ── Designers ────────────────────────────────────────────
     'designer@blclotus.com':      { personCode: 'DS1', role: ROLES.DESIGNER,  displayName: 'Designer' },
     'designer2@blclotus.com':     { personCode: 'DS2', role: ROLES.DESIGNER,  displayName: 'Designer 2' },
