@@ -88,8 +88,9 @@ var ClientFeedback = (function () {
     var actor = RBAC.resolveActor(actorEmail);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_RUN);
 
-    var periodId = options.periodId || Identifiers.generateCurrentPeriodId();
-    var quarter  = buildQuarterLabel_(periodId);
+    var periodId  = options.periodId  || Identifiers.generateCurrentPeriodId();
+    var testEmail = options.testEmail || null;   // if set, all emails go here instead of client
+    var quarter   = buildQuarterLabel_(periodId);
 
     // ── 1. Build { clientCode → [designerCodes] } map ────────
     var pairs    = buildDesignerClientPairs_(periodId);
@@ -136,8 +137,8 @@ var ClientFeedback = (function () {
       // Build ONE pre-filled URL for this client
       var formUrl = buildPrefilledUrl_(formMeta.formId, formMeta.entryIds, periodId, clientCode);
 
-      // Send the email
-      sendClientEmail_(client, designerNames, designers, formUrl, quarter);
+      // Send the email (testEmail overrides recipient for pre-launch testing)
+      sendClientEmail_(client, designerNames, designers, formUrl, quarter, testEmail);
       emailsSent++;
     }
 
@@ -439,7 +440,7 @@ var ClientFeedback = (function () {
   /**
    * Sends one email to a client with their single feedback form link.
    */
-  function sendClientEmail_(client, designerNames, designerCodes, formUrl, quarter) {
+  function sendClientEmail_(client, designerNames, designerCodes, formUrl, quarter, testEmail) {
     var designerList = designerCodes.map(function(c) {
       return designerNames[c] || c;
     }).join(', ');
@@ -479,7 +480,8 @@ var ClientFeedback = (function () {
       '<p>Thank you,<br><strong>Blue Lotus Consulting Corporation</strong></p>'
     ].join('\n');
 
-    MailApp.sendEmail({ to: client.contact_email, subject: subject, body: plain, htmlBody: html });
+    var recipient = testEmail || client.contact_email;
+    MailApp.sendEmail({ to: recipient, subject: subject, body: plain, htmlBody: html });
   }
 
   /**
