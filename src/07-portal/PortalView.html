@@ -1,0 +1,2188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BLC Job Portal</title>
+  <style>
+    /* ── CSS Custom Properties ───────────────────────────── */
+    :root {
+      --c-primary:   #1a3c5e;
+      --c-secondary: #2d6a9f;
+      --c-accent:    #f59e0b;
+      --c-bg:        #f1f5f9;
+      --c-surface:   #ffffff;
+      --c-border:    #e2e8f0;
+      --c-text:      #1e293b;
+      --c-muted:     #64748b;
+      --c-success:   #10b981;
+      --c-danger:    #ef4444;
+      --c-warning:   #f59e0b;
+      --radius:      6px;
+      --shadow:      0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    /* ── Reset + Base ──────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: var(--c-bg); color: var(--c-text); font-size: 14px; line-height: 1.5; }
+    button { cursor: pointer; font-family: inherit; font-size: 13px; border: none;
+             border-radius: var(--radius); padding: 6px 14px; transition: opacity .15s; }
+    button:hover { opacity: .85; }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+    input, select, textarea { font-family: inherit; font-size: 13px; width: 100%;
+      border: 1px solid var(--c-border); border-radius: var(--radius); padding: 7px 10px;
+      outline: none; transition: border-color .15s; }
+    input:focus, select:focus, textarea:focus { border-color: var(--c-secondary); }
+    label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 12px;
+            color: var(--c-muted); text-transform: uppercase; letter-spacing: .04em; }
+    .field { margin-bottom: 14px; }
+
+    /* ── Header ────────────────────────────────────────── */
+    header {
+      background: var(--c-primary); color: #fff;
+      padding: 0 24px; height: 56px;
+      display: flex; align-items: center; justify-content: space-between;
+      box-shadow: 0 2px 4px rgba(0,0,0,.2);
+    }
+    .header-brand h1 { font-size: 16px; font-weight: 700; letter-spacing: .02em; }
+    .header-user { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+    .role-badge { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25);
+                  border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 700;
+                  letter-spacing: .06em; text-transform: uppercase; }
+    .btn-ghost { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.2); }
+
+    /* ── Main Layout ───────────────────────────────────── */
+    main { max-width: 1280px; margin: 0 auto; padding: 24px 20px; }
+
+    /* ── Stats Bar ─────────────────────────────────────── */
+    .stats-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .stat-card { background: var(--c-surface); border: 1px solid var(--c-border);
+                 border-radius: var(--radius); padding: 14px 20px; min-width: 120px;
+                 box-shadow: var(--shadow); flex: 1; }
+    .stat-value { font-size: 28px; font-weight: 700; color: var(--c-primary); }
+    .stat-label { font-size: 11px; color: var(--c-muted); text-transform: uppercase;
+                  letter-spacing: .06em; margin-top: 2px; }
+
+    /* ── Toolbar ───────────────────────────────────────── */
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .toolbar h2 { font-size: 15px; font-weight: 700; }
+    .toolbar-actions { display: flex; gap: 8px; }
+    .btn-primary { background: var(--c-secondary); color: #fff; }
+    .btn-success { background: var(--c-success); color: #fff; }
+    .btn-warning { background: var(--c-warning); color: #fff; }
+    .btn-danger  { background: var(--c-danger);  color: #fff; }
+    .btn-muted   { background: #e2e8f0; color: var(--c-text); }
+    .btn-sm      { padding: 4px 10px; font-size: 12px; }
+
+    /* ── Jobs Table ────────────────────────────────────── */
+    .table-wrap { background: var(--c-surface); border: 1px solid var(--c-border);
+                  border-radius: var(--radius); box-shadow: var(--shadow); overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f8fafc; text-align: left; padding: 10px 14px; font-size: 11px;
+         font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+         color: var(--c-muted); border-bottom: 1px solid var(--c-border); }
+    td { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8fafc; }
+
+    /* ── State Badges ──────────────────────────────────── */
+    .badge { display: inline-block; padding: 3px 9px; border-radius: 12px;
+             font-size: 11px; font-weight: 700; letter-spacing: .04em; white-space: nowrap; }
+    .badge-INTAKE_RECEIVED    { background: #f1f5f9; color: #64748b; }
+    .badge-ALLOCATED          { background: #dbeafe; color: #1d4ed8; }
+    .badge-IN_PROGRESS        { background: #ede9fe; color: #7c3aed; }
+    .badge-ON_HOLD            { background: #fef3c7; color: #b45309; }
+    .badge-CLIENT_RETURN      { background: #ffedd5; color: #c2410c; }
+    .badge-QC_REVIEW          { background: #fce7f3; color: #9d174d; }
+    .badge-COMPLETED_BILLABLE { background: #d1fae5; color: #065f46; }
+    .badge-INVOICED           { background: #e2e8f0; color: #475569; }
+    .badge-rework             { background: #fee2e2; color: #991b1b; }
+
+    /* ── Payroll status badges ──────────────────────────── */
+    .pay-badge { display:inline-block; padding:3px 9px; border-radius:12px;
+                 font-size:11px; font-weight:700; letter-spacing:.04em; }
+    .pay-PENDING_CONFIRMATION { background:#fef3c7; color:#b45309; }
+    .pay-CONFIRMED            { background:#d1fae5; color:#065f46; }
+    .pay-PROCESSED            { background:#dbeafe; color:#1d4ed8; }
+    .pay-NOT_RUN              { background:#f1f5f9; color:#64748b; }
+
+    /* ── Leader Dashboard ───────────────────────────────── */
+    #leader-dashboard { display:none; margin-top:24px; }
+    .dash-header { display:flex; justify-content:space-between; align-items:center;
+                   margin-bottom:14px; }
+    .dash-header h2 { font-size:15px; font-weight:700; }
+    .dash-actions { display:flex; gap:8px; }
+    .dash-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media(max-width:800px) { .dash-grid { grid-template-columns:1fr; } }
+    .dash-panel { background:var(--c-surface); border:1px solid var(--c-border);
+                  border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }
+    .dash-panel-hdr { padding:12px 16px; background:#f8fafc;
+                      border-bottom:1px solid var(--c-border); font-weight:700; font-size:13px;
+                      display:flex; justify-content:space-between; align-items:center; }
+    .dash-panel-body { overflow-x:auto; }
+    .dash-tbl { width:100%; border-collapse:collapse; font-size:13px; }
+    .dash-tbl th { padding:8px 12px; font-size:11px; font-weight:700;
+                   text-transform:uppercase; letter-spacing:.06em;
+                   color:var(--c-muted); border-bottom:1px solid var(--c-border);
+                   background:#f8fafc; text-align:left; }
+    .dash-tbl td { padding:8px 12px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+    .dash-tbl tr:last-child td { border-bottom:none; }
+    .dash-tbl tr:hover td { background:#f8fafc; }
+    .dash-empty { padding:32px; text-align:center; color:var(--c-muted); font-size:13px; }
+
+    /* ── Staff Management ───────────────────────────────── */
+    #staff-panel { display:none; margin-top:24px; }
+    .staff-panel-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+    .staff-panel-hdr h2 { font-size:15px; font-weight:700; }
+    .role-chip { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px;
+                 font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+    .role-CEO       { background:#1a3c5e; color:#fff; }
+    .role-PM        { background:#2d6a9f; color:#fff; }
+    .role-TEAM_LEAD { background:#7c3aed; color:#fff; }
+    .role-DESIGNER  { background:#065f46; color:#fff; }
+    .role-QC        { background:#9d174d; color:#fff; }
+    .role-ADMIN     { background:#b45309; color:#fff; }
+    .status-chip { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px;
+                   font-weight:700; letter-spacing:.04em; }
+    .status-DRAFT   { background:#fef3c7; color:#b45309; }
+    .status-SENT    { background:#dbeafe; color:#1d4ed8; }
+    .status-SIGNED  { background:#d1fae5; color:#065f46; }
+    .status-NONE    { background:#f1f5f9; color:#94a3b8; }
+    .banking-ok   { color:var(--c-success); font-weight:700; }
+    .banking-none { color:#94a3b8; }
+
+    /* ── Multi-section modal form ───────────────────────── */
+    .form-section { margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid var(--c-border); }
+    .form-section:last-of-type { border-bottom:none; margin-bottom:0; }
+    .form-section-title { font-size:11px; font-weight:700; text-transform:uppercase;
+                          letter-spacing:.08em; color:var(--c-secondary);
+                          margin-bottom:12px; padding-bottom:4px;
+                          border-bottom:2px solid var(--c-secondary); display:inline-block; }
+    .field-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    @media(max-width:600px) { .field-row { grid-template-columns:1fr; } }
+
+    /* ── Banking detail view ─────────────────────────────── */
+    .banking-grid { display:grid; grid-template-columns:auto 1fr; gap:6px 16px;
+                    font-size:13px; padding:4px 0; }
+    .banking-key { font-weight:600; color:var(--c-muted); font-size:12px; white-space:nowrap; }
+    .banking-val { word-break:break-all; }
+    .banking-section-title { grid-column:1/-1; font-size:11px; font-weight:700;
+                             text-transform:uppercase; letter-spacing:.06em;
+                             color:var(--c-secondary); margin-top:10px; padding-top:6px;
+                             border-top:1px solid var(--c-border); }
+
+    /* ── Paystub Confirmation Banner ───────────────────── */
+    #paystub-banner { display:none; background:#fffbeb; border:1px solid #fcd34d;
+                      border-radius:var(--radius); padding:14px 20px; margin-bottom:16px;
+                      display:none; align-items:center; justify-content:space-between; gap:12px; }
+    .paystub-banner-msg { font-size:13px; color:#92400e; }
+    .paystub-banner-msg strong { display:block; margin-bottom:2px; }
+
+    /* ── Action buttons in table ────────────────────────── */
+    .action-group { display: flex; gap: 5px; flex-wrap: wrap; }
+
+    /* ── Empty / loading state ─────────────────────────── */
+    .empty-cell { padding: 56px 24px; text-align: center; color: var(--c-muted); }
+    .empty-cell .icon { font-size: 40px; display: block; margin-bottom: 10px; opacity: .4; }
+
+    /* ── Access Denied ─────────────────────────────────── */
+    #denied-view {
+      display: none; max-width: 480px; margin: 80px auto; text-align: center;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: var(--radius); padding: 40px; box-shadow: var(--shadow);
+    }
+    #denied-view .icon { font-size: 48px; display: block; margin-bottom: 16px; }
+    #denied-view h2 { font-size: 20px; margin-bottom: 8px; }
+    #denied-view p  { color: var(--c-muted); font-size: 13px; margin-top: 8px; }
+
+    /* ── Loading overlay ───────────────────────────────── */
+    #loading { position: fixed; inset: 0; background: rgba(255,255,255,.85);
+               display: flex; align-items: center; justify-content: center;
+               z-index: 1000; font-size: 14px; color: var(--c-muted); }
+    .spinner { width: 24px; height: 24px; border: 3px solid var(--c-border);
+               border-top-color: var(--c-secondary); border-radius: 50%;
+               animation: spin .7s linear infinite; margin-right: 10px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Modal ─────────────────────────────────────────── */
+    .modal-backdrop { display: none; position: fixed; inset: 0;
+                      background: rgba(0,0,0,.45); z-index: 500;
+                      align-items: center; justify-content: center; }
+    .modal-backdrop.open { display: flex; }
+    .modal { background: var(--c-surface); border-radius: var(--radius);
+             box-shadow: 0 8px 24px rgba(0,0,0,.18);
+             width: 100%; max-width: 480px; margin: 20px;
+             animation: slideUp .2s ease; }
+    @keyframes slideUp { from { transform: translateY(16px); opacity:0; } to { transform: none; opacity:1; } }
+    .modal-header { padding: 18px 20px 14px; border-bottom: 1px solid var(--c-border);
+                    display: flex; justify-content: space-between; align-items: center; }
+    .modal-header h3 { font-size: 15px; font-weight: 700; }
+    .modal-close { background: none; color: var(--c-muted); font-size: 18px; padding: 0 4px; }
+    .modal-body  { padding: 20px; }
+    .modal-footer { padding: 14px 20px; border-top: 1px solid var(--c-border);
+                    display: flex; justify-content: flex-end; gap: 8px; }
+    .modal-job-info { background: #f8fafc; border: 1px solid var(--c-border);
+                      border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px;
+                      font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    /* ── Toast ─────────────────────────────────────────── */
+    #toast-container { position: fixed; bottom: 24px; right: 24px;
+                       display: flex; flex-direction: column; gap: 8px; z-index: 9999; }
+    .toast { padding: 12px 18px; border-radius: var(--radius); color: #fff; font-size: 13px;
+             box-shadow: 0 4px 12px rgba(0,0,0,.15); max-width: 340px; }
+    .toast-success { background: var(--c-success); }
+    .toast-error   { background: var(--c-danger); }
+    .toast-info    { background: var(--c-secondary); }
+  </style>
+</head>
+<body>
+
+<!-- ── Loading Overlay ───────────────────────────────────── -->
+<div id="loading"><div class="spinner"></div>Loading portal…</div>
+
+<!-- ── Header ────────────────────────────────────────────── -->
+<header>
+  <div class="header-brand"><h1>BLC Job Portal</h1></div>
+  <div class="header-user">
+    <span id="header-name" style="opacity:.8">—</span>
+    <span id="header-role" class="role-badge">—</span>
+    <button class="btn-ghost btn-sm" id="btn-refresh">↻ Refresh</button>
+  </div>
+</header>
+
+<!-- ── Access Denied ─────────────────────────────────────── -->
+<div id="denied-view">
+  <span class="icon">🔒</span>
+  <h2>Access Denied</h2>
+  <p>Your account is not registered in the BLC staff roster.</p>
+  <p>Contact your system administrator to request access.</p>
+  <p id="denied-email" style="font-size:12px; color:#94a3b8; margin-top:12px;"></p>
+</div>
+
+<!-- ── Main Content ──────────────────────────────────────── -->
+<main id="main-content" style="display:none">
+
+  <!-- ── Paystub Confirmation Banner (shown when pending) ── -->
+  <div id="paystub-banner" style="display:none; background:#fffbeb; border:1px solid #fcd34d;
+       border-radius:var(--radius); padding:14px 20px; margin-bottom:16px;
+       align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div class="paystub-banner-msg">
+      <strong>⚠ Paystub Confirmation Required</strong>
+      Your payroll for <span id="banner-period"></span> is ready. Please review and confirm.
+    </div>
+    <button class="btn-success btn-sm" id="btn-confirm-paystub">✓ Confirm My Paystub</button>
+  </div>
+
+  <div class="stats-bar" id="stats-bar"></div>
+
+  <div class="toolbar">
+    <h2>Jobs</h2>
+    <div class="toolbar-actions">
+      <button class="btn-muted btn-sm" id="btn-process-queue" style="display:none">⚙ Process Queue</button>
+      <button class="btn-muted btn-sm" id="btn-clients" style="display:none">👥 Clients</button>
+      <button class="btn-muted btn-sm" id="btn-leader-dash" style="display:none">📊 Dashboard</button>
+      <button class="btn-muted btn-sm" id="btn-staff-panel" style="display:none">👤 Staff</button>
+      <button class="btn-primary btn-sm" id="btn-create-job" style="display:none">+ New Job</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Job #</th><th>Client</th><th>Product</th><th>Qty</th>
+          <th>State</th><th>Assigned</th><th>Updated</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="jobs-tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- ══ STAFF MANAGEMENT PANEL ══════════════════════════════ -->
+  <div id="staff-panel">
+    <div class="staff-panel-hdr">
+      <h2>Staff Management</h2>
+      <div class="toolbar-actions">
+        <button class="btn-primary btn-sm" id="btn-onboard-staff">+ Onboard New Staff</button>
+        <button class="btn-muted btn-sm" id="btn-bulk-import">⬆ Bulk Import from Sheet</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th><th>Name</th><th>Role</th><th>Email</th>
+            <th>Supervisor</th><th>PM</th><th>Rate (Design)</th>
+            <th>Banking</th><th>Contract</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="staff-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ══ LEADER DASHBOARD ═════════════════════════════════════ -->
+  <div id="leader-dashboard">
+
+    <div class="dash-header">
+      <h2>Team Dashboard — <span id="dash-period">—</span></h2>
+      <div class="dash-actions">
+        <button class="btn-muted btn-sm" id="btn-send-feedback" style="display:none">✉ Send Feedback Requests</button>
+        <button class="btn-muted btn-sm" id="btn-run-bonus" style="display:none">💰 Run Bonus</button>
+        <button class="btn-success btn-sm" id="btn-approve-payroll" style="display:none">✓ Approve Payroll</button>
+        <button class="btn-muted btn-sm" id="btn-refresh-dash">↻ Refresh</button>
+      </div>
+    </div>
+
+    <div class="dash-grid">
+      <!-- Team Hours panel -->
+      <div class="dash-panel">
+        <div class="dash-panel-hdr">
+          <span>Team Hours (This Period)</span>
+          <span id="dash-hours-total" style="font-size:12px; font-weight:400; color:var(--c-muted)"></span>
+        </div>
+        <div class="dash-panel-body" id="dash-hours-body">
+          <div class="dash-empty">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Payroll Status panel -->
+      <div class="dash-panel">
+        <div class="dash-panel-hdr">
+          <span>Payroll Status</span>
+          <span id="dash-payroll-meta" style="font-size:12px; font-weight:400; color:var(--c-muted)"></span>
+        </div>
+        <div class="dash-panel-body" id="dash-payroll-body">
+          <div class="dash-empty">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Client Feedback panel -->
+      <div class="dash-panel" id="dash-feedback-panel" style="display:none">
+        <div class="dash-panel-hdr">
+          <span>Client Feedback</span>
+          <span id="dash-feedback-meta" style="font-size:12px; font-weight:400; color:var(--c-muted)"></span>
+        </div>
+        <div class="dash-panel-body" id="dash-feedback-body">
+          <div class="dash-empty">No responses yet this period.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<!-- ══ ONBOARD STAFF MODAL ═══════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-onboard-staff">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-header">
+      <h3>Onboard New Staff Member</h3>
+      <button class="modal-close" data-close="modal-onboard-staff">✕</button>
+    </div>
+    <div class="modal-body" style="max-height:70vh; overflow-y:auto">
+
+      <!-- Section 1: Profile -->
+      <div class="form-section">
+        <div class="form-section-title">Profile</div>
+        <div class="field-row">
+          <div class="field"><label>Person Code *</label>
+            <input id="staff-person-code" placeholder="e.g. DS5, TL2" maxlength="10" style="text-transform:uppercase"></div>
+          <div class="field"><label>Full Name *</label>
+            <input id="staff-name" placeholder="Full legal name"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Email Address *</label>
+            <input id="staff-email" type="email" placeholder="designer@gmail.com"></div>
+          <div class="field"><label>Role *</label>
+            <select id="staff-role">
+              <option value="DESIGNER">DESIGNER</option>
+              <option value="QC">QC</option>
+              <option value="TEAM_LEAD">TEAM LEAD</option>
+              <option value="PM">PROJECT MANAGER</option>
+              <option value="ADMIN">ADMIN</option>
+            </select></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Supervisor Code (TL)</label>
+            <input id="staff-supervisor" placeholder="e.g. TL1 (leave blank for TLs+)"></div>
+          <div class="field"><label>PM Code</label>
+            <input id="staff-pm" placeholder="e.g. PM1"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Start Date *</label>
+            <input id="staff-start-date" type="date"></div>
+          <div class="field"><label>Bonus Eligible</label>
+            <select id="staff-bonus-eligible">
+              <option value="TRUE">Yes</option>
+              <option value="FALSE">No</option>
+            </select></div>
+        </div>
+      </div>
+
+      <!-- Section 2: Pay Config -->
+      <div class="form-section">
+        <div class="form-section-title">Pay Configuration</div>
+        <div class="field-row">
+          <div class="field"><label>Pay Currency *</label>
+            <select id="staff-pay-currency">
+              <option value="INR">INR (India)</option>
+              <option value="CAD">CAD (Canada)</option>
+              <option value="USD">USD (USA)</option>
+            </select></div>
+          <div class="field"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Design Rate (per hour) *</label>
+            <input id="staff-pay-design" type="number" min="0" step="0.01" placeholder="e.g. 150"></div>
+          <div class="field"><label>QC Rate (per hour) *</label>
+            <input id="staff-pay-qc" type="number" min="0" step="0.01" placeholder="e.g. 120"></div>
+        </div>
+      </div>
+
+      <!-- Section 3: Banking (OFX) -->
+      <div class="form-section">
+        <div class="form-section-title">Banking Details — OFX / Wire Transfer</div>
+        <p style="font-size:12px; color:var(--c-muted); margin-bottom:12px;">
+          These details are used to set up international payments via OFX or wire transfer.
+          Account Holder Name must exactly match bank records.
+        </p>
+        <div class="field-row">
+          <div class="field"><label>Account Holder Name *</label>
+            <input id="bank-holder-name" placeholder="Exact name as per bank account"></div>
+          <div class="field"><label>Bank Country</label>
+            <select id="bank-country" onchange="updateBankFields()">
+              <option value="India">India</option>
+              <option value="Canada">Canada</option>
+              <option value="USA">USA</option>
+              <option value="Other">Other / International</option>
+            </select></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Bank Name</label>
+            <input id="bank-name" placeholder="e.g. HDFC Bank"></div>
+          <div class="field"><label>Account Number</label>
+            <input id="bank-account-number" placeholder="Bank account number"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Account Type</label>
+            <select id="bank-account-type">
+              <option value="Savings">Savings</option>
+              <option value="Current">Current</option>
+              <option value="NRE">NRE (Non-Resident External)</option>
+              <option value="NRO">NRO (Non-Resident Ordinary)</option>
+              <option value="Checking">Checking</option>
+            </select></div>
+          <div class="field"><label>Bank Branch</label>
+            <input id="bank-branch" placeholder="Branch name"></div>
+        </div>
+        <!-- India fields -->
+        <div id="bank-india-fields">
+          <div class="field"><label>IFSC Code <span style="font-weight:400;color:var(--c-muted)">(India — 11 chars, e.g. HDFC0001234)</span></label>
+            <input id="bank-ifsc" placeholder="HDFC0001234" maxlength="11" style="text-transform:uppercase"></div>
+        </div>
+        <!-- International fields -->
+        <div id="bank-intl-fields" style="display:none">
+          <div class="field-row">
+            <div class="field"><label>SWIFT / BIC Code</label>
+              <input id="bank-swift" placeholder="e.g. HDFCINBB" maxlength="11" style="text-transform:uppercase"></div>
+            <div class="field"><label>IBAN</label>
+              <input id="bank-iban" placeholder="e.g. GB29NWBK60161331926819"></div>
+          </div>
+        </div>
+        <!-- Canada fields -->
+        <div id="bank-canada-fields" style="display:none">
+          <div class="field-row">
+            <div class="field"><label>Institution Number <span style="font-weight:400;color:var(--c-muted)">(3-digit)</span></label>
+              <input id="bank-institution" placeholder="e.g. 006" maxlength="3"></div>
+            <div class="field"><label>Transit Number <span style="font-weight:400;color:var(--c-muted)">(5-digit)</span></label>
+              <input id="bank-transit" placeholder="e.g. 12345" maxlength="5"></div>
+          </div>
+        </div>
+        <!-- USA fields -->
+        <div id="bank-usa-fields" style="display:none">
+          <div class="field"><label>Routing Number <span style="font-weight:400;color:var(--c-muted)">(9-digit ABA)</span></label>
+            <input id="bank-routing" placeholder="e.g. 021000021" maxlength="9"></div>
+        </div>
+        <div class="field">
+          <label>Bank Address</label>
+          <input id="bank-address" placeholder="Street, City, Country"></div>
+        <div class="field">
+          <label>OFX Recipient ID <span style="font-weight:400;color:var(--c-muted)">(fill after adding to OFX platform)</span></label>
+          <input id="bank-ofx-id" placeholder="OFX / Wise recipient ID (optional)"></div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-onboard-staff">Cancel</button>
+      <button class="btn-primary" id="btn-submit-onboard-staff">Onboard Staff Member</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ BANKING DETAILS MODAL ════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-banking-details">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <h3>Banking Details — <span id="banking-staff-name">—</span></h3>
+      <button class="modal-close" data-close="modal-banking-details">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px; color:var(--c-muted); margin-bottom:14px;">
+        Use these details to add this person as a recipient in OFX or your wire transfer platform.
+      </p>
+      <div class="banking-grid" id="banking-details-grid">
+        <span style="color:var(--c-muted); font-size:13px">Loading…</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-banking-details">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ BULK IMPORT MODAL ═════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-bulk-import">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-hdr">
+      <span class="modal-title">Bulk Staff Import</span>
+      <button class="modal-close" data-close="modal-bulk-import">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:#f0f4ff;border:1px solid #c7d2fe;border-radius:6px;padding:12px 14px;margin-bottom:16px;font-size:13px;line-height:1.6">
+        <strong>How to use:</strong><br>
+        1. Open the <strong>STG_STAFF_IMPORT</strong> sheet in the BLC Nexus spreadsheet.<br>
+        2. Fill in one row per staff member. Required: <code>person_code</code>, <code>name</code>, <code>email</code>, <code>role</code>, <code>pay_currency</code>, <code>pay_design</code>, <code>pay_qc</code>, <code>effective_from</code>.<br>
+        3. Banking fields (IFSC, SWIFT, etc.) are optional — can be added later.<br>
+        4. Click <strong>Run Import</strong> below. The system writes <code>import_status</code> back to each row.<br>
+        5. Already-imported rows (<code>IMPORTED</code>) are automatically skipped — safe to re-run.
+      </div>
+      <div id="bulk-import-results" style="display:none">
+        <div id="bulk-import-summary" style="margin-bottom:12px;font-size:14px;font-weight:600"></div>
+        <div class="table-wrap" style="max-height:280px;overflow-y:auto">
+          <table>
+            <thead>
+              <tr><th>Code</th><th>Name</th><th>Status</th><th>Notes</th></tr>
+            </thead>
+            <tbody id="bulk-import-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="bulk-import-idle" style="color:#64748b;font-size:13px">
+        Rows with <code>import_status</code> already set to <strong>IMPORTED</strong> will be skipped.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-primary" id="btn-run-bulk-import">Run Import</button>
+      <button class="btn-muted" data-close="modal-bulk-import">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CREATE JOB MODAL ══════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-create">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Create New Job</h3>
+      <button class="modal-close" data-close="modal-create">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>Client Code</label>
+        <input id="create-client" placeholder="e.g. AXYZCO" maxlength="20"></div>
+      <div class="field"><label>Job Type</label>
+        <select id="create-job-type">
+          <option value="DESIGN">DESIGN</option>
+          <option value="REVISION">REVISION</option>
+          <option value="PRINT">PRINT</option>
+          <option value="RUSH">RUSH</option>
+        </select></div>
+      <div class="field"><label>Product Code</label>
+        <input id="create-product" placeholder="e.g. LOGO" maxlength="30"></div>
+      <div class="field"><label>Quantity</label>
+        <input id="create-qty" type="number" value="1" min="1" max="999"></div>
+      <div class="field"><label>Assign To (email, optional)</label>
+        <input id="create-assigned" placeholder="designer@blclotus.com"></div>
+      <div class="field"><label>Notes (optional)</label>
+        <textarea id="create-notes" rows="2" maxlength="500"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-create">Cancel</button>
+      <button class="btn-primary" id="btn-submit-create">Create Job</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ LOG WORK MODAL ════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-work-log">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Log Work</h3>
+      <button class="modal-close" data-close="modal-work-log">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-job-info" id="work-log-job-info"></div>
+      <div class="field"><label>Hours Worked</label>
+        <input id="work-log-hours" type="number" step="0.25" min="0.25" max="24" placeholder="e.g. 2.5"></div>
+      <div class="field"><label>Work Date</label>
+        <input id="work-log-date" type="date"></div>
+      <div class="field"><label>Notes (optional)</label>
+        <textarea id="work-log-notes" rows="2" maxlength="500"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-work-log">Cancel</button>
+      <button class="btn-success" id="btn-submit-work-log">Log Hours</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SUBMIT FOR QC MODAL ═══════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-submit-qc">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Submit for QC Review</h3>
+      <button class="modal-close" data-close="modal-submit-qc">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-job-info" id="submit-qc-job-info"></div>
+      <p style="color:var(--c-muted);font-size:13px;margin-bottom:12px">
+        This will move the job to <strong>QC REVIEW</strong> status.
+        Ensure your design is complete before submitting.
+      </p>
+      <div class="field"><label>Notes (optional)</label>
+        <textarea id="submit-qc-notes" rows="2" maxlength="500"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-submit-qc">Cancel</button>
+      <button class="btn-primary" id="btn-submit-qc">Submit for QC</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ HOLD MODAL ════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-hold">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Place Job On Hold</h3>
+      <button class="modal-close" data-close="modal-hold">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-job-info" id="hold-job-info"></div>
+      <div class="field"><label>Reason (optional)</label>
+        <textarea id="hold-notes" rows="2" maxlength="500"
+          placeholder="Why is this job being placed on hold?"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-hold">Cancel</button>
+      <button class="btn-warning" id="btn-submit-hold">Place On Hold</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RESUME MODAL ══════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-resume">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Resume Job</h3>
+      <button class="modal-close" data-close="modal-resume">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-job-info" id="resume-job-info"></div>
+      <p style="color:var(--c-muted);font-size:13px">
+        Resume this job to its previous active state.
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-resume">Cancel</button>
+      <button class="btn-success" id="btn-submit-resume">Resume Job</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ QC REVIEW MODAL ═══════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-qc-review">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>QC Review</h3>
+      <button class="modal-close" data-close="modal-qc-review">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-job-info" id="qc-review-job-info"></div>
+      <div class="field"><label>Decision</label>
+        <select id="qc-result">
+          <option value="APPROVED">APPROVED — mark as completed</option>
+          <option value="REWORK">REWORK — return to designer</option>
+        </select></div>
+      <div class="field" id="rework-notes-field" style="display:none">
+        <label>Rework Notes <span style="color:var(--c-danger)">*</span></label>
+        <textarea id="qc-rework-notes" rows="3" maxlength="500"
+          placeholder="Describe what needs to be corrected…"></textarea></div>
+      <div class="field"><label>General Notes (optional)</label>
+        <textarea id="qc-notes" rows="2" maxlength="500"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-qc-review">Cancel</button>
+      <button class="btn-success" id="btn-submit-qc-review">Submit Review</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CLIENTS LIST MODAL ════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-clients">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-header">
+      <h3>Clients</h3>
+      <button class="modal-close" data-close="modal-clients">✕</button>
+    </div>
+    <div class="modal-body" style="padding-bottom:8px">
+      <div id="clients-list" style="margin-bottom:14px;min-height:40px"></div>
+      <button class="btn-primary btn-sm" id="btn-add-client">+ Onboard New Client</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-clients">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CLIENT ONBOARDING MODAL ═══════════════════════════════ -->
+<div class="modal-backdrop" id="modal-onboard-client">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Onboard New Client</h3>
+      <button class="modal-close" data-close="modal-onboard-client">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px">
+        <div class="field"><label>Client Code <span style="color:var(--c-danger)">*</span></label>
+          <input id="ob-client-code" placeholder="e.g. AXYZCO" maxlength="20"
+                 style="text-transform:uppercase"></div>
+        <div class="field"><label>Client Name <span style="color:var(--c-danger)">*</span></label>
+          <input id="ob-client-name" placeholder="Acme Corp" maxlength="100"></div>
+        <div class="field"><label>Contact Email</label>
+          <input id="ob-contact-email" type="email" placeholder="billing@client.com"></div>
+        <div class="field"><label>Currency <span style="color:var(--c-danger)">*</span></label>
+          <select id="ob-currency">
+            <option value="CAD">CAD — Canadian Dollar</option>
+            <option value="USD">USD — US Dollar</option>
+          </select></div>
+        <div class="field" style="grid-column:1/-1">
+          <label>Hourly Rate <span style="color:var(--c-danger)">*</span></label>
+          <input id="ob-hourly-rate" type="number" step="0.01" min="0.01"
+                 placeholder="e.g. 150.00"></div>
+        <div class="field" style="grid-column:1/-1"><label>Notes (optional)</label>
+          <textarea id="ob-notes" rows="2" maxlength="500"></textarea></div>
+      </div>
+      <p style="font-size:12px;color:var(--c-muted);margin-top:4px">
+        This creates a flat hourly rate for all job types.
+        Product-specific rates can be added directly in <strong>DIM_CLIENT_RATES</strong> later.
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-onboard-client">Cancel</button>
+      <button class="btn-primary" id="btn-submit-onboard">Save Client</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast Container ───────────────────────────────────────── -->
+<div id="toast-container"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// BLC Job Portal — Client JS
+//
+// Security: all dynamic text content uses .textContent (never innerHTML)
+//   except for structural HTML assembled from safe, whitelisted values
+//   (state strings validated server-side by StateMachine).
+// ═══════════════════════════════════════════════════════════════
+
+// ── Whitelist: valid state strings from Config.STATES ──────────
+var VALID_STATES = {
+  INTAKE_RECEIVED: true, ALLOCATED: true, IN_PROGRESS: true,
+  ON_HOLD: true, CLIENT_RETURN: true, QC_REVIEW: true,
+  COMPLETED_BILLABLE: true, INVOICED: true
+};
+
+// ── App state ─────────────────────────────────────────────────
+var _data      = null;   // { actor, jobs, stats, perms }
+var _activeJob = null;   // job object for the currently-open modal
+
+// ── Bootstrap ─────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function () {
+  // Default work-log date to today
+  var today = new Date();
+  var pad   = function(n) { return String(n).padStart(2, '0'); };
+  document.getElementById('work-log-date').value =
+    today.getFullYear() + '-' + pad(today.getMonth() + 1) + '-' + pad(today.getDate());
+
+  // ── Button wiring ──────────────────────────────────────
+  document.getElementById('btn-refresh').addEventListener('click', loadData);
+  document.getElementById('btn-process-queue').addEventListener('click', processQueue);
+  document.getElementById('btn-create-job').addEventListener('click', function() { openModal('modal-create'); });
+
+  document.getElementById('btn-submit-create').addEventListener('click',    submitCreateJob);
+  document.getElementById('btn-submit-work-log').addEventListener('click',  submitWorkLog);
+  document.getElementById('btn-submit-qc').addEventListener('click',        submitForQC);
+  document.getElementById('btn-submit-hold').addEventListener('click',      submitHold);
+  document.getElementById('btn-submit-resume').addEventListener('click',    submitResume);
+  document.getElementById('btn-submit-qc-review').addEventListener('click', submitQCReview);
+  document.getElementById('btn-clients').addEventListener('click',          openClients);
+  document.getElementById('btn-add-client').addEventListener('click',       openOnboardClient);
+  document.getElementById('btn-submit-onboard').addEventListener('click',   submitOnboardClient);
+  document.getElementById('btn-leader-dash').addEventListener('click',       toggleLeaderDash);
+  document.getElementById('btn-refresh-dash').addEventListener('click',      loadLeaderDashboard);
+  document.getElementById('btn-confirm-paystub').addEventListener('click',   confirmPaystub);
+  document.getElementById('btn-send-feedback').addEventListener('click',     sendFeedbackRequests);
+  document.getElementById('btn-run-bonus').addEventListener('click',         runBonusRun);
+  document.getElementById('btn-approve-payroll').addEventListener('click',   approveAllPayroll);
+  document.getElementById('btn-staff-panel').addEventListener('click',       toggleStaffPanel);
+  document.getElementById('btn-onboard-staff').addEventListener('click',     openOnboardStaff);
+  document.getElementById('btn-submit-onboard-staff').addEventListener('click', submitOnboardStaff);
+  document.getElementById('btn-bulk-import').addEventListener('click',        openBulkImport);
+  document.getElementById('btn-run-bulk-import').addEventListener('click',    runBulkImport);
+
+  document.getElementById('qc-result').addEventListener('change', function() {
+    var isRework = this.value === 'REWORK';
+    document.getElementById('rework-notes-field').style.display = isRework ? 'block' : 'none';
+  });
+
+  // Close modals via [data-close] buttons + backdrop click
+  document.querySelectorAll('[data-close]').forEach(function(btn) {
+    btn.addEventListener('click', function() { closeModal(btn.dataset.close); });
+  });
+  document.querySelectorAll('.modal-backdrop').forEach(function(el) {
+    el.addEventListener('click', function(e) { if (e.target === el) el.classList.remove('open'); });
+  });
+
+  // Table action delegation — safer than per-row onclick attributes
+  document.getElementById('jobs-tbody').addEventListener('click', function(e) {
+    var btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    var action = btn.dataset.action;
+    var jobNum = btn.dataset.job;
+    if (!action || !jobNum) return;
+
+    switch (action) {
+      case 'work-log':    openWorkLog(jobNum);   break;
+      case 'submit-qc':   openSubmitQC(jobNum);  break;
+      case 'qc-review':   openQCReview(jobNum);  break;
+      case 'hold':        openHold(jobNum);      break;
+      case 'resume':      openResume(jobNum);    break;
+    }
+  });
+
+  loadData();
+});
+
+// ── Data Loading ───────────────────────────────────────────────
+function loadData() {
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(onDataLoaded)
+    .withFailureHandler(onDataError)
+    .portal_getViewData();
+}
+
+function onDataLoaded(jsonStr) {
+  try { _data = JSON.parse(jsonStr); }
+  catch (e) { onDataError(e); return; }
+
+  var actor = _data.actor;
+
+  if (actor.role === 'UNKNOWN') {
+    showLoading(false);
+    document.getElementById('denied-view').style.display = 'block';
+    document.getElementById('denied-email').textContent = actor.email;
+    return;
+  }
+
+  // Header
+  document.getElementById('header-name').textContent = actor.displayName || actor.email;
+  document.getElementById('header-role').textContent  = actor.role;
+
+  // Toolbar buttons
+  if (_data.perms.canCreateJob)  document.getElementById('btn-create-job').style.display     = 'inline-block';
+  if (_data.perms.canViewAll)    document.getElementById('btn-process-queue').style.display   = 'inline-block';
+  if (_data.perms.canCreateJob)  document.getElementById('btn-clients').style.display         = 'inline-block';
+  if (_data.perms.isLeader)      document.getElementById('btn-leader-dash').style.display     = 'inline-block';
+  if (_data.perms.canManageStaff) document.getElementById('btn-staff-panel').style.display    = 'inline-block';
+
+  // Leader dashboard payroll action buttons
+  if (_data.perms.canRunPayroll)     document.getElementById('btn-send-feedback').style.display   = 'inline-block';
+  if (_data.perms.canRunPayroll)     document.getElementById('btn-run-bonus').style.display       = 'inline-block';
+  if (_data.perms.canApprovePayroll) document.getElementById('btn-approve-payroll').style.display = 'inline-block';
+  if (_data.perms.isLeader)          document.getElementById('dash-feedback-panel').style.display = 'block';
+
+  renderStats(_data.stats);
+  renderJobs(_data.jobs, actor, _data.perms);
+
+  // Show leader dashboard automatically if leader
+  if (_data.perms.isLeader) {
+    _dashVisible = true;
+    document.getElementById('leader-dashboard').style.display = 'block';
+    loadLeaderDashboard();
+  }
+
+  document.getElementById('main-content').style.display = 'block';
+  showLoading(false);
+}
+
+function onDataError(err) {
+  showLoading(false);
+  showToast('Failed to load portal data: ' + (err.message || String(err)), 'error');
+}
+
+// ── Stats Rendering ────────────────────────────────────────────
+function renderStats(stats) {
+  var bar = document.getElementById('stats-bar');
+  // Clear
+  while (bar.firstChild) bar.removeChild(bar.firstChild);
+
+  var statDefs = [
+    { label: 'Total Jobs',   value: stats.total },
+    { label: 'In Progress',  value: stats.byState['IN_PROGRESS']        || 0 },
+    { label: 'QC Review',    value: stats.byState['QC_REVIEW']          || 0 },
+    { label: 'On Hold',      value: stats.byState['ON_HOLD']            || 0 },
+    { label: 'Completed',    value: stats.byState['COMPLETED_BILLABLE'] || 0 }
+  ];
+
+  statDefs.forEach(function(s) {
+    var card  = document.createElement('div');
+    card.className = 'stat-card';
+    var val   = document.createElement('div');
+    val.className  = 'stat-value';
+    val.textContent = String(s.value);
+    var lbl   = document.createElement('div');
+    lbl.className  = 'stat-label';
+    lbl.textContent = s.label;
+    card.appendChild(val);
+    card.appendChild(lbl);
+    bar.appendChild(card);
+  });
+}
+
+// ── Jobs Table Rendering ───────────────────────────────────────
+function renderJobs(jobs, actor, perms) {
+  var tbody = document.getElementById('jobs-tbody');
+  while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+  if (!jobs || jobs.length === 0) {
+    var row = document.createElement('tr');
+    var td  = document.createElement('td');
+    td.colSpan = 8;
+    td.className = 'empty-cell';
+    var icon = document.createElement('span');
+    icon.className   = 'icon';
+    icon.textContent = '📋';
+    var msg = document.createElement('span');
+    msg.textContent = 'No jobs found.';
+    td.appendChild(icon);
+    td.appendChild(msg);
+    row.appendChild(td);
+    tbody.appendChild(row);
+    return;
+  }
+
+  jobs.forEach(function(job) {
+    tbody.appendChild(buildJobRow(job, actor, perms));
+  });
+}
+
+function buildJobRow(job, actor, perms) {
+  var tr = document.createElement('tr');
+
+  // Job Number
+  tr.appendChild(makeCell(function(td) {
+    var strong = document.createElement('strong');
+    strong.textContent = job.job_number || '';
+    td.appendChild(strong);
+  }));
+
+  // Client
+  tr.appendChild(makeTextCell(job.client_code || '—'));
+
+  // Product
+  tr.appendChild(makeTextCell(job.product_code || '—'));
+
+  // Qty
+  tr.appendChild(makeTextCell(String(job.quantity || '—')));
+
+  // State + rework badge
+  tr.appendChild(makeCell(function(td) {
+    td.appendChild(makeStateBadge(job.current_state));
+    var rework = parseInt(job.rework_cycle || 0, 10);
+    if (rework > 0) {
+      var rb = document.createElement('span');
+      rb.className   = 'badge badge-rework';
+      rb.style.marginLeft = '4px';
+      rb.textContent = 'R' + rework;
+      td.appendChild(rb);
+    }
+  }));
+
+  // Assigned
+  tr.appendChild(makeCell(function(td) {
+    td.style.fontSize = '12px';
+    td.style.color    = 'var(--c-muted)';
+    td.textContent    = shortEmail(job.allocated_to);
+  }));
+
+  // Updated
+  tr.appendChild(makeCell(function(td) {
+    td.style.fontSize = '12px';
+    td.style.color    = 'var(--c-muted)';
+    td.textContent    = formatDate(job.updated_at);
+  }));
+
+  // Actions
+  tr.appendChild(makeCell(function(td) {
+    var group = document.createElement('div');
+    group.className = 'action-group';
+    buildActionButtons(job, perms).forEach(function(btn) { group.appendChild(btn); });
+    td.appendChild(group);
+  }));
+
+  return tr;
+}
+
+function buildActionButtons(job, perms) {
+  var state   = job.current_state;
+  var buttons = [];
+  var isTerminal = (state === 'INVOICED' || state === 'COMPLETED_BILLABLE');
+
+  if (isTerminal) return buttons;
+
+  if (perms.isDesigner && (state === 'IN_PROGRESS' || state === 'ALLOCATED')) {
+    buttons.push(makeActionBtn('Log Work',   'btn-muted',    'work-log',  job.job_number));
+  }
+  if (perms.isDesigner && state === 'IN_PROGRESS') {
+    buttons.push(makeActionBtn('Submit QC',  'btn-primary',  'submit-qc', job.job_number));
+  }
+  if (perms.isQcReviewer && state === 'QC_REVIEW') {
+    buttons.push(makeActionBtn('Review',     'btn-success',  'qc-review', job.job_number));
+  }
+  if (state !== 'ON_HOLD') {
+    buttons.push(makeActionBtn('Hold',       'btn-warning',  'hold',      job.job_number));
+  }
+  if (state === 'ON_HOLD') {
+    buttons.push(makeActionBtn('Resume',     'btn-success',  'resume',    job.job_number));
+  }
+
+  return buttons;
+}
+
+// ── DOM helpers ────────────────────────────────────────────────
+function makeCell(fn) {
+  var td = document.createElement('td');
+  fn(td);
+  return td;
+}
+function makeTextCell(text) {
+  return makeCell(function(td) { td.textContent = text; });
+}
+function makeStateBadge(state) {
+  var badge = document.createElement('span');
+  // Only apply known state classes — reject unknown values from touching className
+  badge.className = 'badge' + (VALID_STATES[state] ? ' badge-' + state : '');
+  badge.textContent = (state || 'UNKNOWN').replace(/_/g, ' ');
+  return badge;
+}
+function makeActionBtn(label, cls, action, jobNum) {
+  var btn = document.createElement('button');
+  btn.className         = cls + ' btn-sm';
+  btn.textContent       = label;
+  btn.dataset.action    = action;    // safe — no HTML interpretation
+  btn.dataset.job       = jobNum;    // safe — /^BLC-\d{5}$/ validated server-side
+  return btn;
+}
+
+// ── Modal helpers ──────────────────────────────────────────────
+function findJob(jobNumber) {
+  return _data && _data.jobs.find(function(j) { return j.job_number === jobNumber; });
+}
+
+function setModalJobInfo(containerId, job) {
+  var container = document.getElementById(containerId);
+  while (container.firstChild) container.removeChild(container.firstChild);
+
+  var strong = document.createElement('strong');
+  strong.textContent = job.job_number;
+  container.appendChild(strong);
+
+  container.appendChild(document.createTextNode('\u00a0— ' + (job.client_code || '') + ' / ' + (job.product_code || '') + '\u00a0'));
+  container.appendChild(makeStateBadge(job.current_state));
+}
+
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ── Modal Openers ──────────────────────────────────────────────
+function openWorkLog(jobNumber) {
+  _activeJob = findJob(jobNumber);
+  if (!_activeJob) return;
+  setModalJobInfo('work-log-job-info', _activeJob);
+  document.getElementById('work-log-hours').value = '';
+  document.getElementById('work-log-notes').value = '';
+  openModal('modal-work-log');
+}
+function openSubmitQC(jobNumber) {
+  _activeJob = findJob(jobNumber);
+  if (!_activeJob) return;
+  setModalJobInfo('submit-qc-job-info', _activeJob);
+  document.getElementById('submit-qc-notes').value = '';
+  openModal('modal-submit-qc');
+}
+function openHold(jobNumber) {
+  _activeJob = findJob(jobNumber);
+  if (!_activeJob) return;
+  setModalJobInfo('hold-job-info', _activeJob);
+  document.getElementById('hold-notes').value = '';
+  openModal('modal-hold');
+}
+function openResume(jobNumber) {
+  _activeJob = findJob(jobNumber);
+  if (!_activeJob) return;
+  setModalJobInfo('resume-job-info', _activeJob);
+  openModal('modal-resume');
+}
+function openQCReview(jobNumber) {
+  _activeJob = findJob(jobNumber);
+  if (!_activeJob) return;
+  setModalJobInfo('qc-review-job-info', _activeJob);
+  document.getElementById('qc-result').value       = 'APPROVED';
+  document.getElementById('qc-rework-notes').value = '';
+  document.getElementById('qc-notes').value        = '';
+  document.getElementById('rework-notes-field').style.display = 'none';
+  openModal('modal-qc-review');
+}
+
+// ── Submit Handlers ────────────────────────────────────────────
+function submitCreateJob() {
+  var client   = val('create-client');
+  var jobType  = val('create-job-type');
+  var product  = val('create-product');
+  var qty      = parseInt(document.getElementById('create-qty').value, 10);
+  var assigned = val('create-assigned');
+  var notes    = val('create-notes');
+
+  if (!client)  return showToast('Client Code is required.', 'error');
+  if (!product) return showToast('Product Code is required.', 'error');
+  if (isNaN(qty) || qty < 1) return showToast('Quantity must be at least 1.', 'error');
+
+  var payload = { client_code: client, job_type: jobType, product_code: product, quantity: qty };
+  if (assigned) payload.allocated_to = assigned;
+  if (notes)    payload.notes = notes;
+
+  closeModal('modal-create');
+  submitAction('JOB_CREATE', payload, 'Job created successfully.');
+}
+
+function submitWorkLog() {
+  if (!_activeJob) return;
+  var hours = parseFloat(document.getElementById('work-log-hours').value);
+  var date  = val('work-log-date');
+  var notes = val('work-log-notes');
+
+  if (isNaN(hours) || hours < 0.25) return showToast('Hours must be at least 0.25.', 'error');
+  if (!date) return showToast('Work date is required.', 'error');
+
+  var payload = { job_number: _activeJob.job_number, hours: hours, work_date: date };
+  if (notes) payload.notes = notes;
+
+  closeModal('modal-work-log');
+  submitAction('WORK_LOG', payload, 'Hours logged for ' + _activeJob.job_number + '.');
+}
+
+function submitForQC() {
+  if (!_activeJob) return;
+  var notes = val('submit-qc-notes');
+  var payload = { job_number: _activeJob.job_number };
+  if (notes) payload.notes = notes;
+
+  closeModal('modal-submit-qc');
+  submitAction('QC_SUBMIT', payload, _activeJob.job_number + ' submitted for QC review.');
+}
+
+function submitHold() {
+  if (!_activeJob) return;
+  var notes = val('hold-notes');
+  var payload = { job_number: _activeJob.job_number };
+  if (notes) payload.notes = notes;
+
+  closeModal('modal-hold');
+  submitAction('JOB_HOLD', payload, _activeJob.job_number + ' placed on hold.');
+}
+
+function submitResume() {
+  if (!_activeJob) return;
+  closeModal('modal-resume');
+  submitAction('JOB_RESUME', { job_number: _activeJob.job_number },
+               _activeJob.job_number + ' resumed.');
+}
+
+function submitQCReview() {
+  if (!_activeJob) return;
+  var qcResult    = document.getElementById('qc-result').value;
+  var reworkNotes = val('qc-rework-notes');
+  var notes       = val('qc-notes');
+
+  if (qcResult === 'REWORK' && !reworkNotes) {
+    return showToast('Rework notes are required when requesting rework.', 'error');
+  }
+
+  var payload = { job_number: _activeJob.job_number, qc_result: qcResult };
+  if (reworkNotes) payload.rework_notes = reworkNotes;
+  if (notes)       payload.notes = notes;
+
+  closeModal('modal-qc-review');
+  var msg = qcResult === 'APPROVED'
+    ? _activeJob.job_number + ' approved — marked as completed.'
+    : _activeJob.job_number + ' returned for rework.';
+  submitAction('QC_SUBMIT', payload, msg);
+}
+
+// ── Core submit helper ─────────────────────────────────────────
+function submitAction(formType, payload, successMsg) {
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function() {
+      showLoading(false);
+      showToast(successMsg, 'success');
+      setTimeout(loadData, 800);
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_submitAction(formType, JSON.stringify(payload));
+}
+
+function processQueue() {
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(r) {
+      showLoading(false);
+      try {
+        var res = JSON.parse(r);
+        showToast(res.message || 'Queue processed.', res.ok ? 'info' : 'error');
+      } catch(e) { showToast('Queue processed.', 'info'); }
+      setTimeout(loadData, 600);
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Queue error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_processQueue();
+}
+
+// ── Toast ──────────────────────────────────────────────────────
+function showToast(msg, type) {
+  var container = document.getElementById('toast-container');
+  var toast = document.createElement('div');
+  toast.className  = 'toast toast-' + (type || 'info');
+  toast.textContent = msg;                  // textContent — never innerHTML
+  container.appendChild(toast);
+  setTimeout(function() {
+    toast.style.opacity    = '0';
+    toast.style.transition = 'opacity .3s';
+    setTimeout(function() {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
+  }, 4000);
+}
+
+// ── Loading overlay ────────────────────────────────────────────
+function showLoading(visible) {
+  document.getElementById('loading').style.display = visible ? 'flex' : 'none';
+}
+
+// ── Utility ───────────────────────────────────────────────────
+function val(id) {
+  var el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+function shortEmail(email) {
+  if (!email) return '—';
+  var at = email.indexOf('@');
+  return at > 0 ? email.substring(0, at) : email;
+}
+function formatDate(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleDateString('en-CA'); // YYYY-MM-DD
+  } catch(e) { return String(iso); }
+}
+
+// ── Client Onboarding ──────────────────────────────────────────
+function openClients() {
+  var list = document.getElementById('clients-list');
+  list.textContent = 'Loading…';
+  openModal('modal-clients');
+
+  google.script.run
+    .withSuccessHandler(function(json) {
+      var clients = JSON.parse(json);
+      while (list.firstChild) list.removeChild(list.firstChild);
+
+      if (!clients || clients.length === 0) {
+        var msg = document.createElement('p');
+        msg.style.color    = 'var(--c-muted)';
+        msg.style.fontSize = '13px';
+        msg.textContent    = 'No clients onboarded yet. Click "+ Onboard New Client" to add one.';
+        list.appendChild(msg);
+        return;
+      }
+
+      var tbl = document.createElement('table');
+      tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px;';
+
+      var thead = document.createElement('thead');
+      var hr    = document.createElement('tr');
+      ['Code','Name','Contact','Rate','Currency'].forEach(function(h) {
+        var th = document.createElement('th');
+        th.textContent   = h;
+        th.style.cssText = 'text-align:left;padding:6px 10px;font-size:11px;text-transform:uppercase;' +
+                           'letter-spacing:.05em;color:var(--c-muted);border-bottom:1px solid var(--c-border);';
+        hr.appendChild(th);
+      });
+      thead.appendChild(hr);
+      tbl.appendChild(thead);
+
+      var tbody = document.createElement('tbody');
+      clients.forEach(function(c) {
+        var row = document.createElement('tr');
+        [ c.client_code,
+          c.client_name,
+          c.contact_email || '—',
+          c.hourly_rate   ? c.hourly_rate + ' /hr' : '—',
+          c.currency
+        ].forEach(function(v) {
+          var td = document.createElement('td');
+          td.textContent   = String(v);
+          td.style.cssText = 'padding:7px 10px;border-bottom:1px solid #f1f5f9;';
+          row.appendChild(td);
+        });
+        tbody.appendChild(row);
+      });
+      tbl.appendChild(tbody);
+      list.appendChild(tbl);
+    })
+    .withFailureHandler(function(err) {
+      list.textContent = 'Error loading clients: ' + (err.message || String(err));
+    })
+    .portal_getClients();
+}
+
+function openOnboardClient() {
+  document.getElementById('ob-client-code').value    = '';
+  document.getElementById('ob-client-name').value    = '';
+  document.getElementById('ob-contact-email').value  = '';
+  document.getElementById('ob-currency').value       = 'CAD';
+  document.getElementById('ob-hourly-rate').value    = '';
+  document.getElementById('ob-notes').value          = '';
+  openModal('modal-onboard-client');
+}
+
+// ══════════════════════════════════════════════════════════════
+// STAFF MANAGEMENT
+// ══════════════════════════════════════════════════════════════
+
+var _staffVisible = false;
+
+function toggleStaffPanel() {
+  _staffVisible = !_staffVisible;
+  var panel = document.getElementById('staff-panel');
+  panel.style.display = _staffVisible ? 'block' : 'none';
+  if (_staffVisible) loadStaffList();
+}
+
+function loadStaffList() {
+  var tbody = document.getElementById('staff-tbody');
+  while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+  var loadRow = document.createElement('tr');
+  var loadTd  = document.createElement('td');
+  loadTd.colSpan   = 10;
+  loadTd.className = 'empty-cell';
+  loadTd.textContent = 'Loading staff…';
+  loadRow.appendChild(loadTd);
+  tbody.appendChild(loadRow);
+
+  google.script.run
+    .withSuccessHandler(function(json) {
+      try { renderStaffList(JSON.parse(json)); }
+      catch(e) { showToast('Staff list parse error: ' + e.message, 'error'); }
+    })
+    .withFailureHandler(function(err) {
+      showToast('Failed to load staff: ' + (err.message || String(err)), 'error');
+    })
+    .portal_getStaffList();
+}
+
+var VALID_ROLES    = { CEO:1, PM:1, TEAM_LEAD:1, DESIGNER:1, QC:1, ADMIN:1 };
+var VALID_CONTRACT = { DRAFT:1, SENT:1, SIGNED:1, NONE:1, EXPIRED:1, TERMINATED:1 };
+
+function renderStaffList(staffList) {
+  var tbody = document.getElementById('staff-tbody');
+  while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+  if (!staffList || staffList.length === 0) {
+    var emptyRow = document.createElement('tr');
+    var emptyTd  = document.createElement('td');
+    emptyTd.colSpan   = 10;
+    emptyTd.className = 'empty-cell';
+    emptyTd.textContent = 'No staff onboarded yet. Click "+ Onboard New Staff" to begin.';
+    emptyRow.appendChild(emptyTd);
+    tbody.appendChild(emptyRow);
+    return;
+  }
+
+  staffList.forEach(function(s) {
+    var tr = document.createElement('tr');
+
+    // Code
+    tr.appendChild(makeCell(function(td) {
+      td.textContent    = s.person_code;
+      td.style.fontWeight = '700';
+      td.style.fontFamily = 'monospace';
+    }));
+
+    // Name
+    tr.appendChild(makeTextCell(s.name));
+
+    // Role chip
+    tr.appendChild(makeCell(function(td) {
+      var chip = document.createElement('span');
+      var safeRole = VALID_ROLES[s.role] ? s.role : '';
+      chip.className   = 'role-chip' + (safeRole ? ' role-' + safeRole : '');
+      chip.textContent = (s.role || '').replace('_', ' ');
+      td.appendChild(chip);
+    }));
+
+    // Email
+    tr.appendChild(makeCell(function(td) {
+      td.textContent   = s.email;
+      td.style.fontSize = '12px';
+      td.style.color   = 'var(--c-muted)';
+    }));
+
+    // Supervisor
+    tr.appendChild(makeTextCell(s.supervisor_code || '—'));
+
+    // PM
+    tr.appendChild(makeTextCell(s.pm_code || '—'));
+
+    // Rate
+    tr.appendChild(makeCell(function(td) {
+      td.textContent   = s.pay_design + ' ' + s.pay_currency + '/hr';
+      td.style.fontSize = '12px';
+    }));
+
+    // Banking status
+    tr.appendChild(makeCell(function(td) {
+      var span = document.createElement('span');
+      if (s.has_banking) {
+        span.className   = 'banking-ok';
+        span.textContent = '✓ Set up';
+      } else {
+        span.className   = 'banking-none';
+        span.textContent = '— Missing';
+      }
+      td.appendChild(span);
+    }));
+
+    // Contract status
+    tr.appendChild(makeCell(function(td) {
+      var safeStatus = VALID_CONTRACT[s.contract_status] ? s.contract_status : 'NONE';
+      var chip = document.createElement('span');
+      chip.className   = 'status-chip status-' + safeStatus;
+      chip.textContent = safeStatus;
+      td.appendChild(chip);
+    }));
+
+    // Actions
+    tr.appendChild(makeCell(function(td) {
+      var group = document.createElement('div');
+      group.className = 'action-group';
+
+      // Generate / View Contract
+      var contractBtn = document.createElement('button');
+      contractBtn.className   = 'btn-primary btn-sm';
+      contractBtn.textContent = s.contract_status === 'NONE' ? '📄 Contract' : '📄 Renew';
+      contractBtn.dataset.action   = 'generate-contract';
+      contractBtn.dataset.person   = s.person_code;
+      contractBtn.dataset.name     = s.name;
+      group.appendChild(contractBtn);
+
+      if (s.contract_url) {
+        var viewBtn = document.createElement('a');
+        viewBtn.href        = s.contract_url;
+        viewBtn.target      = '_blank';
+        viewBtn.textContent = '↗ View';
+        viewBtn.className   = 'btn-muted btn-sm';
+        viewBtn.style.cssText = 'text-decoration:none; display:inline-flex; align-items:center;';
+        group.appendChild(viewBtn);
+      }
+
+      // Banking details (CEO only — shown if canApprovePayroll)
+      if (_data && _data.perms && _data.perms.canApprovePayroll) {
+        var bankBtn = document.createElement('button');
+        bankBtn.className   = 'btn-muted btn-sm';
+        bankBtn.textContent = '🏦 Banking';
+        bankBtn.dataset.action  = 'view-banking';
+        bankBtn.dataset.person  = s.person_code;
+        bankBtn.dataset.name    = s.name;
+        group.appendChild(bankBtn);
+      }
+
+      td.appendChild(group);
+    }));
+
+    tbody.appendChild(tr);
+  });
+
+  // Event delegation on staff table
+  document.getElementById('staff-tbody').addEventListener('click', function(e) {
+    var btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    var action = btn.dataset.action;
+    var person = btn.dataset.person;
+    var name   = btn.dataset.name || person;
+    if (action === 'generate-contract') generateContract(person, name);
+    if (action === 'view-banking')      openBankingDetails(person, name);
+  });
+}
+
+// ── Onboard Staff ──────────────────────────────────────────────
+
+function openOnboardStaff() {
+  // Reset form
+  ['staff-person-code','staff-name','staff-email','staff-supervisor','staff-pm',
+   'staff-pay-design','staff-pay-qc','bank-holder-name','bank-name','bank-account-number',
+   'bank-branch','bank-ifsc','bank-swift','bank-iban','bank-institution',
+   'bank-transit','bank-routing','bank-address','bank-ofx-id'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('staff-role').value            = 'DESIGNER';
+  document.getElementById('staff-pay-currency').value    = 'INR';
+  document.getElementById('staff-bonus-eligible').value  = 'TRUE';
+  document.getElementById('bank-country').value          = 'India';
+  document.getElementById('bank-account-type').value     = 'Savings';
+  document.getElementById('staff-start-date').value      = new Date().toISOString().slice(0, 10);
+  updateBankFields();
+  openModal('modal-onboard-staff');
+}
+
+function updateBankFields() {
+  var country = document.getElementById('bank-country').value;
+  document.getElementById('bank-india-fields').style.display  = country === 'India'   ? 'block' : 'none';
+  document.getElementById('bank-canada-fields').style.display = country === 'Canada'  ? 'block' : 'none';
+  document.getElementById('bank-usa-fields').style.display    = country === 'USA'     ? 'block' : 'none';
+  document.getElementById('bank-intl-fields').style.display   = (country === 'Other') ? 'block' : 'none';
+}
+
+function submitOnboardStaff() {
+  var personCode = val('staff-person-code').toUpperCase();
+  var name       = val('staff-name');
+  var email      = val('staff-email');
+  var role       = document.getElementById('staff-role').value;
+  var startDate  = val('staff-start-date');
+  var payCur     = document.getElementById('staff-pay-currency').value;
+  var payDesign  = parseFloat(document.getElementById('staff-pay-design').value);
+  var payQC      = parseFloat(document.getElementById('staff-pay-qc').value);
+
+  if (!personCode) return showToast('Person Code is required.', 'error');
+  if (!name)       return showToast('Full Name is required.', 'error');
+  if (!email)      return showToast('Email is required.', 'error');
+  if (!startDate)  return showToast('Start Date is required.', 'error');
+  if (isNaN(payDesign) || payDesign < 0) return showToast('Design rate must be a number ≥ 0.', 'error');
+  if (isNaN(payQC)     || payQC     < 0) return showToast('QC rate must be a number ≥ 0.', 'error');
+
+  var payload = {
+    person_code:     personCode,
+    name:            name,
+    email:           email,
+    role:            role,
+    supervisor_code: val('staff-supervisor'),
+    pm_code:         val('staff-pm'),
+    effective_from:  startDate,
+    pay_currency:    payCur,
+    pay_design:      payDesign,
+    pay_qc:          payQC,
+    bonus_eligible:  document.getElementById('staff-bonus-eligible').value === 'TRUE',
+    // Banking
+    account_holder_name: val('bank-holder-name'),
+    bank_name:       val('bank-name'),
+    bank_country:    document.getElementById('bank-country').value,
+    bank_branch:     val('bank-branch'),
+    bank_address:    val('bank-address'),
+    account_number:  val('bank-account-number'),
+    account_type:    document.getElementById('bank-account-type').value,
+    ifsc_code:       val('bank-ifsc'),
+    swift_bic:       val('bank-swift'),
+    iban:            val('bank-iban'),
+    institution_number: val('bank-institution'),
+    transit_number:  val('bank-transit'),
+    routing_number:  val('bank-routing'),
+    ofx_recipient_id: val('bank-ofx-id'),
+    purpose_of_payment: 'Contract services payment'
+  };
+
+  closeModal('modal-onboard-staff');
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      try {
+        var res = JSON.parse(json);
+        showToast(
+          res.isNew
+            ? res.personCode + ' onboarded successfully.'
+            : res.personCode + ' already exists — no changes made.',
+          res.isNew ? 'success' : 'info'
+        );
+        loadStaffList();
+      } catch(e) { showToast('Onboard complete.', 'success'); }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_onboardStaff(JSON.stringify(payload));
+}
+
+// ── Contract Generation ────────────────────────────────────────
+
+function generateContract(personCode, name) {
+  if (!confirm('Generate a contractor agreement for ' + name + '?\n\nA Google Doc will be created and the link saved.')) return;
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      try {
+        var res = JSON.parse(json);
+        showToast('Contract generated for ' + name + '.', 'success');
+        loadStaffList();
+        // Open the document in a new tab
+        if (res.docUrl) window.open(res.docUrl, '_blank');
+      } catch(e) { showToast('Contract generated.', 'success'); }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Contract error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_generateContract(personCode, '{}');
+}
+
+// ── Banking Details ────────────────────────────────────────────
+
+function openBankingDetails(personCode, name) {
+  document.getElementById('banking-staff-name').textContent = name;
+  var grid = document.getElementById('banking-details-grid');
+  while (grid.firstChild) grid.removeChild(grid.firstChild);
+  var loading = document.createElement('span');
+  loading.textContent = 'Loading…';
+  loading.style.color = 'var(--c-muted)';
+  grid.appendChild(loading);
+  openModal('modal-banking-details');
+
+  google.script.run
+    .withSuccessHandler(function(json) {
+      try {
+        var res = JSON.parse(json);
+        renderBankingDetails(res.banking || null, res.message);
+      } catch(e) {
+        var errMsg = document.createElement('span');
+        errMsg.textContent = 'Error loading banking details.';
+        while (grid.firstChild) grid.removeChild(grid.firstChild);
+        grid.appendChild(errMsg);
+      }
+    })
+    .withFailureHandler(function(err) {
+      while (grid.firstChild) grid.removeChild(grid.firstChild);
+      var errMsg = document.createElement('span');
+      errMsg.textContent = 'Error: ' + (err.message || String(err));
+      grid.appendChild(errMsg);
+    })
+    .portal_getBankingDetails(personCode);
+}
+
+function renderBankingDetails(banking, fallbackMsg) {
+  var grid = document.getElementById('banking-details-grid');
+  while (grid.firstChild) grid.removeChild(grid.firstChild);
+
+  if (!banking) {
+    var noData = document.createElement('span');
+    noData.style.color   = 'var(--c-muted)';
+    noData.style.fontSize = '13px';
+    noData.textContent   = fallbackMsg || 'No banking details on file for this staff member.';
+    grid.appendChild(noData);
+    return;
+  }
+
+  function addField(label, value) {
+    if (!value) return;
+    var k = document.createElement('span');
+    k.className   = 'banking-key';
+    k.textContent = label;
+    var v = document.createElement('span');
+    v.className   = 'banking-val';
+    v.textContent = String(value);      // textContent — never innerHTML
+    grid.appendChild(k);
+    grid.appendChild(v);
+  }
+
+  function addSection(title) {
+    var s = document.createElement('span');
+    s.className   = 'banking-section-title';
+    s.textContent = title;
+    grid.appendChild(s);
+  }
+
+  addSection('Beneficiary');
+  addField('Holder Name', banking.account_holder_name);
+  addField('Bank', banking.bank_name);
+  addField('Country', banking.bank_country);
+  addField('Branch', banking.bank_branch);
+  addField('Address', banking.bank_address);
+
+  addSection('Account Details');
+  addField('Account Number', banking.account_number);
+  addField('Account Type', banking.account_type);
+  addField('Currency', banking.currency);
+
+  if (banking.ifsc_code)           addField('IFSC Code', banking.ifsc_code);
+  if (banking.swift_bic)           addField('SWIFT / BIC', banking.swift_bic);
+  if (banking.iban)                addField('IBAN', banking.iban);
+  if (banking.routing_number)      addField('Routing Number', banking.routing_number);
+  if (banking.institution_number)  addField('Institution No.', banking.institution_number);
+  if (banking.transit_number)      addField('Transit No.', banking.transit_number);
+
+  addSection('Transfer Details');
+  addField('Purpose of Payment', banking.purpose_of_payment);
+  if (banking.ofx_recipient_id) addField('OFX Recipient ID', banking.ofx_recipient_id);
+  addField('Added On', banking.created_at ? banking.created_at.slice(0, 10) : '');
+  if (banking.notes) addField('Notes', banking.notes);
+}
+
+// ── Bulk Staff Import ──────────────────────────────────────────
+
+function openBulkImport() {
+  document.getElementById('bulk-import-results').style.display = 'none';
+  document.getElementById('bulk-import-idle').style.display    = 'block';
+  var btn = document.getElementById('btn-run-bulk-import');
+  btn.textContent = 'Run Import';
+  btn.disabled    = false;
+  openModal('modal-bulk-import');
+}
+
+function runBulkImport() {
+  var btn = document.getElementById('btn-run-bulk-import');
+  btn.textContent = 'Importing…';
+  btn.disabled    = true;
+
+  google.script.run
+    .withSuccessHandler(function(jsonStr) {
+      var result;
+      try { result = JSON.parse(jsonStr); } catch(e) { result = { total:0, created:0, skipped:0, errors:0, results:[] }; }
+      renderBulkImportResults(result);
+      btn.textContent = 'Run Import';
+      btn.disabled    = false;
+      if (result.created > 0) loadStaffList();   // refresh table if new staff were added
+    })
+    .withFailureHandler(function(err) {
+      showToast('Bulk import failed: ' + err.message, true);
+      btn.textContent = 'Run Import';
+      btn.disabled    = false;
+    })
+    .portal_bulkOnboardStaff();
+}
+
+function renderBulkImportResults(result) {
+  document.getElementById('bulk-import-idle').style.display    = 'none';
+  document.getElementById('bulk-import-results').style.display = 'block';
+
+  var summary = document.getElementById('bulk-import-summary');
+  summary.textContent = 'Total: ' + result.total +
+    '   Created: ' + result.created +
+    '   Skipped: ' + result.skipped +
+    '   Errors: ' + result.errors;
+  summary.style.color = result.errors > 0 ? 'var(--c-warn)' : 'var(--c-ok)';
+
+  var tbody = document.getElementById('bulk-import-tbody');
+  while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+  var STATUS_COLOR = {
+    IMPORTED:       'color:#16a34a',
+    SKIPPED_EXISTS: 'color:#64748b',
+    SKIPPED:        'color:#64748b',
+    ERROR:          'color:#dc2626'
+  };
+
+  (result.results || []).forEach(function(r) {
+    var tr = document.createElement('tr');
+    ['person_code','name','status','reason'].forEach(function(field) {
+      var td = document.createElement('td');
+      td.textContent = String(r[field] || '');
+      if (field === 'status') td.style.cssText = STATUS_COLOR[r.status] || '';
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Leader Dashboard ───────────────────────────────────────────
+
+var _dashVisible = false;
+
+function toggleLeaderDash() {
+  var el = document.getElementById('leader-dashboard');
+  _dashVisible = !_dashVisible;
+  el.style.display = _dashVisible ? 'block' : 'none';
+  if (_dashVisible && (!_dashData)) loadLeaderDashboard();
+}
+
+var _dashData = null;
+
+function loadLeaderDashboard() {
+  var hoursBody   = document.getElementById('dash-hours-body');
+  var payrollBody = document.getElementById('dash-payroll-body');
+  hoursBody.innerHTML   = '';
+  payrollBody.innerHTML = '';
+  var loadMsg1 = document.createElement('div');
+  loadMsg1.className   = 'dash-empty';
+  loadMsg1.textContent = 'Loading…';
+  var loadMsg2 = document.createElement('div');
+  loadMsg2.className   = 'dash-empty';
+  loadMsg2.textContent = 'Loading…';
+  hoursBody.appendChild(loadMsg1);
+  payrollBody.appendChild(loadMsg2);
+
+  google.script.run
+    .withSuccessHandler(function(json) {
+      try { _dashData = JSON.parse(json); }
+      catch(e) { showToast('Dashboard parse error: ' + e.message, 'error'); return; }
+      renderLeaderDashboard(_dashData);
+    })
+    .withFailureHandler(function(err) {
+      hoursBody.textContent   = 'Error: ' + (err.message || String(err));
+      payrollBody.textContent = '';
+      showToast('Dashboard load failed: ' + (err.message || String(err)), 'error');
+    })
+    .portal_getLeaderDashboard();
+
+  // Load feedback status in parallel (separate call — doesn't block dashboard)
+  if (_data && _data.perms && _data.perms.isLeader) loadFeedbackStatus();
+}
+
+function renderLeaderDashboard(data) {
+  document.getElementById('dash-period').textContent = data.period_id || '—';
+
+  // ── Team Hours ──────────────────────────────────────────────
+  var hoursBody = document.getElementById('dash-hours-body');
+  while (hoursBody.firstChild) hoursBody.removeChild(hoursBody.firstChild);
+
+  if (!data.team_hours || data.team_hours.length === 0) {
+    var emptyHours = document.createElement('div');
+    emptyHours.className   = 'dash-empty';
+    emptyHours.textContent = 'No work logs this period.';
+    hoursBody.appendChild(emptyHours);
+  } else {
+    var totalHrs = 0;
+    var tbl = document.createElement('table');
+    tbl.className = 'dash-tbl';
+    var thead = document.createElement('thead');
+    var hr = document.createElement('tr');
+    ['Person', 'Design Hrs', 'QC Hrs', 'Total'].forEach(function(h) {
+      var th = document.createElement('th');
+      th.textContent = h;
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    tbl.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    data.team_hours.forEach(function(row) {
+      totalHrs += row.total_hours || 0;
+      var tr = document.createElement('tr');
+      var nameCell = document.createElement('td');
+      nameCell.textContent = row.name || row.person_code;
+      nameCell.style.fontWeight = '600';
+      tr.appendChild(nameCell);
+      [row.design_hours, row.qc_hours, row.total_hours].forEach(function(v) {
+        var td = document.createElement('td');
+        td.textContent = (v || 0).toFixed(1);
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    hoursBody.appendChild(tbl);
+
+    document.getElementById('dash-hours-total').textContent =
+      'Total: ' + totalHrs.toFixed(1) + ' hrs';
+  }
+
+  // ── Payroll Status ──────────────────────────────────────────
+  var payrollBody = document.getElementById('dash-payroll-body');
+  while (payrollBody.firstChild) payrollBody.removeChild(payrollBody.firstChild);
+
+  var VALID_PAY_STATUSES = {
+    'PENDING_CONFIRMATION': true, 'CONFIRMED': true, 'PROCESSED': true, 'NOT_RUN': true
+  };
+
+  if (!data.payroll_status || data.payroll_status.length === 0) {
+    var emptyPay = document.createElement('div');
+    emptyPay.className   = 'dash-empty';
+    emptyPay.textContent = 'Payroll not yet run for this period.';
+    payrollBody.appendChild(emptyPay);
+    document.getElementById('dash-payroll-meta').textContent = 'Not run yet';
+  } else {
+    var confirmedCount = 0;
+    var ptbl = document.createElement('table');
+    ptbl.className = 'dash-tbl';
+    var pthead = document.createElement('thead');
+    var phr = document.createElement('tr');
+    ['Person', 'Base INR', 'Bonus INR', 'Total INR', 'Status'].forEach(function(h) {
+      var th = document.createElement('th');
+      th.textContent = h;
+      phr.appendChild(th);
+    });
+    pthead.appendChild(phr);
+    ptbl.appendChild(pthead);
+
+    var ptbody = document.createElement('tbody');
+    data.payroll_status.forEach(function(row) {
+      if (row.status === 'CONFIRMED' || row.status === 'PROCESSED') confirmedCount++;
+      var ptr = document.createElement('tr');
+
+      var nameCell = document.createElement('td');
+      nameCell.textContent = row.name || row.person_code;
+      nameCell.style.fontWeight = '600';
+      ptr.appendChild(nameCell);
+
+      var baseInr  = (row.design_pay || 0) + (row.qc_pay || 0);
+      [baseInr, row.supervisor_bonus || 0, row.total_pay || 0].forEach(function(v) {
+        var td = document.createElement('td');
+        td.textContent = fmtInr(v);
+        ptr.appendChild(td);
+      });
+
+      var statusTd = document.createElement('td');
+      var statusBadge = document.createElement('span');
+      var safeStatus = VALID_PAY_STATUSES[row.status] ? row.status : 'NOT_RUN';
+      statusBadge.className   = 'pay-badge pay-' + safeStatus;
+      statusBadge.textContent = safeStatus.replace(/_/g, ' ');
+      statusTd.appendChild(statusBadge);
+      ptr.appendChild(statusTd);
+
+      ptbody.appendChild(ptr);
+    });
+    ptbl.appendChild(ptbody);
+    payrollBody.appendChild(ptbl);
+
+    document.getElementById('dash-payroll-meta').textContent =
+      confirmedCount + ' / ' + data.payroll_status.length + ' confirmed';
+  }
+}
+
+function fmtInr(v) {
+  return '₹' + (v || 0).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+// ── Paystub Confirmation ───────────────────────────────────────
+// The "Confirm My Paystub" button appears in the paystub-banner div.
+// Leaders see their own payroll status in the dashboard; designers
+// see the banner when it is shown programmatically (future: driven
+// by payroll status returned in getViewData).
+
+function confirmPaystub() {
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      try {
+        var result = JSON.parse(json);
+        showToast(result.message || 'Paystub confirmed.', result.ok ? 'success' : 'error');
+        if (result.ok) {
+          document.getElementById('paystub-banner').style.display = 'none';
+          if (_data && _data.perms && _data.perms.isLeader) loadLeaderDashboard();
+        }
+      } catch(e) { showToast('Confirmation error.', 'error'); }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_confirmPaystub('');
+}
+
+// ── CEO Payroll Actions ────────────────────────────────────────
+
+function runBonusRun() {
+  if (!confirm('Run supervisor bonus calculations for the current period?\n\nThis will calculate INR 25 × supervised design hours for all TLs and PMs.')) return;
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      try {
+        var result = JSON.parse(json);
+        showToast('Bonus run complete: ' + result.processed + ' supervisors processed.', 'success');
+        loadLeaderDashboard();
+      } catch(e) { showToast('Bonus run complete.', 'success'); }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Bonus run error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_runBonusRun('');
+}
+
+function approveAllPayroll() {
+  if (!confirm('Approve all CONFIRMED payroll for the current period?\n\nThis marks all confirmed records as PROCESSED. This cannot be undone.')) return;
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      try {
+        var result = JSON.parse(json);
+        showToast(result.processed + ' payroll records approved.', 'success');
+        loadLeaderDashboard();
+      } catch(e) { showToast('Payroll approved.', 'success'); }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Approval error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_approveAllPayroll('');
+}
+
+// ── Client Feedback ────────────────────────────────────────────
+
+function sendFeedbackRequests() {
+  if (!confirm('Send quarterly feedback emails to all active clients?\n\nThis will create a Google Form for this quarter and email each client a rating link for their assigned designers.')) return;
+  var btn = document.getElementById('btn-send-feedback');
+  btn.textContent = 'Sending…';
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function(json) {
+      btn.textContent = '✉ Send Feedback Requests';
+      btn.disabled = false;
+      try {
+        var r = JSON.parse(json);
+        showToast(r.emails_sent + ' emails sent to clients (' + r.designer_client_pairs + ' designer links).', 'success');
+        loadFeedbackStatus();
+      } catch(e) { showToast('Feedback emails sent.', 'success'); }
+    })
+    .withFailureHandler(function(err) {
+      btn.textContent = '✉ Send Feedback Requests';
+      btn.disabled = false;
+      showToast('Error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_sendFeedbackRequests('');
+}
+
+function loadFeedbackStatus() {
+  google.script.run
+    .withSuccessHandler(function(json) {
+      try {
+        var data = JSON.parse(json);
+        renderFeedbackPanel(data);
+      } catch(e) {}
+    })
+    .withFailureHandler(function() {})
+    .portal_getFeedbackStatus('');
+}
+
+function renderFeedbackPanel(data) {
+  var meta = document.getElementById('dash-feedback-meta');
+  var body = document.getElementById('dash-feedback-body');
+
+  meta.textContent = data.quarter || '';
+
+  if (!data.per_designer || data.per_designer.length === 0) {
+    body.innerHTML = '';
+    var empty = document.createElement('div');
+    empty.className = 'dash-empty';
+    empty.textContent = 'No responses received yet for ' + (data.quarter || 'this period') + '.';
+    body.appendChild(empty);
+    return;
+  }
+
+  body.innerHTML = '';
+  var tbl = document.createElement('table');
+  tbl.className = 'dash-tbl';
+
+  var thead = tbl.createTHead();
+  var hr = thead.insertRow();
+  ['Designer','Responses','Avg Score (0–100)','Clients'].forEach(function(h) {
+    var th = document.createElement('th');
+    th.textContent = h;
+    hr.appendChild(th);
+  });
+
+  var tbody = tbl.createTBody();
+  data.per_designer.forEach(function(d) {
+    var tr = tbody.insertRow();
+    [d.designer_code, d.response_count, d.avg_score.toFixed(1), d.clients].forEach(function(v, i) {
+      var td = tr.insertCell();
+      td.textContent = String(v);
+      if (i === 2) {
+        var score = parseFloat(v);
+        td.style.color = score >= 75 ? 'var(--c-ok)' : score >= 50 ? 'var(--c-warn)' : 'var(--c-error, #dc2626)';
+        td.style.fontWeight = '600';
+      }
+    });
+  });
+
+  body.appendChild(tbl);
+}
+
+function submitOnboardClient() {
+  var clientCode   = val('ob-client-code').toUpperCase();
+  var clientName   = val('ob-client-name');
+  var contactEmail = val('ob-contact-email');
+  var currency     = val('ob-currency');
+  var hourlyRate   = parseFloat(document.getElementById('ob-hourly-rate').value);
+  var notes        = val('ob-notes');
+
+  if (!clientCode) return showToast('Client Code is required.', 'error');
+  if (!clientName) return showToast('Client Name is required.', 'error');
+  if (isNaN(hourlyRate) || hourlyRate <= 0)
+    return showToast('Hourly rate must be a positive number.', 'error');
+
+  var payload = {
+    client_code:   clientCode,
+    client_name:   clientName,
+    contact_email: contactEmail,
+    currency:      currency,
+    hourly_rate:   hourlyRate,
+    notes:         notes
+  };
+
+  closeModal('modal-onboard-client');
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      var res = JSON.parse(json);
+      showToast(
+        res.isNew
+          ? 'Client ' + res.clientCode + ' onboarded.'
+          : 'Rate added for ' + res.clientCode + '.',
+        'success'
+      );
+      openClients(); // refresh client list
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_onboardClient(JSON.stringify(payload));
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "project": "blc-nexus",
+  "version": "3.0.0",
+  "description": "BLC Nexus — Internal Operations Platform for Blue Lotus Consulting",
+  "architecture": "event-driven-queue-based",
+  "stack": {
+    "data": "Google Sheets",
+    "backend": "Google Apps Script",
+    "input": "Google Forms",
+    "reporting": "Looker Studio",
+    "accounting": "Xero (external)"
+  },
+  "agents": { "directory": ".claude/agents", "default": "architect" },
+  "rules": { "directory": ".claude/rules", "enforced": true },
+  "hooks": { "directory": ".claude/hooks", "enforced": true },
+  "environments": ["DEV", "STAGING", "PROD"],
+  "current_environment": "DEV"
+}

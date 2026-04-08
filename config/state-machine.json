@@ -1,0 +1,28 @@
+{
+  "states": {
+    "INTAKE_RECEIVED": { "description": "Job received from client, not yet allocated", "terminal": false },
+    "ALLOCATED": { "description": "Job assigned to designer, not yet started", "terminal": false },
+    "IN_PROGRESS": { "description": "Designer actively working on job", "terminal": false },
+    "ON_HOLD": { "description": "Job paused — stores previous state for resume", "terminal": false },
+    "CLIENT_RETURN": { "description": "Job returned by client for revision", "terminal": false },
+    "QC_REVIEW": { "description": "Job submitted to QC for review", "terminal": false },
+    "COMPLETED_BILLABLE": { "description": "Job completed and ready for billing", "terminal": false },
+    "INVOICED": { "description": "Job billed to client — terminal, immutable", "terminal": true }
+  },
+  "transitions": {
+    "INTAKE_RECEIVED": ["ALLOCATED"],
+    "ALLOCATED": ["IN_PROGRESS", "ON_HOLD"],
+    "IN_PROGRESS": ["ON_HOLD", "QC_REVIEW", "CLIENT_RETURN"],
+    "ON_HOLD": ["IN_PROGRESS", "ALLOCATED"],
+    "CLIENT_RETURN": ["IN_PROGRESS", "ALLOCATED"],
+    "QC_REVIEW": ["IN_PROGRESS", "COMPLETED_BILLABLE"],
+    "COMPLETED_BILLABLE": ["INVOICED"],
+    "INVOICED": []
+  },
+  "business_rules": {
+    "ON_HOLD": "Stores previous state in prev_state field for correct resume routing",
+    "INVOICED": "Terminal and immutable — no transitions allowed after INVOICED",
+    "CLIENT_RETURN": "Increments client_return_count, logs reason",
+    "QC_REVIEW": "Requires QC checklist submission — rework increments rework_cycle"
+  }
+}

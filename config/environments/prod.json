@@ -1,0 +1,18 @@
+{
+  "environment": "PROD",
+  "spreadsheet_id": "REPLACE_WITH_PROD_SPREADSHEET_ID",
+  "trigger_frequencies": {
+    "queue_processor_minutes": 3,
+    "health_monitor_minutes": 10,
+    "archival_hour": 4
+  },
+  "protection_level": "PROTECTED",
+  "logging_level": "WARN",
+  "batch_sizes": {
+    "queue_processor": 20,
+    "payroll_chunk": 20,
+    "billing_chunk": 20
+  },
+  "cache_ttl_seconds": 900,
+  "lock_timeout_ms": 30000
+}
