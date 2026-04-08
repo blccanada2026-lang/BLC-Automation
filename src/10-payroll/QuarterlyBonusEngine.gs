@@ -278,13 +278,88 @@ var QuarterlyBonusEngine = (function () {
   // SECTION 3: SCORE COMPUTATION (stub — implemented in Task 8)
   // ============================================================
 
-  function computeCompositeScore_(clientScore, errorScore, ratingScore) { return 0; }
+  /**
+   * Weighted composite: client(30%) + error(40%) + rating(30%)
+   * All inputs 0.0–1.0. Returns 0.0–1.0 rounded to 4dp.
+   */
+  function computeCompositeScore_(clientScore, errorScore, ratingScore) {
+    var c = WEIGHTS.client * (parseFloat(clientScore) || 0);
+    var e = WEIGHTS.error  * (parseFloat(errorScore)  || 0);
+    var r = WEIGHTS.rating * (parseFloat(ratingScore) || 0);
+    return Math.round((c + e + r) * 10000) / 10000;
+  }
 
   // ============================================================
   // SECTION 4: BONUS ROWS (stub — implemented in Task 8)
   // ============================================================
 
-  function computeBonuses_(staffCache, hoursMap, errorRates, clientScores, ratings, qPid) { return []; }
+  /**
+   * Builds bonus row objects — one per eligible staff member.
+   * status = 'CALCULATED' | 'PENDING' | 'SKIPPED'
+   */
+  function computeBonuses_(staffCache, hoursMap, errorRates, clientScores, ratings, qPid) {
+    var today = new Date();
+    var rows  = [];
+    var codes = Object.keys(staffCache);
+
+    for (var i = 0; i < codes.length; i++) {
+      var code  = codes[i];
+      var staff = staffCache[code];
+
+      if (!isEligible_(staff, today)) {
+        rows.push({
+          person_code:     code,
+          name:            staff.name,
+          role:            staff.role,
+          quarter_period:  qPid,
+          design_hours:    0,
+          composite_score: 0,
+          bonus_inr:       0,
+          status:          'SKIPPED',
+          pending_reason:  'not_eligible'
+        });
+        continue;
+      }
+
+      var designHours = hoursMap[code]    || 0;
+      var errorScore  = (errorRates[code]  !== undefined) ? errorRates[code]  : 1.0;
+      var clientScore = (clientScores[code] !== undefined) ? clientScores[code] : 0;
+      var ratingScore = ratings[code];  // null = incomplete
+
+      if (ratingScore === null || ratingScore === undefined) {
+        rows.push({
+          person_code:     code,
+          name:            staff.name,
+          role:            staff.role,
+          quarter_period:  qPid,
+          design_hours:    designHours,
+          composite_score: 0,
+          bonus_inr:       0,
+          status:          'PENDING',
+          pending_reason:  'ratings_incomplete'
+        });
+        continue;
+      }
+
+      var composite = computeCompositeScore_(clientScore, errorScore, ratingScore);
+      var bonusInr  = Math.round(designHours * composite * BONUS_INR_PER_HOUR * 100) / 100;
+
+      rows.push({
+        person_code:     code,
+        name:            staff.name,
+        role:            staff.role,
+        quarter_period:  qPid,
+        design_hours:    designHours,
+        client_score:    clientScore,
+        error_score:     errorScore,
+        rating_score:    ratingScore,
+        composite_score: composite,
+        bonus_inr:       bonusInr,
+        status:          'CALCULATED'
+      });
+    }
+    return rows;
+  }
 
   // ============================================================
   // SECTION 5: LEDGER (stub — implemented in Task 9)
