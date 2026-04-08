@@ -426,7 +426,83 @@ var QuarterlyBonusEngine = (function () {
   // SECTION 6: ANNUAL BONUS (stub — implemented in Task 10)
   // ============================================================
 
-  function runAnnualBonus_(actorEmail, year) {}
+  /**
+   * Reads all 4 quarterly bonus rows for the year and writes one
+   * ANNUAL_BONUS row per person = sum of Q1+Q2+Q3+Q4 CALCULATED amounts.
+   */
+  function runAnnualBonus_(actorEmail, year) {
+    var quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
+    var yearStr  = String(year);
+    var annualPid = 'ANNUAL-' + yearStr;
+    var totals   = {};
+
+    for (var q = 0; q < quarters.length; q++) {
+      var qPid = quarterPeriodId_(quarters[q], year);
+      var rows;
+      try {
+        rows = DAL.readWhere(
+          Config.TABLES.FACT_PAYROLL_LEDGER,
+          { event_type: 'QUARTERLY_BONUS', status: 'CALCULATED' },
+          { periodId: qPid }
+        );
+      } catch (e) {
+        if (e.code === 'SHEET_NOT_FOUND') continue;
+        throw e;
+      }
+
+      for (var i = 0; i < rows.length; i++) {
+        var row  = rows[i];
+        var code = String(row.person_code || '').trim();
+        var amt  = parseFloat(row.amount_inr) || 0;
+        if (!code) continue;
+        totals[code] = (totals[code] || 0) + amt;
+      }
+    }
+
+    DAL.ensurePartition(Config.TABLES.FACT_PAYROLL_LEDGER, annualPid, MODULE);
+
+    var codes = Object.keys(totals);
+    for (var j = 0; j < codes.length; j++) {
+      var personCode    = codes[j];
+      var annualAmount  = Math.round(totals[personCode] * 100) / 100;
+      var idempotencyKey = 'ANNUAL_BONUS|' + personCode + '|' + yearStr;
+
+      var existing;
+      try {
+        existing = DAL.readWhere(
+          Config.TABLES.FACT_PAYROLL_LEDGER,
+          { idempotency_key: idempotencyKey },
+          { periodId: annualPid }
+        );
+      } catch (e) {
+        if (e.code === 'SHEET_NOT_FOUND') existing = [];
+        else throw e;
+      }
+
+      if (existing.length > 0) {
+        Logger.warn('QB_ANNUAL_DUPLICATE', { module: MODULE,
+          message: 'Annual bonus already recorded',
+          person_code: personCode, year: year });
+        continue;
+      }
+
+      DAL.appendRow(Config.TABLES.FACT_PAYROLL_LEDGER, {
+        event_id:        Identifiers.generateId(),
+        event_type:      'ANNUAL_BONUS',
+        person_code:     personCode,
+        period_id:       annualPid,
+        amount_inr:      annualAmount,
+        status:          'CALCULATED',
+        actor_email:     actorEmail,
+        timestamp:       new Date().toISOString(),
+        idempotency_key: idempotencyKey
+      }, { callerModule: MODULE, periodId: annualPid });
+
+      Logger.info('QB_ANNUAL_WRITTEN', { module: MODULE,
+        message: 'Annual bonus written',
+        person_code: personCode, amount_inr: annualAmount, year: year });
+    }
+  }
 
   // ============================================================
   // SECTION 7: STAFF CACHE
