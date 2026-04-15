@@ -385,6 +385,24 @@ function portal_runQuarterlyBonus(quarter, year) {
 }
 
 // ============================================================
+// portal_runAnnualBonus — CEO triggers annual bonus run
+// ============================================================
+
+/**
+ * Runs the annual bonus calculation and writes ANNUAL_BONUS rows to FACT_QUARTERLY_BONUS.
+ * Sums Q1–Q4 CALCULATED quarterly bonuses for the given year per eligible staff member.
+ * CEO only. Idempotent — re-running returns written=0, skipped=N.
+ *
+ * @param {number} year  e.g. 2026
+ * @returns {string}  JSON: { written, skipped, year }
+ */
+function portal_runAnnualBonus(year) {
+  var email  = Session.getActiveUser().getEmail();
+  var result = QuarterlyBonusEngine.runAnnualBonus(email, parseInt(year, 10));
+  return JSON.stringify(result);
+}
+
+// ============================================================
 // portal_runBonusRun — CEO triggers supervisor bonus run
 // ============================================================
 
