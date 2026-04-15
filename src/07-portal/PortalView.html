@@ -1202,7 +1202,8 @@ function renderPortal_(data) {
   if (perms.canCreateJob)    document.getElementById('btn-clients').style.display       = 'inline-block';
   if (perms.isLeader)        document.getElementById('btn-leader-dash').style.display   = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-staff-panel').style.display   = 'inline-block';
-  // Payroll action buttons intentionally hidden in preview mode
+  if (perms.canRunPayroll)   document.getElementById('btn-run-quarterly-bonus').style.display = 'inline-block';
+  if (perms.canRunPayroll)   document.getElementById('btn-run-annual-bonus').style.display    = 'inline-block';
 
   renderStats(data.stats);
   renderJobs(data.jobs, actor, perms);
