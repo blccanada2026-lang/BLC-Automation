@@ -197,9 +197,16 @@ var EventReplayEngine = (function () {
 
       case 'JOB_RESUMED':
         if (!jobMap[jobNumber]) break;
-        jobMap[jobNumber].current_state = jobMap[jobNumber].prev_state;
-        jobMap[jobNumber].prev_state    = Config.STATES.ON_HOLD;
-        jobMap[jobNumber].updated_at    = updatedAt;
+        if (!jobMap[jobNumber].prev_state) {
+          Logger.warn('REPLAY_RESUME_NO_PREV_STATE', {
+            module: MODULE, job_number: jobNumber
+          });
+          jobMap[jobNumber].current_state = Config.STATES.IN_PROGRESS; // safe fallback
+        } else {
+          jobMap[jobNumber].current_state = jobMap[jobNumber].prev_state;
+        }
+        jobMap[jobNumber].prev_state = Config.STATES.ON_HOLD;
+        jobMap[jobNumber].updated_at = updatedAt;
         break;
 
       case 'QC_SUBMITTED':
@@ -216,8 +223,15 @@ var EventReplayEngine = (function () {
 
       case 'QC_REWORK_REQUESTED':
         if (!jobMap[jobNumber]) break;
-        jobMap[jobNumber].current_state       = Config.STATES.IN_PROGRESS;
-        jobMap[jobNumber].rework_cycle        = (jobMap[jobNumber].rework_cycle || 0) + 1;
+        jobMap[jobNumber].current_state = Config.STATES.IN_PROGRESS;
+        jobMap[jobNumber].rework_cycle  = (jobMap[jobNumber].rework_cycle || 0) + 1;
+        jobMap[jobNumber].updated_at    = updatedAt;
+        break;
+
+      case 'CLIENT_RETURN_RECEIVED':
+        if (!jobMap[jobNumber]) break;
+        jobMap[jobNumber].prev_state          = jobMap[jobNumber].current_state;
+        jobMap[jobNumber].current_state       = Config.STATES.CLIENT_RETURN;
         jobMap[jobNumber].client_return_count = (jobMap[jobNumber].client_return_count || 0) + 1;
         jobMap[jobNumber].updated_at          = updatedAt;
         break;
