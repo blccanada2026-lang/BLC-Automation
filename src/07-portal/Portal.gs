@@ -403,6 +403,26 @@ function portal_runAnnualBonus(year) {
 }
 
 // ============================================================
+// portal_rebuildViews — CEO triggers full VW projection rebuild
+// ============================================================
+
+/**
+ * Rebuilds VW_JOB_CURRENT_STATE and VW_DESIGNER_WORKLOAD by
+ * replaying all FACT_JOB_EVENTS and FACT_WORK_LOGS partitions.
+ * CEO only. Run only when view tables are suspected to be
+ * corrupted or out of sync.
+ *
+ * NOTE: Portal button to be migrated to AdminConsole (T13) when built.
+ *
+ * @returns {string}  JSON: { vw_job, vw_workload, partial, elapsed_ms }
+ */
+function portal_rebuildViews() {
+  var email  = Session.getActiveUser().getEmail();
+  var result = EventReplayEngine.rebuildAllViews(email);
+  return JSON.stringify(result);
+}
+
+// ============================================================
 // portal_runBonusRun — CEO triggers supervisor bonus run
 // ============================================================
 
