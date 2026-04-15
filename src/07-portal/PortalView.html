@@ -344,6 +344,7 @@
         <button class="btn-muted btn-sm" id="btn-run-bonus" style="display:none">💰 Run Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-quarterly-bonus" style="display:none">🏆 Run Quarterly Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-annual-bonus" style="display:none">🎁 Run Annual Bonus</button>
+        <button class="btn-danger btn-sm" id="btn-rebuild-views" style="display:none">🔧 Rebuild Views</button>
         <button class="btn-success btn-sm" id="btn-approve-payroll" style="display:none">✓ Approve Payroll</button>
         <label id="lbl-test-mode" style="display:none;align-items:center;gap:6px;font-size:12px;color:#b45309;font-weight:600;cursor:pointer;">
           <input type="checkbox" id="chk-test-mode"> TEST MODE (sends to BLC Gmail)
@@ -866,6 +867,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-run-bonus').addEventListener('click',         runBonusRun);
   document.getElementById('btn-run-quarterly-bonus').addEventListener('click', runQuarterlyBonus);
   document.getElementById('btn-run-annual-bonus').addEventListener('click',    runAnnualBonus);
+  document.getElementById('btn-rebuild-views').addEventListener('click',       rebuildViews);
   document.getElementById('btn-approve-payroll').addEventListener('click',   approveAllPayroll);
   document.getElementById('btn-staff-panel').addEventListener('click',       toggleStaffPanel);
   document.getElementById('btn-onboard-staff').addEventListener('click',     openOnboardStaff);
@@ -949,6 +951,7 @@ function onDataLoaded(jsonStr) {
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-bonus').style.display              = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-quarterly-bonus').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-annual-bonus').style.display      = 'inline-block';
+  if (_data.perms.canRunPayroll)     document.getElementById('btn-rebuild-views').style.display          = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('lbl-test-mode').style.display       = 'flex';
   if (_data.perms.canApprovePayroll) document.getElementById('btn-approve-payroll').style.display = 'inline-block';
   if (_data.perms.isLeader)          document.getElementById('dash-feedback-panel').style.display = 'block';
@@ -1187,7 +1190,8 @@ function renderPortal_(data) {
   var allBtns = ['btn-create-job','btn-sbs-intake','btn-process-queue','btn-clients',
                  'btn-leader-dash','btn-staff-panel',
                  'btn-send-feedback','btn-send-ratings','btn-run-bonus',
-                 'btn-run-quarterly-bonus','btn-run-annual-bonus','btn-approve-payroll','lbl-test-mode'];
+                 'btn-run-quarterly-bonus','btn-run-annual-bonus','btn-rebuild-views',
+                 'btn-approve-payroll','lbl-test-mode'];
   allBtns.forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = 'none';
@@ -1204,6 +1208,7 @@ function renderPortal_(data) {
   if (perms.canManageStaff)  document.getElementById('btn-staff-panel').style.display   = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-run-quarterly-bonus').style.display = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-run-annual-bonus').style.display    = 'inline-block';
+  if (perms.canRunPayroll)   document.getElementById('btn-rebuild-views').style.display        = 'inline-block';
 
   renderStats(data.stats);
   renderJobs(data.jobs, actor, perms);
@@ -2472,6 +2477,42 @@ function runAnnualBonus() {
       showToast('Error: ' + (err.message || String(err)), 'error');
     })
     .portal_runAnnualBonus(year);
+}
+
+function rebuildViews() {
+  if (!confirm(
+    'Rebuild all view projections?\n\n' +
+    'This clears and rewrites VW_JOB_CURRENT_STATE and VW_DESIGNER_WORKLOAD ' +
+    'by replaying all FACT events from scratch.\n\n' +
+    '⚠ Do not run during active queue processing.\n' +
+    'Run time: ~30–60 seconds depending on data volume.'
+  )) return;
+
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      try {
+        var r   = JSON.parse(json);
+        var sec = Math.round(r.elapsed_ms / 1000);
+        if (r.partial) {
+          showToast('Partial rebuild — quota limit reached, re-run to complete.', 'warning');
+        } else {
+          showToast(
+            'Views rebuilt in ' + sec + 's — ' +
+            r.vw_job.written + ' jobs, ' +
+            r.vw_workload.written + ' workload rows.',
+            'success'
+          );
+        }
+        loadLeaderDashboard();
+      } catch(e) { showToast('Views rebuilt.', 'success'); }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_rebuildViews();
 }
 
 function approveAllPayroll() {
