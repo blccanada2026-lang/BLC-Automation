@@ -2518,3 +2518,33 @@ function runAllTests() {
   return { totalPassed: totalPassed, totalFailed: totalFailed };
 }
 
+/**
+ * Manual test: verifies runAnnualBonus returns the correct shape
+ * and is idempotent. Run from Apps Script editor.
+ * Requires at least one QUARTERLY_BONUS CALCULATED row in FACT_QUARTERLY_BONUS.
+ */
+function testAnnualBonus() {
+  header_('ANNUAL BONUS TEST');
+
+  var year = new Date().getFullYear();
+
+  // First run — should write rows (or 0 if no quarterly data yet)
+  var result1 = QuarterlyBonusEngine.runAnnualBonus(Session.getActiveUser().getEmail(), year);
+  console.log('First run:  written=' + result1.written + ' skipped=' + result1.skipped + ' year=' + result1.year);
+
+  var shapeOk = typeof result1.written === 'number' &&
+                typeof result1.skipped === 'number' &&
+                result1.year === year;
+  console.log('Shape OK:  ' + shapeOk);
+
+  // Second run — must be idempotent (written=0, skipped=result1.written)
+  var result2 = QuarterlyBonusEngine.runAnnualBonus(Session.getActiveUser().getEmail(), year);
+  console.log('Second run: written=' + result2.written + ' skipped=' + result2.skipped);
+
+  var idempotent = result2.written === 0 && result2.skipped === result1.written;
+  console.log('Idempotent: ' + idempotent);
+
+  console.log(shapeOk && idempotent ? '✅ PASS' : '❌ FAIL');
+  line_();
+}
+
