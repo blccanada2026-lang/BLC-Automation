@@ -437,8 +437,9 @@ var QuarterlyBonusEngine = (function () {
     var yearStr   = String(year);
     var annualPid = 'ANNUAL-' + yearStr;
     var totals    = {};
+    var written   = 0;
+    var skipped   = 0;
 
-    // Read all quarterly bonus rows for this year from FACT_QUARTERLY_BONUS
     var allRows;
     try {
       allRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: MODULE });
@@ -447,19 +448,18 @@ var QuarterlyBonusEngine = (function () {
       else throw e;
     }
 
-    // Sum CALCULATED quarterly rows for this year's quarters
     var validQPids = {};
     for (var q = 0; q < quarters.length; q++) {
       validQPids[quarterPeriodId_(quarters[q], year)] = true;
     }
 
     for (var i = 0; i < allRows.length; i++) {
-      var row      = allRows[i];
-      var qPid     = String(row.quarter_period_id || '').trim();
-      var evType   = String(row.event_type        || '').trim();
-      var status   = String(row.status            || '').trim();
-      var code     = String(row.person_code       || '').trim();
-      var amt      = parseFloat(row.bonus_inr)    || 0;
+      var row    = allRows[i];
+      var qPid   = String(row.quarter_period_id || '').trim();
+      var evType = String(row.event_type        || '').trim();
+      var status = String(row.status            || '').trim();
+      var code   = String(row.person_code       || '').trim();
+      var amt    = parseFloat(row.bonus_inr)    || 0;
       if (!validQPids[qPid] || evType !== 'QUARTERLY_BONUS' || status !== 'CALCULATED' || !code) continue;
       totals[code] = (totals[code] || 0) + amt;
     }
@@ -486,6 +486,7 @@ var QuarterlyBonusEngine = (function () {
         Logger.warn('QB_ANNUAL_DUPLICATE', { module: MODULE,
           message: 'Annual bonus already recorded',
           person_code: personCode, year: year });
+        skipped++;
         continue;
       }
 
@@ -510,7 +511,10 @@ var QuarterlyBonusEngine = (function () {
       Logger.info('QB_ANNUAL_WRITTEN', { module: MODULE,
         message: 'Annual bonus written',
         person_code: personCode, amount_inr: annualAmount, year: year });
+      written++;
     }
+
+    return { written: written, skipped: skipped, year: year };
   }
 
   // ============================================================
@@ -613,12 +617,13 @@ var QuarterlyBonusEngine = (function () {
    * Sums Q1-Q4 quarterly bonuses and writes a single ANNUAL_BONUS row per person.
    * @param {string} actorEmail
    * @param {number} year
+   * @returns {{ written: number, skipped: number, year: number }}
    */
   function runAnnualBonus(actorEmail, year) {
     var actor = RBAC.resolveActor(actorEmail);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_RUN);
     RBAC.enforceFinancialAccess(actor);
-    runAnnualBonus_(actorEmail, year);
+    return runAnnualBonus_(actorEmail, year);
   }
 
   return {
