@@ -278,11 +278,12 @@ All records also store: `bank_country`, `bank_city`, `bank_address`, `ofx_recipi
 - [x] Bulk staff import: STG_STAFF_IMPORT staging sheet + portal "Bulk Import from Sheet" button
 - [x] Leader Dashboard: team hours + payroll status per period (CEO/PM/TL)
 - [x] Payroll run + bonus run (separate operations), paystub confirmation, CEO approval
-- [x] Client feedback system: Google Form, email send, onFormSubmit trigger, FACT_CLIENT_FEEDBACK
-- [ ] Quarterly bonus calculation (blocked on TL/PM ratings + error rate engine)
-- [ ] Client feedback form + FACT_CLIENT_FEEDBACK table (done — see above)
-- [ ] TL/PM performance rating entry in portal + FACT_PERFORMANCE_RATINGS table
-- [ ] Error rate calculation engine (from FACT_QC_EVENTS)
-- [ ] Annual bonus (rules TBD)
+- [x] Client feedback system: Google Form, qualitative questions, email send, onFormSubmit trigger, FACT_CLIENT_FEEDBACK
+- [x] TL/PM/CEO performance rating portal + FACT_PERFORMANCE_RATINGS table
+- [x] Quarterly bonus engine: client(30%) + error rate(40%) + ratings(30%) × INR 25 × design hours → FACT_QUARTERLY_BONUS
+- [x] sendRatingRequests: emails TL/PM/CEO a rating portal link per quarter
+- [x] CEO Preview As: view portal and rating page as any staff member
+- [x] SBS sheet intake: SheetAdapter + STG_INTAKE_SBS + DIM_CLIENT_INTAKE_CONFIG
+- [ ] Annual bonus: sum Q1–Q4 scores over full Jan–Dec period, paid in December (engine skeleton exists in QuarterlyBonusEngine)
 - [ ] EventReplayEngine (VW rebuild from FACT events)
 - [ ] MART refresh / Looker Studio reporting layer
