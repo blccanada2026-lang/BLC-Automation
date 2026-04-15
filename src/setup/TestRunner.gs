@@ -2530,21 +2530,22 @@ function testAnnualBonus() {
 
   // First run — should write rows (or 0 if no quarterly data yet)
   var result1 = QuarterlyBonusEngine.runAnnualBonus(Session.getActiveUser().getEmail(), year);
-  console.log('First run:  written=' + result1.written + ' skipped=' + result1.skipped + ' year=' + result1.year);
+  info_('First run:  written=' + result1.written + ' skipped=' + result1.skipped + ' year=' + result1.year);
 
   var shapeOk = typeof result1.written === 'number' &&
                 typeof result1.skipped === 'number' &&
                 result1.year === year;
-  console.log('Shape OK:  ' + shapeOk);
+  info_('Shape OK:  ' + shapeOk);
 
   // Second run — must be idempotent (written=0, skipped=result1.written)
   var result2 = QuarterlyBonusEngine.runAnnualBonus(Session.getActiveUser().getEmail(), year);
-  console.log('Second run: written=' + result2.written + ' skipped=' + result2.skipped);
+  info_('Second run: written=' + result2.written + ' skipped=' + result2.skipped);
 
   var idempotent = result2.written === 0 && result2.skipped === result1.written;
-  console.log('Idempotent: ' + idempotent);
+  info_('Idempotent: ' + idempotent);
 
-  console.log(shapeOk && idempotent ? '✅ PASS' : '❌ FAIL');
+  if (shapeOk && idempotent) { pass_('Annual bonus shape and idempotency checks passed'); }
+  else { fail_('Annual bonus check failed — shapeOk=' + shapeOk + ' idempotent=' + idempotent); }
   line_();
 }
 
