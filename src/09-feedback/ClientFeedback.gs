@@ -68,6 +68,16 @@ var ClientFeedback = (function () {
   // Grid question title — must match exactly in the trigger parser
   var GRID_QUESTION_TITLE = "Please rate each designer's performance this quarter";
 
+  // Qualitative question titles — exported for trigger parser.
+  // Changing any of these breaks the trigger's named-value lookup
+  // until the trigger is also updated and the form is recreated.
+  var Q_STRENGTHS   = "What has the designer/team done particularly well this quarter?";
+  var Q_IMPROVEMENT = "What is the ONE thing we should improve immediately?";
+  var Q_ERRORS      = "Have any errors caused production or site issues? If yes, please describe.";
+  var Q_EASE        = "How easy is it to work with our team? (clarity, responsiveness, communication)";
+  var Q_RECOMMEND   = "Would you confidently recommend our team for more work? (Yes/No + Why)";
+  var Q_SUGGESTIONS = "Any suggestions to improve our service further?";
+
   // ============================================================
   // SECTION 1: sendFeedbackRequests
   // ============================================================
@@ -93,7 +103,10 @@ var ClientFeedback = (function () {
     var quarter   = buildQuarterLabel_(periodId);
 
     // ── 1. Build { clientCode → [designerCodes] } map ────────
-    var pairs    = buildDesignerClientPairs_(periodId);
+    // options.pairs allows manual override for testing / early production
+    // before FACT_WORK_LOGS is populated by real work logging.
+    var pairs = options.pairs || buildDesignerClientPairs_(periodId);
+
     if (pairs.length === 0) {
       Logger.warn('FEEDBACK_NO_PAIRS', {
         module: MODULE, message: 'No designer-client pairs found — no emails sent',
@@ -110,32 +123,42 @@ var ClientFeedback = (function () {
     }
 
     // ── 2. Support maps ───────────────────────────────────────
-    var clientMap    = buildClientMap_();
+    var clientMap     = buildClientMap_();
     var designerNames = buildDesignerNameMap_();
 
     // ── 3. Per client: create form + send email ───────────────
-    var emailsSent = 0;
+    var emailsSent  = 0;
     var clientCodes = Object.keys(byClient);
 
     for (var c = 0; c < clientCodes.length; c++) {
       var clientCode = clientCodes[c];
       var client     = clientMap[clientCode];
 
-      if (!client || !client.contact_email) {
+      if (!client) {
+        if (!testEmail) {
+          Logger.warn('FEEDBACK_CLIENT_NOT_FOUND', {
+            module: MODULE, message: 'Client not in DIM_CLIENT_MASTER — skipping', client_code: clientCode
+          });
+          continue;
+        }
+        // testEmail mode — use client code as display name, real email not needed
+        client = { client_name: clientCode, contact_email: '' };
+      }
+      if (!client.contact_email && !testEmail) {
         Logger.warn('FEEDBACK_NO_CLIENT_EMAIL', {
           module: MODULE, message: 'No contact email — skipping', client_code: clientCode
         });
         continue;
       }
 
-      var designers     = byClient[clientCode];
-      var designerRows  = buildDesignerRows_(designers, designerNames);
+      var designers    = byClient[clientCode];
+      var designerRows = buildDesignerRows_(designers, designerNames);
 
       // Create (or reuse) the form for this client+period
       var formMeta = getOrCreateClientForm_(periodId, quarter, clientCode, client.client_name, designerRows);
 
       // Build ONE pre-filled URL for this client
-      var formUrl = buildPrefilledUrl_(formMeta.formId, formMeta.entryIds, periodId, clientCode);
+      var formUrl = buildFormUrl_(formMeta.formId);
 
       // Send the email (testEmail overrides recipient for pre-launch testing)
       sendClientEmail_(client, designerNames, designers, formUrl, quarter, testEmail);
@@ -182,6 +205,16 @@ var ClientFeedback = (function () {
     var comments     = String(payload.comments      || '').trim();
     var responseId   = String(payload.form_response_id || '').trim();
 
+    // Qualitative open-text fields (all optional)
+    var strengthsText     = String(payload.strengths_text      || '').trim();
+    var improvementText   = String(payload.improvement_text    || '').trim();
+    var errorFeedbackText = String(payload.error_feedback_text || '').trim();
+    var easeText          = String(payload.ease_of_working_text || '').trim();
+    var recommendRaw      = String(payload.recommendation_flag  || '').trim();
+    var recommendFlag     = recommendRaw.toLowerCase().indexOf('yes') === 0 ? 'YES' : (recommendRaw ? 'NO' : '');
+    var recommendReason   = String(payload.recommendation_reason || '').trim();
+    var suggestionsText   = String(payload.suggestions_text    || '').trim();
+
     if (!periodId || !clientCode || !designerCode) {
       throw new Error('ClientFeedback: missing period_id, client_code, or designer_code');
     }
@@ -213,18 +246,25 @@ var ClientFeedback = (function () {
     var eventId         = Identifiers.generateId(Config.ID_PREFIXES.FEEDBACK);
 
     DAL.appendRow(Config.TABLES.FACT_CLIENT_FEEDBACK, {
-      event_id:         eventId,
-      period_id:        periodId,
-      quarter:          buildQuarterLabel_(periodId),
-      client_code:      clientCode,
-      designer_code:    designerCode,
-      submitted_at:     new Date().toISOString(),
-      raw_score:        rawScore,
-      normalized_score: normalizedScore,
-      comments:         comments,
-      form_response_id: responseId,
-      idempotency_key:  iKey,
-      status:           'RECEIVED'
+      event_id:              eventId,
+      period_id:             periodId,
+      quarter:               buildQuarterLabel_(periodId),
+      client_code:           clientCode,
+      designer_code:         designerCode,
+      submitted_at:          new Date().toISOString(),
+      raw_score:             rawScore,
+      normalized_score:      normalizedScore,
+      comments:              comments,
+      form_response_id:      responseId,
+      idempotency_key:       iKey,
+      status:                'RECEIVED',
+      strengths_text:        strengthsText,
+      improvement_text:      improvementText,
+      error_feedback_text:   errorFeedbackText,
+      ease_of_working_text:  easeText,
+      recommendation_flag:   recommendFlag,
+      recommendation_reason: recommendReason,
+      suggestions_text:      suggestionsText
     }, { callerModule: MODULE });
 
     Logger.info('FEEDBACK_RECORDED', {
@@ -351,18 +391,31 @@ var ClientFeedback = (function () {
       try {
         var meta = JSON.parse(existingMeta);
         // Update grid rows in case designers changed since last call
+        var formStillValid = false;
         try {
           var existingForm = FormApp.openById(existingId);
           var items = existingForm.getItems(FormApp.ItemType.GRID);
           if (items.length > 0) items[0].asGridItem().setRows(designerRows);
-        } catch (e) { /* form may have been deleted — fall through to recreate */ }
-        return { formId: existingId, entryIds: meta };
+          formStillValid = true;
+        } catch (e) {
+          // Form was deleted or is inaccessible — clear cache and fall through to recreate
+          props.deleteProperty(formKey);
+          props.deleteProperty(entryIdsKey);
+          Logger.warn('FEEDBACK_FORM_STALE', {
+            module: MODULE, message: 'Cached form inaccessible — recreating', client_code: clientCode
+          });
+        }
+        if (formStillValid) return { formId: existingId, entryIds: meta };
       } catch (e) { /* corrupt meta — recreate */ }
     }
 
     // ── Create new form ───────────────────────────────────────
+    // Period + client context are NOT form fields — they are identified
+    // by the response sheet name (FBRESP_{periodId}_{clientCode}).
+    // This avoids pre-fill URL fragility and hides internal codes from clients.
     var title = 'BLC Performance Feedback \u2014 ' + clientName + ' \u2014 ' + quarter;
     var form  = FormApp.create(title);
+    Utilities.sleep(2000); // wait for Google to fully provision the new form
 
     form.setDescription(
       'Blue Lotus Consulting \u2014 quarterly designer performance feedback.\n' +
@@ -374,19 +427,7 @@ var ClientFeedback = (function () {
     form.setShowLinkToRespondAgain(false);
     form.setConfirmationMessage('Thank you! Your feedback has been received.');
 
-    // Q1: Period ID (hidden, pre-filled)
-    var qPeriod = form.addTextItem();
-    qPeriod.setTitle('Period ID');
-    qPeriod.setHelpText('Auto-filled. Please do not change.');
-    qPeriod.setRequired(true);
-
-    // Q2: Client Code (hidden, pre-filled)
-    var qClient = form.addTextItem();
-    qClient.setTitle('Client Code');
-    qClient.setHelpText('Auto-filled. Please do not change.');
-    qClient.setRequired(true);
-
-    // Q3: Rating grid — one row per designer
+    // Q1: Rating grid — one row per designer (full names)
     var qGrid = form.addGridItem();
     qGrid.setTitle(GRID_QUESTION_TITLE);
     qGrid.setHelpText('Rate 1 (Poor) to 5 (Excellent). Leave blank if a designer did not work on your projects.');
@@ -394,30 +435,68 @@ var ClientFeedback = (function () {
     qGrid.setColumns(['1', '2', '3', '4', '5']);
     qGrid.setRequired(false);
 
-    // Q4: Comments (optional)
+    // Q2: Comments (optional)
     var qComments = form.addParagraphTextItem();
     qComments.setTitle('Any other comments? (optional)');
     qComments.setHelpText('Quality, turnaround time, communication — anything you would like to share.');
     qComments.setRequired(false);
 
-    // Link to BLC spreadsheet for response capture
+    // ── Section: Open Feedback ────────────────────────────────
+    var qSection = form.addSectionHeaderItem();
+    qSection.setTitle('Open Feedback \u2014 Your Insights Matter');
+    qSection.setHelpText('Your honest input helps us improve. All responses are confidential.');
+
+    // Q3–Q8: qualitative paragraph-text questions
+    var qStrengths = form.addParagraphTextItem();
+    qStrengths.setTitle(Q_STRENGTHS);
+    qStrengths.setRequired(false);
+
+    var qImprovement = form.addParagraphTextItem();
+    qImprovement.setTitle(Q_IMPROVEMENT);
+    qImprovement.setRequired(false);
+
+    var qErrors = form.addParagraphTextItem();
+    qErrors.setTitle(Q_ERRORS);
+    qErrors.setRequired(false);
+
+    var qEase = form.addParagraphTextItem();
+    qEase.setTitle(Q_EASE);
+    qEase.setRequired(false);
+
+    var qRecommend = form.addParagraphTextItem();
+    qRecommend.setTitle(Q_RECOMMEND);
+    qRecommend.setHelpText('e.g. "Yes — the team is reliable and detail-oriented." or "Not yet — turnaround needs to improve."');
+    qRecommend.setRequired(false);
+
+    var qSuggestions = form.addParagraphTextItem();
+    qSuggestions.setTitle(Q_SUGGESTIONS);
+    qSuggestions.setRequired(false);
+
+    // ── Link form to spreadsheet and name the response sheet ─
+    // Response sheet named FBRESP_{periodId}_{clientCode} so the
+    // onFeedbackFormSubmit trigger can identify client + period
+    // without relying on pre-filled form fields.
     try {
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var ss           = SpreadsheetApp.getActiveSpreadsheet();
+      var sheetsBefore = ss.getSheets().map(function(s) { return s.getName(); });
       form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
+      Utilities.sleep(2000); // wait for response sheet to be created
+      var sheetsAfter = SpreadsheetApp.openById(ss.getId()).getSheets();
+      for (var si = 0; si < sheetsAfter.length; si++) {
+        if (sheetsBefore.indexOf(sheetsAfter[si].getName()) === -1) {
+          sheetsAfter[si].setName('FBRESP_' + periodId + '_' + clientCode);
+          break;
+        }
+      }
     } catch (e) {
       Logger.warn('FEEDBACK_FORM_LINK_FAILED', {
         module: MODULE, message: 'Could not link form to spreadsheet', error: e.message
       });
     }
 
-    var entryIds = {
-      periodId:   qPeriod.getId(),
-      clientCode: qClient.getId()
-      // Grid and comments don't need pre-filling
-    };
-
-    props.setProperty(formKey,     form.getId());
-    props.setProperty(entryIdsKey, JSON.stringify(entryIds));
+    props.setProperty(formKey, form.getId());
+    // Clear stale entryIds key if present from older form version
+    props.deleteProperty(entryIdsKey);
 
     Logger.info('FEEDBACK_FORM_CREATED', {
       module: MODULE, form_id: form.getId(),
@@ -425,16 +504,14 @@ var ClientFeedback = (function () {
       designer_count: designerRows.length
     });
 
-    return { formId: form.getId(), entryIds: entryIds };
+    return { formId: form.getId() };
   }
 
   /**
    * Builds the pre-filled URL for a client (period + client pre-filled only).
    */
-  function buildPrefilledUrl_(formId, entryIds, periodId, clientCode) {
-    return 'https://docs.google.com/forms/d/' + formId + '/viewform' +
-      '?entry.' + entryIds.periodId   + '=' + encodeURIComponent(periodId) +
-      '&entry.' + entryIds.clientCode + '=' + encodeURIComponent(clientCode);
+  function buildFormUrl_(formId) {
+    return 'https://docs.google.com/forms/d/' + formId + '/viewform';
   }
 
   /**
@@ -447,8 +524,9 @@ var ClientFeedback = (function () {
 
     var subject = 'BLC \u2014 ' + quarter + ' Designer Performance Feedback';
 
+    var greeting = client.contact_name || client.client_name;
     var plain = [
-      'Dear ' + client.client_name + ',',
+      'Dear ' + greeting + ',',
       '',
       'Blue Lotus Consulting is collecting quarterly performance feedback for our designers.',
       'You are receiving this because the following designer(s) worked on your projects this quarter:',
@@ -466,7 +544,7 @@ var ClientFeedback = (function () {
     ].join('\n');
 
     var html = [
-      '<p>Dear ' + client.client_name + ',</p>',
+      '<p>Dear ' + greeting + ',</p>',
       '<p>Blue Lotus Consulting is collecting quarterly performance feedback for our designers. ' +
       'The following designer(s) worked on your projects this quarter: <strong>' + designerList + '</strong>.</p>',
       '<p>The form takes less than 2 minutes and lets you rate everyone on a single page:</p>',
@@ -481,58 +559,284 @@ var ClientFeedback = (function () {
     ].join('\n');
 
     var recipient = testEmail || client.contact_email;
-    MailApp.sendEmail({ to: recipient, subject: subject, body: plain, htmlBody: html });
+    MailApp.sendEmail({ to: recipient, cc: 'hr@bluelotuscanada.ca', subject: subject, body: plain, htmlBody: html });
   }
 
   /**
-   * Reads FACT_WORK_LOGS + FACT_JOB_EVENTS to get unique (client, designer) pairs.
+   * Returns the three YYYY-MM period IDs that make up the quarter containing periodId.
+   * e.g. '2026-03' → ['2026-01', '2026-02', '2026-03']
+   */
+  function getQuarterMonths_(periodId) {
+    var parts      = String(periodId).split('-');
+    var year       = parts[0];
+    var month      = parseInt(parts[1], 10);
+    var qStart     = (Math.ceil(month / 3) - 1) * 3 + 1;  // 1, 4, 7, or 10
+    var months     = [];
+    for (var m = qStart; m < qStart + 3; m++) {
+      months.push(year + '-' + (m < 10 ? '0' : '') + m);
+    }
+    return months;
+  }
+
+  /**
+   * Normalises a date value (Date object or any string variant) to YYYY-MM-DD.
+   * Google Sheets auto-converts date strings to Date objects on write, so DAL
+   * returns them as JS Date objects or locale-formatted strings — neither of
+   * which compares correctly against ISO strings.
+   * Returns '' if the value is blank/null/undefined.
+   *
+   * @param {Date|string|null} val
+   * @returns {string}  YYYY-MM-DD or ''
+   */
+  function toIsoDate_(val) {
+    if (val === null || val === undefined || val === '') return '';
+    if (val instanceof Date) {
+      var y = val.getFullYear();
+      var m = String(val.getMonth() + 1);
+      var d = String(val.getDate());
+      if (m.length < 2) m = '0' + m;
+      if (d.length < 2) d = '0' + d;
+      return y + '-' + m + '-' + d;
+    }
+    // String — could be ISO 8601 with time component or locale string.
+    // Safest: parse as Date and re-format.
+    var s = String(val).trim();
+    if (!s) return '';
+    // If it already looks like YYYY-MM-DD take it directly (fast path)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    // Otherwise parse via Date constructor
+    var parsed = new Date(s);
+    if (isNaN(parsed.getTime())) return s.substring(0, 10); // best-effort fallback
+    var py = parsed.getFullYear();
+    var pm = String(parsed.getMonth() + 1);
+    var pd = String(parsed.getDate());
+    if (pm.length < 2) pm = '0' + pm;
+    if (pd.length < 2) pd = '0' + pd;
+    return py + '-' + pm + '-' + pd;
+  }
+
+  /**
+   * Derives unique (client_code, designer_code) pairs for the quarter.
+   *
+   * Source of truth: FACT_WORK_LOGS
+   *   actor_code = the designer who actually logged hours (accurate, not just allocated)
+   *   hours > 0  = they actually worked on it
+   *
+   * Source of truth: REF_ACCOUNT_DESIGNER_MAP.
+   *   Returns designers who are officially assigned to each client account
+   *   during the quarter — NOT derived from work logs or job allocations.
+   *
+   *   An assignment overlaps the quarter if:
+   *     assigned_from_date ≤ quarter_end
+   *     AND (assigned_to_date IS NULL OR assigned_to_date ≥ quarter_start)
+   *
+   *   DIM_STAFF_ROSTER cross-check: warns if a designer is terminated before
+   *   the quarter starts but does NOT exclude them (the map needs updating).
+   *
+   *   FACT_WORK_LOGS cross-check: warns if a designer logged zero hours for
+   *   this client this quarter but does NOT exclude them (leave = no hours).
+   *
+   * @param {string} periodId  Last month of the quarter (e.g. '2026-03' for Q1)
+   * @returns {{ client_code: string, designer_code: string }[]}
    */
   function buildDesignerClientPairs_(periodId) {
-    var workLogs;
+    var quarterMonths = getQuarterMonths_(periodId);
+
+    // ── Compute quarter date boundaries ──────────────────────────────────────
+    // quarter_start = first day of first quarter month
+    // quarter_end   = last day of periodId month (last month of quarter)
+    var firstMonth    = quarterMonths[0];                          // e.g. '2026-01'
+    var quarterStart  = firstMonth + '-01';                        // e.g. '2026-01-01'
+    var periodParts   = periodId.split('-');
+    var periodYear    = parseInt(periodParts[0], 10);
+    var periodMonth   = parseInt(periodParts[1], 10);
+    var lastDayDate   = new Date(periodYear, periodMonth, 0);      // 0th = last day of prev month
+    var lastDay       = String(lastDayDate.getDate());
+    if (lastDay.length < 2) lastDay = '0' + lastDay;
+    var quarterEnd    = periodId + '-' + lastDay;                  // e.g. '2026-03-31'
+
+    // ── Step 1: Read REF_ACCOUNT_DESIGNER_MAP ────────────────────────────────
+    var mapRows;
     try {
-      workLogs = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: MODULE, periodId: periodId });
+      mapRows = DAL.readAll(Config.TABLES.REF_ACCOUNT_DESIGNER_MAP, { callerModule: MODULE });
     } catch (e) {
-      if (e.code === 'SHEET_NOT_FOUND') return [];
+      if (e.code === 'SHEET_NOT_FOUND') {
+        Logger.warn('FEEDBACK_NO_ACCOUNT_MAP', {
+          module:    MODULE,
+          message:   'REF_ACCOUNT_DESIGNER_MAP sheet not found — run runSetupSchemas(). ' +
+                     'Pass options.pairs[] to override for testing.',
+          period_id: periodId
+        });
+        return [];
+      }
       throw e;
     }
-    if (!workLogs || workLogs.length === 0) return [];
 
-    var jobDesignerMap = {};
-    for (var w = 0; w < workLogs.length; w++) {
-      var wrow = workLogs[w];
-      var job  = String(wrow.job_number || '').trim();
-      var code = String(wrow.actor_code || '').trim();
-      if (!job || !code) continue;
-      if (!jobDesignerMap[job]) jobDesignerMap[job] = {};
-      jobDesignerMap[job][code] = true;
-    }
-
-    var jobEvents;
-    try {
-      jobEvents = DAL.readAll(Config.TABLES.FACT_JOB_EVENTS, { callerModule: MODULE, periodId: periodId });
-    } catch (e) {
-      if (e.code === 'SHEET_NOT_FOUND') jobEvents = [];
-      else throw e;
-    }
-
-    var jobClientMap = {};
-    for (var j = 0; j < jobEvents.length; j++) {
-      var jev = jobEvents[j];
-      var jn  = String(jev.job_number  || '').trim();
-      var cc  = String(jev.client_code || '').trim();
-      if (jn && cc && !jobClientMap[jn]) jobClientMap[jn] = cc;
-    }
-
-    var seen = {}, pairs = [];
-    Object.keys(jobDesignerMap).forEach(function(jn) {
-      var client = jobClientMap[jn];
-      if (!client) return;
-      Object.keys(jobDesignerMap[jn]).forEach(function(designer) {
-        var key = client + '|' + designer;
-        if (!seen[key]) { seen[key] = true; pairs.push({ client_code: client, designer_code: designer }); }
+    if (!mapRows || mapRows.length === 0) {
+      Logger.warn('FEEDBACK_ACCOUNT_MAP_EMPTY', {
+        module:    MODULE,
+        message:   'REF_ACCOUNT_DESIGNER_MAP has no rows — add account assignments before sending feedback. ' +
+                   'Pass options.pairs[] to override for testing.',
+        period_id: periodId
       });
+      return [];
+    }
+
+    // ── Step 2: Filter to assignments overlapping this quarter ───────────────
+    // assigned_from_date ≤ quarter_end AND (assigned_to_date blank OR ≥ quarter_start)
+    //
+    // Google Sheets auto-converts date strings to Date objects on write.
+    // toIsoDate_() normalises both Date objects and string variants to YYYY-MM-DD
+    // so string comparison is safe.
+    var activePairs = [];
+    var seen        = {};
+
+    for (var i = 0; i < mapRows.length; i++) {
+      var r              = mapRows[i];
+      var clientCode     = String(r.client_code    || '').trim().toUpperCase();
+      var designerCode   = String(r.designer_code  || '').trim().toUpperCase();
+      var role           = String(r.role           || '').trim().toUpperCase();
+      var assignedFrom   = toIsoDate_(r.assigned_from_date);
+      var assignedTo     = toIsoDate_(r.assigned_to_date);
+
+      if (!clientCode || !designerCode) continue;
+      if (role !== 'DESIGNER') continue;  // only DESIGNER rows drive feedback forms
+
+      // Date overlap check — string comparison is safe for ISO YYYY-MM-DD
+      if (assignedFrom > quarterEnd) continue;               // assignment starts after quarter ends
+      if (assignedTo !== '' && assignedTo < quarterStart) continue; // assignment ended before quarter started
+
+      var key = clientCode + '|' + designerCode;
+      if (seen[key]) continue;  // deduplicate overlapping assignment rows
+      seen[key] = true;
+
+      activePairs.push({ client_code: clientCode, designer_code: designerCode });
+    }
+
+    if (activePairs.length === 0) {
+      Logger.warn('FEEDBACK_NO_ACTIVE_ASSIGNMENTS', {
+        module:         MODULE,
+        message:        'No active DESIGNER assignments found in REF_ACCOUNT_DESIGNER_MAP for this quarter. ' +
+                        'Pass options.pairs[] to override for testing.',
+        period_id:      periodId,
+        quarter_start:  quarterStart,
+        quarter_end:    quarterEnd
+      });
+      return [];
+    }
+
+    // ── Step 3: DIM_STAFF_ROSTER cross-check (warning only) ─────────────────
+    // Warn if a designer's record is terminated before the quarter starts.
+    // Still include them — the map entry may need closing, not the form.
+    var staffMap = {};
+    try {
+      var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE });
+      for (var s = 0; s < staffRows.length; s++) {
+        var code = String(staffRows[s].person_code || '').trim().toUpperCase();
+        if (code) staffMap[code] = staffRows[s];
+      }
+    } catch (e) {
+      if (e.code !== 'SHEET_NOT_FOUND') throw e;
+    }
+
+    for (var a = 0; a < activePairs.length; a++) {
+      var dCode  = activePairs[a].designer_code;
+      var staff  = staffMap[dCode];
+      if (!staff) {
+        Logger.warn('FEEDBACK_DESIGNER_NOT_IN_ROSTER', {
+          module:        MODULE,
+          message:       'Designer in REF_ACCOUNT_DESIGNER_MAP not found in DIM_STAFF_ROSTER — included anyway',
+          designer_code: dCode,
+          client_code:   activePairs[a].client_code,
+          period_id:     periodId
+        });
+        continue;
+      }
+      var effectiveTo = String(staff.effective_to || '').trim();
+      if (effectiveTo !== '' && effectiveTo < quarterStart) {
+        Logger.warn('FEEDBACK_DESIGNER_TERMINATED', {
+          module:        MODULE,
+          message:       'Designer terminated before quarter — included in form but map entry should be closed',
+          designer_code: dCode,
+          client_code:   activePairs[a].client_code,
+          effective_to:  effectiveTo,
+          quarter_start: quarterStart
+        });
+      }
+    }
+
+    // ── Step 4: FACT_WORK_LOGS cross-check (warning only) ───────────────────
+    // Warn if a designer logged zero hours for this client's jobs this quarter.
+    // Medical leave, bench time, etc. are valid reasons for zero hours —
+    // account membership always overrides activity.
+    var designerClientHours = {};  // 'DS1|MATIX' → total hours
+    var jobClientMap        = {};  // job_number → client_code (from VW)
+
+    try {
+      var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+      for (var v = 0; v < vwRows.length; v++) {
+        var jn = String(vwRows[v].job_number  || '').trim();
+        var cc = String(vwRows[v].client_code || '').trim().toUpperCase();
+        if (jn && cc) jobClientMap[jn] = cc;
+      }
+    } catch (e) {
+      if (e.code !== 'SHEET_NOT_FOUND') throw e;
+    }
+
+    for (var m = 0; m < quarterMonths.length; m++) {
+      try {
+        var wl = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+          callerModule: MODULE,
+          periodId:     quarterMonths[m]
+        });
+        for (var w = 0; w < wl.length; w++) {
+          var wrow   = wl[w];
+          var wJob   = String(wrow.job_number || '').trim();
+          var wDes   = String(wrow.actor_code || '').trim().toUpperCase();
+          var wHrs   = parseFloat(wrow.hours) || 0;
+          var wCli   = jobClientMap[wJob];
+          if (!wJob || !wDes || wHrs <= 0 || !wCli) continue;
+          var hKey = wDes + '|' + wCli;
+          designerClientHours[hKey] = (designerClientHours[hKey] || 0) + wHrs;
+        }
+      } catch (e) {
+        if (e.code !== 'SHEET_NOT_FOUND') throw e;
+      }
+    }
+
+    for (var p = 0; p < activePairs.length; p++) {
+      var hKey2 = activePairs[p].designer_code + '|' + activePairs[p].client_code;
+      if (!designerClientHours[hKey2]) {
+        Logger.warn('FEEDBACK_DESIGNER_NO_HOURS', {
+          module:        MODULE,
+          message:       'Designer has zero hours for this client this quarter — included in form anyway',
+          designer_code: activePairs[p].designer_code,
+          client_code:   activePairs[p].client_code,
+          period_id:     periodId
+        });
+      }
+    }
+
+    // ── Step 5: Log and return ───────────────────────────────────────────────
+    var clientSet   = {};
+    var designerSet = {};
+    for (var f = 0; f < activePairs.length; f++) {
+      clientSet[activePairs[f].client_code]    = true;
+      designerSet[activePairs[f].designer_code] = true;
+    }
+
+    Logger.info('FEEDBACK_PAIRS_BUILT', {
+      module:         MODULE,
+      message:        'Designer-client pairs built from REF_ACCOUNT_DESIGNER_MAP',
+      period_id:      periodId,
+      quarter_start:  quarterStart,
+      quarter_end:    quarterEnd,
+      client_count:   Object.keys(clientSet).length,
+      designer_count: Object.keys(designerSet).length,
+      pair_count:     activePairs.length
     });
-    return pairs;
+
+    return activePairs;
   }
 
   function buildClientMap_() {
@@ -540,8 +844,13 @@ var ClientFeedback = (function () {
     try {
       DAL.readAll(Config.TABLES.DIM_CLIENT_MASTER, { callerModule: MODULE }).forEach(function(row) {
         var cc = String(row.client_code || '').trim();
-        if (cc && String(row.active || '').toUpperCase() === 'TRUE') {
-          map[cc] = { client_name: String(row.client_name || cc), contact_email: String(row.contact_email || '') };
+        if (cc && (row.active === true || String(row.active).toUpperCase() === 'TRUE')) {
+          var contactName = String(row.contact_name || '').trim();
+          map[cc] = {
+            client_name:   String(row.client_name || cc),
+            contact_name:  contactName,
+            contact_email: String(row.contact_email || '')
+          };
         }
       });
     } catch (e) {}
@@ -574,7 +883,15 @@ var ClientFeedback = (function () {
     getFeedbackSummary:      getFeedbackSummary,
     getFeedbackStatus:       getFeedbackStatus,
     buildQuarterLabel:       buildQuarterLabel_,
-    GRID_QUESTION_TITLE:     GRID_QUESTION_TITLE   // exported for trigger parser
+    // Question title constants — trigger parser uses these for namedValues lookups.
+    // Changing any constant here requires recreating active forms and updating the trigger.
+    GRID_QUESTION_TITLE: GRID_QUESTION_TITLE,
+    Q_STRENGTHS:         Q_STRENGTHS,
+    Q_IMPROVEMENT:       Q_IMPROVEMENT,
+    Q_ERRORS:            Q_ERRORS,
+    Q_EASE:              Q_EASE,
+    Q_RECOMMEND:         Q_RECOMMEND,
+    Q_SUGGESTIONS:       Q_SUGGESTIONS
   };
 
 }());

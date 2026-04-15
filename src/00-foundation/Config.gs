@@ -173,6 +173,7 @@ var Config = (function () {
     STG_FEEDBACK_RESPONSES:  'STG_FEEDBACK_RESPONSES',  // Google Form response sheet (auto-created by FormApp)
     FACT_CLIENT_FEEDBACK:    'FACT_CLIENT_FEEDBACK',    // client feedback scores per designer per quarter
     DIM_SEQUENCE_COUNTERS:   'DIM_SEQUENCE_COUNTERS',
+    REF_ACCOUNT_DESIGNER_MAP: 'REF_ACCOUNT_DESIGNER_MAP', // account team assignments: which designers belong to which client
 
     // Staging tables — transient queue (status-driven, not append-only)
     STG_RAW_INTAKE:        'STG_RAW_INTAKE',
@@ -188,6 +189,7 @@ var Config = (function () {
     FACT_PAYROLL_LEDGER:'FACT_PAYROLL_LEDGER',
     FACT_SOP_SUBMISSIONS:'FACT_SOP_SUBMISSIONS',
     FACT_PERFORMANCE_RATINGS: 'FACT_PERFORMANCE_RATINGS',
+    FACT_QUARTERLY_BONUS:     'FACT_QUARTERLY_BONUS',     // quarterly + annual bonus calculations (separate from payroll)
 
     // View tables — projections rebuilt by EventReplayEngine
     // Not source of truth — can be fully replaced at any time
@@ -197,7 +199,13 @@ var Config = (function () {
     // Mart tables — reporting aggregates for Looker Studio
     MART_DASHBOARD:        'MART_DASHBOARD',
     MART_BILLING_SUMMARY:  'MART_BILLING_SUMMARY',
-    MART_PAYROLL_SUMMARY:  'MART_PAYROLL_SUMMARY'
+    MART_PAYROLL_SUMMARY:  'MART_PAYROLL_SUMMARY',
+
+    // Client intake — sheet-based bulk job intake per client
+    // DIM_CLIENT_INTAKE_CONFIG: column mapping rules per client (source → target)
+    // STG_INTAKE_{CLIENT}: one tab per client using their own column headers
+    DIM_CLIENT_INTAKE_CONFIG: 'DIM_CLIENT_INTAKE_CONFIG',
+    STG_INTAKE_SBS:           'STG_INTAKE_SBS'
 
   };
 

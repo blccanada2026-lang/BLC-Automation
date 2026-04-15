@@ -235,12 +235,16 @@ var QuarterlyBonusEngine = (function () {
     }
 
     // Group by ratee: { ratee_code: { TEAM_LEAD: score, PM: score, CEO: score } }
+    // Filter to only ratings for this specific quarter — FACT_PERFORMANCE_RATINGS is
+    // not partitioned so it accumulates all quarters; period_id == qPid selects this one.
     var byRatee = {};
     for (var i = 0; i < rows.length; i++) {
       var row       = rows[i];
+      var rowPeriod = String(row.period_id   || '').trim();
       var rateeCode = String(row.ratee_code  || '').trim();
       var raterRole = String(row.rater_role  || '').toUpperCase().trim();
       var score     = parseFloat(row.avg_score_normalized);
+      if (rowPeriod !== qPid) continue;   // skip ratings from other quarters
       if (!rateeCode || isNaN(score)) continue;
       if (!byRatee[rateeCode]) byRatee[rateeCode] = {};
       byRatee[rateeCode][raterRole] = score;  // last write wins per role
@@ -371,8 +375,6 @@ var QuarterlyBonusEngine = (function () {
    * Idempotent — existing keys are skipped with a warning.
    */
   function writeBonusLedger_(bonusRows, actorEmail, qPid) {
-    DAL.ensurePartition(Config.TABLES.FACT_PAYROLL_LEDGER, qPid, MODULE);
-
     for (var i = 0; i < bonusRows.length; i++) {
       var row = bonusRows[i];
       if (row.status === 'SKIPPED') continue;
@@ -382,9 +384,9 @@ var QuarterlyBonusEngine = (function () {
       var existing;
       try {
         existing = DAL.readWhere(
-          Config.TABLES.FACT_PAYROLL_LEDGER,
+          Config.TABLES.FACT_QUARTERLY_BONUS,
           { idempotency_key: idempotencyKey },
-          { periodId: qPid }
+          { callerModule: MODULE }
         );
       } catch (e) {
         if (e.code === 'SHEET_NOT_FOUND') existing = [];
@@ -398,23 +400,23 @@ var QuarterlyBonusEngine = (function () {
         continue;
       }
 
-      DAL.appendRow(Config.TABLES.FACT_PAYROLL_LEDGER, {
-        event_id:        Identifiers.generateId(),
+      DAL.appendRow(Config.TABLES.FACT_QUARTERLY_BONUS, {
+        bonus_id:        Identifiers.generateId(),
         event_type:      'QUARTERLY_BONUS',
         person_code:     row.person_code,
-        period_id:       qPid,
-        amount_inr:      row.bonus_inr,
+        quarter_period_id: qPid,
         design_hours:    row.design_hours,
-        composite_score: row.composite_score,
         client_score:    row.client_score    || 0,
         error_score:     row.error_score     || 0,
         rating_score:    row.rating_score    || 0,
+        composite_score: row.composite_score || 0,
+        bonus_inr:       row.bonus_inr       || 0,
         status:          row.status,
         pending_reason:  row.pending_reason  || '',
         actor_email:     actorEmail,
         timestamp:       new Date().toISOString(),
         idempotency_key: idempotencyKey
-      }, { callerModule: MODULE, periodId: qPid });
+      }, { callerModule: MODULE });
 
       Logger.info('QB_ROW_WRITTEN', { module: MODULE,
         message: 'Quarterly bonus row written',
@@ -431,48 +433,49 @@ var QuarterlyBonusEngine = (function () {
    * ANNUAL_BONUS row per person = sum of Q1+Q2+Q3+Q4 CALCULATED amounts.
    */
   function runAnnualBonus_(actorEmail, year) {
-    var quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
-    var yearStr  = String(year);
+    var quarters  = ['Q1', 'Q2', 'Q3', 'Q4'];
+    var yearStr   = String(year);
     var annualPid = 'ANNUAL-' + yearStr;
-    var totals   = {};
+    var totals    = {};
 
-    for (var q = 0; q < quarters.length; q++) {
-      var qPid = quarterPeriodId_(quarters[q], year);
-      var rows;
-      try {
-        rows = DAL.readWhere(
-          Config.TABLES.FACT_PAYROLL_LEDGER,
-          { event_type: 'QUARTERLY_BONUS', status: 'CALCULATED' },
-          { periodId: qPid }
-        );
-      } catch (e) {
-        if (e.code === 'SHEET_NOT_FOUND') continue;
-        throw e;
-      }
-
-      for (var i = 0; i < rows.length; i++) {
-        var row  = rows[i];
-        var code = String(row.person_code || '').trim();
-        var amt  = parseFloat(row.amount_inr) || 0;
-        if (!code) continue;
-        totals[code] = (totals[code] || 0) + amt;
-      }
+    // Read all quarterly bonus rows for this year from FACT_QUARTERLY_BONUS
+    var allRows;
+    try {
+      allRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: MODULE });
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') allRows = [];
+      else throw e;
     }
 
-    DAL.ensurePartition(Config.TABLES.FACT_PAYROLL_LEDGER, annualPid, MODULE);
+    // Sum CALCULATED quarterly rows for this year's quarters
+    var validQPids = {};
+    for (var q = 0; q < quarters.length; q++) {
+      validQPids[quarterPeriodId_(quarters[q], year)] = true;
+    }
+
+    for (var i = 0; i < allRows.length; i++) {
+      var row      = allRows[i];
+      var qPid     = String(row.quarter_period_id || '').trim();
+      var evType   = String(row.event_type        || '').trim();
+      var status   = String(row.status            || '').trim();
+      var code     = String(row.person_code       || '').trim();
+      var amt      = parseFloat(row.bonus_inr)    || 0;
+      if (!validQPids[qPid] || evType !== 'QUARTERLY_BONUS' || status !== 'CALCULATED' || !code) continue;
+      totals[code] = (totals[code] || 0) + amt;
+    }
 
     var codes = Object.keys(totals);
     for (var j = 0; j < codes.length; j++) {
-      var personCode    = codes[j];
-      var annualAmount  = Math.round(totals[personCode] * 100) / 100;
+      var personCode     = codes[j];
+      var annualAmount   = Math.round(totals[personCode] * 100) / 100;
       var idempotencyKey = 'ANNUAL_BONUS|' + personCode + '|' + yearStr;
 
       var existing;
       try {
         existing = DAL.readWhere(
-          Config.TABLES.FACT_PAYROLL_LEDGER,
+          Config.TABLES.FACT_QUARTERLY_BONUS,
           { idempotency_key: idempotencyKey },
-          { periodId: annualPid }
+          { callerModule: MODULE }
         );
       } catch (e) {
         if (e.code === 'SHEET_NOT_FOUND') existing = [];
@@ -486,17 +489,23 @@ var QuarterlyBonusEngine = (function () {
         continue;
       }
 
-      DAL.appendRow(Config.TABLES.FACT_PAYROLL_LEDGER, {
-        event_id:        Identifiers.generateId(),
-        event_type:      'ANNUAL_BONUS',
-        person_code:     personCode,
-        period_id:       annualPid,
-        amount_inr:      annualAmount,
-        status:          'CALCULATED',
-        actor_email:     actorEmail,
-        timestamp:       new Date().toISOString(),
-        idempotency_key: idempotencyKey
-      }, { callerModule: MODULE, periodId: annualPid });
+      DAL.appendRow(Config.TABLES.FACT_QUARTERLY_BONUS, {
+        bonus_id:          Identifiers.generateId(),
+        event_type:        'ANNUAL_BONUS',
+        person_code:       personCode,
+        quarter_period_id: annualPid,
+        design_hours:      0,
+        client_score:      0,
+        error_score:       0,
+        rating_score:      0,
+        composite_score:   0,
+        bonus_inr:         annualAmount,
+        status:            'CALCULATED',
+        pending_reason:    '',
+        actor_email:       actorEmail,
+        timestamp:         new Date().toISOString(),
+        idempotency_key:   idempotencyKey
+      }, { callerModule: MODULE });
 
       Logger.info('QB_ANNUAL_WRITTEN', { module: MODULE,
         message: 'Annual bonus written',
