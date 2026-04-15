@@ -88,6 +88,29 @@ var PortalData = (function () {
    * @param {Object} actor  Resolved RBAC actor
    * @returns {Object[]}  Array of job view rows (plain objects)
    */
+  /**
+   * Returns a set of person_codes who are direct reports of the given TL.
+   * Reads DIM_STAFF_ROSTER and filters by supervisor_code = tlPersonCode.
+   * Returns: { personCode: true, ... }
+   */
+  function buildTeamCodes_(tlPersonCode) {
+    var set = {};
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
+    } catch (e) {
+      return set; // fail open — return empty set, jobs table will be empty
+    }
+    for (var i = 0; i < rows.length; i++) {
+      var supCode = String(rows[i].supervisor_code || '').trim();
+      var pCode   = String(rows[i].person_code     || '').trim();
+      if (supCode === tlPersonCode && pCode) {
+        set[pCode] = true;
+      }
+    }
+    return set;
+  }
+
   function loadJobs_(actor) {
     var allRows;
     try {
@@ -103,11 +126,24 @@ var PortalData = (function () {
     var role = actor.role;
     if (role === 'DESIGNER' || role === 'QC') {
       // SELF scope — only jobs assigned to this person
+      // allocated_to stores person_code (e.g. 'PRS') — match against personCode first,
+      // fall back to email for legacy rows that stored email instead
+      var selfCode  = (actor.personCode || '').toLowerCase();
+      var selfEmail = (actor.email      || '').toLowerCase();
       allRows = allRows.filter(function (row) {
-        return String(row.allocated_to || '').toLowerCase() === actor.email.toLowerCase();
+        var at = String(row.allocated_to || '').toLowerCase();
+        return at === selfCode || at === selfEmail;
+      });
+    } else if (role === 'TEAM_LEAD') {
+      // TEAM scope — only jobs allocated to this TL's direct reports
+      // (staff where supervisor_code = TL's person_code)
+      var teamCodes = buildTeamCodes_(actor.personCode);
+      allRows = allRows.filter(function (row) {
+        var at = String(row.allocated_to || '').trim();
+        return teamCodes[at] === true;
       });
     }
-    // TEAM_LEAD, PM, CEO, ADMIN, SYSTEM → ALL scope, no filter
+    // PM, CEO, ADMIN, SYSTEM → ALL scope, no filter
 
     // Sort: active jobs first (IN_PROGRESS, QC_REVIEW, ON_HOLD),
     // then terminal states (COMPLETED_BILLABLE, INVOICED)
@@ -347,19 +383,31 @@ var PortalData = (function () {
       throw e;
     }
 
+    var today  = new Date().toISOString().substring(0, 10);
     var ratees = [];
     for (var i = 0; i < allStaff.length; i++) {
-      var s      = allStaff[i];
-      var active = String(s.active || '').toUpperCase();
-      if (active !== 'TRUE' && active !== 'YES' && active !== '1') continue;
+      var s = allStaff[i];
+
+      // Skip inactive: check explicit active flag first, then effective_to
+      if (s.active === false || String(s.active).toUpperCase().trim() === 'FALSE') continue;
+      var effectiveTo = s.effective_to;
+      if (effectiveTo instanceof Date) {
+        var ety = effectiveTo.getFullYear();
+        var etm = String(effectiveTo.getMonth() + 1); if (etm.length < 2) etm = '0' + etm;
+        var etd = String(effectiveTo.getDate());       if (etd.length < 2) etd = '0' + etd;
+        effectiveTo = ety + '-' + etm + '-' + etd;
+      } else {
+        effectiveTo = String(effectiveTo || '').trim().substring(0, 10);
+      }
+      if (effectiveTo && effectiveTo < today) continue;
 
       var role    = String(s.role || '').toUpperCase().trim();
       var include = false;
 
       if (actor.role === 'TEAM_LEAD' && String(s.supervisor_code || '').trim() === actor.personCode) {
-        include = (role === 'DESIGNER');
+        include = true; // any direct report regardless of role (TLs can supervise other TLs)
       } else if (actor.role === 'PM' && String(s.pm_code || '').trim() === actor.personCode) {
-        include = (role === 'DESIGNER');
+        include = (role === 'DESIGNER'); // PM rates designers only; TLs rated by CEO
       } else if (actor.role === 'CEO') {
         include = (role === 'TEAM_LEAD' || role === 'PM');
       }
@@ -427,8 +475,6 @@ var PortalData = (function () {
 
     var idempotencyKey = 'PERF_RATING|' + actor.personCode + '|' + rateeCode + '|' + qPid;
 
-    DAL.ensurePartition(Config.TABLES.FACT_PERFORMANCE_RATINGS, qPid, 'PortalData');
-
     DAL.appendRow(Config.TABLES.FACT_PERFORMANCE_RATINGS, {
       rating_id:            Identifiers.generateId(),
       period_id:            qPid,
@@ -452,14 +498,285 @@ var PortalData = (function () {
   }
 
   // ============================================================
+  // HELPER: currentQuarterPeriodId_
+  // ============================================================
+
+  /** Returns the current quarter period ID, e.g. '2026-Q2'. */
+  function currentQuarterPeriodId_() {
+    var now   = new Date();
+    var month = now.getMonth() + 1;  // 1-12
+    var year  = now.getFullYear();
+    var q     = month <= 3 ? 'Q1' : month <= 6 ? 'Q2' : month <= 9 ? 'Q3' : 'Q4';
+    return year + '-' + q;
+  }
+
+  // ============================================================
+  // SECTION 9: sendRatingRequests
+  //
+  // Emails every active TL and PM their personal link to the
+  // quarterly ratings portal for the given period.
+  // Portal base URL is read from Script Property PORTAL_BASE_URL.
+  // CEO only.
+  // ============================================================
+
+  /**
+   * Sends rating-request emails to all active TLs and PMs.
+   * Each email contains a direct link: PORTAL_BASE_URL?page=rate-staff&period=periodId
+   *
+   * @param {string} actorEmail
+   * @param {string} periodId    e.g. '2026-Q1' (pass '' for current quarter)
+   * @param {string} [testEmail] If set, all emails are routed here instead of real addresses
+   * @returns {{ period_id, emails_sent, recipients: string[] }}
+   */
+  function sendRatingRequests(actorEmail, periodId, testEmail, dryRun) {
+    var actor = RBAC.resolveActor(actorEmail);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_RUN);
+
+    periodId  = periodId  || currentQuarterPeriodId_();
+    testEmail = testEmail || null;
+    dryRun    = !!dryRun;
+
+    var portalBaseUrl = PropertiesService.getScriptProperties().getProperty('PORTAL_BASE_URL') || '';
+    if (!portalBaseUrl) {
+      throw new Error('PORTAL_BASE_URL not set. Run setPortalBaseUrl(url) once from the Apps Script editor.');
+    }
+
+    var ratingUrl = portalBaseUrl + '?page=rate-staff&period=' + encodeURIComponent(periodId);
+
+    var allStaff;
+    try {
+      allStaff = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') return { period_id: periodId, emails_sent: 0, recipients: [] };
+      throw e;
+    }
+
+    var today = new Date().toISOString().substring(0, 10);
+
+    // ── Build active staff index ──────────────────────────────
+    var staffMap = {}; // person_code → { code, name, role, email, supervisorCode, pmCode }
+    for (var i = 0; i < allStaff.length; i++) {
+      var s = allStaff[i];
+      if (s.active === false || String(s.active).toUpperCase().trim() === 'FALSE') continue;
+      var et = s.effective_to;
+      if (et instanceof Date) {
+        var ey = et.getFullYear(), em = String(et.getMonth()+1), ed = String(et.getDate());
+        if (em.length < 2) em = '0'+em; if (ed.length < 2) ed = '0'+ed;
+        et = ey+'-'+em+'-'+ed;
+      } else { et = String(et||'').trim().substring(0,10); }
+      if (et && et < today) continue;
+
+      var code = String(s.person_code || '').trim();
+      if (!code) continue;
+      staffMap[code] = {
+        code:           code,
+        name:           String(s.name || code),
+        role:           String(s.role || '').toUpperCase().trim(),
+        email:          String(s.email || '').trim(),
+        supervisorCode: String(s.supervisor_code || '').trim(),
+        pmCode:         String(s.pm_code || '').trim()
+      };
+    }
+
+    // ── Build rater → ratee name list ────────────────────────
+    // CEO ratees: all TLs + PMs
+    // TL ratees:  anyone where supervisor_code = TL (any role)
+    // PM ratees:  DESIGNERs where pm_code = PM
+    var raterRatees = {}; // person_code → [name, ...]
+    var ceoRateeNames = [];
+
+    for (var code in staffMap) {
+      var m = staffMap[code];
+
+      // CEO list
+      if (m.role === 'TEAM_LEAD' || m.role === 'PM') {
+        ceoRateeNames.push(m.name);
+      }
+
+      // TL ratees
+      if (m.supervisorCode && staffMap[m.supervisorCode] && staffMap[m.supervisorCode].role === 'TEAM_LEAD') {
+        if (!raterRatees[m.supervisorCode]) raterRatees[m.supervisorCode] = [];
+        raterRatees[m.supervisorCode].push(m.name);
+      }
+
+      // PM ratees (designers only)
+      if (m.pmCode && staffMap[m.pmCode] && staffMap[m.pmCode].role === 'PM' && m.role === 'DESIGNER') {
+        if (!raterRatees[m.pmCode]) raterRatees[m.pmCode] = [];
+        raterRatees[m.pmCode].push(m.name);
+      }
+    }
+
+    var emailsSent = 0;
+    var recipients = [];
+
+    // ── CEO email (1 email, sent to actorEmail) ───────────────
+    if (ceoRateeNames.length > 0) {
+      var ceoRecipient = testEmail || actorEmail;
+      if (!dryRun) MailApp.sendEmail({
+        to:      ceoRecipient,
+        subject: 'BLC Nexus — Please submit your ' + periodId + ' performance ratings'
+                 + (testEmail ? ' [TEST]' : ''),
+        htmlBody: [
+          '<p>Hi,</p>',
+          '<p>Please submit your quarterly performance ratings for <strong>' + periodId + '</strong>.</p>',
+          '<p>You are rating: <strong>' + ceoRateeNames.join(', ') + '</strong></p>',
+          '<p><a href="' + ratingUrl + '" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:4px;">Submit Ratings</a></p>',
+          '<p>If the button above doesn\'t work: ' + ratingUrl + '</p>',
+          '<p>Thanks,<br>BLC Nexus</p>'
+        ].join('\n')
+      });
+      recipients.push(ceoRecipient);
+      emailsSent++;
+    }
+
+    // ── TL + PM emails (1 per rater, lists their ratees) ─────
+    for (var raterCode in raterRatees) {
+      var rater     = staffMap[raterCode];
+      var rateeList = raterRatees[raterCode];
+      if (!rater || !rater.email || rateeList.length === 0) continue;
+
+      var recipient = testEmail || rater.email;
+      if (!dryRun) MailApp.sendEmail({
+        to:      recipient,
+        subject: 'BLC Nexus — Please submit your ' + periodId + ' performance ratings'
+                 + (testEmail ? ' [TEST — for ' + rater.email + ']' : ''),
+        htmlBody: [
+          '<p>Hi ' + rater.name + ',</p>',
+          '<p>Please submit your quarterly performance ratings for <strong>' + periodId + '</strong>.</p>',
+          '<p>You are rating: <strong>' + rateeList.join(', ') + '</strong></p>',
+          '<p><a href="' + ratingUrl + '" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:4px;">Submit Ratings</a></p>',
+          '<p>If the button above doesn\'t work: ' + ratingUrl + '</p>',
+          '<p>Please submit by end of month.</p>',
+          '<p>Thanks,<br>BLC Nexus</p>'
+        ].join('\n')
+      });
+      recipients.push(recipient);
+      emailsSent++;
+    }
+
+    Logger.info('RATING_REQUESTS_SENT', {
+      module: 'PortalData', message: dryRun ? 'Dry run — no emails sent' : 'Rating request emails sent',
+      period_id: periodId, emails_sent: emailsSent, actor: actorEmail
+    });
+
+    var result = { period_id: periodId, emails_sent: dryRun ? 0 : emailsSent, recipients: recipients };
+    if (dryRun) {
+      result.dry_run = true;
+      result.would_send = [];
+      // CEO
+      if (ceoRateeNames.length > 0) {
+        result.would_send.push({ to: testEmail || actorEmail, label: 'CEO', rates: ceoRateeNames });
+      }
+      for (var rc in raterRatees) {
+        if (staffMap[rc] && raterRatees[rc].length > 0) {
+          result.would_send.push({ to: testEmail || staffMap[rc].email, label: staffMap[rc].name + ' (' + staffMap[rc].role + ')', rates: raterRatees[rc] });
+        }
+      }
+    }
+    return result;
+  }
+
+  // ============================================================
   // PUBLIC API
   // ============================================================
   return {
-    getViewData:         getViewData,
-    writeQueueItem:      writeQueueItem,
-    getLeaderDashboard:  getLeaderDashboard,
-    getMyRatees:         getMyRatees,
-    submitRating:        submitRating
+    getViewData:          getViewData,
+    writeQueueItem:       writeQueueItem,
+    getLeaderDashboard:   getLeaderDashboard,
+    getMyRatees:          getMyRatees,
+    submitRating:         submitRating,
+    sendRatingRequests:   sendRatingRequests,
+    getViewDataAs:        getViewDataAs,
+    getMyRateesAs:        getMyRateesAs
   };
+
+  // ============================================================
+  // SECTION 9: getViewDataAs — CEO preview mode
+  // ============================================================
+
+  /**
+   * Returns portal view data as if the target person were logged in.
+   * CEO only — used to preview what any staff member sees in the portal.
+   *
+   * @param {string} ceoEmail          The CEO's actual email
+   * @param {string} targetPersonCode  person_code of the staff member to preview as
+   * @returns {string}  JSON view data with previewMode: true
+   */
+  function getViewDataAs(ceoEmail, targetPersonCode) {
+    var ceoActor = RBAC.resolveActor(ceoEmail);
+    RBAC.enforcePermission(ceoActor, RBAC.ACTIONS.PAYROLL_RUN);
+
+    // Find target in DIM_STAFF_ROSTER
+    var staffRows;
+    try {
+      staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
+    } catch (e) {
+      throw new Error('getViewDataAs: could not read staff roster.');
+    }
+
+    var targetRow = null;
+    for (var i = 0; i < staffRows.length; i++) {
+      if (String(staffRows[i].person_code || '').trim() === targetPersonCode) {
+        targetRow = staffRows[i];
+        break;
+      }
+    }
+    if (!targetRow) throw new Error('Person not found: ' + targetPersonCode);
+
+    var targetEmail = String(targetRow.email || '').trim();
+    if (!targetEmail) throw new Error('No email for person: ' + targetPersonCode);
+
+    var targetActor = RBAC.resolveActor(targetEmail);
+    var jobs        = loadJobs_(targetActor);
+    var stats       = buildStats_(jobs);
+    var perms       = buildPerms_(targetActor);
+
+    return JSON.stringify({
+      actor:             { email: targetActor.email, personCode: targetActor.personCode,
+                           role: targetActor.role, displayName: targetActor.displayName,
+                           scope: targetActor.scope },
+      jobs:              jobs,
+      stats:             stats,
+      perms:             perms,
+      previewMode:       true,
+      previewPersonCode: targetPersonCode
+    });
+  }
+
+  // ============================================================
+  // SECTION 10: getMyRateesAs — CEO preview rating portal
+  // ============================================================
+
+  /**
+   * Returns the ratees list for any staff member.
+   * CEO only — used to preview the rating portal as a specific TL/PM.
+   *
+   * @param {string} ceoEmail          The CEO's actual email
+   * @param {string} targetPersonCode  person_code of the TL/PM to preview as
+   * @param {string} quarterPeriodId   e.g. '2026-Q1'
+   * @returns {string}  JSON array of ratees
+   */
+  function getMyRateesAs(ceoEmail, targetPersonCode, quarterPeriodId) {
+    var ceoActor = RBAC.resolveActor(ceoEmail);
+    RBAC.enforcePermission(ceoActor, RBAC.ACTIONS.PAYROLL_RUN);
+
+    var staffRows;
+    try {
+      staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
+    } catch (e) {
+      throw new Error('getMyRateesAs: could not read staff roster.');
+    }
+
+    var targetEmail = null;
+    for (var i = 0; i < staffRows.length; i++) {
+      if (String(staffRows[i].person_code || '').trim() === targetPersonCode) {
+        targetEmail = String(staffRows[i].email || '').trim();
+        break;
+      }
+    }
+    if (!targetEmail) throw new Error('Person not found: ' + targetPersonCode);
+
+    return getMyRatees(targetEmail, quarterPeriodId);
+  }
 
 }());

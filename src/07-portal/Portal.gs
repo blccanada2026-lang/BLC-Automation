@@ -44,8 +44,11 @@ function doGet(e) {
   var period = e && e.parameter && e.parameter.period ? e.parameter.period : '';
 
   if (page === 'rate-staff') {
+    var preview = e && e.parameter && e.parameter.preview ? e.parameter.preview : '';
     var html    = HtmlService.createHtmlOutputFromFile('07-portal/QuarterlyRating');
-    var content = '<script>var INJECTED_PERIOD = ' + JSON.stringify(period) + ';<\/script>\n' + html.getContent();
+    var content = '<script>var INJECTED_PERIOD = '       + JSON.stringify(period)  + ';<\/script>\n'
+                + '<script>var INJECTED_PREVIEW_CODE = ' + JSON.stringify(preview) + ';<\/script>\n'
+                + html.getContent();
     return HtmlService.createHtmlOutput(content)
       .setTitle('BLC Quarterly Ratings')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
@@ -285,9 +288,12 @@ function portal_getBankingDetails(personCode) {
  * @param {string} periodId  e.g. '2026-06' (pass '' for current period)
  * @returns {string}  JSON: { period_id, quarter, emails_sent, designer_client_pairs }
  */
-function portal_sendFeedbackRequests(periodId) {
+function portal_sendFeedbackRequests(periodId, testEmail) {
   var email  = Session.getActiveUser().getEmail();
-  var result = ClientFeedback.sendFeedbackRequests(email, { periodId: periodId || '' });
+  var result = ClientFeedback.sendFeedbackRequests(email, {
+    periodId:  periodId  || '',
+    testEmail: testEmail || null
+  });
   return JSON.stringify(result);
 }
 
@@ -339,6 +345,42 @@ function portal_getLeaderDashboard() {
 function portal_confirmPaystub(periodId) {
   var email  = Session.getActiveUser().getEmail();
   var result = PayrollEngine.confirmPaystub(email, periodId || '');
+  return JSON.stringify(result);
+}
+
+// ============================================================
+// portal_previewQuarterlyBonus — preview quarterly bonus (no write)
+// ============================================================
+
+/**
+ * Returns a preview of the quarterly bonus calculation without writing anything.
+ * CEO only.
+ *
+ * @param {string} quarter  'Q1'|'Q2'|'Q3'|'Q4'
+ * @param {number} year     e.g. 2026
+ * @returns {string}  JSON array of bonus rows
+ */
+function portal_previewQuarterlyBonus(quarter, year) {
+  var email  = Session.getActiveUser().getEmail();
+  var rows   = QuarterlyBonusEngine.previewQuarterlyBonus(email, quarter, parseInt(year, 10));
+  return JSON.stringify(rows);
+}
+
+// ============================================================
+// portal_runQuarterlyBonus — CEO triggers quarterly bonus run
+// ============================================================
+
+/**
+ * Runs the quarterly bonus calculation and writes to FACT_QUARTERLY_BONUS.
+ * CEO only.
+ *
+ * @param {string} quarter  'Q1'|'Q2'|'Q3'|'Q4'
+ * @param {number} year     e.g. 2026
+ * @returns {string}  JSON: { written, pending, skipped, quarterPeriodId }
+ */
+function portal_runQuarterlyBonus(quarter, year) {
+  var email  = Session.getActiveUser().getEmail();
+  var result = QuarterlyBonusEngine.runQuarterlyBonus(email, quarter, parseInt(year, 10));
   return JSON.stringify(result);
 }
 
@@ -395,6 +437,39 @@ function portal_getMyRatees(quarterPeriodId) {
 }
 
 // ============================================================
+// portal_getMyRateesAs — CEO preview: ratees for any TL/PM
+// ============================================================
+
+/**
+ * Returns ratees for any staff member. CEO only.
+ * Used by the rating portal when opened in CEO preview mode.
+ *
+ * @param {string} targetPersonCode  person_code of the TL/PM to preview as
+ * @param {string} quarterPeriodId   e.g. '2026-Q1'
+ * @returns {string}  JSON array of ratees
+ */
+function portal_getMyRateesAs(targetPersonCode, quarterPeriodId) {
+  var email = Session.getActiveUser().getEmail();
+  return PortalData.getMyRateesAs(email, targetPersonCode, quarterPeriodId);
+}
+
+// ============================================================
+// portal_getViewDataAs — CEO preview: full portal as any staff
+// ============================================================
+
+/**
+ * Returns portal view data as if the target person were logged in.
+ * CEO only.
+ *
+ * @param {string} targetPersonCode  person_code of the staff member to preview as
+ * @returns {string}  JSON view data with previewMode: true
+ */
+function portal_getViewDataAs(targetPersonCode) {
+  var email = Session.getActiveUser().getEmail();
+  return PortalData.getViewDataAs(email, targetPersonCode);
+}
+
+// ============================================================
 // portal_submitRating — submits a performance rating
 // ============================================================
 
@@ -409,4 +484,55 @@ function portal_getMyRatees(quarterPeriodId) {
 function portal_submitRating(payloadJson) {
   var email = Session.getActiveUser().getEmail();
   return PortalData.submitRating(email, payloadJson);
+}
+
+// ============================================================
+// portal_sendRatingRequests — CEO sends quarterly rating emails to TLs/PMs
+// ============================================================
+
+/**
+ * Emails every active TL and PM a direct link to the quarterly ratings portal.
+ * Requires PORTAL_BASE_URL Script Property to be set (run setPortalBaseUrl() once).
+ * CEO only.
+ *
+ * @param {string} periodId  e.g. '2026-Q1' (pass '' for current quarter)
+ * @returns {string}  JSON: { period_id, emails_sent, recipients }
+ */
+function portal_sendRatingRequests(periodId, testEmail) {
+  var email  = Session.getActiveUser().getEmail();
+  var result = PortalData.sendRatingRequests(email, periodId || '', testEmail || null);
+  return JSON.stringify(result);
+}
+
+/**
+ * One-time setup: stores the web app /exec URL in Script Properties.
+ * Run this manually from the Apps Script editor after deploying.
+ * Example: setPortalBaseUrl('https://script.google.com/macros/s/ABC.../exec')
+ *
+ * @param {string} url  The deployed web app /exec URL
+ */
+function setPortalBaseUrl(url) {
+  PropertiesService.getScriptProperties().setProperty('PORTAL_BASE_URL', url);
+  return 'PORTAL_BASE_URL set to: ' + url;
+}
+
+// ============================================================
+// portal_processSbsIntake — bulk intake from STG_INTAKE_SBS
+// ============================================================
+
+/**
+ * Processes all pending rows in STG_INTAKE_SBS.
+ * PM workflow: paste SBS job rows into the sheet, then click
+ * "Process SBS Jobs" in the portal. Each row is mapped using
+ * DIM_CLIENT_INTAKE_CONFIG and submitted to STG_PROCESSING_QUEUE.
+ * Status (_status, _queue_id, _error) is written back per row.
+ *
+ * Requires JOB_CREATE permission (PM, ADMIN, CEO).
+ *
+ * @returns {string}  JSON: { processed, queued, errors[] }
+ */
+function portal_processSbsIntake() {
+  var email  = Session.getActiveUser().getEmail();
+  var result = SheetAdapter.processSbsIntake(email);
+  return JSON.stringify(result);
 }

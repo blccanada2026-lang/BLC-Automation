@@ -204,6 +204,10 @@ var IntakeService = (function () {
       { callerModule: 'IntakeService' }
     );
 
+    // Flush ensures the queue write is committed to the Sheets server before
+    // any immediate processQueue() call can read it in the same execution context.
+    SpreadsheetApp.flush();
+
     return queueId;
   }
 

@@ -51,6 +51,38 @@ var BillingEngine = (function () {
   var MODULE = 'BillingEngine';
 
   // ============================================================
+  // PRIVATE SCHEMAS — used by ValidationEngine.validate()
+  // Rule A4: validate before every FACT table write.
+  // Defined once at module scope; never mutated.
+  // ============================================================
+
+  var BILLING_LEDGER_SCHEMA = {
+    event_id:        { type: 'string', required: true,  label: 'Event ID' },
+    job_number:      { type: 'string', required: true,  pattern: /^BLC-\d{5}$/, label: 'Job Number' },
+    period_id:       { type: 'string', required: true,  pattern: /^\d{4}-\d{2}$/, label: 'Period ID' },
+    event_type:      { type: 'string', required: true,  label: 'Event Type' },
+    timestamp:       { type: 'string', required: true,  label: 'Timestamp' },
+    actor_code:      { type: 'string', required: true,  label: 'Actor Code' },
+    client_code:     { type: 'string', required: true,  minLength: 2, label: 'Client Code' },
+    amount:          { type: 'number', required: true,  min: 0, label: 'Amount' },
+    currency:        { type: 'string', required: true,  allowedValues: ['CAD', 'USD'], label: 'Currency' },
+    invoice_id:      { type: 'string', required: true,  label: 'Invoice ID' },
+    idempotency_key: { type: 'string', required: true,  label: 'Idempotency Key' }
+  };
+
+  var INVOICED_EVENT_SCHEMA = {
+    event_id:   { type: 'string', required: true, label: 'Event ID' },
+    job_number: { type: 'string', required: true, pattern: /^BLC-\d{5}$/, label: 'Job Number' },
+    event_type: { type: 'string', required: true, label: 'Event Type' },
+    from_state: { type: 'string', required: true, label: 'From State' },
+    to_state:   { type: 'string', required: true, label: 'To State' },
+    timestamp:  { type: 'string', required: true, label: 'Timestamp' },
+    actor_code: { type: 'string', required: true, label: 'Actor Code' },
+    period_id:  { type: 'string', required: true, pattern: /^\d{4}-\d{2}$/, label: 'Period ID' },
+    invoice_id: { type: 'string', required: true, label: 'Invoice ID' }
+  };
+
+  // ============================================================
   // SECTION 1: RATE CACHE
   //
   // Built once per run from DIM_CLIENT_RATES.
@@ -273,17 +305,32 @@ var BillingEngine = (function () {
       });
     }
 
-    // Clear MART data rows (keep header), then append fresh aggregates
+    // Clear MART data rows (keep header), then append fresh aggregates.
+    // NOTE: DAL does not yet expose a clearSheet() method, so this uses SpreadsheetApp
+    // directly. This is an acknowledged A2 exception scoped to MART (non-FACT projection
+    // tables). WriteGuard and CacheManager are not required here — MART is rebuilt from
+    // FACT_BILLING_LEDGER on every run and carries no audit-trail obligation.
+    // TODO: add DAL.clearSheet() and migrate this call when implemented.
     try {
+      Logger.info('BILLING_MART_CLEAR_START', {
+        module:    MODULE,
+        message:   'Clearing MART_BILLING_SUMMARY before refresh',
+        period_id: periodId
+      });
       var ss      = SpreadsheetApp.getActiveSpreadsheet();
       var martTab = ss.getSheetByName(Config.TABLES.MART_BILLING_SUMMARY);
       if (martTab && martTab.getLastRow() > 1) {
         martTab.deleteRows(2, martTab.getLastRow() - 1);
       }
+      Logger.info('BILLING_MART_CLEAR_DONE', {
+        module:    MODULE,
+        message:   'MART_BILLING_SUMMARY cleared',
+        period_id: periodId
+      });
     } catch (e) {
       Logger.warn('BILLING_MART_CLEAR_FAILED', {
         module:  MODULE,
-        message: 'Could not clear MART_BILLING_SUMMARY — will append',
+        message: 'Could not clear MART_BILLING_SUMMARY — will append duplicate rows',
         error:   e.message
       });
     }
@@ -330,7 +377,31 @@ var BillingEngine = (function () {
       RBAC.enforcePermission(actor, RBAC.ACTIONS.BILLING_RUN);
 
       var periodId  = options.periodId || Identifiers.generateCurrentPeriodId();
-      var invoiceId = Identifiers.generateId();
+
+      // Resolve a stable invoice group ID for this period.
+      // Re-runs reuse the same ID so all jobs billed for a period share
+      // one invoice_id — partial-run + retry does not split the invoice.
+      // Downstream: always group client invoices by period_id; invoice_id
+      // is a grouping convenience only, not the billing authority.
+      var invoiceGroupKey = 'INVOICE_GROUP_' + periodId;
+      var invoiceId       = PropertiesService.getScriptProperties().getProperty(invoiceGroupKey);
+      if (!invoiceId) {
+        invoiceId = Identifiers.generateId();
+        PropertiesService.getScriptProperties().setProperty(invoiceGroupKey, invoiceId);
+        Logger.info('BILLING_INVOICE_GROUP_CREATED', {
+          module:     MODULE,
+          message:    'New invoice group ID created for period',
+          period_id:  periodId,
+          invoice_id: invoiceId
+        });
+      } else {
+        Logger.info('BILLING_INVOICE_GROUP_REUSED', {
+          module:     MODULE,
+          message:    'Reusing invoice group ID for period (re-run)',
+          period_id:  periodId,
+          invoice_id: invoiceId
+        });
+      }
 
       Logger.info('BILLING_RUN_START', {
         module:     MODULE,
@@ -352,7 +423,23 @@ var BillingEngine = (function () {
       }
 
       // ── 3. Load hours cache ──────────────────────────────
-      var hoursCache = buildHoursCache_(periodId);
+      var hoursCache  = buildHoursCache_(periodId);
+      var hoursCount  = Object.keys(hoursCache).length;
+
+      Logger.info('BILLING_CACHES_LOADED', {
+        module:      MODULE,
+        rate_count:  rateCount,
+        hours_count: hoursCount,
+        period_id:   periodId
+      });
+
+      if (hoursCount === 0) {
+        Logger.warn('BILLING_NO_WORK_LOGS', {
+          module:    MODULE,
+          message:   'No work log hours found for period — all jobs will bill at $0. Check FACT_WORK_LOGS partition.',
+          period_id: periodId
+        });
+      }
 
       // ── 4. Load COMPLETED_BILLABLE jobs ──────────────────
       var allJobs      = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
@@ -374,16 +461,20 @@ var BillingEngine = (function () {
       var skipped    = 0;
       var errors     = [];
       var byCurrency = {};  // { 'CAD': 0.00, 'USD': 0.00 }
+      var wasPartial = false;
 
       for (var i = 0; i < billableJobs.length; i++) {
 
         if (HealthMonitor.isApproachingLimit()) {
           HealthMonitor.checkLimits();
-          Logger.warn('BILLING_RUN_PARTIAL', {
+          wasPartial = true;
+          Logger.warn('BILLING_RUN_TRUNCATED', {
             module:    MODULE,
-            message:   'Stopping early — quota limit approaching',
+            message:   'Billing run truncated by quota limit — re-run to process remaining jobs',
             processed: processed,
-            remaining: billableJobs.length - i
+            remaining: billableJobs.length - i,
+            period_id: periodId,
+            invoice_id: invoiceId
           });
           break;
         }
@@ -393,7 +484,8 @@ var BillingEngine = (function () {
         var idempotencyKey = buildIdempotencyKey_(jobNumber, periodId);
 
         try {
-          // Skip already-billed
+          // Fast path: check without lock (optimisation — avoids lock overhead on re-runs).
+          // This is not the correctness gate; the re-check inside the lock is.
           if (isBilled_(idempotencyKey, periodId)) {
             skipped++;
             continue;
@@ -420,24 +512,107 @@ var BillingEngine = (function () {
           // Get total hours for this job
           var totalHours = hoursCache[jobNumber] || 0;
           if (totalHours === 0) {
-            Logger.warn('BILLING_ZERO_HOURS', {
-              module:     MODULE,
-              message:    'No work log hours found for job — billed at $0. Log hours or contact PM.',
-              job_number: jobNumber
+            if (!options.allowZeroHours) {
+              // Block: do not write a $0 invoice row and do not transition to INVOICED.
+              // Job stays COMPLETED_BILLABLE so work logs can be added and billing re-run.
+              // Pass options.allowZeroHours = true to override for intentional $0 billing.
+              Logger.error('BILLING_ZERO_HOURS', {
+                module:      MODULE,
+                message:     'Job blocked — no work log hours found for period. Add work logs and re-run, or pass allowZeroHours:true to force.',
+                job_number:  jobNumber,
+                client_code: clientCode,
+                invoice_id:  invoiceId,
+                period_id:   periodId
+              });
+              errors.push(jobNumber + ': blocked — no hours logged for period ' + periodId);
+              skipped++;
+              continue;
+            }
+            // allowZeroHours override: proceed but still surface as an error.
+            Logger.error('BILLING_ZERO_HOURS_OVERRIDE', {
+              module:      MODULE,
+              message:     'Job billed at $0 — allowZeroHours override active. Do not send to client without review.',
+              job_number:  jobNumber,
+              client_code: clientCode,
+              invoice_id:  invoiceId,
+              period_id:   periodId
             });
           }
 
-          // Build + write billing record
+          // Build the billing row before acquiring the lock (no shared state involved).
           var billingRow = buildBillingRow_(
             job, totalHours, rateInfo, actor, periodId, invoiceId, idempotencyKey
           );
-          DAL.appendRow(
-            Config.TABLES.FACT_BILLING_LEDGER,
-            billingRow,
-            { callerModule: MODULE, periodId: periodId }
+
+          // Correctness gate: re-check inside a script lock so the isBilled_ read
+          // and the appendRow write are atomic. A concurrent run that passed the
+          // fast-path check above will block here; once it acquires the lock it will
+          // find isBilled_ = true and skip cleanly.
+          // waitLock(8000) throws LockTimeoutException if the lock is not free within
+          // 8 s — the outer catch handles this as BILLING_JOB_ERROR and the job
+          // remains COMPLETED_BILLABLE for the next run.
+          var lock     = LockService.getScriptLock();
+          var acquired = false;
+          try {
+            lock.waitLock(8000);
+            acquired = true;
+
+            if (isBilled_(idempotencyKey, periodId)) {
+              skipped++;
+              continue; // finally releases the lock before the loop continues
+            }
+
+            // Rule A4: validate before every FACT write.
+            // Throws ValidationError if any required field is absent or malformed —
+            // caught by the outer per-job catch, logged as BILLING_JOB_ERROR.
+            ValidationEngine.validate(BILLING_LEDGER_SCHEMA, billingRow, { module: MODULE });
+
+            DAL.appendRow(
+              Config.TABLES.FACT_BILLING_LEDGER,
+              billingRow,
+              { callerModule: MODULE, periodId: periodId }
+            );
+          } finally {
+            if (acquired) lock.releaseLock();
+          }
+
+          // Guard: assert COMPLETED_BILLABLE → INVOICED is a valid transition
+          // before writing any FACT event. Throws INVALID_TRANSITION if not.
+          StateMachine.assertTransition(
+            Config.STATES.COMPLETED_BILLABLE,
+            Config.STATES.INVOICED,
+            { jobNumber: jobNumber }
           );
 
-          // Transition VW → INVOICED
+          // Write INVOICED transition to FACT_JOB_EVENTS — this is the
+          // source of truth. EventReplayEngine rebuilds VW from this row,
+          // not from the VW updateWhere below.
+          var invoicedEvent = {
+            event_id:     Identifiers.generateId(),
+            job_number:   jobNumber,
+            event_type:   Config.STATES.INVOICED,
+            from_state:   Config.STATES.COMPLETED_BILLABLE,
+            to_state:     Config.STATES.INVOICED,
+            timestamp:    billingRow.timestamp,
+            actor_code:   actor.personCode || '',
+            actor_role:   actor.role       || '',
+            period_id:    periodId,
+            invoice_id:   invoiceId,
+            payload_json: JSON.stringify({ billing_event_id: billingRow.event_id })
+          };
+
+          // Rule A4: validate before FACT_JOB_EVENTS write.
+          ValidationEngine.validate(INVOICED_EVENT_SCHEMA, invoicedEvent, { module: MODULE });
+
+          DAL.appendRow(
+            Config.TABLES.FACT_JOB_EVENTS,
+            invoicedEvent,
+            { callerModule: MODULE }
+          );
+
+          // Update the VW projection from the FACT event just written.
+          // If this fails, FACT_JOB_EVENTS already holds the transition —
+          // EventReplayEngine can reconstruct INVOICED on next VW rebuild.
           DAL.updateWhere(
             Config.TABLES.VW_JOB_CURRENT_STATE,
             { job_number: jobNumber },
@@ -479,7 +654,8 @@ var BillingEngine = (function () {
       } // end for
 
       // ── 7. Refresh MART ──────────────────────────────────
-      if (processed > 0) {
+      // Refresh even on re-runs (skipped > 0) in case ledger rows were corrected manually.
+      if (processed > 0 || skipped > 0) {
         refreshMartBillingSummary_(periodId);
       }
 
@@ -489,13 +665,21 @@ var BillingEngine = (function () {
         errors:      errors,
         by_currency: byCurrency,
         invoice_id:  invoiceId,
-        period_id:   periodId
+        period_id:   periodId,
+        partial:     wasPartial
       };
 
       Logger.info('BILLING_RUN_COMPLETE', {
-        module:  MODULE,
-        message: 'Billing run complete',
-        result:  JSON.stringify(result)
+        module:       MODULE,
+        message:      wasPartial ? 'Billing run complete (partial — re-run required)' : 'Billing run complete',
+        processed:    processed,
+        skipped:      skipped,
+        error_count:  errors.length,
+        by_currency:  JSON.stringify(byCurrency),
+        invoice_id:   invoiceId,
+        period_id:    periodId,
+        partial:      wasPartial,
+        elapsed_ms:   (HealthMonitor.getStatus() || {}).elapsedMs || 0
       });
 
       return result;

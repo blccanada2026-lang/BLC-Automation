@@ -121,6 +121,22 @@ var JobCreateHandler = (function () {
       type:     'string',
       required: false,
       label:    'Submitted At'
+    },
+    // Client's own reference number — stored for cross-referencing.
+    // Set by SheetAdapter when intake originates from a client sheet (e.g. SBS 'Job #').
+    client_job_ref: {
+      type:      'string',
+      required:  false,
+      maxLength: 50,
+      label:     'Client Job Ref'
+    },
+    // Client-requested completion date (ISO YYYY-MM-DD).
+    // Informational only — does not affect state machine or billing.
+    target_date: {
+      type:      'string',
+      required:  false,
+      maxLength: 20,
+      label:     'Target Date'
     }
   };
 
@@ -262,13 +278,15 @@ var JobCreateHandler = (function () {
       timestamp:        new Date().toISOString(),
       actor_code:       actor.personCode || '',
       actor_role:       actor.role       || '',
-      client_code:      payload.client_code   || '',
-      job_type:         payload.job_type       || '',
-      product_code:     payload.product_code   || '',
-      quantity:         payload.quantity       || 0,
-      notes:            payload.notes          || '',
+      client_code:      payload.client_code    || '',
+      job_type:         payload.job_type        || '',
+      product_code:     payload.product_code    || '',
+      quantity:         payload.quantity        || 0,
+      client_job_ref:   payload.client_job_ref  || '',
+      target_date:      payload.target_date     || '',
+      notes:            payload.notes           || '',
       idempotency_key:  idempotencyKey,
-      payload_json:     rawPayloadJson         || ''
+      payload_json:     rawPayloadJson          || ''
     };
   }
 

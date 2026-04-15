@@ -122,7 +122,7 @@ var SCHEMAS = {
   ],
 
   'DIM_CLIENT_MASTER': [
-    'client_code', 'client_name', 'contact_email',
+    'client_code', 'client_name', 'contact_name', 'contact_email',
     'currency', 'active', 'effective_from', 'effective_to', 'notes'
   ],
 
@@ -143,6 +143,16 @@ var SCHEMAS = {
 
   'DIM_SEQUENCE_COUNTERS': [
     'counter_name', 'current_value', 'updated_at'
+  ],
+
+  // Official account team assignments — source of truth for client feedback forms.
+  // One row per designer per client. Dates are ISO YYYY-MM-DD strings.
+  // assigned_to_date blank = currently active on this account.
+  // ClientFeedback reads this to determine which designers appear on each client's form.
+  // NEVER derive this from FACT_WORK_LOGS — transactional work ≠ account membership.
+  'REF_ACCOUNT_DESIGNER_MAP': [
+    'client_code', 'designer_code', 'role',
+    'assigned_from_date', 'assigned_to_date', 'notes'
   ],
 
   // ── Staging tables ────────────────────────────────────────
@@ -196,8 +206,9 @@ var SCHEMAS = {
   'FACT_JOB_EVENTS': [
     'event_id', 'job_number', 'period_id', 'event_type',
     'timestamp', 'actor_code', 'actor_role', 'client_code',
-    'job_type', 'product_code', 'quantity', 'notes',
-    'idempotency_key', 'payload_json'
+    'job_type', 'product_code', 'quantity',
+    'client_job_ref', 'target_date',
+    'notes', 'idempotency_key', 'payload_json'
   ],
 
   'FACT_WORK_LOGS': [
@@ -239,12 +250,17 @@ var SCHEMAS = {
   // Client feedback scores per designer per quarter.
   // raw_score: 1–5 (from the Google Form scale).
   // normalized_score: 0–100 converted by formula (raw-1)/4*100.
+  // strengths_text … suggestions_text: qualitative open-text from upgraded form (Q5–Q10).
+  // recommendation_flag: 'YES' | 'NO' | '' (parsed from Q_RECOMMEND response).
   'FACT_CLIENT_FEEDBACK': [
     'event_id', 'period_id', 'quarter',
     'client_code', 'designer_code',
     'submitted_at', 'raw_score', 'normalized_score',
     'comments', 'form_response_id',
-    'idempotency_key', 'status'
+    'idempotency_key', 'status',
+    'strengths_text', 'improvement_text', 'error_feedback_text',
+    'ease_of_working_text', 'recommendation_flag', 'recommendation_reason',
+    'suggestions_text'
   ],
 
   'FACT_SOP_SUBMISSIONS': [
@@ -252,6 +268,22 @@ var SCHEMAS = {
     'timestamp', 'actor_code', 'actor_role',
     'checklist_data', 'approved_by', 'notes',
     'idempotency_key', 'payload_json'
+  ],
+
+  'FACT_PERFORMANCE_RATINGS': [
+    'rating_id', 'period_id',
+    'ratee_code', 'rater_code', 'rater_role',
+    'score_quality', 'score_sop', 'score_communication', 'score_initiative',
+    'avg_score_normalized',
+    'submitted_at', 'idempotency_key'
+  ],
+
+  'FACT_QUARTERLY_BONUS': [
+    'bonus_id', 'event_type', 'person_code', 'quarter_period_id',
+    'design_hours', 'client_score', 'error_score', 'rating_score',
+    'composite_score', 'bonus_inr',
+    'status', 'pending_reason',
+    'actor_email', 'timestamp', 'idempotency_key'
   ],
 
   // ── View tables ───────────────────────────────────────────
@@ -265,6 +297,31 @@ var SCHEMAS = {
   'VW_DESIGNER_WORKLOAD': [
     'person_code', 'period_id', 'job_count',
     'total_quantity', 'last_updated'
+  ],
+
+  // ── Client intake tables ──────────────────────────────────
+  //
+  // DIM_CLIENT_INTAKE_CONFIG: one row per field mapping per client.
+  //   source_column  — column header in the client's intake sheet (blank = fixed injection)
+  //   target_field   — standard payload field (e.g. client_job_ref, product_code, notes)
+  //   transform      — TRIM | UPPERCASE | DATE_ISO | blank = pass-through
+  //   required       — TRUE/FALSE
+  //   sort_order     — integer; controls join order for multi-source fields (e.g. notes)
+  //   fixed_value    — value to inject when source_column is blank (e.g. 'SBS', '1')
+  //
+  // STG_INTAKE_SBS: PM pastes SBS job rows here. System columns prefixed with _.
+  //   Rows where _status is blank are processed by SheetAdapter.processSbsIntake().
+  //   _status values: '' (pending) | 'QUEUED' | 'ERROR: <message>'
+
+  'DIM_CLIENT_INTAKE_CONFIG': [
+    'client_code', 'source_column', 'target_field',
+    'transform', 'required', 'sort_order', 'fixed_value', 'notes'
+  ],
+
+  'STG_INTAKE_SBS': [
+    'Job #', 'Customer', 'Due Date', 'Notes', 'Product',
+    'Design/Estimator', 'Job Name', 'Model',
+    '_status', '_queue_id', '_queued_at', '_error'
   ],
 
   // ── Mart tables ───────────────────────────────────────────
@@ -294,6 +351,13 @@ var FACT_TABLE_NAMES = [
   'FACT_BILLING_LEDGER',
   'FACT_PAYROLL_LEDGER',
   'FACT_SOP_SUBMISSIONS'
+];
+
+// ── Non-partitioned FACT tables — plain static tabs (no period suffix) ────
+var FLAT_FACT_TABLE_NAMES = [
+  'FACT_CLIENT_FEEDBACK',
+  'FACT_PERFORMANCE_RATINGS',
+  'FACT_QUARTERLY_BONUS'
 ];
 
 // ============================================================
@@ -429,6 +493,17 @@ function setupSchemas_() {
     ensureHeaders_(factSheet, SCHEMAS[factTable]);
   }
 
+  // ── Flat FACT tables (no period suffix — not monthly partitioned) ──
+  log_('─────────────────────────────────────────');
+  log_('Flat FACT tables (non-partitioned)');
+  log_('─────────────────────────────────────────');
+
+  for (var k = 0; k < FLAT_FACT_TABLE_NAMES.length; k++) {
+    var flatTable = FLAT_FACT_TABLE_NAMES[k];
+    var flatSheet = ensureTab_(flatTable);
+    ensureHeaders_(flatSheet, SCHEMAS[flatTable]);
+  }
+
   log_('Schema setup complete.');
 }
 
@@ -490,6 +565,396 @@ function seedVersion_() {
 }
 
 /**
+ * Seeds DIM_CLIENT_INTAKE_CONFIG with the SBS column mapping.
+ * Idempotent — skips rows where client_code + source_column + target_field
+ * already exists. Safe to re-run after adding new clients.
+ */
+function seedClientIntakeConfig_() {
+  log_('Seeding DIM_CLIENT_INTAKE_CONFIG (SBS)…');
+  var sheet = getTab_('DIM_CLIENT_INTAKE_CONFIG');
+  if (!sheet) {
+    log_('  ⚠️  DIM_CLIENT_INTAKE_CONFIG tab not found — run schema setup first.');
+    return;
+  }
+
+  // SBS mapping rows.
+  // Columns: client_code, source_column, target_field, transform,
+  //          required, sort_order, fixed_value, notes
+  //
+  // Rows with blank source_column are fixed injections — value comes from fixed_value.
+  // Multiple rows with the same target_field (e.g. 'notes') are joined with ' | '
+  // in sort_order sequence.
+  var SBS_ROWS = [
+    ['SBS', '',              'client_code',   '',          'TRUE',  0, 'SBS',  'Fixed — BLC client code for all SBS jobs'],
+    ['SBS', '',              'quantity',      '',          'TRUE',  0, '1',   'Fixed — each SBS sheet row = 1 job'],
+    ['SBS', 'Job #',         'client_job_ref','TRIM',      'TRUE',  1, '',    'SBS reference number stored for cross-referencing'],
+    ['SBS', 'Due Date',      'target_date',   'DATE_ISO',  'FALSE', 2, '',    'MM/DD/YYYY → YYYY-MM-DD'],
+    ['SBS', 'Notes',         'job_type',      'UPPERCASE', 'TRUE',  3, '',    'Submittal badge → SUBMITTAL'],
+    ['SBS', 'Product',       'product_code',  'UPPERCASE', 'TRUE',  4, '',    'Roof → ROOF, Floor → FLOOR'],
+    ['SBS', 'Job Name',      'notes',         'TRIM',      'FALSE', 5, '',    'Primary job description'],
+    ['SBS', 'Customer',      'notes',         'TRIM',      'FALSE', 6, '',    'SBS customer/division — appended to notes'],
+    ['SBS', 'Model',         'notes',         'TRIM',      'FALSE', 7, '',    'House model — appended to notes']
+  ];
+
+  // Build a set of existing (client_code|source_column|target_field) keys
+  var existing = {};
+  var lastRow  = sheet.getLastRow();
+  if (lastRow > 1) {
+    var data = sheet.getRange(2, 1, lastRow - 1, 3).getValues(); // cols: client_code, source_column, target_field
+    for (var i = 0; i < data.length; i++) {
+      var key = data[i][0] + '|' + data[i][1] + '|' + data[i][2];
+      existing[key] = true;
+    }
+  }
+
+  var inserted = 0;
+  for (var j = 0; j < SBS_ROWS.length; j++) {
+    var row = SBS_ROWS[j];
+    var rowKey = row[0] + '|' + row[1] + '|' + row[2];
+    if (existing[rowKey]) {
+      log_('  ✅ EXISTS   ' + rowKey);
+    } else {
+      sheet.appendRow(row);
+      log_('  ➕ SEEDED   ' + rowKey);
+      inserted++;
+    }
+  }
+
+  log_('  SBS config: ' + inserted + ' rows added (' + (SBS_ROWS.length - inserted) + ' already existed)');
+}
+
+/**
+ * Seeds REF_ACCOUNT_DESIGNER_MAP with the official account team.
+ * Derived from DIM_STAFF_ROSTER + Assigned_Clients column (Apr 2026 snapshot).
+ * Safe to re-run — skips rows that already exist.
+ *
+ * Roles: DESIGNER = delivers work + receives client feedback
+ *        SUPERVISOR = PM/leadership oversight (excluded from feedback forms)
+ *        QC = QC reviewer (excluded from feedback forms)
+ *
+ * client_code must match DIM_CLIENT_MASTER exactly.
+ * Verify ALBERTA-TRUSS matches your DIM_CLIENT_MASTER entry for Alberta Truss.
+ */
+function seedAccountDesignerMap_() {
+  log_('Seeding REF_ACCOUNT_DESIGNER_MAP…');
+  var sheet = getTab_('REF_ACCOUNT_DESIGNER_MAP');
+  if (!sheet) {
+    log_('  ⚠️  REF_ACCOUNT_DESIGNER_MAP tab not found — run runSetupSchemas() first.');
+    return;
+  }
+
+  // Columns: client_code, designer_code, role, assigned_from_date, assigned_to_date, notes
+  var DEFAULT_FROM = '2025-01-01';
+  var ROWS = [
+    // ── SBS ──────────────────────────────────────────────────────────────────
+    ['SBS', 'SGO',   'SUPERVISOR', DEFAULT_FROM, '', 'PM on SBS'],
+    ['SBS', 'BCH',   'DESIGNER',   DEFAULT_FROM, '', 'Team Lead'],
+    ['SBS', 'SDA',   'DESIGNER',   DEFAULT_FROM, '', 'Team Lead'],
+    ['SBS', 'SVN',   'DESIGNER',   DEFAULT_FROM, '', 'Team Lead'],
+    ['SBS', 'PBG',   'DESIGNER',   DEFAULT_FROM, '', 'Team Lead'],
+    ['SBS', 'JYS',   'DESIGNER',   DEFAULT_FROM, '', 'Senior Designer'],
+    ['SBS', 'ABB',   'DESIGNER',   DEFAULT_FROM, '', 'Designer'],
+    ['SBS', 'SYR',   'DESIGNER',   DEFAULT_FROM, '', 'Designer'],
+    ['SBS', 'BSG',   'DESIGNER',   DEFAULT_FROM, '', 'Designer'],
+    ['SBS', 'RKU',   'QC',         DEFAULT_FROM, '', 'QC Reviewer'],
+
+    // ── NORSPAN-MB ────────────────────────────────────────────────────────────
+    ['NORSPAN-MB', 'SGO',   'SUPERVISOR', DEFAULT_FROM, '', 'PM'],
+    ['NORSPAN-MB', 'BCH',   'DESIGNER',   DEFAULT_FROM, '', 'Team Lead'],
+    ['NORSPAN-MB', 'VKV',   'DESIGNER',   DEFAULT_FROM, '', 'Designer'],
+    ['NORSPAN-MB', 'RKG',   'DESIGNER',   DEFAULT_FROM, '', 'Designer'],
+
+    // ── TITAN ─────────────────────────────────────────────────────────────────
+    ['TITAN', 'SGO',   'SUPERVISOR', DEFAULT_FROM, '', 'PM'],
+    ['TITAN', 'PBG',   'DESIGNER',   DEFAULT_FROM, '', 'Team Lead'],
+    ['TITAN', 'PRS',   'DESIGNER',   DEFAULT_FROM, '', 'Designer'],
+    ['TITAN', 'NMM',   'DESIGNER',   DEFAULT_FROM, '', 'Designer'],
+
+    // ── MATIX-SK ──────────────────────────────────────────────────────────────
+    ['MATIX-SK', 'SGO',   'SUPERVISOR', DEFAULT_FROM, '', 'PM'],
+    ['MATIX-SK', 'DBG',   'DESIGNER',   DEFAULT_FROM, '', 'Senior Designer'],
+    ['MATIX-SK', 'DBS',   'DESIGNER',   DEFAULT_FROM, '', 'Senior Designer'],
+
+    // ── NELSON ────────────────────────────────────────────────────────────────
+    ['NELSON', 'DBS',   'DESIGNER',   DEFAULT_FROM,  '', 'Senior Designer'],
+    ['NELSON', 'AR001', 'DESIGNER',   '2026-03-12',  '', 'Onboarded 2026-03-12'],
+
+    // ── ALBERTA TRUSS ────────────────────────────────────────────────────────
+    ['ALBERTA TRUSS', 'PRS', 'DESIGNER', DEFAULT_FROM, '', 'Designer'],
+    ['ALBERTA TRUSS', 'DBS', 'DESIGNER', DEFAULT_FROM, '', 'Senior Designer']
+  ];
+
+  // Build set of existing client_code|designer_code keys to skip duplicates
+  var existing = {};
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+    for (var i = 0; i < data.length; i++) {
+      existing[data[i][0] + '|' + data[i][1]] = true;
+    }
+  }
+
+  var inserted = 0;
+  for (var j = 0; j < ROWS.length; j++) {
+    var row = ROWS[j];
+    var key = row[0] + '|' + row[1];
+    if (existing[key]) {
+      log_('  ✅ EXISTS   ' + key);
+    } else {
+      sheet.appendRow(row);
+      log_('  ➕ SEEDED   ' + key);
+      inserted++;
+    }
+  }
+
+  log_('  Account-designer map: ' + inserted + ' rows added (' + (ROWS.length - inserted) + ' already existed)');
+}
+
+/**
+ * Seeds DIM_STAFF_ROSTER with active staff (Apr 2026 snapshot).
+ * Inactive staff (Active=No) are included with active='FALSE' and effective_to='2025-12-31'.
+ * Safe to re-run — skips person_codes that already exist.
+ *
+ * Columns (13): person_code, name, email, role, supervisor_code, pm_code,
+ *               pay_currency, pay_design, pay_qc, bonus_eligible,
+ *               active, effective_from, effective_to
+ */
+function seedDimStaffRoster_() {
+  log_('Seeding DIM_STAFF_ROSTER…');
+  var sheet = getTab_('DIM_STAFF_ROSTER');
+  if (!sheet) {
+    log_('  ⚠️  DIM_STAFF_ROSTER tab not found — run runSetupSchemas() first.');
+    return;
+  }
+
+  // Columns: person_code, name, email, role, supervisor_code, pm_code,
+  //          pay_currency, pay_design, pay_qc, bonus_eligible, active, effective_from, effective_to
+  // All rates in INR. Inactive staff: active='FALSE', effective_to='2025-12-31'.
+  // pm_code=SGO for all (Sarty Gosh is PM on all accounts).
+  var STAFF = [
+    // Active (13 values each — active='TRUE' at position 10)
+    ['SGO',  'Sarty Gosh',        'sarthakaespl@gmail.com',           'PM',          '',    'SGO', 'INR', 500, 500, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['BCH',  'Bharath Charles',   'bharathchunarkar121@gmail.com',     'TEAM_LEAD',   'SGO', 'SGO', 'INR', 400, 400, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['SDA',  'Samar Kumar Das',   'samar.das1995@gmail.com',           'TEAM_LEAD',   'SGO', 'SGO', 'INR', 350, 350, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['SVN',  'Savvy Nath',        'subonath2018@gmail.com',            'TEAM_LEAD',   'SDA', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['PBG',  'Pabitra Gosh',      'pabitra8846@gmail.com',             'TEAM_LEAD',   'SDA', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['JYS',  'Joy Sarkar',        'joysarkar21.1143@gmail.com',        'DESIGNER',    '',    'SGO', 'INR', 350, 350, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['DBG',  'Debby Gosh',        'debiaespl@gmail.com',               'DESIGNER',    'SGO', 'SGO', 'INR', 450, 450, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['DBS',  'Deb Sen',           'Debnathsen9831@gmail.com',          'DESIGNER',    'SGO', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['RKU',  'Raj Kumar',         'rky9133@gmail.com',                 'QC_REVIEWER', 'BCH', 'SGO', 'INR', 350, 350, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['PRS',  'Priyanka S',        'priyanka.santra613@gmail.com',      'DESIGNER',    'PBG', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['ABB',  'Abhijit Bera',      'abhijitshilpamandira@gmail.com',    'DESIGNER',    'SVN', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['SYR',  'Sayan Roy',         'sr5062407@gmail.com',               'DESIGNER',    'BCH', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['BSG',  'Banik Sagar',       'sagarbanik77@gmail.com',            'DESIGNER',    'SDA', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['VKV',  'Vani KV',           'kolimivani@gmail.com',              'DESIGNER',    'BCH', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['RKG',  'RaviKumar Gummadi', 'ravigummadi12@gmail.com',           'DESIGNER',    'BCH', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['NMM',  'Nitesh Mishra',     'nitishrickybahl.nrb@gmail.com',     'DESIGNER',    'PBG', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    ['AR001','Abhisek Rit',       'abhisek.architect@gmail.com',       'DESIGNER',    'SGO', 'SGO', 'INR', 350, 350, 'TRUE',  'TRUE',  '2026-03-12', ''],
+    // Inactive (active='FALSE', effective_to='2025-12-31')
+    ['SKR',  'Sai Kris',          'sai.kris@bluelotuscanada.ca',       'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
+    ['SMB',  'Sammy Banerjee',    'sammy@bluelotuscanada.ca',          'DESIGNER',    '',    'SGO', 'INR', 450, 450, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
+    ['SUB',  'Suman Bera',        's.bera@bluelotuscanada.ca',         'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
+    ['SUB2', 'Sunit Barui',       's.barui@bluelotuscanada.ca',        'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
+    ['RUD',  'Rupa Das',          'rupa.das@bluelotuscanada.ca',       'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
+    ['PRG',  'Pritam Gosh',       'pritam@bluelotuscanada.ca',         'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
+    ['AVM',  'Ashok Vemuri',      'ashok.allpoints@gmail.com',         'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31']
+  ];
+
+  var existing = {};
+  var lastRow  = sheet.getLastRow();
+  if (lastRow > 1) {
+    var data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < data.length; i++) {
+      existing[String(data[i][0])] = true;
+    }
+  }
+
+  var inserted = 0;
+  for (var j = 0; j < STAFF.length; j++) {
+    var row = STAFF[j];
+    if (existing[row[0]]) {
+      log_('  ✅ EXISTS   ' + row[0] + ' (' + row[1] + ')');
+    } else {
+      sheet.appendRow(row);
+      log_('  ➕ SEEDED   ' + row[0] + ' (' + row[1] + ')');
+      inserted++;
+    }
+  }
+  log_('  Staff roster: ' + inserted + ' rows added (' + (STAFF.length - inserted) + ' already existed)');
+}
+
+/**
+ * Clears ALL data rows from DIM_STAFF_ROSTER and re-seeds with correct 13-column data.
+ * Use this to fix column misalignment caused by earlier seeds that were missing the
+ * `active` column. Safe — DIM_STAFF_ROSTER is a dimension table, not a FACT table.
+ */
+function resetAndReseedStaffRoster() {
+  var sheet = getTab_('DIM_STAFF_ROSTER');
+  if (!sheet) {
+    log_('  ⚠️  DIM_STAFF_ROSTER not found — run runSetupSchemas() first.');
+    return;
+  }
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.deleteRows(2, lastRow - 1);
+    log_('  Cleared ' + (lastRow - 1) + ' existing rows from DIM_STAFF_ROSTER');
+  }
+  seedDimStaffRoster_();
+  log_('  resetAndReseedStaffRoster complete — run diagnoseStaffRoster() to verify.');
+}
+
+/**
+ * Seeds DIM_CLIENT_MASTER with the 6 active clients (Apr 2026 snapshot).
+ * Safe to re-run — skips client_codes that already exist.
+ *
+ * ⚠️  Missing contact emails: SBS, TITAN, MATIX-SK, NORSPAN-MB.
+ *     Add these manually in the sheet before the first feedback run.
+ * ⚠️  ALBERTA TRUSS email 'bobs@albertatruss' looks incomplete — verify domain.
+ */
+function seedClientMaster_() {
+  log_('Seeding DIM_CLIENT_MASTER…');
+  var sheet = getTab_('DIM_CLIENT_MASTER');
+  if (!sheet) {
+    log_('  ⚠️  DIM_CLIENT_MASTER tab not found — run runSetupSchemas() first.');
+    return;
+  }
+
+  // Columns: client_code, client_name, contact_name, contact_email, currency, active, effective_from, effective_to, notes
+  var CLIENTS = [
+    ['SBS',          'SBS',               'Al',          'aguerra@structuralbuildingsolutions.com', 'USD', 'TRUE',  '2025-01-01', '', '350 Burbank Road, Oldsmar, FL 34677 | Alvaro Guerra | Net 15 | No GST'],
+    ['TITAN',        'TITAN',             'Joel',        'joel@titanmanufacturing.ca',              'CAD', 'TRUE',  '2025-01-01', '', 'Alberton, ON | Net 15 | GST applicable'],
+    ['MATIX-SK',     'MATIX',             'Miles',       'miles@norspantruss.com',                  'CAD', 'TRUE',  '2025-01-01', '', '5 Cory Place, Martensville, SK | Net 15 | GST applicable'],
+    ['NORSPAN-MB',   'NORSPAN',           '',            '',                                        'CAD', 'TRUE',  '2025-01-01', '', '4987 Portage Avenue West, Headingley, MB R4H 1C7 | Net 15 | GST applicable'],
+    ['NELSON',       'Nelson Lumber Ltd.','Jackson',     'jstelte@nlc.ca',                         'CAD', 'TRUE',  '2025-01-01', '', '12727 St. Albert Trail, Edmonton, AB T5L 4H5 | Jackson Stelte | Net 15 | GST applicable'],
+    ['ALBERTA TRUSS','Alberta Truss',     'Bob',         'bobs@albertatruss.com',                  'CAD', 'TRUE',  '2026-03-16', '', '2140 Railway Street NW Edmonton, AB T6P 1X3 | Bob Schneider | 587-686-0975 | Net 15 | GST applicable']
+  ];
+
+  var existing = {};
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    var data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < data.length; i++) {
+      existing[data[i][0]] = true;
+    }
+  }
+
+  var inserted = 0;
+  for (var j = 0; j < CLIENTS.length; j++) {
+    var row = CLIENTS[j];
+    if (existing[row[0]]) {
+      log_('  ✅ EXISTS   ' + row[0]);
+    } else {
+      sheet.appendRow(row);
+      log_('  ➕ SEEDED   ' + row[0] + ' (' + row[1] + ')');
+      inserted++;
+    }
+  }
+  log_('  Client master: ' + inserted + ' rows added (' + (CLIENTS.length - inserted) + ' already existed)');
+}
+
+/**
+ * Patches DIM_CLIENT_MASTER: adds contact_name column header (if missing)
+ * and updates contact details for known clients.
+ * Safe to re-run.
+ */
+function patchClientMaster() {
+  var sheet   = getTab_('DIM_CLIENT_MASTER');
+  if (!sheet) { log_('DIM_CLIENT_MASTER not found'); return; }
+
+  // ── Ensure contact_name column exists after client_name ──────
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var contactNameCol = headers.indexOf('contact_name') + 1; // 1-based, 0 = not found
+
+  if (contactNameCol === 0) {
+    // Insert after client_name (col 2)
+    sheet.insertColumnAfter(2);
+    sheet.getRange(1, 3).setValue('contact_name');
+    headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    contactNameCol = 3;
+    log_('Added contact_name column at position 3');
+  }
+
+  var clientCodeCol  = headers.indexOf('client_code')  + 1;
+  var contactEmailCol= headers.indexOf('contact_email') + 1;
+
+  // Patch data: [client_code, contact_name, contact_email]
+  var patches = [
+    ['SBS',          'Al',   'aguerra@structuralbuildingsolutions.com'],
+    ['TITAN',        'Joel', 'joel@titanmanufacturing.ca'],
+    ['MATIX-SK',     'Miles','miles@norspantruss.com'],
+    ['NELSON',       'Jackson', 'jstelte@nlc.ca'],
+    ['ALBERTA TRUSS','Bob',  'bobs@albertatruss.com']
+  ];
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) { log_('No data rows'); return; }
+
+  var codes = sheet.getRange(2, clientCodeCol, lastRow - 1, 1).getValues();
+
+  for (var p = 0; p < patches.length; p++) {
+    var patch = patches[p];
+    for (var r = 0; r < codes.length; r++) {
+      if (String(codes[r][0]).trim() === patch[0]) {
+        var dataRow = r + 2; // +2: 1-based + header
+        sheet.getRange(dataRow, contactNameCol).setValue(patch[1]);
+        if (contactEmailCol > 0 && patch[2]) {
+          sheet.getRange(dataRow, contactEmailCol).setValue(patch[2]);
+        }
+        log_('Patched ' + patch[0] + ': name=' + patch[1] + ', email=' + patch[2]);
+        break;
+      }
+    }
+  }
+  log_('patchClientMaster complete');
+}
+
+/**
+ * Seeds DIM_CLIENT_RATES with flat hourly rates for all 6 clients.
+ * product_code blank = flat rate for all products.
+ * Safe to re-run — skips existing client_code rows.
+ */
+function seedClientRates_() {
+  log_('Seeding DIM_CLIENT_RATES…');
+  var sheet = getTab_('DIM_CLIENT_RATES');
+  if (!sheet) {
+    log_('  ⚠️  DIM_CLIENT_RATES tab not found — run runSetupSchemas() first.');
+    return;
+  }
+
+  // Columns: client_code, product_code, hourly_rate, currency, active, effective_from, effective_to, notes
+  var RATES = [
+    ['SBS',          '', 22.5, 'USD', 'TRUE', '2025-01-01', '', 'Flat rate — all products'],
+    ['TITAN',        '', 25,   'CAD', 'TRUE', '2025-01-01', '', 'Flat rate — all products'],
+    ['MATIX-SK',     '', 25,   'CAD', 'TRUE', '2025-01-01', '', 'Flat rate — all products'],
+    ['NORSPAN-MB',   '', 25,   'CAD', 'TRUE', '2025-01-01', '', 'Flat rate — all products'],
+    ['NELSON',       '', 25,   'CAD', 'TRUE', '2025-01-01', '', 'Flat rate — all products'],
+    ['ALBERTA TRUSS','', 25,   'CAD', 'TRUE', '2026-03-16', '', 'Flat rate — all products']
+  ];
+
+  var existing = {};
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    var data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < data.length; i++) {
+      existing[data[i][0]] = true;
+    }
+  }
+
+  var inserted = 0;
+  for (var j = 0; j < RATES.length; j++) {
+    var row = RATES[j];
+    if (existing[row[0]]) {
+      log_('  ✅ EXISTS   ' + row[0]);
+    } else {
+      sheet.appendRow(row);
+      log_('  ➕ SEEDED   ' + row[0] + ' @ ' + row[2] + ' ' + row[3]);
+      inserted++;
+    }
+  }
+  log_('  Client rates: ' + inserted + ' rows added (' + (RATES.length - inserted) + ' already existed)');
+}
+
+/**
  * Seeds all required reference data.
  * Safe to re-run — checks before inserting.
  */
@@ -500,6 +965,11 @@ function seedData_() {
 
   seedSequenceCounters_();
   seedVersion_();
+  seedDimStaffRoster_();
+  seedClientMaster_();
+  seedClientRates_();
+  seedClientIntakeConfig_();
+  seedAccountDesignerMap_();
 
   log_('Seed data complete.');
   log_('');
@@ -659,6 +1129,35 @@ function runFixHeaders() {
     log_('  ✅ FIXED: ' + tabName);
   }
 
+  // Fix flat FACT tabs
+  for (var k = 0; k < FLAT_FACT_TABLE_NAMES.length; k++) {
+    var flatSheet = getTab_(FLAT_FACT_TABLE_NAMES[k]);
+    if (!flatSheet) {
+      log_('  ⚠️  MISSING: ' + FLAT_FACT_TABLE_NAMES[k] + ' — run createFlatFactSheets() first');
+      continue;
+    }
+    applyHeaders_(flatSheet, SCHEMAS[FLAT_FACT_TABLE_NAMES[k]]);
+    log_('  ✅ FIXED: ' + FLAT_FACT_TABLE_NAMES[k]);
+  }
+
   log_('Header fix complete. Run runVerify() to confirm.');
   log_('═════════════════════════════════════════');
+}
+
+/**
+ * Creates FACT_CLIENT_FEEDBACK and FACT_PERFORMANCE_RATINGS as plain
+ * (non-partitioned) sheet tabs. Safe to run on an existing spreadsheet.
+ * Run this once if these tabs are missing.
+ */
+function createFlatFactSheets() {
+  log_('═════════════════════════════════════════');
+  log_('Creating flat FACT sheets');
+  log_('═════════════════════════════════════════');
+  for (var k = 0; k < FLAT_FACT_TABLE_NAMES.length; k++) {
+    var name  = FLAT_FACT_TABLE_NAMES[k];
+    var sheet = ensureTab_(name);
+    ensureHeaders_(sheet, SCHEMAS[name]);
+    log_('  ✅ ' + name);
+  }
+  log_('Done. Run runVerify() to confirm.');
 }

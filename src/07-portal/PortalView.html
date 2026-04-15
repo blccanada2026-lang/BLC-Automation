@@ -274,6 +274,15 @@
     <button class="btn-success btn-sm" id="btn-confirm-paystub">✓ Confirm My Paystub</button>
   </div>
 
+  <!-- ══ PREVIEW MODE BANNER ═════════════════════════════════ -->
+  <div id="preview-mode-banner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:10px 16px;margin-bottom:12px;font-size:0.85rem;color:#92400e;font-weight:600;display:none;align-items:center;justify-content:space-between;">
+    <span>PREVIEW MODE — viewing portal as <strong id="preview-banner-name"></strong> (<span id="preview-banner-role"></span>)</span>
+    <button onclick="exitPreview()" style="background:#f59e0b;color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:0.8rem;">Exit Preview</button>
+  </div>
+
+  <!-- ══ QUICK LINKS BAR ══════════════════════════════════════ -->
+  <div id="quick-links" style="display:none;margin-bottom:16px;"></div>
+
   <div class="stats-bar" id="stats-bar"></div>
 
   <div class="toolbar">
@@ -283,6 +292,8 @@
       <button class="btn-muted btn-sm" id="btn-clients" style="display:none">👥 Clients</button>
       <button class="btn-muted btn-sm" id="btn-leader-dash" style="display:none">📊 Dashboard</button>
       <button class="btn-muted btn-sm" id="btn-staff-panel" style="display:none">👤 Staff</button>
+      <button class="btn-muted btn-sm" id="btn-sbs-intake" style="display:none">⬆ Process SBS Jobs</button>
+      <button class="btn-muted btn-sm" id="btn-preview-as" style="display:none">👁 Preview As</button>
       <button class="btn-primary btn-sm" id="btn-create-job" style="display:none">+ New Job</button>
     </div>
   </div>
@@ -329,13 +340,29 @@
       <h2>Team Dashboard — <span id="dash-period">—</span></h2>
       <div class="dash-actions">
         <button class="btn-muted btn-sm" id="btn-send-feedback" style="display:none">✉ Send Feedback Requests</button>
+        <button class="btn-muted btn-sm" id="btn-send-ratings" style="display:none">📋 Send Rating Requests</button>
         <button class="btn-muted btn-sm" id="btn-run-bonus" style="display:none">💰 Run Bonus</button>
+        <button class="btn-muted btn-sm" id="btn-run-quarterly-bonus" style="display:none">🏆 Run Quarterly Bonus</button>
         <button class="btn-success btn-sm" id="btn-approve-payroll" style="display:none">✓ Approve Payroll</button>
+        <label id="lbl-test-mode" style="display:none;align-items:center;gap:6px;font-size:12px;color:#b45309;font-weight:600;cursor:pointer;">
+          <input type="checkbox" id="chk-test-mode"> TEST MODE (sends to BLC Gmail)
+        </label>
         <button class="btn-muted btn-sm" id="btn-refresh-dash">↻ Refresh</button>
       </div>
     </div>
 
     <div class="dash-grid">
+      <!-- Designer Workload panel -->
+      <div class="dash-panel">
+        <div class="dash-panel-hdr">
+          <span>Designer Workload (Active Jobs)</span>
+          <span id="dash-workload-meta" style="font-size:12px;font-weight:400;color:var(--c-muted)"></span>
+        </div>
+        <div class="dash-panel-body" id="dash-workload-body">
+          <div class="dash-empty">Loading…</div>
+        </div>
+      </div>
+
       <!-- Team Hours panel -->
       <div class="dash-panel">
         <div class="dash-panel-hdr">
@@ -833,7 +860,10 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-refresh-dash').addEventListener('click',      loadLeaderDashboard);
   document.getElementById('btn-confirm-paystub').addEventListener('click',   confirmPaystub);
   document.getElementById('btn-send-feedback').addEventListener('click',     sendFeedbackRequests);
+  document.getElementById('btn-send-ratings').addEventListener('click',      sendRatingRequests);
+  document.getElementById('btn-sbs-intake').addEventListener('click',        processSbsIntake);
   document.getElementById('btn-run-bonus').addEventListener('click',         runBonusRun);
+  document.getElementById('btn-run-quarterly-bonus').addEventListener('click', runQuarterlyBonus);
   document.getElementById('btn-approve-payroll').addEventListener('click',   approveAllPayroll);
   document.getElementById('btn-staff-panel').addEventListener('click',       toggleStaffPanel);
   document.getElementById('btn-onboard-staff').addEventListener('click',     openOnboardStaff);
@@ -855,6 +885,8 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   // Table action delegation — safer than per-row onclick attributes
+  document.getElementById('btn-preview-as').addEventListener('click', openPreviewModal);
+
   document.getElementById('jobs-tbody').addEventListener('click', function(e) {
     var btn = e.target.closest('button[data-action]');
     if (!btn) return;
@@ -902,24 +934,31 @@ function onDataLoaded(jsonStr) {
 
   // Toolbar buttons
   if (_data.perms.canCreateJob)  document.getElementById('btn-create-job').style.display     = 'inline-block';
+  if (_data.perms.canCreateJob)  document.getElementById('btn-sbs-intake').style.display      = 'inline-block';
   if (_data.perms.canViewAll)    document.getElementById('btn-process-queue').style.display   = 'inline-block';
   if (_data.perms.canCreateJob)  document.getElementById('btn-clients').style.display         = 'inline-block';
   if (_data.perms.isLeader)      document.getElementById('btn-leader-dash').style.display     = 'inline-block';
   if (_data.perms.canManageStaff) document.getElementById('btn-staff-panel').style.display    = 'inline-block';
+  if (_data.perms.canViewAll)    document.getElementById('btn-preview-as').style.display      = 'inline-block';
 
   // Leader dashboard payroll action buttons
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-feedback').style.display   = 'inline-block';
-  if (_data.perms.canRunPayroll)     document.getElementById('btn-run-bonus').style.display       = 'inline-block';
+  if (_data.perms.canRunPayroll)     document.getElementById('btn-send-ratings').style.display    = 'inline-block';
+  if (_data.perms.canRunPayroll)     document.getElementById('btn-run-bonus').style.display              = 'inline-block';
+  if (_data.perms.canRunPayroll)     document.getElementById('btn-run-quarterly-bonus').style.display   = 'inline-block';
+  if (_data.perms.canRunPayroll)     document.getElementById('lbl-test-mode').style.display       = 'flex';
   if (_data.perms.canApprovePayroll) document.getElementById('btn-approve-payroll').style.display = 'inline-block';
   if (_data.perms.isLeader)          document.getElementById('dash-feedback-panel').style.display = 'block';
 
   renderStats(_data.stats);
   renderJobs(_data.jobs, actor, _data.perms);
+  renderQuickLinks(actor, _data.perms);
 
   // Show leader dashboard automatically if leader
   if (_data.perms.isLeader) {
     _dashVisible = true;
     document.getElementById('leader-dashboard').style.display = 'block';
+    renderWorkloadPanel(_data.jobs);
     loadLeaderDashboard();
   }
 
@@ -930,6 +969,323 @@ function onDataLoaded(jsonStr) {
 function onDataError(err) {
   showLoading(false);
   showToast('Failed to load portal data: ' + (err.message || String(err)), 'error');
+}
+
+// ── Quick Links ────────────────────────────────────────────────
+function renderQuickLinks(actor, perms) {
+  var container = document.getElementById('quick-links');
+  while (container.firstChild) container.removeChild(container.firstChild);
+
+  var role  = actor.role;
+  var links = [];
+  var qPid  = currentQuarterPeriodId_();
+  var base  = getPortalUrl_();
+
+  if (role === 'DESIGNER' || role === 'QC') {
+    links.push({ label: 'My Jobs', action: function() { window.scrollTo(0,0); } });
+  }
+  if (role === 'TEAM_LEAD' || role === 'PM') {
+    links.push({ label: 'Rate My Team', url: base + '?page=rate-staff&period=' + encodeURIComponent(qPid) });
+    links.push({ label: 'Team Dashboard', action: function() {
+      document.getElementById('btn-leader-dash').click();
+      setTimeout(function() { document.getElementById('leader-dashboard').scrollIntoView(); }, 100);
+    }});
+  }
+  if (perms.canViewAll) {
+    links.push({ label: 'Rate All Staff', url: base + '?page=rate-staff&period=' + encodeURIComponent(qPid) });
+  }
+
+  if (links.length === 0) return;
+
+  container.style.display   = 'flex';
+  container.style.flexWrap  = 'wrap';
+  container.style.gap       = '8px';
+  container.style.alignItems = 'center';
+
+  var lbl = document.createElement('span');
+  lbl.style.cssText = 'font-size:12px;color:var(--c-muted);font-weight:600;';
+  lbl.textContent = 'Quick Links:';
+  container.appendChild(lbl);
+
+  for (var i = 0; i < links.length; i++) {
+    (function(lnk) {
+      if (lnk.url) {
+        var a = document.createElement('a');
+        a.className = 'btn-muted btn-sm';
+        a.textContent = lnk.label;
+        a.href = lnk.url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.style.cssText = 'text-decoration:none;display:inline-flex;align-items:center;';
+        container.appendChild(a);
+      } else {
+        var btn = document.createElement('button');
+        btn.className = 'btn-muted btn-sm';
+        btn.textContent = lnk.label;
+        btn.addEventListener('click', lnk.action);
+        container.appendChild(btn);
+      }
+    })(links[i]);
+  }
+}
+
+function currentQuarterPeriodId_() {
+  var now   = new Date();
+  var month = now.getMonth() + 1;
+  var year  = now.getFullYear();
+  var q     = month <= 3 ? 'Q1' : month <= 6 ? 'Q2' : month <= 9 ? 'Q3' : 'Q4';
+  return year + '-' + q;
+}
+
+function getPortalUrl_() {
+  return window.location.href.split('?')[0];
+}
+
+// ── Preview As ─────────────────────────────────────────────────
+var _previewStaffList = null;
+
+function openPreviewModal() {
+  if (_previewStaffList) { showPreviewModal_(_previewStaffList); return; }
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      try { _previewStaffList = JSON.parse(json); showPreviewModal_(_previewStaffList); }
+      catch(e) { showToast('Could not load staff list.', 'error'); }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_getStaffList();
+}
+
+function showPreviewModal_(staffList) {
+  var existing = document.getElementById('modal-preview-as');
+  if (existing) { existing.classList.add('open'); return; }
+
+  var backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop open';
+  backdrop.id = 'modal-preview-as';
+  backdrop.addEventListener('click', function(e) {
+    if (e.target === backdrop) backdrop.classList.remove('open');
+  });
+
+  var modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.maxWidth = '440px';
+
+  // Header
+  var hdr = document.createElement('div');
+  hdr.className = 'modal-hdr';
+  var hdrTitle = document.createElement('h3');
+  hdrTitle.textContent = 'Preview As';
+  var closeBtn = document.createElement('button');
+  closeBtn.className = 'modal-close';
+  closeBtn.textContent = '\u2715';
+  closeBtn.addEventListener('click', function() { backdrop.classList.remove('open'); });
+  hdr.appendChild(hdrTitle);
+  hdr.appendChild(closeBtn);
+
+  // Body
+  var body = document.createElement('div');
+  body.className = 'modal-body';
+
+  var desc = document.createElement('p');
+  desc.style.cssText = 'font-size:13px;color:var(--c-muted);margin-bottom:12px;';
+  desc.textContent = 'Select a staff member to see the portal exactly as they would see it. Rating portal links open read-only.';
+  body.appendChild(desc);
+
+  var list = document.createElement('div');
+  list.style.cssText = 'display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto;';
+
+  var qPid = currentQuarterPeriodId_();
+  var base = getPortalUrl_();
+
+  for (var i = 0; i < staffList.length; i++) {
+    (function(s) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;';
+
+      var nameSpan = document.createElement('span');
+      nameSpan.style.fontSize = '13px';
+      var strong = document.createElement('strong');
+      strong.textContent = s.name || s.person_code;
+      var muted = document.createElement('span');
+      muted.style.color = 'var(--c-muted)';
+      muted.textContent = ' (' + s.role + ')';
+      nameSpan.appendChild(strong);
+      nameSpan.appendChild(muted);
+
+      var btnGroup = document.createElement('div');
+      btnGroup.style.cssText = 'display:flex;gap:6px;flex-shrink:0;';
+
+      var btnPortal = document.createElement('button');
+      btnPortal.className = 'btn-muted btn-sm';
+      btnPortal.textContent = 'Portal';
+      btnPortal.addEventListener('click', function() {
+        backdrop.classList.remove('open');
+        loadPreviewAs_(s.person_code, s.name || s.person_code, s.role);
+      });
+      btnGroup.appendChild(btnPortal);
+
+      var r = (s.role || '').toUpperCase();
+      if (r === 'TEAM_LEAD' || r === 'PM') {
+        var rateLink = document.createElement('a');
+        rateLink.className = 'btn-muted btn-sm';
+        rateLink.textContent = 'Rating Portal';
+        rateLink.href = base + '?page=rate-staff&period=' + encodeURIComponent(qPid) + '&preview=' + encodeURIComponent(s.person_code);
+        rateLink.target = '_blank';
+        rateLink.rel = 'noopener';
+        rateLink.style.cssText = 'text-decoration:none;display:inline-flex;align-items:center;';
+        btnGroup.appendChild(rateLink);
+      }
+
+      row.appendChild(nameSpan);
+      row.appendChild(btnGroup);
+      list.appendChild(row);
+    })(staffList[i]);
+  }
+
+  body.appendChild(list);
+  modal.appendChild(hdr);
+  modal.appendChild(body);
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+}
+
+function loadPreviewAs_(personCode, name, role) {
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      try {
+        var data = JSON.parse(json);
+        var banner = document.getElementById('preview-mode-banner');
+        banner.style.display = 'flex';
+        document.getElementById('preview-banner-name').textContent = name;
+        document.getElementById('preview-banner-role').textContent = role;
+        _data = data;
+        renderPortal_(data);
+      } catch(e) { showToast('Preview failed: ' + e.message, 'error'); }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Preview error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_getViewDataAs(personCode);
+}
+
+function renderPortal_(data) {
+  var actor = data.actor;
+  var perms = data.perms;
+
+  // Hide ALL toolbar + dashboard action buttons before re-showing what this role gets
+  var allBtns = ['btn-create-job','btn-sbs-intake','btn-process-queue','btn-clients',
+                 'btn-leader-dash','btn-staff-panel',
+                 'btn-send-feedback','btn-send-ratings','btn-run-bonus',
+                 'btn-run-quarterly-bonus','btn-approve-payroll','lbl-test-mode'];
+  allBtns.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+
+  document.getElementById('header-name').textContent = actor.displayName || actor.email;
+  document.getElementById('header-role').textContent  = actor.role;
+
+  if (perms.canCreateJob)    document.getElementById('btn-create-job').style.display   = 'inline-block';
+  if (perms.canCreateJob)    document.getElementById('btn-sbs-intake').style.display    = 'inline-block';
+  if (perms.canViewAll)      document.getElementById('btn-process-queue').style.display = 'inline-block';
+  if (perms.canCreateJob)    document.getElementById('btn-clients').style.display       = 'inline-block';
+  if (perms.isLeader)        document.getElementById('btn-leader-dash').style.display   = 'inline-block';
+  if (perms.canManageStaff)  document.getElementById('btn-staff-panel').style.display   = 'inline-block';
+  // Payroll action buttons intentionally hidden in preview mode
+
+  renderStats(data.stats);
+  renderJobs(data.jobs, actor, perms);
+  renderQuickLinks(actor, perms);
+
+  if (perms.isLeader) {
+    document.getElementById('leader-dashboard').style.display = 'block';
+    renderWorkloadPanel(data.jobs);
+  } else {
+    document.getElementById('leader-dashboard').style.display = 'none';
+  }
+}
+
+function exitPreview() {
+  document.getElementById('preview-mode-banner').style.display = 'none';
+  loadData();
+}
+
+// ── Designer Workload Panel ────────────────────────────────────
+var ACTIVE_STATES = { IN_PROGRESS: true, QC_REVIEW: true, ALLOCATED: true,
+                      ON_HOLD: true, CLIENT_RETURN: true };
+
+function renderWorkloadPanel(jobs) {
+  var body = document.getElementById('dash-workload-body');
+  if (!body) return;
+  while (body.firstChild) body.removeChild(body.firstChild);
+
+  // Count active jobs per allocated_to person
+  var counts = {};   // personCode -> { IN_PROGRESS, QC_REVIEW, ON_HOLD, ALLOCATED, CLIENT_RETURN, total }
+  for (var i = 0; i < jobs.length; i++) {
+    var j   = jobs[i];
+    var who = String(j.allocated_to || '').trim();
+    var st  = String(j.current_state || '').trim();
+    if (!who || !ACTIVE_STATES[st]) continue;
+    if (!counts[who]) counts[who] = { IN_PROGRESS:0, QC_REVIEW:0, ON_HOLD:0, ALLOCATED:0, CLIENT_RETURN:0, total:0 };
+    counts[who][st] = (counts[who][st] || 0) + 1;
+    counts[who].total++;
+  }
+
+  var people = Object.keys(counts).sort(function(a, b) {
+    return counts[b].total - counts[a].total; // busiest first
+  });
+
+  document.getElementById('dash-workload-meta').textContent = people.length + ' designers with active jobs';
+
+  if (people.length === 0) {
+    var empty = document.createElement('div');
+    empty.className = 'dash-empty';
+    empty.textContent = 'No active jobs assigned.';
+    body.appendChild(empty);
+    return;
+  }
+
+  var table = document.createElement('table');
+  table.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px;';
+
+  // Header
+  var thead = document.createElement('thead');
+  var hrow  = document.createElement('tr');
+  ['Designer', 'In Progress', 'QC Review', 'On Hold', 'Allocated', 'Total'].forEach(function(h) {
+    var th = document.createElement('th');
+    th.textContent = h;
+    th.style.cssText = 'text-align:left;padding:4px 8px;border-bottom:2px solid #e5e7eb;font-size:11px;color:var(--c-muted);font-weight:600;';
+    hrow.appendChild(th);
+  });
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
+  for (var p = 0; p < people.length; p++) {
+    var code = people[p];
+    var c    = counts[code];
+    var tr   = document.createElement('tr');
+
+    var cells = [code, c.IN_PROGRESS, c.QC_REVIEW, c.ON_HOLD, c.ALLOCATED, c.total];
+    for (var ci = 0; ci < cells.length; ci++) {
+      var td = document.createElement('td');
+      td.textContent = cells[ci];
+      td.style.cssText = 'padding:5px 8px;border-bottom:1px solid #f3f4f6;';
+      if (ci === cells.length - 1) td.style.fontWeight = '700'; // bold total
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  body.appendChild(table);
 }
 
 // ── Stats Rendering ────────────────────────────────────────────
@@ -2040,6 +2396,33 @@ function runBonusRun() {
     .portal_runBonusRun('');
 }
 
+function runQuarterlyBonus() {
+  var now     = new Date();
+  var month   = now.getMonth() + 1; // 1-12
+  var year    = now.getFullYear();
+  var quarter = month <= 3 ? 'Q1' : month <= 6 ? 'Q2' : month <= 9 ? 'Q3' : 'Q4';
+
+  if (!confirm('Run quarterly bonus for ' + quarter + ' ' + year + '?\n\nFormula: client(30%) + error rate(40%) + ratings(30%) × design hours × INR 25.\n\nStaff with incomplete ratings will be marked PENDING.')) return;
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      try {
+        var result = JSON.parse(json);
+        showToast(
+          'Quarterly bonus complete: ' + result.written + ' calculated, ' +
+          result.pending + ' pending, ' + result.skipped + ' skipped.',
+          result.pending > 0 ? 'warning' : 'success'
+        );
+      } catch(e) { showToast('Quarterly bonus run complete.', 'success'); }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Quarterly bonus error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_runQuarterlyBonus(quarter, year);
+}
+
 function approveAllPayroll() {
   if (!confirm('Approve all CONFIRMED payroll for the current period?\n\nThis marks all confirmed records as PROCESSED. This cannot be undone.')) return;
   showLoading(true);
@@ -2059,10 +2442,46 @@ function approveAllPayroll() {
     .portal_approveAllPayroll('');
 }
 
+// ── SBS Sheet Intake ───────────────────────────────────────────
+
+function processSbsIntake() {
+  if (!confirm('Process all pending rows in STG_INTAKE_SBS?\n\nRows will be mapped and submitted to the job queue. Status is written back per row.')) return;
+  var btn = document.getElementById('btn-sbs-intake');
+  btn.textContent = 'Processing…';
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function(json) {
+      btn.textContent = '⬆ Process SBS Jobs';
+      btn.disabled = false;
+      try {
+        var r = JSON.parse(json);
+        var msg = r.queued + ' jobs queued';
+        if (r.errors && r.errors.length > 0) msg += ', ' + r.errors.length + ' errors (check _status column in STG_INTAKE_SBS)';
+        showToast(msg, r.errors && r.errors.length > 0 ? 'warning' : 'success');
+      } catch(e) { showToast('Done.', 'success'); }
+    })
+    .withFailureHandler(function(err) {
+      btn.textContent = '⬆ Process SBS Jobs';
+      btn.disabled = false;
+      showToast('Error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_processSbsIntake();
+}
+
 // ── Client Feedback ────────────────────────────────────────────
 
+function getTestEmail_() {
+  var chk = document.getElementById('chk-test-mode');
+  return (chk && chk.checked) ? 'blccanada2026@gmail.com' : '';
+}
+
 function sendFeedbackRequests() {
-  if (!confirm('Send quarterly feedback emails to all active clients?\n\nThis will create a Google Form for this quarter and email each client a rating link for their assigned designers.')) return;
+  var testEmail = getTestEmail_();
+  var isTest    = !!testEmail;
+  var msg = isTest
+    ? 'TEST MODE: All feedback emails will go to ' + testEmail + ' (not real clients).\n\nProceed?'
+    : 'Send quarterly feedback emails to all active clients?\n\nThis will email each client a rating link for their assigned designers.';
+  if (!confirm(msg)) return;
   var btn = document.getElementById('btn-send-feedback');
   btn.textContent = 'Sending…';
   btn.disabled = true;
@@ -2072,7 +2491,7 @@ function sendFeedbackRequests() {
       btn.disabled = false;
       try {
         var r = JSON.parse(json);
-        showToast(r.emails_sent + ' emails sent to clients (' + r.designer_client_pairs + ' designer links).', 'success');
+        showToast(r.emails_sent + ' emails sent' + (isTest ? ' (TEST)' : ' to clients') + ' (' + r.designer_client_pairs + ' designer links).', 'success');
         loadFeedbackStatus();
       } catch(e) { showToast('Feedback emails sent.', 'success'); }
     })
@@ -2081,7 +2500,34 @@ function sendFeedbackRequests() {
       btn.disabled = false;
       showToast('Error: ' + (err.message || String(err)), 'error');
     })
-    .portal_sendFeedbackRequests('');
+    .portal_sendFeedbackRequests('', testEmail);
+}
+
+function sendRatingRequests() {
+  var testEmail = getTestEmail_();
+  var isTest    = !!testEmail;
+  var msg = isTest
+    ? 'TEST MODE: All rating request emails will go to ' + testEmail + ' (not real TLs/PMs).\n\nProceed?'
+    : 'Send quarterly rating request emails to all active Team Leads and PMs?\n\nEach person will receive a link to submit their ratings for the current period.';
+  if (!confirm(msg)) return;
+  var btn = document.getElementById('btn-send-ratings');
+  btn.textContent = 'Sending…';
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function(json) {
+      btn.textContent = '📋 Send Rating Requests';
+      btn.disabled = false;
+      try {
+        var r = JSON.parse(json);
+        showToast(r.emails_sent + ' rating request email(s) sent' + (isTest ? ' (TEST)' : '') + '.', 'success');
+      } catch(e) { showToast('Rating request emails sent.', 'success'); }
+    })
+    .withFailureHandler(function(err) {
+      btn.textContent = '📋 Send Rating Requests';
+      btn.disabled = false;
+      showToast('Error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_sendRatingRequests('', testEmail);
 }
 
 function loadFeedbackStatus() {
