@@ -340,10 +340,30 @@ var PortalData = (function () {
           qc_pay:           parseFloat(mrow.qc_pay)           || 0,
           supervisor_bonus: parseFloat(mrow.supervisor_bonus) || 0,
           total_pay:        parseFloat(mrow.total_pay)        || 0,
-          status:           String(mrow.status || 'NOT_RUN')
+          status:           String(mrow.status || 'NOT_RUN'),
+          annual_bonus_inr: 0  // placeholder — will be populated from FACT_QUARTERLY_BONUS
         });
       }
     } catch (e) { /* MART may be empty */ }
+
+    // ── 4. Annual bonus from FACT_QUARTERLY_BONUS ─────────────
+    var annualBonusMap = {};
+    try {
+      var annualPid  = 'ANNUAL-' + periodId.substring(0, 4);  // e.g. 'ANNUAL-2026'
+      var bonusRows  = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: 'PortalData' });
+      for (var b = 0; b < bonusRows.length; b++) {
+        var br = bonusRows[b];
+        if (String(br.event_type        || '') !== 'ANNUAL_BONUS')  continue;
+        if (String(br.quarter_period_id || '') !== annualPid)       continue;
+        var bcode = String(br.person_code || '').trim();
+        if (bcode) annualBonusMap[bcode] = parseFloat(br.bonus_inr) || 0;
+      }
+    } catch (e) { /* FACT_QUARTERLY_BONUS may be empty */ }
+
+    // Populate annual_bonus_inr in payrollStatus
+    for (var p = 0; p < payrollStatus.length; p++) {
+      payrollStatus[p].annual_bonus_inr = annualBonusMap[payrollStatus[p].person_code] || 0;
+    }
 
     return JSON.stringify({
       period_id:      periodId,
