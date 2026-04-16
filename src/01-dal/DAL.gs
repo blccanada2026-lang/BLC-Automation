@@ -121,6 +121,15 @@ var DAL = (function () {
     'MART_DESIGNER_SUMMARY': ['ReportingEngine'],
     'MART_ACCOUNT_SUMMARY':  ['ReportingEngine'],
 
+    // ── Migration tables (T12 migration modules only) ────────
+    // Written exclusively during the Stacey V2 → Nexus V3 migration.
+    // Raw import layer (Layer 1), normalised staging (Layer 2),
+    // and migration audit trail.
+    'MIGRATION_RAW_IMPORT':  ['MigrationRawImporter'],
+    'MIGRATION_NORMALIZED':  ['MigrationNormalizer'],
+    'MIGRATION_AUDIT_LOG':   ['MigrationRawImporter', 'MigrationNormalizer',
+                              'MigrationReplayEngine', 'MigrationReconciler'],
+
   };
 
   // ──────────────────────────────────────────────────────────

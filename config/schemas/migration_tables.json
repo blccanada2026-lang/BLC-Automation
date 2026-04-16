@@ -1,0 +1,32 @@
+{
+  "MIGRATION_RAW_IMPORT": {
+    "description": "Layer 1 — raw copy of Stacey source rows, unmodified",
+    "columns": [
+      { "name": "import_id",       "type": "string",    "description": "Unique row ID (Identifiers.generateId)" },
+      { "name": "import_key",      "type": "string",    "description": "Idempotency key: BATCH-x|TAB-y|ROW-z" },
+      { "name": "migration_batch", "type": "string",    "description": "Batch identifier from MigrationConfig" },
+      { "name": "source_tag",      "type": "string",    "description": "Source system tag (STACEY_V2)" },
+      { "name": "source_tab",      "type": "string",    "description": "Stacey tab name this row came from" },
+      { "name": "row_index",       "type": "number",    "description": "1-based row index in source tab (excludes header)" },
+      { "name": "raw_json",        "type": "string",    "description": "Full row serialized as JSON" },
+      { "name": "imported_at",     "type": "timestamp", "description": "ISO timestamp of import" },
+      { "name": "imported_by",     "type": "string",    "description": "Actor email who ran the import" },
+      { "name": "status",          "type": "string",    "description": "IMPORTED | NORMALIZED | ERROR" }
+    ]
+  },
+  "MIGRATION_NORMALIZED": {
+    "description": "Layer 2 — cleaned and mapped rows ready for FACT replay",
+    "columns": [
+      { "name": "norm_id",          "type": "string",    "description": "Unique row ID" },
+      { "name": "import_key",       "type": "string",    "description": "FK to MIGRATION_RAW_IMPORT.import_key" },
+      { "name": "migration_batch",  "type": "string",    "description": "Batch identifier" },
+      { "name": "entity_type",      "type": "string",    "description": "STAFF | CLIENT | JOB | WORK_LOG | BILLING | PAYROLL" },
+      { "name": "normalized_json",  "type": "string",    "description": "Normalized payload serialized as JSON" },
+      { "name": "validation_status","type": "string",    "description": "VALID | INVALID | SKIPPED" },
+      { "name": "validation_notes", "type": "string",    "description": "Validation errors if INVALID" },
+      { "name": "replay_status",    "type": "string",    "description": "PENDING | REPLAYED | FAILED" },
+      { "name": "normalized_at",    "type": "timestamp", "description": "ISO timestamp of normalization" },
+      { "name": "normalized_by",    "type": "string",    "description": "Actor email" }
+    ]
+  }
+}
