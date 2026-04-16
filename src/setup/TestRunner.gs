@@ -2690,3 +2690,48 @@ function testReportingEngine() {
   line_();
 }
 
+/**
+ * Verifies JobCreateHandler.handle() enforces RBAC.
+ * A DESIGNER actor (JOB_CREATE=false) must be denied before any data access.
+ * Run from Apps Script editor. Requires no live data.
+ */
+function testJobCreateHandlerRBAC() {
+  header_('TEST: JobCreateHandler RBAC');
+
+  var designerActor = {
+    email:      'test-designer@blctest.com',
+    personCode: 'TEST-DS',
+    role:       'DESIGNER',
+    scope:      'SELF',
+    isSystem:   false
+  };
+
+  var mockItem = {
+    queue_id:        'TEST-QITM-RBAC-001',
+    form_type:       'JOB_CREATE',
+    submitter_email: 'test-designer@blctest.com',
+    payload_json:    JSON.stringify({ client_code: 'TC', job_type: 'TEST', quantity: 1 }),
+    created_at:      new Date().toISOString()
+  };
+
+  var denied = false;
+  try {
+    JobCreateHandler.handle(mockItem, designerActor);
+  } catch (e) {
+    var msg = (e && e.message) ? e.message.toLowerCase() : '';
+    if (msg.indexOf('permission') !== -1 || msg.indexOf('denied') !== -1 ||
+        msg.indexOf('rbac') !== -1 || msg.indexOf('job_create') !== -1) {
+      denied = true;
+    } else {
+      info_('Unexpected error (not RBAC): ' + e.message);
+    }
+  }
+
+  if (denied) {
+    pass_('DESIGNER correctly denied JOB_CREATE');
+  } else {
+    fail_('DESIGNER was NOT denied — RBAC guard missing on JobCreateHandler.handle()');
+  }
+
+  line_();
+}
