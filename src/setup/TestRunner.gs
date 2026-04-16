@@ -2821,3 +2821,27 @@ function testStaceyAudit() {
   }
   line_();
 }
+
+/**
+ * Diagnostic: checks MIGRATION_RAW_IMPORT row count and last import batch.
+ * Run after executing MigrationRawImporter.importAll() to verify rows landed.
+ */
+function testRawImport() {
+  header_('RAW IMPORT DIAGNOSTIC');
+  try {
+    var rows = DAL.readAll(Config.TABLES.MIGRATION_RAW_IMPORT, { callerModule: 'TestRunner' });
+    if (!rows || rows.length === 0) {
+      info_('MIGRATION_RAW_IMPORT is empty — run MigrationRawImporter.importAll() first');
+    } else {
+      pass_('MIGRATION_RAW_IMPORT: ' + rows.length + ' rows');
+      var batches = {};
+      rows.forEach(function (r) { batches[r.migration_batch] = (batches[r.migration_batch] || 0) + 1; });
+      Object.keys(batches).forEach(function (b) {
+        info_('  Batch ' + b + ': ' + batches[b] + ' rows');
+      });
+    }
+  } catch (e) {
+    fail_('testRawImport threw: ' + e.message);
+  }
+  line_();
+}
