@@ -2907,3 +2907,29 @@ function testMigrationReplay() {
   }
   line_();
 }
+
+/**
+ * Runs the full migration reconciliation report.
+ * Run after MigrationReplayEngine.replayAll() to verify data completeness.
+ */
+function testReconciliation() {
+  header_('MIGRATION RECONCILIATION');
+  try {
+    var report = MigrationReconciler.runReconciliation(Session.getActiveUser().getEmail());
+    report.checks.forEach(function (c) {
+      if (c.passed) {
+        pass_(c.check + ': PASS');
+      } else {
+        fail_(c.check + ': FAIL — ' + JSON.stringify(c));
+      }
+    });
+    if (report.passed) {
+      pass_('ALL RECONCILIATION CHECKS PASSED — safe to proceed to Phase G');
+    } else {
+      fail_('RECONCILIATION FAILED — do not proceed to cutover');
+    }
+  } catch (e) {
+    fail_('testReconciliation threw: ' + e.message);
+  }
+  line_();
+}
