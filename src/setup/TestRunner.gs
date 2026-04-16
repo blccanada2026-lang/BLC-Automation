@@ -2549,3 +2549,61 @@ function testAnnualBonus() {
   line_();
 }
 
+/**
+ * Manual test: verifies rebuildAllViews returns the correct shape
+ * and is idempotent. Run from Apps Script editor.
+ * Requires at least one FACT_JOB_EVENTS partition tab to exist.
+ */
+function testEventReplay() {
+  header_('EVENT REPLAY TEST');
+
+  var email = Session.getActiveUser().getEmail();
+
+  // First run — rebuilds from all FACT partitions
+  var result1 = EventReplayEngine.rebuildAllViews(email);
+  info_('First run: jobs=' + result1.vw_job.written +
+        ' workload=' + result1.vw_workload.written +
+        ' partial=' + result1.partial +
+        ' elapsed_ms=' + result1.elapsed_ms);
+
+  var shapeOk = (
+    typeof result1.vw_job.written      === 'number' &&
+    typeof result1.vw_job.cleared      === 'number' &&
+    typeof result1.vw_workload.written === 'number' &&
+    typeof result1.vw_workload.cleared === 'number' &&
+    typeof result1.partial             === 'boolean' &&
+    typeof result1.elapsed_ms          === 'number'
+  );
+  info_('Shape OK: ' + shapeOk);
+
+  // Row count check — VW_JOB_CURRENT_STATE must match vw_job.written
+  var ss         = SpreadsheetApp.getActiveSpreadsheet();
+  var vwSheet    = ss.getSheetByName('VW_JOB_CURRENT_STATE');
+  var actualRows = vwSheet ? Math.max(vwSheet.getLastRow() - 1, 0) : 0;
+  var rowCountOk = (actualRows === result1.vw_job.written);
+  info_('Row count OK: ' + rowCountOk +
+        ' (sheet=' + actualRows + ' written=' + result1.vw_job.written + ')');
+
+  // Second run — idempotent: same row counts
+  var result2 = EventReplayEngine.rebuildAllViews(email);
+  info_('Second run: jobs=' + result2.vw_job.written +
+        ' workload=' + result2.vw_workload.written);
+
+  var idempotent = (
+    result2.vw_job.written      === result1.vw_job.written &&
+    result2.vw_workload.written === result1.vw_workload.written
+  );
+  info_('Idempotent: ' + idempotent);
+
+  var allOk = shapeOk && rowCountOk && idempotent && !result1.partial;
+  if (allOk) {
+    pass_('EventReplay shape, row count, and idempotency checks passed');
+  } else {
+    fail_('EventReplay check failed — shapeOk=' + shapeOk +
+          ' rowCountOk=' + rowCountOk +
+          ' idempotent=' + idempotent +
+          ' partial=' + result1.partial);
+  }
+  line_();
+}
+
