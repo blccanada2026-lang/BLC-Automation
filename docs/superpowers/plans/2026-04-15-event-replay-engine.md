@@ -1,6 +1,6 @@
 # EventReplayEngine Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build EventReplayEngine — a CEO-only recovery tool that rebuilds VW_JOB_CURRENT_STATE and VW_DESIGNER_WORKLOAD by replaying all FACT table events from scratch.
 
@@ -26,7 +26,7 @@
 **Files:**
 - Create: `src/11-reporting/EventReplayEngine.gs`
 
-- [ ] **Step 1: Create the file with module header and skeleton**
+- [x] **Step 1: Create the file with module header and skeleton**
 
   Create `src/11-reporting/EventReplayEngine.gs` with this exact content:
 
@@ -426,7 +426,7 @@
   })();
   ```
 
-- [ ] **Step 2: Verify Config.STATES constants exist**
+- [x] **Step 2: Verify Config.STATES constants exist**
 
   In `src/00-foundation/Config.gs`, confirm these state constants are defined:
   `Config.STATES.ALLOCATED`, `Config.STATES.INTAKE_RECEIVED`, `Config.STATES.IN_PROGRESS`,
@@ -438,7 +438,7 @@
   ```
   Expected: each state name appears at least once. If any are missing, add them to the `Config.STATES` object in Config.gs before continuing.
 
-- [ ] **Step 3: Add EventReplayEngine to DAL WRITE_PERMISSIONS** (it's already there — verify)
+- [x] **Step 3: Add EventReplayEngine to DAL WRITE_PERMISSIONS** (it's already there — verify)
 
   In `src/01-dal/DAL.gs`, confirm `EventReplayEngine` is listed for both VW tables:
   ```bash
@@ -451,7 +451,7 @@
   ```
   If `BatchOperations` is a separate module, also confirm it is allowed to write VW tables — or adjust the call to use `DAL.appendRows()` directly if BatchOperations is not separately registered. Check `src/01-dal/BatchOperations.gs` to see if it calls DAL internally.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
   ```bash
   git add src/11-reporting/EventReplayEngine.gs
@@ -465,7 +465,7 @@
 **Files:**
 - Modify: `src/07-portal/Portal.gs`
 
-- [ ] **Step 1: Add the portal function after `portal_runAnnualBonus`**
+- [x] **Step 1: Add the portal function after `portal_runAnnualBonus`**
 
   In `src/07-portal/Portal.gs`, find the `portal_runAnnualBonus` function (currently the last portal function). Add the following block immediately after its closing brace:
 
@@ -491,7 +491,7 @@
   }
   ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
   ```bash
   git add src/07-portal/Portal.gs
@@ -505,7 +505,7 @@
 **Files:**
 - Modify: `src/07-portal/PortalView.html`
 
-- [ ] **Step 1: Add the button HTML**
+- [x] **Step 1: Add the button HTML**
 
   Find the line containing `btn-run-annual-bonus` (currently line 346). Insert the new button immediately after it:
 
@@ -516,7 +516,7 @@
 
   Note: use `btn-danger` class (red) instead of `btn-muted` — this is a destructive operation and should look different from routine buttons. If `btn-danger` doesn't exist in the stylesheet, use `btn-muted` instead and add a comment.
 
-- [ ] **Step 2: Add the event listener**
+- [x] **Step 2: Add the event listener**
 
   Find the line with `btn-run-annual-bonus` event listener (currently line 868). Add the new listener immediately after it:
 
@@ -525,7 +525,7 @@
   document.getElementById('btn-rebuild-views').addEventListener('click',       rebuildViews);
   ```
 
-- [ ] **Step 3: Add to `allBtns` in `renderPortal_`**
+- [x] **Step 3: Add to `allBtns` in `renderPortal_`**
 
   Find the `allBtns` array (currently line 1187). Add `'btn-rebuild-views'` to the list:
 
@@ -537,7 +537,7 @@
                  'btn-approve-payroll','lbl-test-mode'];
   ```
 
-- [ ] **Step 4: Add visibility in `renderPortal_`**
+- [x] **Step 4: Add visibility in `renderPortal_`**
 
   Find the line setting `btn-run-annual-bonus` visibility in `renderPortal_` (currently line 1206). Add the new line immediately after it:
 
@@ -546,7 +546,7 @@
   if (perms.canRunPayroll)   document.getElementById('btn-rebuild-views').style.display        = 'inline-block';
   ```
 
-- [ ] **Step 5: Add visibility in `onDataLoaded`**
+- [x] **Step 5: Add visibility in `onDataLoaded`**
 
   Find the line setting `btn-run-annual-bonus` visibility in `onDataLoaded` (currently line 951). Add the new line immediately after it:
 
@@ -555,7 +555,7 @@
   if (_data.perms.canRunPayroll)     document.getElementById('btn-rebuild-views').style.display          = 'inline-block';
   ```
 
-- [ ] **Step 6: Add the `rebuildViews()` JS function**
+- [x] **Step 6: Add the `rebuildViews()` JS function**
 
   Find the `runAnnualBonus()` function. Add the following function immediately after its closing brace:
 
@@ -597,7 +597,7 @@
   }
   ```
 
-- [ ] **Step 7: Check `btn-danger` style exists**
+- [x] **Step 7: Check `btn-danger` style exists**
 
   Search for `btn-danger` in `PortalView.html`:
   ```bash
@@ -605,7 +605,7 @@
   ```
   If not found, change the button class in Step 1 from `btn-danger` to `btn-muted` instead.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
   ```bash
   git add src/07-portal/PortalView.html
@@ -619,7 +619,7 @@
 **Files:**
 - Modify: `src/setup/TestRunner.gs`
 
-- [ ] **Step 1: Append the test function at the end of TestRunner.gs**
+- [x] **Step 1: Append the test function at the end of TestRunner.gs**
 
   Add the following function at the very end of `src/setup/TestRunner.gs`:
 
@@ -683,7 +683,7 @@
   }
   ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
   ```bash
   git add src/setup/TestRunner.gs
@@ -694,7 +694,7 @@
 
 ## Task 5: Push and verify
 
-- [ ] **Step 1: Push to Apps Script**
+- [x] **Step 1: Push to Apps Script**
 
   ```bash
   clasp push
@@ -702,7 +702,7 @@
 
   Expected: `Pushed N files at HH:MM:SS` with no errors.
 
-- [ ] **Step 2: Run `testEventReplay` in Apps Script editor**
+- [x] **Step 2: Run `testEventReplay` in Apps Script editor**
 
   Open Apps Script editor → select `testEventReplay` → Run.
 
@@ -730,11 +730,11 @@
     ✅  EventReplay shape, row count, and idempotency checks passed
   ```
 
-- [ ] **Step 3: Smoke-test the portal button**
+- [x] **Step 3: Smoke-test the portal button**
 
   Open the portal as CEO → confirm "🔧 Rebuild Views" button appears in the leader dashboard toolbar → click it → confirm dialog appears → confirm → confirm toast shows `"Views rebuilt in Xs — N jobs, M workload rows"` and leader dashboard refreshes.
 
-- [ ] **Step 4: Final commit — update plan and CLAUDE.md**
+- [x] **Step 4: Final commit — update plan and CLAUDE.md**
 
   Mark annual bonus and EventReplayEngine as done in `CLAUDE.md`:
   ```
