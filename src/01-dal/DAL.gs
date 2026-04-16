@@ -76,8 +76,8 @@ var DAL = (function () {
     '_SYS_VERSION':          ['VersionRecorder', 'AdminEngine'],
 
     // ── Dimension tables (Admin + Migration only) ───────────
-    'DIM_STAFF_ROSTER':         ['AdminEngine', 'MigrationEngine', 'StaffOnboarding'],
-    'DIM_CLIENT_MASTER':        ['AdminEngine', 'MigrationEngine', 'ClientOnboarding'],
+    'DIM_STAFF_ROSTER':         ['AdminEngine', 'MigrationEngine', 'MigrationReplayEngine', 'StaffOnboarding'],
+    'DIM_CLIENT_MASTER':        ['AdminEngine', 'MigrationEngine', 'MigrationReplayEngine', 'ClientOnboarding'],
     'DIM_CLIENT_RATES':         ['AdminEngine', 'MigrationEngine', 'ClientOnboarding'],
     'DIM_FX_RATES':             ['AdminEngine', 'MigrationEngine'],
     'DIM_STAFF_BANKING':        ['AdminEngine', 'MigrationEngine', 'StaffOnboarding'],
@@ -100,11 +100,11 @@ var DAL = (function () {
     // hard-blocked regardless of what callerModule is passed.
     'FACT_JOB_EVENTS':       ['JobCreateHandler', 'JobStartHandler', 'JobHoldHandler',
                               'JobResumeHandler', 'ClientReturnHandler',
-                              'EventReplayEngine', 'MigrationEngine'],
-    'FACT_WORK_LOGS':        ['WorkLogHandler', 'MigrationEngine'],
+                              'EventReplayEngine', 'MigrationEngine', 'MigrationReplayEngine'],
+    'FACT_WORK_LOGS':        ['WorkLogHandler', 'MigrationEngine', 'MigrationReplayEngine'],
     'FACT_QC_EVENTS':        ['QCHandler', 'MigrationEngine'],
-    'FACT_BILLING_LEDGER':   ['BillingEngine', 'MigrationEngine'],
-    'FACT_PAYROLL_LEDGER':   ['PayrollEngine', 'MigrationEngine'],
+    'FACT_BILLING_LEDGER':   ['BillingEngine', 'MigrationEngine', 'MigrationReplayEngine'],
+    'FACT_PAYROLL_LEDGER':   ['PayrollEngine', 'MigrationEngine', 'MigrationReplayEngine'],
     'FACT_SOP_SUBMISSIONS':  ['SOPHandler', 'MigrationEngine'],
 
     // ── View tables (rebuilt projections) ───────────────────
@@ -126,7 +126,7 @@ var DAL = (function () {
     // Raw import layer (Layer 1), normalised staging (Layer 2),
     // and migration audit trail.
     'MIGRATION_RAW_IMPORT':  ['MigrationRawImporter'],
-    'MIGRATION_NORMALIZED':  ['MigrationNormalizer'],
+    'MIGRATION_NORMALIZED':  ['MigrationNormalizer', 'MigrationReplayEngine'],
     'MIGRATION_AUDIT_LOG':   ['MigrationRawImporter', 'MigrationNormalizer',
                               'MigrationReplayEngine', 'MigrationReconciler'],
 

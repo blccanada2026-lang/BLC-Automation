@@ -2876,3 +2876,34 @@ function testNormalization() {
   }
   line_();
 }
+
+/**
+ * Diagnostic: checks MIGRATION_NORMALIZED replay_status breakdown.
+ * Run after MigrationReplayEngine.replayAll() to verify FACT table writes.
+ */
+function testMigrationReplay() {
+  header_('MIGRATION REPLAY DIAGNOSTIC');
+  try {
+    var rows = DAL.readAll(Config.TABLES.MIGRATION_NORMALIZED, { callerModule: 'TestRunner' });
+    if (!rows || rows.length === 0) {
+      info_('MIGRATION_NORMALIZED is empty — run normalizeAll first');
+      line_();
+      return;
+    }
+    var statusCounts = {};
+    rows.forEach(function (r) {
+      statusCounts[r.replay_status] = (statusCounts[r.replay_status] || 0) + 1;
+    });
+    Object.keys(statusCounts).forEach(function (s) {
+      var ok = s === 'REPLAYED';
+      if (ok) {
+        pass_('replay_status=' + s + ': ' + statusCounts[s] + ' rows');
+      } else {
+        info_('replay_status=' + s + ': ' + statusCounts[s] + ' rows');
+      }
+    });
+  } catch (e) {
+    fail_('testMigrationReplay threw: ' + e.message);
+  }
+  line_();
+}
