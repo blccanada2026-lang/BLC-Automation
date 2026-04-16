@@ -317,11 +317,7 @@ var BillingEngine = (function () {
         message:   'Clearing MART_BILLING_SUMMARY before refresh',
         period_id: periodId
       });
-      var ss      = SpreadsheetApp.getActiveSpreadsheet();
-      var martTab = ss.getSheetByName(Config.TABLES.MART_BILLING_SUMMARY);
-      if (martTab && martTab.getLastRow() > 1) {
-        martTab.deleteRows(2, martTab.getLastRow() - 1);
-      }
+      DAL.clearSheet(Config.TABLES.MART_BILLING_SUMMARY);
       Logger.info('BILLING_MART_CLEAR_DONE', {
         module:    MODULE,
         message:   'MART_BILLING_SUMMARY cleared',

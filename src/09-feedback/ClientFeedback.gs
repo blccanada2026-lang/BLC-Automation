@@ -476,6 +476,9 @@ var ClientFeedback = (function () {
     // Response sheet named FBRESP_{periodId}_{clientCode} so the
     // onFeedbackFormSubmit trigger can identify client + period
     // without relying on pre-filled form fields.
+    // NOTE: SpreadsheetApp used here as a known A2 exception — FormApp's
+    // setDestination() requires the active spreadsheet reference, and the
+    // response sheet discovery (before/after diff) has no DAL equivalent.
     try {
       var ss           = SpreadsheetApp.getActiveSpreadsheet();
       var sheetsBefore = ss.getSheets().map(function(s) { return s.getName(); });
