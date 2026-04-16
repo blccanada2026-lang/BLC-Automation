@@ -2795,3 +2795,29 @@ function testPurgeAudit() {
   }
   line_();
 }
+
+/**
+ * Runs the Stacey source audit (read-only).
+ * Lists all Stacey tabs and row counts.
+ * Requires STACEY_SPREADSHEET_ID to be set in MigrationConfig.gs.
+ * Run from Apps Script editor before Phase D.
+ */
+function testStaceyAudit() {
+  header_('STACEY SOURCE AUDIT');
+  try {
+    var staceyId = MigrationConfig.getStaceyId();
+    if (staceyId === 'REPLACE_WITH_STACEY_SPREADSHEET_ID') {
+      fail_('STACEY_SPREADSHEET_ID not set — update MigrationConfig.gs first');
+      line_();
+      return;
+    }
+    var result = StaceyAuditor.listTabs(Session.getActiveUser().getEmail());
+    pass_('Stacey accessible: ' + result.length + ' tabs found');
+    result.forEach(function (t) {
+      info_('  ' + t.name + ': ' + t.rows + ' rows');
+    });
+  } catch (e) {
+    fail_('testStaceyAudit threw: ' + e.message);
+  }
+  line_();
+}
