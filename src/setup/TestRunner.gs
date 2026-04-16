@@ -2845,3 +2845,34 @@ function testRawImport() {
   }
   line_();
 }
+
+/**
+ * Diagnostic: checks MIGRATION_NORMALIZED row counts and validation status.
+ * Run after MigrationNormalizer.normalizeAll() to verify normalization results.
+ */
+function testNormalization() {
+  header_('NORMALIZATION DIAGNOSTIC');
+  try {
+    var rows = DAL.readAll(Config.TABLES.MIGRATION_NORMALIZED, { callerModule: 'TestRunner' });
+    if (!rows || rows.length === 0) {
+      info_('MIGRATION_NORMALIZED is empty — run MigrationNormalizer.normalizeAll() first');
+    } else {
+      pass_('MIGRATION_NORMALIZED: ' + rows.length + ' rows');
+      var statusCounts = {};
+      var entityCounts = {};
+      rows.forEach(function (r) {
+        statusCounts[r.validation_status] = (statusCounts[r.validation_status] || 0) + 1;
+        entityCounts[r.entity_type]       = (entityCounts[r.entity_type] || 0) + 1;
+      });
+      Object.keys(entityCounts).forEach(function (e) {
+        info_('  ' + e + ': ' + entityCounts[e] + ' rows');
+      });
+      Object.keys(statusCounts).forEach(function (s) {
+        info_('  Status ' + s + ': ' + statusCounts[s] + ' rows');
+      });
+    }
+  } catch (e) {
+    fail_('testNormalization threw: ' + e.message);
+  }
+  line_();
+}
