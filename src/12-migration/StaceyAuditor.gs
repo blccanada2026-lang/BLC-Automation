@@ -16,7 +16,12 @@ var StaceyAuditor = (function () {
   var MODULE = 'StaceyAuditor';
 
   function getStaceySheet_(tabName) {
-    var ss    = SpreadsheetApp.openById(MigrationConfig.getStaceyId());
+    var ss;
+    try {
+      ss = SpreadsheetApp.openById(MigrationConfig.getStaceyId());
+    } catch (e) {
+      throw new Error('StaceyAuditor: cannot open Stacey spreadsheet — check MigrationConfig.getStaceyId(). Cause: ' + e.message);
+    }
     var sheet = ss.getSheetByName(tabName);
     if (!sheet) throw new Error('StaceyAuditor: tab "' + tabName + '" not found in Stacey.');
     return sheet;
@@ -33,7 +38,13 @@ var StaceyAuditor = (function () {
     var actor = RBAC.resolveActor(actorEmail);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
 
-    var ss     = SpreadsheetApp.openById(MigrationConfig.getStaceyId());
+    var ss;
+    try {
+      ss = SpreadsheetApp.openById(MigrationConfig.getStaceyId());
+    } catch (e) {
+      Logger.error('STACEY_OPEN_FAILED', { module: MODULE, error: e.message });
+      throw new Error('StaceyAuditor: cannot open Stacey spreadsheet. Cause: ' + e.message);
+    }
     var sheets = ss.getSheets();
     var result = sheets.map(function (s) {
       return { name: s.getName(), rows: Math.max(s.getLastRow() - 1, 0) };
@@ -123,6 +134,11 @@ var StaceyAuditor = (function () {
     var duplicates = [];
 
     for (var i = 1; i < rawData.length; i++) {
+      if (HealthMonitor.isApproachingLimit()) {
+        Logger.warn('STACEY_QUALITY_QUOTA_CUTOFF', { module: MODULE, tab: tabName, processed: i });
+        break;
+      }
+
       var row = rawData[i];
       var id  = idIdx >= 0 ? String(row[idIdx]).trim() : '';
 
@@ -141,11 +157,6 @@ var StaceyAuditor = (function () {
         return cell instanceof Date && !isNaN(cell.getTime());
       });
       if (!hasAnyDate) blankDates++;
-
-      if (HealthMonitor.isApproachingLimit()) {
-        Logger.warn('STACEY_QUALITY_QUOTA_CUTOFF', { module: MODULE, tab: tabName, processed: i });
-        break;
-      }
     }
 
     var result = {
@@ -176,6 +187,11 @@ var StaceyAuditor = (function () {
   function runAudit(actorEmail) {
     var actor = RBAC.resolveActor(actorEmail);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
+
+    if (MigrationConfig.getStaceyId() === 'REPLACE_WITH_STACEY_SPREADSHEET_ID') {
+      Logger.error('STACEY_AUDIT_NO_ID', { module: MODULE, message: 'STACEY_SPREADSHEET_ID not configured in MigrationConfig.gs' });
+      throw new Error('StaceyAuditor.runAudit: STACEY_SPREADSHEET_ID not set — update MigrationConfig.gs first.');
+    }
 
     Logger.info('STACEY_AUDIT_START', { module: MODULE, message: 'Starting Stacey source audit' });
 
