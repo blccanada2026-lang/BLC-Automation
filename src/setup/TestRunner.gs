@@ -2607,3 +2607,86 @@ function testEventReplay() {
   line_();
 }
 
+/**
+ * Manual test: verifies refreshDashboard returns correct shape,
+ * row counts match MART sheets, and run is idempotent.
+ * Run from Apps Script editor.
+ */
+function testReportingEngine() {
+  header_('REPORTING ENGINE TEST');
+
+  var email = Session.getActiveUser().getEmail();
+
+  // First run — aggregates all source data into four MARTs
+  var result1 = ReportingEngine.refreshDashboard(email);
+  info_('First run: periods=' + result1.periods +
+        ' dashboard=' + result1.mart_dashboard.written +
+        ' team=' + result1.mart_team.written +
+        ' designer=' + result1.mart_designer.written +
+        ' account=' + result1.mart_account.written +
+        ' partial=' + result1.partial +
+        ' elapsed_ms=' + result1.elapsed_ms);
+
+  var shapeOk = (
+    typeof result1.periods                 === 'number'  &&
+    typeof result1.mart_dashboard.written  === 'number'  &&
+    typeof result1.mart_dashboard.cleared  === 'number'  &&
+    typeof result1.mart_team.written       === 'number'  &&
+    typeof result1.mart_designer.written   === 'number'  &&
+    typeof result1.mart_account.written    === 'number'  &&
+    typeof result1.partial                 === 'boolean' &&
+    typeof result1.elapsed_ms              === 'number'
+  );
+  info_('Shape OK: ' + shapeOk);
+
+  // Row count checks — each MART sheet must match .written
+  var ss            = SpreadsheetApp.getActiveSpreadsheet();
+  var dashSheet     = ss.getSheetByName('MART_DASHBOARD');
+  var teamSheet     = ss.getSheetByName('MART_TEAM_SUMMARY');
+  var designerSheet = ss.getSheetByName('MART_DESIGNER_SUMMARY');
+  var accountSheet  = ss.getSheetByName('MART_ACCOUNT_SUMMARY');
+
+  var dashRows     = dashSheet     ? Math.max(dashSheet.getLastRow()     - 1, 0) : 0;
+  var teamRows     = teamSheet     ? Math.max(teamSheet.getLastRow()     - 1, 0) : 0;
+  var designerRows = designerSheet ? Math.max(designerSheet.getLastRow() - 1, 0) : 0;
+  var accountRows  = accountSheet  ? Math.max(accountSheet.getLastRow()  - 1, 0) : 0;
+
+  var rowCountOk = (
+    dashRows     === result1.mart_dashboard.written &&
+    teamRows     === result1.mart_team.written      &&
+    designerRows === result1.mart_designer.written  &&
+    accountRows  === result1.mart_account.written
+  );
+  info_('Row count OK: ' + rowCountOk +
+        ' (dashboard=' + dashRows + '/' + result1.mart_dashboard.written +
+        ' team=' + teamRows + '/' + result1.mart_team.written +
+        ' designer=' + designerRows + '/' + result1.mart_designer.written +
+        ' account=' + accountRows + '/' + result1.mart_account.written + ')');
+
+  // Second run — idempotent: row counts must be identical
+  var result2 = ReportingEngine.refreshDashboard(email);
+  info_('Second run: periods=' + result2.periods +
+        ' dashboard=' + result2.mart_dashboard.written +
+        ' designer=' + result2.mart_designer.written +
+        ' account=' + result2.mart_account.written);
+
+  var idempotent = (
+    result2.mart_dashboard.written === result1.mart_dashboard.written &&
+    result2.mart_team.written      === result1.mart_team.written      &&
+    result2.mart_designer.written  === result1.mart_designer.written  &&
+    result2.mart_account.written   === result1.mart_account.written
+  );
+  info_('Idempotent: ' + idempotent);
+
+  var allOk = shapeOk && rowCountOk && idempotent && !result1.partial;
+  if (allOk) {
+    pass_('ReportingEngine shape, row counts, and idempotency checks passed');
+  } else {
+    fail_('ReportingEngine check failed — shapeOk=' + shapeOk +
+          ' rowCountOk=' + rowCountOk +
+          ' idempotent=' + idempotent +
+          ' partial=' + result1.partial);
+  }
+  line_();
+}
+
