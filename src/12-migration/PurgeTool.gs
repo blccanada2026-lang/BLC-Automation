@@ -74,18 +74,17 @@ var PurgeTool = (function () {
       var scan = scanTable_(t.table, t.id);
       results.push(scan);
       Logger.info('PURGE_AUDIT_TABLE', { module: MODULE, table: t.table, suspects: scan.count });
-      console.log((scan.count > 0 ? '[WARN] ' : '[OK]   ') +
-                  t.table + ': ' + scan.count + ' suspect rows');
+      Logger.info('PURGE_AUDIT_TABLE_RESULT', { module: MODULE, table: t.table, suspects: scan.count, status: scan.count > 0 ? 'WARN' : 'OK' });
       if (scan.count > 0) {
         scan.rows.forEach(function (r) {
-          console.log('    -> ' + (r[t.id] || r.event_id || r.queue_id || '?'));
+          Logger.info('PURGE_AUDIT_ROW', { module: MODULE, table: t.table, id: r[t.id] || r.event_id || r.queue_id || '?' });
         });
       }
     });
 
     var totalSuspect = results.reduce(function (s, r) { return s + r.count; }, 0);
-    console.log('\nTotal suspect rows: ' + totalSuspect);
-    console.log('Review above, then call PurgeTool.runPurge(email, false) to execute.');
+    Logger.info('PURGE_AUDIT_SUMMARY', { module: MODULE, totalSuspect: totalSuspect });
+    Logger.info('PURGE_AUDIT_NEXT_STEP', { module: MODULE, message: 'Review results above, then call PurgeTool.runPurge(email, false) to execute.' });
 
     return { total: totalSuspect, results: results };
   }
@@ -164,8 +163,7 @@ var PurgeTool = (function () {
 
     Logger.info('PURGE_COMPLETE', { module: MODULE,
       tagged: totalTagged, deleted: totalDeleted, actor: actorEmail });
-    console.log('Purge complete: ' + totalTagged + ' FACT rows tagged, ' +
-                totalDeleted + ' STG rows marked PURGED.');
+    Logger.info('PURGE_COMPLETE_SUMMARY', { module: MODULE, tagged: totalTagged, deleted: totalDeleted });
 
     return { tagged: totalTagged, deleted: totalDeleted };
   }
