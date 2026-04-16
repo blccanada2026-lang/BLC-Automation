@@ -423,6 +423,25 @@ function portal_rebuildViews() {
 }
 
 // ============================================================
+// portal_refreshDashboard — CEO triggers Looker Studio MART refresh
+// ============================================================
+
+/**
+ * Rebuilds MART_DASHBOARD, MART_TEAM_SUMMARY, MART_DESIGNER_SUMMARY,
+ * and MART_ACCOUNT_SUMMARY from current FACT and VW data.
+ * CEO only. Run on demand or triggered nightly automatically.
+ *
+ * NOTE: Portal button to be migrated to AdminConsole (T13) when built.
+ *
+ * @returns {string}  JSON: { periods, mart_dashboard, mart_team, mart_designer, mart_account, partial, elapsed_ms }
+ */
+function portal_refreshDashboard() {
+  var email  = Session.getActiveUser().getEmail();
+  var result = ReportingEngine.refreshDashboard(email);
+  return JSON.stringify(result);
+}
+
+// ============================================================
 // portal_runBonusRun — CEO triggers supervisor bonus run
 // ============================================================
 
