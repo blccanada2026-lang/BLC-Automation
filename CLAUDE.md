@@ -284,6 +284,6 @@ All records also store: `bank_country`, `bank_city`, `bank_address`, `ofx_recipi
 - [x] sendRatingRequests: emails TL/PM/CEO a rating portal link per quarter
 - [x] CEO Preview As: view portal and rating page as any staff member
 - [x] SBS sheet intake: SheetAdapter + STG_INTAKE_SBS + DIM_CLIENT_INTAKE_CONFIG
-- [ ] Annual bonus: sum Q1–Q4 scores over full Jan–Dec period, paid in December (engine skeleton exists in QuarterlyBonusEngine)
-- [ ] EventReplayEngine (VW rebuild from FACT events)
+- [x] Annual bonus: sum Q1–Q4 scores over full Jan–Dec period, paid in December — fully complete, 5 staff written, idempotency verified
+- [x] EventReplayEngine (VW rebuild from FACT events) — fully complete, 51 jobs replayed, idempotency verified
 - [ ] MART refresh / Looker Studio reporting layer
