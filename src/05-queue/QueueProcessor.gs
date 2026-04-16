@@ -517,10 +517,9 @@ var QueueProcessor = (function () {
     try {
       lock.waitLock(Config.get('lockTimeoutMs', 10000));
       lockAcquired = true;
-      console.log('  [pQ] lock acquired');
+      Logger.info('QUEUE_LOCK_ACQUIRED', { module: 'QueueProcessor', message: 'Script lock acquired' });
     } catch (e) {
       // Another instance is running — skip this invocation
-      console.log('  [pQ] LOCK UNAVAILABLE — skipping');
       Logger.warn('QUEUE_LOCK_UNAVAILABLE', {
         module:  'QueueProcessor',
         message: 'Could not acquire script lock — another instance may be running. Skipping.'
@@ -555,9 +554,12 @@ var QueueProcessor = (function () {
         return; // Cannot process without reading the queue
       }
 
-      console.log('  [pQ] pendingItems found: ' + pendingItems.length +
-                  ' | isApproachingLimit: ' + HealthMonitor.isApproachingLimit() +
-                  ' | apiCalls: ' + DAL.getApiCallCount());
+      Logger.info('QUEUE_PENDING_FOUND', {
+        module:    'QueueProcessor',
+        message:   'Pending items ready for processing',
+        pending:   pendingItems.length,
+        api_calls: DAL.getApiCallCount()
+      });
 
       if (pendingItems.length === 0) {
         Logger.info('QUEUE_EMPTY', {
