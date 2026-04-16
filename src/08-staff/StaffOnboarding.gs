@@ -728,12 +728,23 @@ var StaffOnboarding = (function () {
     }
 
     if (!importRows || importRows.length === 0) {
-      return { total: 0, created: 0, skipped: 0, errors: 0, results: [] };
+      return { total: 0, created: 0, skipped: 0, errors: 0, results: [], partial: false };
     }
 
-    var summary = { total: 0, created: 0, skipped: 0, errors: 0, results: [] };
+    var summary = { total: 0, created: 0, skipped: 0, errors: 0, results: [], partial: false };
 
     for (var i = 0; i < importRows.length; i++) {
+      if (i > 0 && i % 20 === 0 && HealthMonitor.isApproachingLimit()) {
+        Logger.warn('BULK_ONBOARD_QUOTA_CUTOFF', {
+          module:    MODULE,
+          message:   'Quota limit approaching — bulk import stopped early',
+          processed: i,
+          total:     importRows.length
+        });
+        summary.partial = true;
+        break;
+      }
+
       var row = importRows[i];
 
       // Skip blank rows (no person_code)

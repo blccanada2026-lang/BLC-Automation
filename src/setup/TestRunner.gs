@@ -2735,3 +2735,42 @@ function testJobCreateHandlerRBAC() {
 
   line_();
 }
+
+/**
+ * Verifies bulkOnboardStaff returns { partial: true } shape when quota limit
+ * is approached. Checks the return object has a partial field (not undefined).
+ * Run from Apps Script editor.
+ */
+function testBulkOnboardQuotaGuard() {
+  header_('TEST: bulkOnboardStaff quota guard shape');
+
+  var email = Session.getActiveUser().getEmail();
+
+  // Run bulk import against whatever is in STG_STAFF_IMPORT.
+  // We only check that the return shape always includes a partial field.
+  var result;
+  try {
+    result = StaffOnboarding.bulkOnboardStaff(email);
+  } catch (e) {
+    fail_('bulkOnboardStaff threw unexpectedly: ' + e.message);
+    line_();
+    return;
+  }
+
+  var hasPartialField = (result !== null && result !== undefined &&
+                         typeof result.partial !== 'undefined');
+  var hasTotal        = typeof result.total   === 'number';
+  var hasCreated      = typeof result.created === 'number';
+
+  info_('Result shape — total=' + result.total + ' created=' + result.created +
+        ' skipped=' + result.skipped + ' errors=' + result.errors +
+        ' partial=' + result.partial);
+
+  if (hasPartialField && hasTotal && hasCreated) {
+    pass_('bulkOnboardStaff return shape includes partial field');
+  } else {
+    fail_('Return shape missing partial field — quota guard not implemented');
+  }
+
+  line_();
+}
