@@ -33,13 +33,15 @@ var PurgeTool = (function () {
     try {
       rows = DAL.readAll(tableName, { callerModule: MODULE });
     } catch (e) {
-      return { tableName: tableName, rows: [], count: 0 };
+      Logger.error('PURGE_SCAN_FAILED', { module: MODULE, table: tableName, error: e.message });
+      return { tableName: tableName, rows: [], count: 0, error: e.message };
     }
     if (!rows || rows.length === 0) return { tableName: tableName, rows: [], count: 0 };
     var suspect = rows.filter(function (r) {
       return isTestId_(r[idField]) ||
              isTestEmail_(r.actor_email) ||
-             isTestEmail_(r.submitter_email);
+             isTestEmail_(r.submitter_email) ||
+             isTestEmail_(r.email);
     });
     return { tableName: tableName, rows: suspect, count: suspect.length };
   }
@@ -112,10 +114,10 @@ var PurgeTool = (function () {
       message: 'Starting test data purge', actor: actorEmail });
 
     var factTargets = [
-      { table: Config.TABLES.FACT_JOB_EVENTS,    id: 'job_number' },
-      { table: Config.TABLES.FACT_WORK_LOGS,      id: 'event_id'   },
-      { table: Config.TABLES.FACT_BILLING_LEDGER, id: 'billing_id' },
-      { table: Config.TABLES.FACT_PAYROLL_LEDGER, id: 'payroll_id' }
+      { table: Config.TABLES.FACT_JOB_EVENTS,    id: 'job_number', eventType: 'JOB_TEST_PURGED'     },
+      { table: Config.TABLES.FACT_WORK_LOGS,      id: 'event_id',   eventType: 'WORK_LOG_TEST_PURGED' },
+      { table: Config.TABLES.FACT_BILLING_LEDGER, id: 'billing_id', eventType: 'BILLING_TEST_PURGED'  },
+      { table: Config.TABLES.FACT_PAYROLL_LEDGER, id: 'payroll_id', eventType: 'PAYROLL_TEST_PURGED'  }
     ];
 
     var totalTagged  = 0;
@@ -123,19 +125,27 @@ var PurgeTool = (function () {
 
     factTargets.forEach(function (t) {
       var scan = scanTable_(t.table, t.id);
-      scan.rows.forEach(function (r) {
+      for (var i = 0; i < scan.rows.length; i++) {
+        if (i > 0 && i % 20 === 0 && HealthMonitor.isApproachingLimit()) {
+          Logger.warn('PURGE_QUOTA_CUTOFF', { module: MODULE, table: t.table, processed: i });
+          break;
+        }
+        var r = scan.rows[i];
         try {
-          var cond = {};
-          cond[t.id] = r[t.id];
-          DAL.updateWhere(t.table, cond,
-            { migration_batch: 'TEST_PURGED', status: 'PURGED' },
-            { callerModule: MODULE }
-          );
+          DAL.appendRow(t.table, {
+            event_id:         Identifiers.generateId(),
+            event_type:       t.eventType,
+            amendment_of:     r[t.id],
+            migration_batch:  'TEST_PURGED',
+            status:           'PURGED',
+            created_by:       actorEmail,
+            created_at:       new Date().toISOString()
+          }, { callerModule: MODULE });
           totalTagged++;
         } catch (e) {
           Logger.warn('PURGE_TAG_FAILED', { module: MODULE, id: r[t.id], error: e.message });
         }
-      });
+      }
     });
 
     var stgTargets = [
@@ -146,7 +156,12 @@ var PurgeTool = (function () {
 
     stgTargets.forEach(function (t) {
       var scan = scanTable_(t.table, t.id);
-      scan.rows.forEach(function (r) {
+      for (var i = 0; i < scan.rows.length; i++) {
+        if (i > 0 && i % 20 === 0 && HealthMonitor.isApproachingLimit()) {
+          Logger.warn('PURGE_QUOTA_CUTOFF', { module: MODULE, table: t.table, processed: i });
+          break;
+        }
+        var r = scan.rows[i];
         try {
           var cond = {};
           cond[t.id] = r[t.id];
@@ -158,7 +173,7 @@ var PurgeTool = (function () {
         } catch (e) {
           Logger.warn('PURGE_DELETE_FAILED', { module: MODULE, id: r[t.id], error: e.message });
         }
-      });
+      }
     });
 
     Logger.info('PURGE_COMPLETE', { module: MODULE,
