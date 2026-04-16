@@ -1,6 +1,6 @@
 # ReportingEngine — MART Refresh & Looker Studio Layer Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build ReportingEngine — aggregates FACT/VW/MART data into four MART tables for Looker Studio, with CEO-triggered portal refresh and nightly time-based trigger.
 
@@ -33,7 +33,7 @@
 - Modify: `src/02-security/RBAC.gs`
 - Modify: `src/setup/SetupScript.gs`
 
-- [ ] **Step 1: Add 3 new MART constants to Config.gs**
+- [x] **Step 1: Add 3 new MART constants to Config.gs**
 
   In `src/00-foundation/Config.gs`, find this block (around line 200):
 
@@ -54,7 +54,7 @@
       MART_ACCOUNT_SUMMARY:  'MART_ACCOUNT_SUMMARY',
   ```
 
-- [ ] **Step 2: Add write permissions to DAL.gs**
+- [x] **Step 2: Add write permissions to DAL.gs**
 
   In `src/01-dal/DAL.gs`, find this block (around line 116):
 
@@ -77,7 +77,7 @@
       'MART_ACCOUNT_SUMMARY':  ['ReportingEngine'],
   ```
 
-- [ ] **Step 3: Add MART_DASHBOARD to FINANCIAL_TABLES in RBAC.gs**
+- [x] **Step 3: Add MART_DASHBOARD to FINANCIAL_TABLES in RBAC.gs**
 
   In `src/02-security/RBAC.gs`, find this block (around line 435):
 
@@ -102,7 +102,7 @@
     };
   ```
 
-- [ ] **Step 4: Update MART_DASHBOARD schema and add 3 new schemas in SetupScript.gs**
+- [x] **Step 4: Update MART_DASHBOARD schema and add 3 new schemas in SetupScript.gs**
 
   In `src/setup/SetupScript.gs`, find this block (around line 329):
 
@@ -163,7 +163,7 @@
   };
   ```
 
-- [ ] **Step 5: Add installReportingTrigger() to SetupScript.gs**
+- [x] **Step 5: Add installReportingTrigger() to SetupScript.gs**
 
   In `src/setup/SetupScript.gs`, go to the very end of the file (after `createFlatFactSheets` — currently line 1163). Append:
 
@@ -190,7 +190,7 @@
   }
   ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
   ```bash
   git add src/00-foundation/Config.gs src/01-dal/DAL.gs src/02-security/RBAC.gs src/setup/SetupScript.gs
@@ -204,7 +204,7 @@
 **Files:**
 - Create: `src/11-reporting/ReportingEngine.gs`
 
-- [ ] **Step 1: Create the file**
+- [x] **Step 1: Create the file**
 
   Create `src/11-reporting/ReportingEngine.gs` with this exact content:
 
@@ -666,7 +666,7 @@
   }
   ```
 
-- [ ] **Step 2: Verify Config.TABLES constants are reachable**
+- [x] **Step 2: Verify Config.TABLES constants are reachable**
 
   Run this grep to confirm the 3 new constants exist:
 
@@ -676,7 +676,7 @@
 
   Expected: 3 lines found. If missing, complete Task 1 Step 1 first.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
   ```bash
   git add src/11-reporting/ReportingEngine.gs
@@ -690,7 +690,7 @@
 **Files:**
 - Modify: `src/07-portal/Portal.gs`
 
-- [ ] **Step 1: Add the portal function after `portal_rebuildViews`**
+- [x] **Step 1: Add the portal function after `portal_rebuildViews`**
 
   In `src/07-portal/Portal.gs`, find the closing brace of `portal_rebuildViews` (currently around line 423):
 
@@ -725,7 +725,7 @@
   }
   ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
   ```bash
   git add src/07-portal/Portal.gs
@@ -739,7 +739,7 @@
 **Files:**
 - Modify: `src/07-portal/PortalView.html`
 
-- [ ] **Step 1: Add the button HTML**
+- [x] **Step 1: Add the button HTML**
 
   Find the line with `btn-rebuild-views` (currently line 347):
 
@@ -754,7 +754,7 @@
         <button class="btn-muted btn-sm" id="btn-refresh-dashboard" style="display:none">🔄 Refresh Dashboard</button>
   ```
 
-- [ ] **Step 2: Add the event listener**
+- [x] **Step 2: Add the event listener**
 
   Find the line with the `btn-rebuild-views` listener (currently line 870):
 
@@ -769,7 +769,7 @@
     document.getElementById('btn-refresh-dashboard').addEventListener('click',   refreshDashboard);
   ```
 
-- [ ] **Step 3: Add to `allBtns` array**
+- [x] **Step 3: Add to `allBtns` array**
 
   Find the `allBtns` array (currently around line 1190). Add `'btn-refresh-dashboard'` after `'btn-rebuild-views'`:
 
@@ -782,7 +782,7 @@
                    'btn-approve-payroll','lbl-test-mode'];
   ```
 
-- [ ] **Step 4: Add visibility in `renderPortal_`**
+- [x] **Step 4: Add visibility in `renderPortal_`**
 
   Find the line setting `btn-rebuild-views` visibility in `renderPortal_` (currently around line 1211):
 
@@ -797,7 +797,7 @@
     if (perms.canRunPayroll)   document.getElementById('btn-refresh-dashboard').style.display    = 'inline-block';
   ```
 
-- [ ] **Step 5: Add visibility in `onDataLoaded`**
+- [x] **Step 5: Add visibility in `onDataLoaded`**
 
   Find the line setting `btn-rebuild-views` visibility in `onDataLoaded` (currently around line 954):
 
@@ -812,7 +812,7 @@
     if (_data.perms.canRunPayroll)     document.getElementById('btn-refresh-dashboard').style.display      = 'inline-block';
   ```
 
-- [ ] **Step 6: Add the `refreshDashboard()` JS function**
+- [x] **Step 6: Add the `refreshDashboard()` JS function**
 
   Find the `rebuildViews()` function (currently around line 2482). Add the following function immediately after its closing brace:
 
@@ -848,7 +848,7 @@
   }
   ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
   ```bash
   git add src/07-portal/PortalView.html
@@ -862,7 +862,7 @@
 **Files:**
 - Modify: `src/setup/TestRunner.gs`
 
-- [ ] **Step 1: Append the test function at the end of TestRunner.gs**
+- [x] **Step 1: Append the test function at the end of TestRunner.gs**
 
   Add the following at the very end of `src/setup/TestRunner.gs` (after the closing `}` of `testEventReplay`):
 
@@ -951,7 +951,7 @@
   }
   ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
   ```bash
   git add src/setup/TestRunner.gs
@@ -962,7 +962,7 @@
 
 ## Task 6: Push, verify, and close out
 
-- [ ] **Step 1: Push to Apps Script**
+- [x] **Step 1: Push to Apps Script**
 
   ```bash
   clasp push
@@ -970,7 +970,7 @@
 
   Expected: `Pushed N files at HH:MM:SS` with no errors.
 
-- [ ] **Step 2: Create the 3 new MART sheet tabs**
+- [x] **Step 2: Create the 3 new MART sheet tabs**
 
   In Apps Script editor, select `runSetupSchemas` → Run. This is idempotent — it skips existing tabs and creates only the missing ones.
 
@@ -984,7 +984,7 @@
   ✅ CREATED  MART_ACCOUNT_SUMMARY
   ```
 
-- [ ] **Step 3: Run `testReportingEngine` in Apps Script editor**
+- [x] **Step 3: Run `testReportingEngine` in Apps Script editor**
 
   Open Apps Script editor → select `testReportingEngine` → Run.
 
@@ -1003,15 +1003,15 @@
 
   Note: `account=0` is expected until FACT_WORK_LOGS partitions exist (work logs are recorded per job, and those partitions may be empty).
 
-- [ ] **Step 4: Smoke-test the portal button**
+- [x] **Step 4: Smoke-test the portal button**
 
   Open the portal as CEO → confirm `🔄 Refresh Dashboard` button appears in the leader toolbar → click it → confirm dialog → confirm green toast shows `"Dashboard refreshed in Xs — N periods updated"`.
 
-- [ ] **Step 5: Install the nightly trigger**
+- [x] **Step 5: Install the nightly trigger**
 
   In Apps Script editor, select `installReportingTrigger` → Run once. Verify trigger appears in **Triggers** panel (left sidebar → clock icon) pointing at `refreshDashboardSystem`, firing daily at 2am.
 
-- [ ] **Step 6: Final commit — update CLAUDE.md**
+- [x] **Step 6: Final commit — update CLAUDE.md**
 
   In `CLAUDE.md`, mark ReportingEngine complete:
 
