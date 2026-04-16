@@ -12,6 +12,8 @@
 // ║  Handles FORM_TYPE = 'JOB_CREATE'                       ║
 // ║  Creates the first event for a new job in               ║
 // ║  FACT_JOB_EVENTS and assigns a BLC-NNNNN job number.   ║
+// ║                                                         ║
+// ║  PERMISSION REQUIRED: RBAC.ACTIONS.JOB_CREATE           ║
 // ╚══════════════════════════════════════════════════════════╝
 //
 // Responsibilities:
@@ -326,6 +328,9 @@ var JobCreateHandler = (function () {
       message:  'Starting job creation',
       queue_id: queueId
     });
+
+    // ── Step 0: RBAC check ──────────────────────────────────
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.JOB_CREATE);
 
     // ── Step 1: Parse payload_json ──────────────────────────
     var rawPayload = queueItem.payload_json || '{}';
