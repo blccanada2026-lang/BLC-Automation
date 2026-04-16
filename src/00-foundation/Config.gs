@@ -208,7 +208,14 @@ var Config = (function () {
     // DIM_CLIENT_INTAKE_CONFIG: column mapping rules per client (source → target)
     // STG_INTAKE_{CLIENT}: one tab per client using their own column headers
     DIM_CLIENT_INTAKE_CONFIG: 'DIM_CLIENT_INTAKE_CONFIG',
-    STG_INTAKE_SBS:           'STG_INTAKE_SBS'
+    STG_INTAKE_SBS:           'STG_INTAKE_SBS',
+
+    // Migration tables — used exclusively by src/12-migration/
+    // Raw import landing zone, normalised staging, and audit trail
+    // for the Stacey V2 → Nexus V3 migration.
+    MIGRATION_RAW_IMPORT: 'MIGRATION_RAW_IMPORT',
+    MIGRATION_NORMALIZED: 'MIGRATION_NORMALIZED',
+    MIGRATION_AUDIT_LOG:  'MIGRATION_AUDIT_LOG'
 
   };
 
