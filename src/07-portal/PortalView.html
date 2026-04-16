@@ -345,6 +345,7 @@
         <button class="btn-muted btn-sm" id="btn-run-quarterly-bonus" style="display:none">🏆 Run Quarterly Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-annual-bonus" style="display:none">🎁 Run Annual Bonus</button>
         <button class="btn-danger btn-sm" id="btn-rebuild-views" style="display:none">🔧 Rebuild Views</button>
+        <button class="btn-muted btn-sm" id="btn-refresh-dashboard" style="display:none">🔄 Refresh Dashboard</button>
         <button class="btn-success btn-sm" id="btn-approve-payroll" style="display:none">✓ Approve Payroll</button>
         <label id="lbl-test-mode" style="display:none;align-items:center;gap:6px;font-size:12px;color:#b45309;font-weight:600;cursor:pointer;">
           <input type="checkbox" id="chk-test-mode"> TEST MODE (sends to BLC Gmail)
@@ -868,6 +869,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-run-quarterly-bonus').addEventListener('click', runQuarterlyBonus);
   document.getElementById('btn-run-annual-bonus').addEventListener('click',    runAnnualBonus);
   document.getElementById('btn-rebuild-views').addEventListener('click',       rebuildViews);
+  document.getElementById('btn-refresh-dashboard').addEventListener('click',   refreshDashboard);
   document.getElementById('btn-approve-payroll').addEventListener('click',   approveAllPayroll);
   document.getElementById('btn-staff-panel').addEventListener('click',       toggleStaffPanel);
   document.getElementById('btn-onboard-staff').addEventListener('click',     openOnboardStaff);
@@ -952,6 +954,7 @@ function onDataLoaded(jsonStr) {
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-quarterly-bonus').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-annual-bonus').style.display      = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-rebuild-views').style.display          = 'inline-block';
+  if (_data.perms.canRunPayroll)     document.getElementById('btn-refresh-dashboard').style.display      = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('lbl-test-mode').style.display       = 'flex';
   if (_data.perms.canApprovePayroll) document.getElementById('btn-approve-payroll').style.display = 'inline-block';
   if (_data.perms.isLeader)          document.getElementById('dash-feedback-panel').style.display = 'block';
@@ -1191,6 +1194,7 @@ function renderPortal_(data) {
                  'btn-leader-dash','btn-staff-panel',
                  'btn-send-feedback','btn-send-ratings','btn-run-bonus',
                  'btn-run-quarterly-bonus','btn-run-annual-bonus','btn-rebuild-views',
+                 'btn-refresh-dashboard',
                  'btn-approve-payroll','lbl-test-mode'];
   allBtns.forEach(function(id) {
     var el = document.getElementById(id);
@@ -1209,6 +1213,7 @@ function renderPortal_(data) {
   if (perms.canRunPayroll)   document.getElementById('btn-run-quarterly-bonus').style.display = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-run-annual-bonus').style.display    = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-rebuild-views').style.display        = 'inline-block';
+  if (perms.canRunPayroll)   document.getElementById('btn-refresh-dashboard').style.display    = 'inline-block';
 
   renderStats(data.stats);
   renderJobs(data.jobs, actor, perms);
@@ -2513,6 +2518,36 @@ function rebuildViews() {
       showToast('Error: ' + (err.message || String(err)), 'error');
     })
     .portal_rebuildViews();
+}
+
+function refreshDashboard() {
+  if (!confirm(
+    'Refresh Looker Studio dashboard data?\n\n' +
+    'This rebuilds MART_DASHBOARD, MART_TEAM_SUMMARY,\n' +
+    'MART_DESIGNER_SUMMARY, and MART_ACCOUNT_SUMMARY\n' +
+    'from current FACT and VW data.\n\n' +
+    'Run time: ~15\u201330 seconds depending on data volume.'
+  )) return;
+
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      try {
+        var r   = JSON.parse(json);
+        var sec = Math.round(r.elapsed_ms / 1000);
+        if (r.partial) {
+          showToast('Partial refresh \u2014 quota limit reached, re-run to complete.', 'warning');
+        } else {
+          showToast('Dashboard refreshed in ' + sec + 's \u2014 ' + r.periods + ' periods updated.', 'success');
+        }
+      } catch(e) { showToast('Dashboard refreshed.', 'success'); }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_refreshDashboard();
 }
 
 function approveAllPayroll() {
