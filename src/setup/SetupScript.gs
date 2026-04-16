@@ -326,8 +326,10 @@ var SCHEMAS = {
 
   // ── Mart tables ───────────────────────────────────────────
 
+  // CEO only — full financial + operational summary per period
   'MART_DASHBOARD': [
-    'period_id', 'metric_name', 'metric_value', 'updated_at'
+    'period_id', 'total_revenue_cad', 'total_revenue_usd',
+    'total_payroll_inr', 'design_hours', 'active_designers', 'updated_at'
   ],
 
   'MART_BILLING_SUMMARY': [
@@ -339,6 +341,21 @@ var SCHEMAS = {
     'period_id', 'person_code',
     'design_pay', 'qc_pay', 'supervisor_bonus', 'total_pay',
     'status', 'updated_at'
+  ],
+
+  // PM + TL accessible — non-financial operational summary per period
+  'MART_TEAM_SUMMARY': [
+    'period_id', 'design_hours', 'active_designers', 'updated_at'
+  ],
+
+  // PM + TL accessible — hours per designer per period
+  'MART_DESIGNER_SUMMARY': [
+    'period_id', 'person_code', 'design_hours', 'updated_at'
+  ],
+
+  // PM + TL accessible — hours per client account per period
+  'MART_ACCOUNT_SUMMARY': [
+    'period_id', 'client_code', 'design_hours', 'updated_at'
   ]
 
 };
@@ -1160,4 +1177,25 @@ function createFlatFactSheets() {
     log_('  ✅ ' + name);
   }
   log_('Done. Run runVerify() to confirm.');
+}
+
+/**
+ * Installs a nightly time-based trigger for ReportingEngine.
+ * Run ONCE from Apps Script editor. CEO only.
+ * Removes any existing refreshDashboardSystem trigger first to avoid duplicates.
+ * Trigger fires between 2–3am daily.
+ */
+function installReportingTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'refreshDashboardSystem') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  ScriptApp.newTrigger('refreshDashboardSystem')
+    .timeBased()
+    .everyDays(1)
+    .atHour(2)
+    .create();
+  Logger.info('REPORTING_TRIGGER_INSTALLED', { module: 'SetupScript' });
 }

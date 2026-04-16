@@ -116,7 +116,10 @@ var DAL = (function () {
     // ── Mart tables (reporting aggregates) ──────────────────
     'MART_DASHBOARD':        ['ReportingEngine', 'DashboardService'],
     'MART_BILLING_SUMMARY':  ['BillingEngine', 'ReportingEngine'],
-    'MART_PAYROLL_SUMMARY':  ['PayrollEngine', 'ReportingEngine']
+    'MART_PAYROLL_SUMMARY':  ['PayrollEngine', 'ReportingEngine'],
+    'MART_TEAM_SUMMARY':     ['ReportingEngine'],
+    'MART_DESIGNER_SUMMARY': ['ReportingEngine'],
+    'MART_ACCOUNT_SUMMARY':  ['ReportingEngine'],
 
   };
 

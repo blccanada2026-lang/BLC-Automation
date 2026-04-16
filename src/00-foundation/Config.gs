@@ -200,6 +200,9 @@ var Config = (function () {
     MART_DASHBOARD:        'MART_DASHBOARD',
     MART_BILLING_SUMMARY:  'MART_BILLING_SUMMARY',
     MART_PAYROLL_SUMMARY:  'MART_PAYROLL_SUMMARY',
+    MART_TEAM_SUMMARY:     'MART_TEAM_SUMMARY',
+    MART_DESIGNER_SUMMARY: 'MART_DESIGNER_SUMMARY',
+    MART_ACCOUNT_SUMMARY:  'MART_ACCOUNT_SUMMARY',
 
     // Client intake — sheet-based bulk job intake per client
     // DIM_CLIENT_INTAKE_CONFIG: column mapping rules per client (source → target)

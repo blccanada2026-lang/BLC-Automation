@@ -436,7 +436,8 @@ var RBAC = (function () {
     'FACT_PAYROLL_LEDGER':   true,
     'FACT_BILLING_LEDGER':   true,
     'MART_PAYROLL_SUMMARY':  true,
-    'MART_BILLING_SUMMARY':  true
+    'MART_BILLING_SUMMARY':  true,
+    'MART_DASHBOARD':        true
   };
 
   // ============================================================
