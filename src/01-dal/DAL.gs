@@ -940,7 +940,49 @@ var DAL = (function () {
   }
 
   // ============================================================
-  // SECTION 16: PUBLIC — UTILITY METHODS
+  // SECTION 16: PUBLIC — SHEET UTILITIES
+  //
+  // clearSheet() and listSheets() allow engines to manage MART and
+  // VW sheets without bypassing DAL via SpreadsheetApp directly.
+  // Resolves the known A2 exception documented in ReportingEngine,
+  // EventReplayEngine, BillingEngine, and PayrollEngine.
+  // ============================================================
+
+  /**
+   * Deletes all data rows (row 2 onward) from a named sheet, keeping
+   * the header row intact. Safe on empty or missing sheets (returns 0).
+   *
+   * Used by engines that clear MART or VW sheets before rebuilding.
+   *
+   * @param {string} sheetName
+   * @returns {number}  Rows deleted (0 if sheet empty or not found)
+   */
+  function clearSheet(sheetName) {
+    var ss    = getSpreadsheet_();
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet || sheet.getLastRow() <= 1) return 0;
+    trackApiCall_();
+    var rowCount = sheet.getLastRow() - 1;
+    sheet.deleteRows(2, rowCount);
+    emit_('INFO', 'CLEAR_SHEET', { tableName: sheetName, rowsCleared: rowCount });
+    return rowCount;
+  }
+
+  /**
+   * Returns the names of all sheets in the spreadsheet.
+   * Used by engines that discover partition tabs by name prefix
+   * (e.g. FACT_WORK_LOGS|YYYY-MM matching).
+   *
+   * @returns {string[]}  Tab names in sheet order
+   */
+  function listSheets() {
+    var ss = getSpreadsheet_();
+    trackApiCall_();
+    return ss.getSheets().map(function(s) { return s.getName(); });
+  }
+
+  // ============================================================
+  // SECTION 17: PUBLIC — UTILITY METHODS
   // ============================================================
 
   /**
@@ -1014,6 +1056,10 @@ var DAL = (function () {
 
     // ── Partition management ──────────────────────────────────
     ensurePartition: ensurePartition,
+
+    // ── Sheet utilities ───────────────────────────────────────
+    clearSheet:      clearSheet,
+    listSheets:      listSheets,
 
     // ── Infrastructure integration ────────────────────────────
     getApiCallCount: getApiCallCount,  // consumed by HealthMonitor.gs

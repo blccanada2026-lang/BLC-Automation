@@ -458,11 +458,7 @@ var PayrollEngine = (function () {
 
     // Clear MART and rebuild
     try {
-      var ss      = SpreadsheetApp.getActiveSpreadsheet();
-      var martTab = ss.getSheetByName(Config.TABLES.MART_PAYROLL_SUMMARY);
-      if (martTab && martTab.getLastRow() > 1) {
-        martTab.deleteRows(2, martTab.getLastRow() - 1);
-      }
+      DAL.clearSheet(Config.TABLES.MART_PAYROLL_SUMMARY);
     } catch (e) {
       Logger.warn('PAYROLL_MART_CLEAR_FAILED', {
         module: MODULE, message: 'Could not clear MART_PAYROLL_SUMMARY', error: e.message

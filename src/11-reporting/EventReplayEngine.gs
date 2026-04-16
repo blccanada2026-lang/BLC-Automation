@@ -20,10 +20,7 @@
 // ║                                                         ║
 // ║  Permission: PAYROLL_RUN + enforceFinancialAccess (CEO) ║
 // ║                                                         ║
-// ║  NOTE: Uses SpreadsheetApp.getSheetByName().deleteRows()║
-// ║  to clear VW sheets — same known A2 exception as        ║
-// ║  BillingEngine/PayrollEngine. DAL has no clearSheet().  ║
-// ║  TODO: migrate when DAL.clearSheet() is implemented.    ║
+// ║  Sheet clearing uses DAL.clearSheet() — A2 compliant.   ║
 // ║                                                         ║
 // ║  FUTURE: migrate portal button to AdminConsole (T13)    ║
 // ║  when that module is built.                             ║
@@ -38,20 +35,18 @@ var EventReplayEngine = (function () {
   // ============================================================
 
   /**
-   * Scans the active spreadsheet for tab names matching
-   * `BASE_TABLE_NAME|YYYY-MM` and returns the period IDs
-   * sorted ascending (oldest first).
+   * Scans all sheets for tab names matching BASE_TABLE_NAME|YYYY-MM,
+   * returns period IDs sorted ascending (oldest first).
    *
    * @param {string} baseTableName  e.g. 'FACT_JOB_EVENTS'
    * @returns {string[]}  e.g. ['2025-11', '2025-12', '2026-01']
    */
   function discoverPartitions_(baseTableName) {
-    var ss      = SpreadsheetApp.getActiveSpreadsheet();
-    var sheets  = ss.getSheets();
+    var sheets  = DAL.listSheets();
     var prefix  = baseTableName + '|';
     var periods = [];
     for (var i = 0; i < sheets.length; i++) {
-      var name = sheets[i].getName();
+      var name = sheets[i];
       if (name.indexOf(prefix) === 0) {
         var period = name.substring(prefix.length);
         if (/^\d{4}-\d{2}$/.test(period)) {
@@ -61,30 +56,6 @@ var EventReplayEngine = (function () {
     }
     periods.sort();
     return periods;
-  }
-
-  // ============================================================
-  // SECTION 2: SHEET CLEAR
-  // ============================================================
-
-  /**
-   * Clears all data rows from a sheet (keeps header row 1).
-   * Returns the number of rows cleared, or 0 if sheet is
-   * empty or missing.
-   *
-   * NOTE: Uses SpreadsheetApp directly — known A2 exception.
-   * Same pattern as BillingEngine.refreshMartBillingSummary_().
-   *
-   * @param {string} sheetName  e.g. 'VW_JOB_CURRENT_STATE'
-   * @returns {number}  rows cleared
-   */
-  function clearSheet_(sheetName) {
-    var ss    = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(sheetName);
-    if (!sheet || sheet.getLastRow() <= 1) return 0;
-    var rowCount = sheet.getLastRow() - 1;
-    sheet.deleteRows(2, rowCount);
-    return rowCount;
   }
 
   // ============================================================
@@ -132,7 +103,7 @@ var EventReplayEngine = (function () {
     }
 
     // Clear VW then batch-write all rebuilt rows
-    var cleared = clearSheet_(Config.TABLES.VW_JOB_CURRENT_STATE);
+    var cleared = DAL.clearSheet(Config.TABLES.VW_JOB_CURRENT_STATE);
     var vwRows  = objectValues_(jobMap);
     if (vwRows.length > 0) {
       DAL.appendRows(Config.TABLES.VW_JOB_CURRENT_STATE, vwRows, { callerModule: MODULE });
@@ -312,7 +283,7 @@ var EventReplayEngine = (function () {
       }
     }
 
-    var cleared = clearSheet_(Config.TABLES.VW_DESIGNER_WORKLOAD);
+    var cleared = DAL.clearSheet(Config.TABLES.VW_DESIGNER_WORKLOAD);
     var wlRows  = objectValues_(workloadMap);
     if (wlRows.length > 0) {
       DAL.appendRows(Config.TABLES.VW_DESIGNER_WORKLOAD, wlRows, { callerModule: MODULE });

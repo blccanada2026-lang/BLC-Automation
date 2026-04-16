@@ -20,9 +20,7 @@
 // ║    MART_DESIGNER_SUMMARY — CEO + PM + TL               ║
 // ║    MART_ACCOUNT_SUMMARY  — CEO + PM + TL               ║
 // ║                                                         ║
-// ║  NOTE: Uses SpreadsheetApp.deleteRows() to clear sheets  ║
-// ║  — same known A2 exception as BillingEngine/Payroll/    ║
-// ║  EventReplayEngine. DAL has no clearSheet() method.     ║
+// ║  Sheet clearing uses DAL.clearSheet() — A2 compliant.   ║
 // ╚══════════════════════════════════════════════════════════╝
 
 var ReportingEngine = (function () {
@@ -34,23 +32,6 @@ var ReportingEngine = (function () {
   // ============================================================
 
   /**
-   * Clears all data rows from a sheet (keeps header row 1).
-   * Returns number of rows cleared, or 0 if sheet empty/missing.
-   * NOTE: Uses SpreadsheetApp directly — known A2 exception.
-   *
-   * @param {string} sheetName
-   * @returns {number}
-   */
-  function clearSheet_(sheetName) {
-    var ss    = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(sheetName);
-    if (!sheet || sheet.getLastRow() <= 1) return 0;
-    var rowCount = sheet.getLastRow() - 1;
-    sheet.deleteRows(2, rowCount);
-    return rowCount;
-  }
-
-  /**
    * Scans for tab names matching BASE_TABLE|YYYY-MM, returns
    * period IDs sorted ascending (oldest first).
    *
@@ -58,12 +39,11 @@ var ReportingEngine = (function () {
    * @returns {string[]}
    */
   function discoverPartitions_(baseTableName) {
-    var ss      = SpreadsheetApp.getActiveSpreadsheet();
-    var sheets  = ss.getSheets();
+    var sheets  = DAL.listSheets();
     var prefix  = baseTableName + '|';
     var periods = [];
     for (var i = 0; i < sheets.length; i++) {
-      var name = sheets[i].getName();
+      var name = sheets[i];
       if (name.indexOf(prefix) === 0) {
         var period = name.substring(prefix.length);
         if (/^\d{4}-\d{2}$/.test(period)) periods.push(period);
@@ -285,7 +265,7 @@ var ReportingEngine = (function () {
         updated_at:        updatedAt
       });
     }
-    var dashCleared = clearSheet_(Config.TABLES.MART_DASHBOARD);
+    var dashCleared = DAL.clearSheet(Config.TABLES.MART_DASHBOARD);
     if (dashRows.length > 0) {
       DAL.appendRows(Config.TABLES.MART_DASHBOARD, dashRows, { callerModule: MODULE });
     }
@@ -299,7 +279,7 @@ var ReportingEngine = (function () {
         updated_at:       updatedAt
       };
     });
-    var teamCleared = clearSheet_(Config.TABLES.MART_TEAM_SUMMARY);
+    var teamCleared = DAL.clearSheet(Config.TABLES.MART_TEAM_SUMMARY);
     if (teamRows.length > 0) {
       DAL.appendRows(Config.TABLES.MART_TEAM_SUMMARY, teamRows, { callerModule: MODULE });
     }
@@ -313,7 +293,7 @@ var ReportingEngine = (function () {
         updated_at:   updatedAt
       };
     });
-    var designerCleared = clearSheet_(Config.TABLES.MART_DESIGNER_SUMMARY);
+    var designerCleared = DAL.clearSheet(Config.TABLES.MART_DESIGNER_SUMMARY);
     if (designerRows.length > 0) {
       DAL.appendRows(Config.TABLES.MART_DESIGNER_SUMMARY, designerRows, { callerModule: MODULE });
     }
@@ -327,7 +307,7 @@ var ReportingEngine = (function () {
         updated_at:   updatedAt
       };
     });
-    var accountCleared = clearSheet_(Config.TABLES.MART_ACCOUNT_SUMMARY);
+    var accountCleared = DAL.clearSheet(Config.TABLES.MART_ACCOUNT_SUMMARY);
     if (accountRows.length > 0) {
       DAL.appendRows(Config.TABLES.MART_ACCOUNT_SUMMARY, accountRows, { callerModule: MODULE });
     }
