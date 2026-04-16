@@ -2774,3 +2774,24 @@ function testBulkOnboardQuotaGuard() {
 
   line_();
 }
+
+/**
+ * Runs the test data purge audit (non-destructive).
+ * Shows all suspected test rows per table.
+ * Run from Apps Script editor before migration begins.
+ */
+function testPurgeAudit() {
+  header_('PURGE AUDIT');
+  try {
+    var result = PurgeTool.runAudit(Session.getActiveUser().getEmail());
+    if (result.total === 0) {
+      pass_('No test data found — Nexus is clean for migration');
+    } else {
+      info_('Found ' + result.total + ' suspect rows — review output above');
+      info_('Call PurgeTool.runPurge(email, false) after CEO review to execute purge');
+    }
+  } catch (e) {
+    fail_('testPurgeAudit threw: ' + e.message);
+  }
+  line_();
+}
