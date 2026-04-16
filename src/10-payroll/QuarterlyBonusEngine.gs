@@ -466,6 +466,15 @@ var QuarterlyBonusEngine = (function () {
 
     var codes = Object.keys(totals);
     for (var j = 0; j < codes.length; j++) {
+      if (j > 0 && j % 10 === 0 && HealthMonitor.isApproachingLimit()) {
+        Logger.warn('QB_ANNUAL_QUOTA_CUTOFF', {
+          module:    MODULE,
+          message:   'Quota limit approaching — annual bonus run stopped early',
+          processed: j,
+          total:     codes.length
+        });
+        return { written: written, skipped: skipped, year: year, partial: true };
+      }
       var personCode     = codes[j];
       var annualAmount   = Math.round(totals[personCode] * 100) / 100;
       var idempotencyKey = 'ANNUAL_BONUS|' + personCode + '|' + yearStr;
