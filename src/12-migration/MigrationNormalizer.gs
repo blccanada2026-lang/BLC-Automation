@@ -169,7 +169,7 @@ var MigrationNormalizer = (function () {
 
     function flushBuffer_() {
       if (buffer.length === 0) return;
-      BatchOperations.appendRows(MigrationConfig.TABLES.NORMALIZED, buffer);
+      DAL.appendRows(MigrationConfig.TABLES.NORMALIZED, buffer, { callerModule: MODULE });
       normalized += buffer.length;
       buffer = [];
     }
