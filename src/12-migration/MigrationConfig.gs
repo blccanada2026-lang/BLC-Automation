@@ -14,7 +14,7 @@
 // | RBAC model            | ✅     | Low    | None                         |
 // | Audit logging         | ✅     | Low    | None                         |
 // | Rollback mechanism    | ✅     | Medium | PurgeTool.runPurge ready     |
-// | Stacey read access    | ❓     | High   | CEO must provide spreadsheet ID |
+// | Stacey read access    | ✅     | High   | ID set: 1EIuLg4dJj...           |
 // | DEV/PROD isolation    | ✅     | Low    | Run in DEV first             |
 // | Override flags        | ✅     | High   | Keep false until migration   |
 //
@@ -24,8 +24,7 @@
 //     |        | FIX: BillingEngine MUST add WHERE migration_batch IS NULL
 //     |        | filter before any billing calculation. Verify before cutover.
 //
-// R02 | HIGH   | Stacey ID not provided: all Phase C–G tasks blocked until
-//     |        | CEO sets STACEY_SPREADSHEET_ID in this file.
+// R02 | CLOSED | Stacey ID set: 1EIuLg4dJjePPOSinMcGZocKGpe2wnjXI2pEFflD_f9U
 //
 // R03 | HIGH   | Override flags left ON: ALLOW_BACKDATE_PERIOD and
 //     |        | ALLOW_MIGR_IDEMPOTENCY must be reset to false after migration.
@@ -74,7 +73,7 @@ var MigrationConfig = (function () {
   // ── Stacey (legacy) spreadsheet ───────────────────────────
   // Read-only. Never write to Stacey.
   // CEO must provide this ID before migration begins.
-  var STACEY_SPREADSHEET_ID = 'REPLACE_WITH_STACEY_SPREADSHEET_ID';
+  var STACEY_SPREADSHEET_ID = '1EIuLg4dJjePPOSinMcGZocKGpe2wnjXI2pEFflD_f9U';
 
   // ── Migration batch tracking ──────────────────────────────
   var CURRENT_BATCH        = 'BATCH-001';
