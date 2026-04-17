@@ -2797,6 +2797,58 @@ function testPurgeAudit() {
 }
 
 /**
+ * Samples the header row of each configured Stacey tab.
+ * Run this to see the actual column names so alias maps can be updated.
+ */
+function runSampleStaceyHeaders() {
+  header_('STACEY COLUMN HEADERS');
+  var email = Session.getActiveUser().getEmail();
+  var tabs = {
+    STAFF:     MigrationConfig.STACEY_TABLES.STAFF,
+    CLIENTS:   MigrationConfig.STACEY_TABLES.CLIENTS,
+    JOBS:      MigrationConfig.STACEY_TABLES.JOBS,
+    WORK_LOGS: MigrationConfig.STACEY_TABLES.WORK_LOGS,
+    QC_LOGS:   MigrationConfig.STACEY_TABLES.QC_LOGS
+  };
+  Object.keys(tabs).forEach(function (key) {
+    var tabName = tabs[key];
+    if (!tabName || tabName === 'SKIP') return;
+    try {
+      var sample = StaceyAuditor.sampleTab(email, tabName, 1);
+      info_(key + ' (' + tabName + ') headers: ' + sample.headers.join(' | '));
+    } catch (e) {
+      fail_(key + ': ' + e.message);
+    }
+  });
+  line_();
+}
+
+/**
+ * Shows a sample of INVALID rows from MIGRATION_NORMALIZED with their validation notes.
+ * Run to diagnose why normalization is producing INVALID records.
+ */
+function runShowInvalidRows() {
+  header_('INVALID NORMALIZATION ROWS');
+  try {
+    var rows = DAL.readAll(Config.TABLES.MIGRATION_NORMALIZED, { callerModule: 'TestRunner' });
+    var invalid = (rows || []).filter(function (r) { return r.validation_status === 'INVALID'; });
+    if (invalid.length === 0) {
+      pass_('No INVALID rows found');
+      line_();
+      return;
+    }
+    info_(invalid.length + ' INVALID rows total. Showing first 10:');
+    invalid.slice(0, 10).forEach(function (r) {
+      info_('  [' + r.entity_type + '] ' + r.validation_notes);
+      info_('    payload: ' + r.normalized_json.substring(0, 120));
+    });
+  } catch (e) {
+    fail_('runShowInvalidRows threw: ' + e.message);
+  }
+  line_();
+}
+
+/**
  * Runs the Stacey source audit (read-only).
  * Lists all Stacey tabs and row counts.
  * Requires STACEY_SPREADSHEET_ID to be set in MigrationConfig.gs.
