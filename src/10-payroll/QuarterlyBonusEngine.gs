@@ -116,6 +116,8 @@ var QuarterlyBonusEngine = (function () {
 
       for (var i = 0; i < rows.length; i++) {
         var row   = rows[i];
+        // Exclude migrated historical rows from live bonus calculation.
+        if (row.migration_batch) continue;
         var code  = String(row.actor_code || '').trim();
         var role  = String(row.actor_role || '').toUpperCase();
         var hours = parseFloat(row.hours) || 0;
