@@ -161,11 +161,13 @@ var MigrationNormalizer = (function () {
     var existingKeys = loadNormalizedKeys_(batch);
     var batchRows    = rawRows.filter(function (r) { return r.migration_batch === batch; });
 
-    var normalized = 0;
-    var invalid    = 0;
-    var skipped    = 0;
-    var partial    = false;
-    var buffer     = [];
+    var normalized  = 0;
+    var invalid     = 0;
+    var skipped     = 0;
+    var partial     = false;
+    var buffer      = [];
+    var runStart    = new Date();
+    var LIMIT_MS    = 270000; // 4.5 min — leaves 1.5 min buffer before GAS 6-min kill
 
     function flushBuffer_() {
       if (buffer.length === 0) return;
@@ -175,9 +177,9 @@ var MigrationNormalizer = (function () {
     }
 
     for (var i = 0; i < batchRows.length; i++) {
-      // Quota guard every 20 iterations before doing work
-      if (i % 20 === 0 && HealthMonitor.isApproachingLimit()) {
-        Logger.warn('NORMALIZER_QUOTA_CUTOFF', { module: MODULE, processed: i, total: batchRows.length });
+      // Wall-clock guard — check every 20 rows; stop before GAS kills the execution
+      if (i % 20 === 0 && (new Date() - runStart) > LIMIT_MS) {
+        Logger.warn('NORMALIZER_TIME_CUTOFF', { module: MODULE, processed: i, total: batchRows.length, elapsedMs: new Date() - runStart });
         flushBuffer_();
         partial = true;
         break;
