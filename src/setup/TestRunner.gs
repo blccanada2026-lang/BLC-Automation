@@ -2875,8 +2875,57 @@ function testRawImport() {
 }
 
 /**
+ * Normalizes all raw import rows into MIGRATION_NORMALIZED (Phase E Layer 2).
+ * Idempotent — already normalized rows are skipped.
+ */
+function runNormalizeAll() {
+  header_('NORMALIZATION — RUNNING');
+  try {
+    var result = MigrationNormalizer.normalizeAll(Session.getActiveUser().getEmail());
+    pass_('normalized=' + result.normalized + ' invalid=' + result.invalid +
+          ' skipped=' + result.skipped + (result.partial ? ' [PARTIAL]' : ''));
+    if (result.invalid > 0) {
+      info_('Some rows are INVALID — check MIGRATION_NORMALIZED.validation_notes for details');
+    }
+    if (result.partial) {
+      info_('Partial run — re-run runNormalizeAll() to continue');
+    } else {
+      pass_('Normalization complete — run testNormalization() to verify');
+    }
+  } catch (e) {
+    fail_('runNormalizeAll threw: ' + e.message);
+  }
+  line_();
+}
+
+/**
+ * Replays all VALID normalized rows into FACT/DIM tables (Phase E Layer 3).
+ * Order: STAFF → CLIENT → JOB → WORK_LOG → BILLING → PAYROLL.
+ * Idempotent — already replayed rows are skipped.
+ */
+function runReplayAll() {
+  header_('REPLAY — RUNNING');
+  try {
+    var result = MigrationReplayEngine.replayAll(Session.getActiveUser().getEmail());
+    pass_('replayed=' + result.replayed + ' skipped=' + result.skipped +
+          ' failed=' + result.failed + (result.partial ? ' [PARTIAL]' : ''));
+    if (result.failed > 0) {
+      info_('Some rows FAILED — check MIGRATION_NORMALIZED.replay_error for details');
+    }
+    if (result.partial) {
+      info_('Partial run — re-run runReplayAll() to continue');
+    } else {
+      pass_('Replay complete — run testReconciliation() then testMigrationSystemTest()');
+    }
+  } catch (e) {
+    fail_('runReplayAll threw: ' + e.message);
+  }
+  line_();
+}
+
+/**
  * Diagnostic: checks MIGRATION_NORMALIZED row counts and validation status.
- * Run after MigrationNormalizer.normalizeAll() to verify normalization results.
+ * Run after runNormalizeAll() to verify normalization results.
  */
 function testNormalization() {
   header_('NORMALIZATION DIAGNOSTIC');
