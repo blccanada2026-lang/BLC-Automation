@@ -356,6 +356,25 @@ var SCHEMAS = {
   // PM + TL accessible — hours per client account per period
   'MART_ACCOUNT_SUMMARY': [
     'period_id', 'client_code', 'design_hours', 'updated_at'
+  ],
+
+  // ── Migration tables (T12) ────────────────────────────────
+
+  'MIGRATION_RAW_IMPORT': [
+    'import_id', 'import_key', 'migration_batch', 'source_tag',
+    'source_tab', 'row_index', 'raw_json', 'imported_at', 'imported_by', 'status'
+  ],
+
+  'MIGRATION_NORMALIZED': [
+    'norm_id', 'import_key', 'migration_batch', 'entity_type',
+    'normalized_json', 'validation_status', 'validation_notes',
+    'replay_status', 'replay_error', 'replayed_at', 'replayed_by',
+    'normalized_at', 'normalized_by'
+  ],
+
+  'MIGRATION_AUDIT_LOG': [
+    'audit_id', 'migration_batch', 'phase', 'event_type',
+    'message', 'details_json', 'created_at', 'created_by'
   ]
 
 };
