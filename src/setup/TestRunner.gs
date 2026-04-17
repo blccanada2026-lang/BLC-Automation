@@ -2824,6 +2824,25 @@ function runSampleStaceyHeaders() {
 }
 
 /**
+ * Shows the first 3 rows of STAFF_ROSTER raw data so we can see the real headers.
+ * STAFF_ROSTER has a title on row 1 — this reveals row 2 (real headers) content.
+ */
+function runShowStaffRawHeaders() {
+  header_('STAFF_ROSTER RAW DATA (first 3 rows)');
+  try {
+    var ss    = SpreadsheetApp.openById(MigrationConfig.getStaceyId());
+    var sheet = ss.getSheetByName(MigrationConfig.STACEY_TABLES.STAFF);
+    var data  = sheet.getRange(1, 1, Math.min(4, sheet.getLastRow()), sheet.getLastColumn()).getValues();
+    data.forEach(function (row, i) {
+      info_('Row ' + (i + 1) + ': ' + row.filter(function(c){ return c !== ''; }).join(' | '));
+    });
+  } catch (e) {
+    fail_('runShowStaffRawHeaders threw: ' + e.message);
+  }
+  line_();
+}
+
+/**
  * Shows a sample of INVALID rows from MIGRATION_NORMALIZED with their validation notes.
  * Run to diagnose why normalization is producing INVALID records.
  */
