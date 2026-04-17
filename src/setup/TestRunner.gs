@@ -2909,6 +2909,32 @@ function testMigrationReplay() {
 }
 
 /**
+ * Runs all 5 post-migration system tests via MigrationTestRunner.
+ * Run after Phase F reconciliation passes.
+ */
+function testMigrationSystemTest() {
+  header_('MIGRATION SYSTEM TESTS');
+  try {
+    var report = MigrationTestRunner.runAll(Session.getActiveUser().getEmail());
+    report.results.forEach(function (r) {
+      if (r.passed) {
+        pass_(r.test + ': PASS');
+      } else {
+        fail_(r.test + ': FAIL — ' + r.reason);
+      }
+    });
+    if (report.passed) {
+      pass_('ALL MIGRATION SYSTEM TESTS PASSED — migration complete');
+    } else {
+      fail_('MIGRATION SYSTEM TESTS FAILED — review failures above');
+    }
+  } catch (e) {
+    fail_('testMigrationSystemTest threw: ' + e.message);
+  }
+  line_();
+}
+
+/**
  * Runs the full migration reconciliation report.
  * Run after MigrationReplayEngine.replayAll() to verify data completeness.
  */
