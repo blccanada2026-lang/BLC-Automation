@@ -2823,8 +2823,36 @@ function testStaceyAudit() {
 }
 
 /**
+ * Runs the full Stacey raw import — copies all configured tabs into MIGRATION_RAW_IMPORT.
+ * Idempotent: already-imported rows are skipped. Safe to re-run.
+ */
+function runRawImport() {
+  header_('RAW IMPORT — RUNNING');
+  try {
+    var result = MigrationRawImporter.importAll(Session.getActiveUser().getEmail());
+    result.results.forEach(function (r) {
+      if (r.error) {
+        fail_(r.key + ' (' + r.tab + '): ERROR — ' + r.error);
+      } else {
+        pass_(r.key + ' (' + r.tab + '): imported=' + r.result.imported +
+              ' skipped=' + r.result.skipped +
+              (r.result.partial ? ' [PARTIAL]' : ''));
+      }
+    });
+    if (result.anyPartial) {
+      info_('Partial run — re-run runRawImport() to continue');
+    } else {
+      pass_('Raw import complete — run testRawImport() to verify row counts');
+    }
+  } catch (e) {
+    fail_('runRawImport threw: ' + e.message);
+  }
+  line_();
+}
+
+/**
  * Diagnostic: checks MIGRATION_RAW_IMPORT row count and last import batch.
- * Run after executing MigrationRawImporter.importAll() to verify rows landed.
+ * Run after executing runRawImport() to verify rows landed.
  */
 function testRawImport() {
   header_('RAW IMPORT DIAGNOSTIC');
