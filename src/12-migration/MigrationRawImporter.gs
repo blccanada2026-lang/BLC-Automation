@@ -98,6 +98,8 @@ var MigrationRawImporter = (function () {
     var skipped   = 0;
     var partial   = false;
     var buffer    = [];
+    var runStart  = new Date();
+    var LIMIT_MS  = 270000; // 4.5 min wall-clock guard
 
     function flushBuffer_() {
       if (buffer.length === 0) return;
@@ -107,9 +109,8 @@ var MigrationRawImporter = (function () {
     }
 
     for (var i = 1; i < rawData.length; i++) {
-      // Quota guard — check every 20 iterations per Rule P1
-      if (i % 20 === 0 && HealthMonitor.isApproachingLimit()) {
-        Logger.warn('RAW_IMPORT_QUOTA_CUTOFF', {
+      if (i % 20 === 0 && (new Date() - runStart) > LIMIT_MS) {
+        Logger.warn('RAW_IMPORT_TIME_CUTOFF', {
           module: MODULE, tab: tabName, processed: i, total: rawData.length - 1
         });
         flushBuffer_();

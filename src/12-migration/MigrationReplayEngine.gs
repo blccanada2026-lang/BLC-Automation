@@ -271,6 +271,8 @@ var MigrationReplayEngine = (function () {
     var skipped  = 0;
     var failed   = 0;
     var partial  = false;
+    var runStart = new Date();
+    var LIMIT_MS = 270000; // 4.5 min wall-clock guard
 
     // Process in dependency order: STAFF → CLIENT → JOB → WORK_LOG → BILLING → PAYROLL
     for (var o = 0; o < REPLAY_ORDER.length; o++) {
@@ -283,10 +285,9 @@ var MigrationReplayEngine = (function () {
       });
 
       for (var i = 0; i < entityRows.length; i++) {
-        // Quota guard every 20 iterations (Rule P1)
-        if (i % 20 === 0 && HealthMonitor.isApproachingLimit()) {
-          Logger.warn('REPLAY_QUOTA_CUTOFF', {
-            module: MODULE, entityType: entityType, processed: i, total: entityRows.length
+        if (i % 20 === 0 && (new Date() - runStart) > LIMIT_MS) {
+          Logger.warn('REPLAY_TIME_CUTOFF', {
+            module: MODULE, entityType: entityType, processed: i, total: entityRows.length, elapsedMs: new Date() - runStart
           });
           partial = true;
           break;
