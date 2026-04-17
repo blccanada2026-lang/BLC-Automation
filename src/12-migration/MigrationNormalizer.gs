@@ -106,9 +106,16 @@ var MigrationNormalizer = (function () {
     if (sourceTab === st.CLIENTS)   return 'CLIENT';
     if (sourceTab === st.JOBS)      return 'JOB';
     if (sourceTab === st.WORK_LOGS) return 'WORK_LOG';
+    if (sourceTab === st.QC_LOGS)   return 'WORK_LOG'; // QC logs → same entity, role=QC
     if (sourceTab === st.BILLING)   return 'BILLING';
     if (sourceTab === st.PAYROLL)   return 'PAYROLL';
     return null;
+  }
+
+  // Returns the default actor_role for a source tab.
+  function detectDefaultRole_(sourceTab) {
+    if (sourceTab === MigrationConfig.STACEY_TABLES.QC_LOGS) return 'QC';
+    return 'DESIGNER';
   }
 
   /**
@@ -201,6 +208,10 @@ var MigrationNormalizer = (function () {
 
       var fieldMap    = ENTITY_MAPS[entityType];
       var payload     = applyMap_(rawObj, fieldMap);
+      // For WORK_LOG rows, inject default actor_role if not already mapped.
+      if (entityType === 'WORK_LOG' && !payload.actor_role) {
+        payload.actor_role = detectDefaultRole_(raw.source_tab);
+      }
       var validation  = MigrationValidator.validate(entityType, payload);
       var valStatus   = validation.valid ? 'VALID' : 'INVALID';
       var valNotes    = validation.errors.join('; ');

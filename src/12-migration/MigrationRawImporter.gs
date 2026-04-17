@@ -195,8 +195,8 @@ var MigrationRawImporter = (function () {
       var key     = keys[k];
       var tabName = staceyTables[key];
 
-      if (!tabName || tabName === 'REPLACE_AFTER_AUDIT') {
-        Logger.warn('RAW_IMPORT_SKIP_UNCONFIGURED', { module: MODULE, key: key });
+      if (!tabName || tabName === 'REPLACE_AFTER_AUDIT' || tabName === 'SKIP') {
+        Logger.info('RAW_IMPORT_SKIP', { module: MODULE, key: key, tab: tabName });
         continue;
       }
 

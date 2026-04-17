@@ -93,15 +93,18 @@ var MigrationConfig = (function () {
     AUDIT_LOG:  'MIGRATION_AUDIT_LOG'
   };
 
-  // ── Source table names (Stacey tabs — update after audit) ─
-  // Fill these in after running StaceyAuditor.runAudit()
+  // ── Source table names (Stacey tabs — confirmed 2026-04-17) ─
+  // STAFF_ROSTER is authoritative (21 rows, includes pay rates).
+  // FORM_QC_Log is imported as WORK_LOG with actor_role=QC.
+  // BILLING and PAYROLL skipped — clean break; rates live in STAFF_ROSTER.
   var STACEY_TABLES = {
-    STAFF:     'REPLACE_AFTER_AUDIT',
-    CLIENTS:   'REPLACE_AFTER_AUDIT',
-    JOBS:      'REPLACE_AFTER_AUDIT',
-    WORK_LOGS: 'REPLACE_AFTER_AUDIT',
-    BILLING:   'REPLACE_AFTER_AUDIT',
-    PAYROLL:   'REPLACE_AFTER_AUDIT'
+    STAFF:     'STAFF_ROSTER',            // 21 rows → DIM_STAFF_ROSTER
+    CLIENTS:   'CLIENT_MASTER',           // 6 rows  → DIM_CLIENT_MASTER
+    JOBS:      'MASTER_JOB_DATABASE',     // 1313 rows → FACT_JOB_EVENTS
+    WORK_LOGS: 'FORM_Daily_Work_Log',     // 997 rows → FACT_WORK_LOGS (DESIGNER)
+    QC_LOGS:   'FORM_QC_Log',             // 724 rows → FACT_WORK_LOGS (QC)
+    BILLING:   'SKIP',                    // INVOICE_MASTER is empty — skipped
+    PAYROLL:   'SKIP'                     // Rates in STAFF_ROSTER — skipped
   };
 
   return {
