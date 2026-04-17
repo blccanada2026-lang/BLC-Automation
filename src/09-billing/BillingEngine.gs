@@ -189,6 +189,9 @@ var BillingEngine = (function () {
 
     var hoursMap = {};
     for (var i = 0; i < rows.length; i++) {
+      // Exclude migrated historical rows — migration_batch tag means the row
+      // came from Stacey import and must not be included in live billing runs.
+      if (rows[i].migration_batch) continue;
       var jobNum = String(rows[i].job_number || '');
       var hours  = parseFloat(rows[i].hours) || 0;
       if (!jobNum) continue;

@@ -10,13 +10,63 @@
 // |-----------------------|--------|--------|------------------------------|
 // | FACT tables           | ✅     | Low    | None                         |
 // | DIM tables            | ✅     | Low    | None                         |
-// | Migration tables      | ❓     | High   | Create if missing (see below)|
+// | Migration tables      | ✅     | High   | All 3 registered in Config   |
 // | RBAC model            | ✅     | Low    | None                         |
 // | Audit logging         | ✅     | Low    | None                         |
-// | Rollback mechanism    | ✅     | Medium | Batch-tag purge ready        |
+// | Rollback mechanism    | ✅     | Medium | PurgeTool.runPurge ready     |
 // | Stacey read access    | ❓     | High   | CEO must provide spreadsheet ID |
 // | DEV/PROD isolation    | ✅     | Low    | Run in DEV first             |
 // | Override flags        | ✅     | High   | Keep false until migration   |
+//
+// ── RISK REGISTER (Phase I) ──────────────────────────────────
+// R01 | HIGH   | Billing inflation: migrated FACT rows could enter live billing
+//     |        | runs if billing engine does not filter migration_batch.
+//     |        | FIX: BillingEngine MUST add WHERE migration_batch IS NULL
+//     |        | filter before any billing calculation. Verify before cutover.
+//
+// R02 | HIGH   | Stacey ID not provided: all Phase C–G tasks blocked until
+//     |        | CEO sets STACEY_SPREADSHEET_ID in this file.
+//
+// R03 | HIGH   | Override flags left ON: ALLOW_BACKDATE_PERIOD and
+//     |        | ALLOW_MIGR_IDEMPOTENCY must be reset to false after migration.
+//     |        | Leaving them ON allows backdated records in production.
+//
+// R04 | MEDIUM | Partial quota cutoff: all importers/replayers support partial
+//     |        | runs via migration_batch idempotency. Re-run is safe.
+//
+// R05 | MEDIUM | Column name mismatches: Stacey tab headers may not match the
+//     |        | alias maps in MigrationNormalizer. Run StaceyAuditor.sampleTab()
+//     |        | per tab and update STAFF_MAP, CLIENT_MAP etc. before Phase D.
+//
+// R06 | MEDIUM | DIM_STAFF_ROSTER duplicates: if person_codes already exist in
+//     |        | Nexus, IdempotencyEngine will skip the write — verify counts.
+//
+// R07 | LOW    | Stacey has no payroll history: PAYROLL tab may be missing.
+//     |        | StaceyAuditor.listTabs() will detect. MigrationNormalizer
+//     |        | skips REPLACE_AFTER_AUDIT tabs safely.
+//
+// R08 | LOW    | Hours rounding: Stacey may store hours as strings (e.g. "8.5h").
+//     |        | MigrationNormalizer uses Number() coercion — review raw_json
+//     |        | samples from MIGRATION_RAW_IMPORT before replay.
+//
+// ── CUTOVER ROADMAP (Phase J) ─────────────────────────────────
+// T-7 days : Run StaceyAuditor.runAudit() — map all tab names into STACEY_TABLES
+// T-7 days : Update MigrationNormalizer column alias maps after tab inspection
+// T-5 days : Run PurgeTool.runAudit() in DEV — confirm Nexus is clean
+// T-3 days : Full dry run in DEV: importAll → normalizeAll → replayAll
+// T-3 days : Run testReconciliation() and testMigrationSystemTest() — must PASS
+// T-1 day  : CEO reviews reconciliation report; signs off on go-ahead
+// T-0      : Set STACEY_SPREADSHEET_ID, run importAll → normalizeAll → replayAll in PROD
+// T-0      : Run testReconciliation() in PROD — all checks must pass before go-live
+// T-0      : Call MigrationConfig.disableOverrides() immediately after replay
+// T+1 day  : Spot-check 10 random jobs in portal against Stacey source
+// T+1 week : Monitor BillingEngine runs — confirm no migrated rows included
+// T+1 mth  : Archive MIGRATION_RAW_IMPORT and MIGRATION_NORMALIZED (read-only)
+//
+// !! BILLING INFLATION GUARD !!
+// Before any live billing run post-migration, confirm BillingEngine filters:
+//   WHERE migration_batch IS NULL OR migration_batch = ''
+// This prevents historical Stacey billing rows from being double-billed.
 // ============================================================
 
 var MigrationConfig = (function () {
