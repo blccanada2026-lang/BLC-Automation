@@ -3086,6 +3086,33 @@ function testMigrationSystemTest() {
  * Runs the full migration reconciliation report.
  * Run after MigrationReplayEngine.replayAll() to verify data completeness.
  */
+/**
+ * Clears all data rows from MIGRATION_NORMALIZED (keeps header).
+ * Run this before re-normalizing after alias map fixes.
+ * CEO / migration admin only — manual trigger.
+ */
+function runResetNormalized() {
+  header_('RESET MIGRATION_NORMALIZED');
+  try {
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(MigrationConfig.TABLES.NORMALIZED);
+    if (!sheet) {
+      fail_('Sheet MIGRATION_NORMALIZED not found — run runSetupSchemas() first');
+      return;
+    }
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      info_('MIGRATION_NORMALIZED is already empty (0 data rows)');
+    } else {
+      sheet.deleteRows(2, lastRow - 1);
+      pass_('Cleared ' + (lastRow - 1) + ' rows from MIGRATION_NORMALIZED');
+    }
+  } catch (e) {
+    fail_('runResetNormalized threw: ' + e.message);
+  }
+  line_();
+}
+
 function testReconciliation() {
   header_('MIGRATION RECONCILIATION');
   try {

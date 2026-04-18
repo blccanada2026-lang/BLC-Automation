@@ -113,6 +113,10 @@ var MigrationConfig = (function () {
     getSourceTag:      function () { return MIGRATION_SOURCE_TAG; },
     isBackdateAllowed: function () { return ALLOW_BACKDATE_PERIOD; },
     isMigrIdempotency: function () { return ALLOW_MIGR_IDEMPOTENCY; },
+    // Row 1 of STAFF_ROSTER is a title; real headers are on row 2.
+    getHeaderRow:      function (tabName) {
+      return tabName === STACEY_TABLES.STAFF ? 2 : 1;
+    },
     enableOverrides:   function () {
       ALLOW_BACKDATE_PERIOD  = true;
       ALLOW_MIGR_IDEMPOTENCY = true;
