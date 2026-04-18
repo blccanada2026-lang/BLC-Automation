@@ -2871,6 +2871,42 @@ function runShowInvalidRows() {
  * Shows replay_error messages from MIGRATION_NORMALIZED for the first 15 FAILED rows.
  * Run after a replay to diagnose systemic failures.
  */
+/**
+ * Resets all FAILED rows in MIGRATION_NORMALIZED back to PENDING
+ * so runReplayAll() will retry them. Run after fixing the root cause.
+ */
+function runResetFailedReplayRows() {
+  header_('RESET FAILED REPLAY ROWS → PENDING');
+  try {
+    var ss     = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet  = ss.getSheetByName(MigrationConfig.TABLES.NORMALIZED);
+    if (!sheet) { fail_('MIGRATION_NORMALIZED not found'); return; }
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) { info_('Sheet is empty'); line_(); return; }
+
+    // Read headers to find replay_status column index (1-based)
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var statusCol  = headers.indexOf('replay_status') + 1;
+    var errorCol   = headers.indexOf('replay_error')  + 1;
+    if (statusCol === 0) { fail_('replay_status column not found'); return; }
+
+    var data  = sheet.getRange(2, statusCol, lastRow - 1, 1).getValues();
+    var reset = 0;
+    for (var i = 0; i < data.length; i++) {
+      if (data[i][0] === 'FAILED') {
+        sheet.getRange(i + 2, statusCol).setValue('PENDING');
+        if (errorCol > 0) sheet.getRange(i + 2, errorCol).clearContent();
+        reset++;
+      }
+    }
+    pass_('Reset ' + reset + ' FAILED rows to PENDING');
+  } catch (e) {
+    fail_('runResetFailedReplayRows threw: ' + e.message);
+  }
+  line_();
+}
+
 function runShowReplayErrors() {
   header_('REPLAY ERROR DIAGNOSTIC');
   try {
