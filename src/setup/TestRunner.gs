@@ -2907,6 +2907,23 @@ function runResetFailedReplayRows() {
   line_();
 }
 
+/** Lists all FACT_* partition tab names and tests Identifiers.generatePartitionTabName. */
+function runDiagnoseFACTPartitions() {
+  header_('FACT PARTITION DIAGNOSTIC');
+  try {
+    var ss     = SpreadsheetApp.getActiveSpreadsheet();
+    var sheets = ss.getSheets();
+    var fact   = sheets.filter(function(s) { return s.getName().indexOf('FACT_') === 0; });
+    info_('Existing FACT tabs (' + fact.length + '):');
+    fact.slice(0, 20).forEach(function(s) { info_('  ' + s.getName()); });
+    info_('Identifiers.generatePartitionTabName test: ' +
+      Identifiers.generatePartitionTabName('FACT_JOB_EVENTS', '2026-01'));
+  } catch (e) {
+    fail_('runDiagnoseFACTPartitions threw: ' + e.message);
+  }
+  line_();
+}
+
 function runShowReplayErrors() {
   header_('REPLAY ERROR DIAGNOSTIC');
   try {
