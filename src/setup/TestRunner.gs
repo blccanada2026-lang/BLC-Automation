@@ -2868,6 +2868,26 @@ function runShowInvalidRows() {
 }
 
 /**
+ * Shows replay_error messages from MIGRATION_NORMALIZED for the first 15 FAILED rows.
+ * Run after a replay to diagnose systemic failures.
+ */
+function runShowReplayErrors() {
+  header_('REPLAY ERROR DIAGNOSTIC');
+  try {
+    var rows   = DAL.readAll(MigrationConfig.TABLES.NORMALIZED, { callerModule: 'TestRunner' });
+    var failed = (rows || []).filter(function (r) { return r.replay_status === 'FAILED'; });
+    if (failed.length === 0) { info_('No FAILED replay rows found'); line_(); return; }
+    info_(failed.length + ' FAILED rows. Showing first 15:');
+    failed.slice(0, 15).forEach(function (r) {
+      info_('  [' + r.entity_type + '] ' + r.replay_error);
+    });
+  } catch (e) {
+    fail_('runShowReplayErrors threw: ' + e.message);
+  }
+  line_();
+}
+
+/**
  * Runs the Stacey source audit (read-only).
  * Lists all Stacey tabs and row counts.
  * Requires STACEY_SPREADSHEET_ID to be set in MigrationConfig.gs.
