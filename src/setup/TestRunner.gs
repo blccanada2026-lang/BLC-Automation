@@ -3145,7 +3145,8 @@ function runResetNormalized() {
     if (lastRow <= 1) {
       info_('MIGRATION_NORMALIZED is already empty (0 data rows)');
     } else {
-      sheet.deleteRows(2, lastRow - 1);
+      // clearContent avoids the "cannot delete all non-frozen rows" Sheets error
+      sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).clearContent();
       pass_('Cleared ' + (lastRow - 1) + ' rows from MIGRATION_NORMALIZED');
     }
   } catch (e) {
