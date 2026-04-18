@@ -227,6 +227,42 @@ var MigrationReplayEngine = (function () {
     return { ok: true };
   }
 
+  /**
+   * Pre-creates all FACT partition tabs needed by the current batch.
+   * Called once at the start of replayAll() before the write loop.
+   * Idempotent — no-op for tabs that already exist.
+   */
+  function ensureMigrationPartitions_(batchRows) {
+    var tableMap = {
+      JOB:      Config.TABLES.FACT_JOB_EVENTS,
+      WORK_LOG: Config.TABLES.FACT_WORK_LOGS,
+      BILLING:  Config.TABLES.FACT_BILLING_LEDGER,
+      PAYROLL:  Config.TABLES.FACT_PAYROLL_LEDGER
+    };
+    var seen = {};
+    batchRows.forEach(function (r) {
+      if (r.validation_status !== 'VALID') return;
+      var table = tableMap[r.entity_type];
+      if (!table) return;
+      try {
+        var payload = JSON.parse(r.normalized_json || '{}');
+        var period  = payload.period_id;
+        if (!period || period === 'UNKNOWN') return;
+        var key = table + '|' + period;
+        if (seen[key]) return;
+        seen[key] = true;
+        DAL.ensurePartition(table, period, MODULE);
+      } catch (e) {
+        Logger.warn('REPLAY_ENSURE_PARTITION_FAILED', {
+          module: MODULE, error: e.message
+        });
+      }
+    });
+    Logger.info('REPLAY_PARTITIONS_ENSURED', {
+      module: MODULE, count: Object.keys(seen).length
+    });
+  }
+
   var ENTITY_HANDLERS = {
     STAFF:    replayStaff_,
     CLIENT:   replayClient_,
@@ -266,6 +302,8 @@ var MigrationReplayEngine = (function () {
     var batchRows   = allNorm.filter(function (r) {
       return r.migration_batch === batch && r.validation_status === 'VALID';
     });
+
+    ensureMigrationPartitions_(batchRows);
 
     var replayed = 0;
     var skipped  = 0;
