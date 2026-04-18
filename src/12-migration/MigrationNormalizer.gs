@@ -184,6 +184,19 @@ var MigrationNormalizer = (function () {
   }
 
   /**
+   * Attempts to extract a period_id (YYYY-MM) from BLC job number format YYMM-XXXX.
+   * Returns '' if the pattern does not match.
+   */
+  function extractPeriodFromJobNumber_(jobNumber) {
+    var m = String(jobNumber || '').match(/^(\d{2})(\d{2})-/);
+    if (!m) return '';
+    var year  = 2000 + parseInt(m[1], 10);
+    var month = parseInt(m[2], 10);
+    if (month < 1 || month > 12) return '';
+    return year + '-' + (month < 10 ? '0' + month : String(month));
+  }
+
+  /**
    * Loads already-normalized import keys to support idempotency.
    */
   function loadNormalizedKeys_(batch) {
@@ -279,6 +292,11 @@ var MigrationNormalizer = (function () {
 
       if (entityType === 'STAFF') {
         payload = postProcessStaff_(payload);
+      }
+
+      if (entityType === 'JOB' && !payload.period_id && payload.job_number) {
+        var derived = extractPeriodFromJobNumber_(payload.job_number);
+        if (derived) payload.period_id = derived;
       }
 
       if (entityType === 'WORK_LOG') {
