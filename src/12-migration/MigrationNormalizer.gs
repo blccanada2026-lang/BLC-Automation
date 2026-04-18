@@ -184,6 +184,17 @@ var MigrationNormalizer = (function () {
   }
 
   /**
+   * Strips Stacey's bi-monthly suffix from a Billing_Period value.
+   * '2026-01 | 1-15' → '2026-01'   '2025-12 | 16-End' → '2025-12'
+   * Already-clean values ('2026-01') pass through unchanged.
+   */
+  function cleanPeriodId_(raw) {
+    if (!raw) return '';
+    var m = String(raw).trim().match(/^(\d{4}-\d{2})/);
+    return m ? m[1] : String(raw).trim();
+  }
+
+  /**
    * Attempts to extract a period_id (YYYY-MM) from BLC job number format YYMM-XXXX.
    * Returns '' if the pattern does not match.
    */
@@ -294,9 +305,28 @@ var MigrationNormalizer = (function () {
         payload = postProcessStaff_(payload);
       }
 
-      if (entityType === 'JOB' && !payload.period_id && payload.job_number) {
-        var derived = extractPeriodFromJobNumber_(payload.job_number);
-        if (derived) payload.period_id = derived;
+      if (entityType === 'JOB') {
+        // Clean Stacey bi-monthly suffix first ('2026-01 | 1-15' → '2026-01')
+        if (payload.period_id) payload.period_id = cleanPeriodId_(payload.period_id);
+        // Fall back to extracting period from job number for jobs with no Billing_Period
+        if (!payload.period_id && payload.job_number) {
+          var derived = extractPeriodFromJobNumber_(payload.job_number);
+          if (derived) payload.period_id = derived;
+        }
+      }
+
+      if (entityType === 'WORK_LOG') {
+        // Stacey work logs have no Billing_Period — derive period from work_date
+        if (!payload.period_id && payload.work_date) {
+          try {
+            var d = new Date(payload.work_date);
+            if (!isNaN(d.getTime())) {
+              var yr = d.getFullYear();
+              var mo = d.getMonth() + 1;
+              payload.period_id = yr + '-' + (mo < 10 ? '0' + mo : String(mo));
+            }
+          } catch (e) { /* leave period_id empty */ }
+        }
       }
 
       if (entityType === 'WORK_LOG') {
