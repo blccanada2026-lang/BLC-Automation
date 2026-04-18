@@ -3087,6 +3087,47 @@ function testMigrationSystemTest() {
  * Run after MigrationReplayEngine.replayAll() to verify data completeness.
  */
 /**
+ * Removes all STAFF_ROSTER rows from MIGRATION_RAW_IMPORT so they can be
+ * cleanly re-imported with the correct header offset. All other tab rows
+ * are left intact. Run BEFORE runRawImport() when fixing a broken STAFF import.
+ */
+function runResetStaffRawImport() {
+  header_('RESET STAFF ROWS IN MIGRATION_RAW_IMPORT');
+  try {
+    var ss        = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet     = ss.getSheetByName(MigrationConfig.TABLES.RAW_IMPORT);
+    if (!sheet) { fail_('MIGRATION_RAW_IMPORT not found'); return; }
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) { info_('Sheet is already empty'); line_(); return; }
+
+    var staffTab = MigrationConfig.STACEY_TABLES.STAFF;
+    // Column index for source_tab (1-based). Must match SetupScript schema order.
+    // Schema columns: import_id,import_key,migration_batch,source_tag,source_tab,...
+    var TAB_COL = 5; // source_tab is the 5th column
+
+    // Collect row indices to delete (1-based sheet row, descending to avoid index shift)
+    var rowsToDelete = [];
+    var data = sheet.getRange(2, TAB_COL, lastRow - 1, 1).getValues();
+    for (var i = data.length - 1; i >= 0; i--) {
+      if (data[i][0] === staffTab) rowsToDelete.push(i + 2); // +2 = header offset + 1-based
+    }
+
+    if (rowsToDelete.length === 0) {
+      info_('No STAFF_ROSTER rows found in MIGRATION_RAW_IMPORT');
+      line_(); return;
+    }
+
+    // Delete from bottom to top so row indices don't shift
+    rowsToDelete.forEach(function (r) { sheet.deleteRow(r); });
+    pass_('Deleted ' + rowsToDelete.length + ' STAFF_ROSTER rows from MIGRATION_RAW_IMPORT');
+  } catch (e) {
+    fail_('runResetStaffRawImport threw: ' + e.message);
+  }
+  line_();
+}
+
+/**
  * Clears all data rows from MIGRATION_NORMALIZED (keeps header).
  * Run this before re-normalizing after alias map fixes.
  * CEO / migration admin only — manual trigger.
