@@ -12,39 +12,40 @@ var MigrationNormalizer = (function () {
   var MODULE = 'MigrationNormalizer';
 
   // ── Column name mappings: Stacey → Nexus ─────────────────
-  // Adapt these to actual Stacey column names after running
-  // StaceyAuditor.sampleTab() and reviewing output.
+  // Confirmed against actual Stacey tab headers 2026-04-18.
   var STAFF_MAP = {
-    person_code:     ['person_code', 'PersonCode', 'Code'],
-    name:            ['name', 'Name', 'FullName', 'full_name'],
-    email:           ['email', 'Email'],
-    role:            ['role', 'Role'],
-    supervisor_code: ['supervisor_code', 'SupervisorCode', 'supervisor'],
-    pm_code:         ['pm_code', 'PMCode', 'pm'],
-    pay_design:      ['pay_design', 'PayDesign', 'design_rate'],
-    pay_qc:          ['pay_qc', 'PayQC', 'qc_rate'],
-    pay_currency:    ['pay_currency', 'PayCurrency', 'currency']
+    person_code:     ['Designer_ID', 'person_code', 'PersonCode'],
+    name:            ['Designer_Name', 'Designer Name', 'name', 'Name'],
+    role:            ['Role', 'role'],
+    supervisor_code: ['Supervisor_ID', 'supervisor_code', 'SupervisorCode'],
+    // Stacey has one Hourly_Rate for both design and QC work
+    pay_design:      ['Hourly_Rate', 'pay_design', 'PayDesign'],
+    pay_qc:          ['Hourly_Rate', 'pay_qc', 'PayQC'],
+    pay_currency:    ['pay_currency', 'PayCurrency'],
+    bonus_eligible:  ['Supervisor_Bonus_Eligible', 'bonus_eligible']
   };
 
   var CLIENT_MAP = {
-    client_code:   ['client_code', 'ClientCode', 'Code'],
-    client_name:   ['client_name', 'ClientName', 'Name'],
+    client_code:   ['Client_Code', 'client_code', 'ClientCode'],
+    client_name:   ['Client_Name', 'client_name', 'ClientName'],
     contact_email: ['contact_email', 'ContactEmail', 'Email']
   };
 
   var JOB_MAP = {
-    job_number:  ['job_number', 'JobNumber', 'Job', 'job_no'],
-    client_code: ['client_code', 'ClientCode'],
-    period_id:   ['period_id', 'PeriodId', 'Period', 'period'],
-    status:      ['status', 'Status']
+    job_number:  ['Job_Number', 'job_number', 'JobNumber'],
+    client_code: ['Client_Code', 'client_code', 'ClientCode'],
+    period_id:   ['Billing_Period', 'period_id', 'PeriodId', 'Period'],
+    status:      ['Status', 'status']
   };
 
+  // 'Your Name' (work logs) and 'QC Reviewer Name' (QC logs) are full
+  // designer names — resolved to person_code via name→code map at normalise time.
   var WORK_LOG_MAP = {
-    job_number:   ['job_number', 'JobNumber'],
-    person_code:  ['person_code', 'PersonCode'],
-    hours:        ['hours', 'Hours', 'design_hours', 'DesignHours'],
-    work_date:    ['work_date', 'WorkDate', 'Date', 'date'],
-    actor_role:   ['actor_role', 'ActorRole', 'role', 'Role']
+    job_number:  ['Job Number', 'job_number', 'JobNumber'],
+    person_code: ['Your Name', 'QC Reviewer Name', 'person_code', 'PersonCode'],
+    hours:       ['Hours Worked', 'QC Hours Spent', 'hours', 'Hours'],
+    work_date:   ['Date Worked', 'Date of QC Review', 'work_date', 'WorkDate'],
+    actor_role:  ['actor_role', 'ActorRole', 'role', 'Role']
   };
 
   var BILLING_MAP = {
@@ -60,6 +61,20 @@ var MigrationNormalizer = (function () {
     period_id:    ['period_id', 'PeriodId', 'Period'],
     amount_inr:   ['amount_inr', 'AmountINR', 'amount', 'Amount'],
     event_type:   ['event_type', 'EventType', 'type']
+  };
+
+  // ── Stacey role name → Nexus role constant ────────────────
+  var ROLE_MAP = {
+    'team leader':       'TEAM_LEAD',
+    'teamlead':          'TEAM_LEAD',
+    'team lead':         'TEAM_LEAD',
+    'tl':                'TEAM_LEAD',
+    'project manager':   'PM',
+    'pm':                'PM',
+    'designer':          'DESIGNER',
+    'qc':                'QC',
+    'ceo':               'CEO',
+    'admin':             'ADMIN'
   };
 
   var ENTITY_MAPS = {
@@ -119,6 +134,56 @@ var MigrationNormalizer = (function () {
   }
 
   /**
+   * Strips currency symbols (₹, $, C$, USD) and whitespace from a rate string,
+   * returning a plain numeric string.
+   */
+  function parseRate_(val) {
+    if (val === undefined || val === null) return val;
+    return String(val).replace(/[₹$€£,\s]/g, '').trim();
+  }
+
+  /**
+   * Post-processes a STAFF payload:
+   * - Normalises role name to Nexus constant
+   * - Strips currency symbol from pay_design / pay_qc
+   * - Defaults pay_currency to INR if ₹ symbol was present
+   */
+  function postProcessStaff_(payload) {
+    if (payload.role) {
+      var key = String(payload.role).trim().toLowerCase();
+      if (ROLE_MAP[key]) payload.role = ROLE_MAP[key];
+    }
+    var rawRate = String(payload.pay_design || payload.pay_qc || '');
+    var isInr   = rawRate.indexOf('₹') !== -1;
+    if (payload.pay_design) payload.pay_design = parseRate_(payload.pay_design);
+    if (payload.pay_qc)     payload.pay_qc     = parseRate_(payload.pay_qc);
+    if (!payload.pay_currency) payload.pay_currency = isInr ? 'INR' : 'CAD';
+    return payload;
+  }
+
+  /**
+   * Builds a lowercase Designer_Name → Designer_ID lookup from STAFF raw rows.
+   * Used to resolve person_code from full names in work-log forms.
+   *
+   * @param {Object[]} allRawRows  All MIGRATION_RAW_IMPORT rows for the batch
+   * @returns {Object}  map of lowercased name → person_code
+   */
+  function buildNameCodeMap_(allRawRows) {
+    var map  = {};
+    var staffTab = MigrationConfig.STACEY_TABLES.STAFF;
+    allRawRows.forEach(function (r) {
+      if (r.source_tab !== staffTab) return;
+      try {
+        var raw  = JSON.parse(r.raw_json || '{}');
+        var name = raw['Designer_Name'] || raw['name'] || raw['Name'];
+        var code = raw['Designer_ID']   || raw['person_code'];
+        if (name && code) map[String(name).trim().toLowerCase()] = String(code).trim();
+      } catch (e) { /* skip malformed row */ }
+    });
+    return map;
+  }
+
+  /**
    * Loads already-normalized import keys to support idempotency.
    */
   function loadNormalizedKeys_(batch) {
@@ -160,6 +225,7 @@ var MigrationNormalizer = (function () {
 
     var existingKeys = loadNormalizedKeys_(batch);
     var batchRows    = rawRows.filter(function (r) { return r.migration_batch === batch; });
+    var nameCodeMap  = buildNameCodeMap_(batchRows);
 
     var normalized  = 0;
     var invalid     = 0;
@@ -208,11 +274,22 @@ var MigrationNormalizer = (function () {
         continue;
       }
 
-      var fieldMap    = ENTITY_MAPS[entityType];
-      var payload     = applyMap_(rawObj, fieldMap);
-      // For WORK_LOG rows, inject default actor_role if not already mapped.
-      if (entityType === 'WORK_LOG' && !payload.actor_role) {
-        payload.actor_role = detectDefaultRole_(raw.source_tab);
+      var fieldMap = ENTITY_MAPS[entityType];
+      var payload  = applyMap_(rawObj, fieldMap);
+
+      if (entityType === 'STAFF') {
+        payload = postProcessStaff_(payload);
+      }
+
+      if (entityType === 'WORK_LOG') {
+        // Resolve full designer name → person_code if form used a name field
+        if (payload.person_code) {
+          var nameKey = String(payload.person_code).trim().toLowerCase();
+          if (nameCodeMap[nameKey]) payload.person_code = nameCodeMap[nameKey];
+        }
+        if (!payload.actor_role) {
+          payload.actor_role = detectDefaultRole_(raw.source_tab);
+        }
       }
       var validation  = MigrationValidator.validate(entityType, payload);
       var valStatus   = validation.valid ? 'VALID' : 'INVALID';

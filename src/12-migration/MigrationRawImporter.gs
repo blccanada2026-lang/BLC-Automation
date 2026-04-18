@@ -83,14 +83,15 @@ var MigrationRawImporter = (function () {
     var sheet = ss.getSheetByName(tabName);
     if (!sheet) throw new Error('MigrationRawImporter: tab "' + tabName + '" not found.');
 
-    var lastRow = sheet.getLastRow();
-    if (lastRow < 2) {
+    var lastRow   = sheet.getLastRow();
+    var headerRow = MigrationConfig.getHeaderRow(tabName); // 2 for STAFF (title on row 1)
+    if (lastRow < headerRow + 1) {
       Logger.warn('RAW_IMPORT_EMPTY_TAB', { module: MODULE, tab: tabName });
       return { imported: 0, skipped: 0, partial: false };
     }
 
     var numCols  = sheet.getLastColumn();
-    var rawData  = sheet.getRange(1, 1, lastRow, numCols).getValues();
+    var rawData  = sheet.getRange(headerRow, 1, lastRow - headerRow + 1, numCols).getValues();
     var headers  = rawData[0].map(function (h) { return String(h).trim(); });
     var existing = loadExistingKeys_(batch, tabName);
 
@@ -118,7 +119,10 @@ var MigrationRawImporter = (function () {
         break;
       }
 
-      var importKey = makeImportKey_(batch, tabName, i);
+      // Use absolute sheet row so STAFF (headerRow=2) gets different keys
+      // than the broken first import (which used headerRow=1).
+      var rowNum    = headerRow + i; // absolute sheet row number
+      var importKey = makeImportKey_(batch, tabName, rowNum);
       if (existing[importKey]) {
         skipped++;
         continue;
@@ -134,7 +138,7 @@ var MigrationRawImporter = (function () {
         migration_batch: batch,
         source_tag:      sourceTag,
         source_tab:      tabName,
-        row_index:       i,
+        row_index:       rowNum,
         raw_json:        JSON.stringify(rowObj),
         imported_at:     new Date().toISOString(),
         imported_by:     actorEmail,
