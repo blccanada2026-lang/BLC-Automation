@@ -132,11 +132,25 @@ var StaffOnboarding = (function () {
     var isNew = !existing || existing.length === 0;
 
     if (!isNew) {
-      Logger.warn('STAFF_ONBOARD_EXISTS', {
-        module:      MODULE,
-        message:     'person_code already exists in DIM_STAFF_ROSTER — skipping roster write',
-        person_code: personCode
-      });
+      // Ensure the existing row is active — migration replay writes rows without active='TRUE'.
+      var existingActive = String((existing[0] || {}).active || '').toUpperCase();
+      if (existingActive !== 'TRUE') {
+        DAL.updateWhere(
+          Config.TABLES.DIM_STAFF_ROSTER,
+          { person_code: personCode },
+          { active: 'TRUE' },
+          { callerModule: MODULE }
+        );
+        Logger.info('STAFF_ACTIVATED', {
+          module: MODULE, message: 'Set active=TRUE on existing row', person_code: personCode
+        });
+      } else {
+        Logger.warn('STAFF_ONBOARD_EXISTS', {
+          module:      MODULE,
+          message:     'person_code already exists in DIM_STAFF_ROSTER — skipping roster write',
+          person_code: personCode
+        });
+      }
     } else {
       // ── Write DIM_STAFF_ROSTER ─────────────────────────────
       var rosterRow = {
