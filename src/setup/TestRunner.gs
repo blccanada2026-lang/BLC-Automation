@@ -29,6 +29,84 @@
 // ============================================================
 
 /**
+ * For every QC_SUBMIT item in the queue, prints:
+ *   queue_id | status | error_message | qc_result (blank = Flow A, APPROVED/REWORK = Flow B)
+ *
+ * Run after testJobLifecycleHappyPath or testQCReworkPath fails to determine
+ * whether Flow B items were processed, stuck as PENDING, or killed by cleanup.
+ */
+function diagQCFlowBItemTypes() {
+  header_('QC FLOW B ITEM DIAGNOSTIC');
+  var ss    = SpreadsheetApp.openById(Config.getSpreadsheetId());
+  var sheet = ss.getSheetByName('STG_PROCESSING_QUEUE');
+  if (!sheet) { console.log('STG_PROCESSING_QUEUE not found'); return; }
+
+  var data       = sheet.getDataRange().getValues();
+  var headers    = data[0];
+  var formIdx    = headers.indexOf('form_type');
+  var statusIdx  = headers.indexOf('status');
+  var errorIdx   = headers.indexOf('error_message');
+  var payloadIdx = headers.indexOf('payload_json');
+  var queueIdIdx = headers.indexOf('queue_id');
+
+  var found = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][formIdx] !== 'QC_SUBMIT') continue;
+    found++;
+    var payload = {};
+    try { payload = JSON.parse(data[i][payloadIdx] || '{}'); } catch (e) {}
+    var qcResult = payload.qc_result || '(none=FlowA)';
+    console.log(
+      'queue_id=' + data[i][queueIdIdx] +
+      ' | status='  + data[i][statusIdx] +
+      ' | error='   + (data[i][errorIdx] || '(none)') +
+      ' | qc_result=' + qcResult
+    );
+  }
+  if (found === 0) console.log('No QC_SUBMIT items found in queue.');
+
+  // Also dump last 15 _SYS_LOGS rows to see what QCHandler logged
+  console.log('');
+  console.log('--- Last 15 _SYS_LOGS rows ---');
+  var logSheet = ss.getSheetByName('_SYS_LOGS');
+  if (logSheet && logSheet.getLastRow() > 1) {
+    var lastRow  = logSheet.getLastRow();
+    var startRow = Math.max(2, lastRow - 14);
+    var lHeaders = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0];
+    var lData    = logSheet.getRange(startRow, 1, lastRow - startRow + 1, logSheet.getLastColumn()).getValues();
+    for (var r = 0; r < lData.length; r++) {
+      var row = {};
+      for (var c = 0; c < lHeaders.length; c++) row[lHeaders[c]] = lData[r][c];
+      console.log('[' + row.level + '] ' + row.action + ' — ' + (row.message || '') +
+                  (row.detail_json ? ' | ' + row.detail_json : ''));
+    }
+  }
+  line_();
+}
+
+/**
+ * Reads DIM_STAFF_ROSTER and prints every row for DS1 and QC1.
+ * Run to verify active field value before testPayrollRun.
+ */
+function diagStaffRoster() {
+  header_('DIAG: DIM_STAFF_ROSTER — DS1 / QC1');
+  var rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'TestRunner' });
+  var found = 0;
+  (rows || []).forEach(function(r) {
+    var pc = String(r.person_code || '').toUpperCase();
+    if (pc !== 'DS1' && pc !== 'QC1') return;
+    found++;
+    console.log('  person_code=' + r.person_code +
+                ' | active="' + r.active + '"' +
+                ' | role=' + r.role +
+                ' | pay_design=' + r.pay_design +
+                ' | migration_batch=' + (r.migration_batch || '(none)'));
+  });
+  if (found === 0) info_('No DS1 or QC1 rows found in DIM_STAFF_ROSTER');
+  line_();
+}
+
+/**
  * Traces buildDesignerClientPairs_ logic step-by-step to find why 0 pairs return.
  */
 function diagnosePairs() {
@@ -206,6 +284,70 @@ function clearStalePendingItems_() {
 }
 
 /**
+ * Resets the DAL API call counter and then runs processQueue().
+ *
+ * In production, each trigger firing is a fresh script execution so the
+ * API call counter starts at 0. In tests, multiple processQueue() calls
+ * share one execution and the counter accumulates — causing HealthMonitor
+ * to trip the quota guard before items are processed. Resetting before
+ * each call mirrors the production execution model.
+ */
+function processQueueFresh_() {
+  DAL._resetApiCallCount();
+  QueueProcessor.processQueue();
+}
+
+/**
+ * Ensures test actors DS1 and QC1 exist in DIM_STAFF_ROSTER with valid pay rates.
+ * Called before any test that exercises PayrollEngine (G, H).
+ * Idempotent — StaffOnboarding.onboardStaff() skips existing person_codes.
+ */
+function seedTestStaff() {
+  var testStaff = [
+    {
+      person_code:     'DS1',
+      name:            'Test Designer',
+      email:           'designer@blclotus.com',
+      role:            'DESIGNER',
+      pay_currency:    'INR',
+      pay_design:      500,
+      pay_qc:          400,
+      supervisor_code: 'SDA',
+      pm_code:         'SGO',
+      bonus_eligible:  'FALSE',
+      effective_from:  '2024-01-01'
+    },
+    {
+      person_code:     'QC1',
+      name:            'Test QC Reviewer',
+      email:           'qc@blclotus.com',
+      role:            'QC',
+      pay_currency:    'INR',
+      pay_design:      0,
+      pay_qc:          450,
+      supervisor_code: '',
+      pm_code:         'SGO',
+      bonus_eligible:  'FALSE',
+      effective_from:  '2024-01-01'
+    }
+  ];
+
+  for (var i = 0; i < testStaff.length; i++) {
+    var pc = testStaff[i].person_code;
+    try {
+      var result = StaffOnboarding.onboardStaff(SUITE_CEO_EMAIL, testStaff[i]);
+      if (result.isNew) {
+        info_('seedTestStaff: created ' + pc + ' (active=TRUE)');
+      } else {
+        info_('seedTestStaff: ' + pc + ' already exists (StaffOnboarding ensured active=TRUE)');
+      }
+    } catch (e) {
+      info_('seedTestStaff_: ERROR for ' + pc + ' — ' + e.message);
+    }
+  }
+}
+
+/**
  * Creates a job and immediately starts it (JOB_CREATE + JOB_START pipeline).
  * Returns the job_number in IN_PROGRESS state, or null on failure.
  * Used by WorkLog, HoldResume, and QC tests to skip repeated setup.
@@ -227,7 +369,7 @@ function setupTestJobInProgress_() {
   var pendingBefore = countPendingQueueItems_();
   console.log('  [setup] PENDING items after flush, before processQueue: ' + pendingBefore);
 
-  QueueProcessor.processQueue();
+  processQueueFresh_();
 
   // Flush VW writes before checking row count — processQueue writes to VW but
   // may buffer the write; flush ensures it is visible to subsequent getLastRow().
@@ -254,7 +396,7 @@ function setupTestJobInProgress_() {
   });
   if (!startResult.ok) { console.log('  [setup] JOB_START intake failed'); return null; }
 
-  QueueProcessor.processQueue();
+  processQueueFresh_();
 
   // Verify actual state — return null if not IN_PROGRESS (prevents tests from running on wrong job)
   var finalView = StateMachine.getJobView(jobNumber);
@@ -388,7 +530,7 @@ function runTestQueueOnly() {
   info_('Processing all PENDING items in STG_PROCESSING_QUEUE…');
   line_();
 
-  QueueProcessor.processQueue();
+  processQueueFresh_();
 
   line_();
   console.log('  Check these tabs in the spreadsheet:');
@@ -433,7 +575,7 @@ function runTestEndToEnd() {
   info_('Step 2: Running QueueProcessor…');
   line_();
 
-  QueueProcessor.processQueue();
+  processQueueFresh_();
 
   line_();
   pass_('QueueProcessor run complete');
@@ -490,7 +632,7 @@ function runTestJobStartE2E() {
 
   // ── Phase 2: Process JOB_CREATE ─────────────────────────
   info_('Phase 2: Processing JOB_CREATE queue item…');
-  QueueProcessor.processQueue();
+  processQueueFresh_();
   line_();
 
   // ── Phase 3: Read job number from VW ───────────────────
@@ -527,7 +669,7 @@ function runTestJobStartE2E() {
 
   // ── Phase 5: Process JOB_START ──────────────────────────
   info_('Phase 4: Processing JOB_START queue item…');
-  QueueProcessor.processQueue();
+  processQueueFresh_();
 
   line_();
   pass_('QueueProcessor run complete');
@@ -612,7 +754,7 @@ function runTestWorkLogE2E() {
   info_('queue_id : ' + result.queueId);
   line_();
 
-  QueueProcessor.processQueue();
+  processQueueFresh_();
 
   line_();
   pass_('QueueProcessor run complete');
@@ -645,7 +787,7 @@ function runTestHoldResumeE2E() {
   });
   if (!holdResult.ok) { fail_('JOB_HOLD intake failed'); return; }
   pass_('JOB_HOLD intake succeeded');
-  QueueProcessor.processQueue();
+  processQueueFresh_();
   line_();
 
   info_('Check VW: current_state should be ON_HOLD, prev_state = IN_PROGRESS');
@@ -661,7 +803,7 @@ function runTestHoldResumeE2E() {
   });
   if (!resumeResult.ok) { fail_('JOB_RESUME intake failed'); return; }
   pass_('JOB_RESUME intake succeeded');
-  QueueProcessor.processQueue();
+  processQueueFresh_();
 
   line_();
   pass_('Hold/Resume cycle complete');
@@ -695,7 +837,7 @@ function runTestQCE2E() {
   });
   if (!submitResult.ok) { fail_('QC_SUBMIT (Flow A) intake failed'); return; }
   pass_('QC_SUBMIT intake succeeded');
-  QueueProcessor.processQueue();
+  processQueueFresh_();
 
   info_('Check VW: current_state should be QC_REVIEW');
   line_();
@@ -714,7 +856,7 @@ function runTestQCE2E() {
   });
   if (!approveResult.ok) { fail_('QC_SUBMIT (Flow B) intake failed'); return; }
   pass_('QC approval intake succeeded');
-  QueueProcessor.processQueue();
+  processQueueFresh_();
 
   line_();
   pass_('Full QC lifecycle complete');
@@ -781,6 +923,8 @@ function runTestBillingRun() {
  */
 function runTestPayrollRun() {
   header_('TEST: Payroll Run');
+
+  seedTestStaff();
 
   var result = PayrollEngine.runPayrollRun('ceo@blclotus.com');
 
@@ -1199,7 +1343,7 @@ function testJobLifecycleHappyPath() {
     assert_(results, counters, 'JOB_CREATE intake returns a queue_id',
       !!(createResult.queueId), 'queueId=' + createResult.queueId);
 
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     var jobNumber = getLatestJobNumber_();
     assert_(results, counters, 'Job number assigned after queue processing',
@@ -1245,7 +1389,7 @@ function testJobLifecycleHappyPath() {
       source:         'TEST'
     });
     assert_(results, counters, 'JOB_START intake returns ok=true', startResult.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     var vwAfterStart = StateMachine.getJobView(jobNumber);
     assert_(results, counters, 'VW current_state = IN_PROGRESS after JOB_START',
@@ -1274,7 +1418,7 @@ function testJobLifecycleHappyPath() {
       source:         'TEST'
     });
     assert_(results, counters, 'WORK_LOG intake returns ok=true', logResult.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     var workLogs = DAL.readWhere(
       Config.TABLES.FACT_WORK_LOGS,
@@ -1299,7 +1443,7 @@ function testJobLifecycleHappyPath() {
       source:         'TEST'
     });
     assert_(results, counters, 'QC_SUBMIT (Flow A) intake returns ok=true', qcSubmitResult.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     var vwAfterQcSubmit = StateMachine.getJobView(jobNumber);
     assert_(results, counters, 'VW current_state = QC_REVIEW after QC_SUBMIT',
@@ -1315,7 +1459,7 @@ function testJobLifecycleHappyPath() {
     });
     assert_(results, counters, 'QC_SUBMIT (Flow B APPROVED) intake returns ok=true',
       qcApproveResult.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     var vwFinal = StateMachine.getJobView(jobNumber);
     assert_(results, counters, 'VW current_state = COMPLETED_BILLABLE after QC approve',
@@ -1388,7 +1532,7 @@ function testQCReworkPath() {
       source:         'TEST'
     });
     assert_(results, counters, 'Initial work log intake ok', logR1.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     // Submit for QC
     var qcSub1 = IntakeService.processSubmission({
@@ -1398,7 +1542,7 @@ function testQCReworkPath() {
       source:         'TEST'
     });
     assert_(results, counters, 'QC_SUBMIT (Flow A) for rework test ok', qcSub1.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     var vwBeforeRework = StateMachine.getJobView(jobNumber);
     assert_(results, counters, 'State = QC_REVIEW before rework decision',
@@ -1413,7 +1557,7 @@ function testQCReworkPath() {
       source:         'TEST'
     });
     assert_(results, counters, 'QC_SUBMIT (Flow B REWORK) intake ok', qcRework.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     var vwAfterRework = StateMachine.getJobView(jobNumber);
     assert_(results, counters, 'State = IN_PROGRESS after REWORK decision',
@@ -1431,7 +1575,7 @@ function testQCReworkPath() {
       source:         'TEST'
     });
     assert_(results, counters, 'Post-rework work log intake ok', logR2.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     // Submit for QC again
     var qcSub2 = IntakeService.processSubmission({
@@ -1441,7 +1585,7 @@ function testQCReworkPath() {
       source:         'TEST'
     });
     assert_(results, counters, 'Second QC_SUBMIT intake ok', qcSub2.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     // QC Approves
     var qcApprove = IntakeService.processSubmission({
@@ -1451,7 +1595,7 @@ function testQCReworkPath() {
       source:         'TEST'
     });
     assert_(results, counters, 'Final QC_SUBMIT (APPROVED) intake ok', qcApprove.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     var vwFinal = StateMachine.getJobView(jobNumber);
     assert_(results, counters, 'State = COMPLETED_BILLABLE after final approval',
@@ -1523,7 +1667,7 @@ function testJobHoldResume() {
       source:         'TEST'
     });
     assert_(results, counters, 'JOB_HOLD intake ok', holdR.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     var vwOnHold = StateMachine.getJobView(jobNumber);
     assert_(results, counters, 'VW current_state = ON_HOLD after hold',
@@ -1541,7 +1685,7 @@ function testJobHoldResume() {
       source:         'TEST'
     });
     assert_(results, counters, 'JOB_RESUME intake ok', resumeR.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     var vwAfterResume = StateMachine.getJobView(jobNumber);
     assert_(results, counters, 'VW current_state = IN_PROGRESS after resume',
@@ -1613,7 +1757,7 @@ function testRBACEnforcement() {
       source:         'TEST'
     });
     // Intake itself may succeed (it just enqueues); we verify after processing
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     // FACT row count must not increase — RBAC blocked the write
     var afterCount = 0;
@@ -1641,7 +1785,7 @@ function testRBACEnforcement() {
         payload:        { job_number: qcTestJob },
         source:         'TEST'
       });
-      QueueProcessor.processQueue();
+      processQueueFresh_();
 
       var vwInQcReview = StateMachine.getJobView(qcTestJob);
       assert_(results, counters, 'Setup: job reached QC_REVIEW state',
@@ -1655,7 +1799,7 @@ function testRBACEnforcement() {
         payload:        { job_number: qcTestJob, qc_result: 'APPROVED' },
         source:         'TEST'
       });
-      QueueProcessor.processQueue();
+      processQueueFresh_();
 
       // State must still be QC_REVIEW — not COMPLETED_BILLABLE
       var vwAfterBadApprove = StateMachine.getJobView(qcTestJob);
@@ -1686,7 +1830,7 @@ function testRBACEnforcement() {
       payload:        SUITE_JOB_PAYLOAD,
       source:         'TEST'
     });
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     var unknownAfter = 0;
     try {
@@ -1739,7 +1883,7 @@ function testIdempotency() {
     });
     assert_(results, counters, 'First intake submission ok', firstResult.ok === true);
 
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     // Read count of JOB_CREATED rows after first processing
     var afterFirst = [];
@@ -1843,7 +1987,7 @@ function testWorkLogAccumulation() {
       source:         'TEST'
     });
     assert_(results, counters, 'First work log intake ok', log1.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     // Log 2: 3.0 hours (same day, different entry is valid per system rules)
     var log2 = IntakeService.processSubmission({
@@ -1853,7 +1997,7 @@ function testWorkLogAccumulation() {
       source:         'TEST'
     });
     assert_(results, counters, 'Second work log intake ok', log2.ok === true);
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     // Verify both logs are in FACT_WORK_LOGS
     var workLogs = DAL.readWhere(
@@ -1909,6 +2053,9 @@ function testPayrollRun() {
   var counters = { passed: 0, failed: 0 };
 
   try {
+    // Ensure DS1 and QC1 are in DIM_STAFF_ROSTER (idempotent)
+    seedTestStaff();
+
     // Read FACT_PAYROLL_LEDGER row count before run
     var beforeRows = 0;
     try {
@@ -2111,7 +2258,7 @@ function testStateMachineGuards() {
       payload:        { job_number: jobNumber },
       source:         'TEST'
     });
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     // State must remain IN_PROGRESS — not change
     var vwAfterBadStart = StateMachine.getJobView(jobNumber);
@@ -2132,7 +2279,7 @@ function testStateMachineGuards() {
         payload:        { job_number: jobNumber2 },
         source:         'TEST'
       });
-      QueueProcessor.processQueue();
+      processQueueFresh_();
 
       var vwInQCReview = StateMachine.getJobView(jobNumber2);
       assert_(results, counters, 'Job2 reached QC_REVIEW',
@@ -2146,7 +2293,7 @@ function testStateMachineGuards() {
         payload:        { job_number: jobNumber2 },
         source:         'TEST'
       });
-      QueueProcessor.processQueue();
+      processQueueFresh_();
 
       var vwAfterDoubleQC = StateMachine.getJobView(jobNumber2);
       assert_(results, counters, 'State unchanged after invalid double QC_SUBMIT',
@@ -2200,7 +2347,7 @@ function testValidationRejection() {
       payload:        { job_type: 'DESIGN', quantity: 1 },  // missing client_code
       source:         'TEST'
     });
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     var afterV1 = 0;
     try {
@@ -2221,7 +2368,7 @@ function testValidationRejection() {
       payload:        { client_code: 'NORSPAN', job_type: 'DESIGN', quantity: 0 },
       source:         'TEST'
     });
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     var afterV2 = 0;
     try {
@@ -2255,7 +2402,7 @@ function testValidationRejection() {
         payload:        { job_number: jobForV3, hours: 0, work_date: today },
         source:         'TEST'
       });
-      QueueProcessor.processQueue();
+      processQueueFresh_();
 
       var afterWorkLogs = 0;
       try {
@@ -2328,7 +2475,7 @@ function testWorkLogPeriodBoundary() {
     });
     assert_(results, counters, 'Work log with period-start date accepted at intake',
       logR.ok === true, 'result=' + JSON.stringify(logR));
-    QueueProcessor.processQueue();
+    processQueueFresh_();
 
     // The row must be in the current period partition
     var workLogs = DAL.readWhere(
@@ -2337,14 +2484,17 @@ function testWorkLogPeriodBoundary() {
       { periodId: SUITE_PERIOD_ID, callerModule: 'TestRunner' }
     );
     var boundaryLog = workLogs.filter(function(r) {
-      var wd = r.work_date instanceof Date ? Utilities.formatDate(r.work_date, 'America/Regina', 'yyyy-MM-dd') : String(r.work_date);
-      return wd === periodBoundaryDate || wd.indexOf(periodBoundaryDate) === 0;
+      var d = r.work_date instanceof Date ? r.work_date : new Date(r.work_date);
+      if (isNaN(d.getTime())) { return String(r.work_date).indexOf(periodBoundaryDate) === 0; }
+      return Utilities.formatDate(d, 'America/Regina', 'yyyy-MM-dd') === periodBoundaryDate;
     });
     assert_(results, counters, 'Period-boundary work log row written to FACT_WORK_LOGS',
       workLogs.length >= 1, 'workLogs.length=' + workLogs.length);
+
     assert_(results, counters, 'Period-boundary work log has hours = 1.0',
       workLogs.some(function(r) {
-        var wd = r.work_date instanceof Date ? Utilities.formatDate(r.work_date, 'America/Regina', 'yyyy-MM-dd') : String(r.work_date);
+        var d = r.work_date instanceof Date ? r.work_date : new Date(r.work_date);
+        var wd = isNaN(d.getTime()) ? String(r.work_date) : Utilities.formatDate(d, 'America/Regina', 'yyyy-MM-dd');
         return Math.abs(parseFloat(r.hours) - 1.0) < 0.01 &&
                (wd === periodBoundaryDate || wd.indexOf(periodBoundaryDate) === 0);
       }),
@@ -2515,6 +2665,252 @@ function runAllTests() {
   console.log('  TOTAL: ' + totalPassed + ' passed, ' + totalFailed + ' failed');
   console.log('  ' + (totalFailed === 0 ? 'ALL TESTS PASSED — safe to deploy' :
                                           'FAILURES DETECTED — fix before deploying'));
+  console.log('══════════════════════════════════════════════');
+
+  return { totalPassed: totalPassed, totalFailed: totalFailed };
+}
+
+/**
+ * Runs tests A–F (Job Lifecycle, QC Rework, Hold/Resume, RBAC, Idempotency, Work Log).
+ * Split from runAllTests() to stay within the 6-minute GAS execution limit.
+ * Run runAllTestsPart2() separately for G–L.
+ */
+function runAllTestsPart1() {
+  var totalPassed = 0;
+  var totalFailed = 0;
+  var suiteResults = [];
+
+  var tests = [
+    { name: 'A — Job Lifecycle Happy Path', fn: testJobLifecycleHappyPath },
+    { name: 'B — QC Rework Path',           fn: testQCReworkPath           },
+    { name: 'C — Job Hold / Resume',        fn: testJobHoldResume          },
+    { name: 'D — RBAC Enforcement',         fn: testRBACEnforcement        },
+    { name: 'E — Idempotency',              fn: testIdempotency            },
+    { name: 'F — Work Log Accumulation',    fn: testWorkLogAccumulation    }
+  ];
+
+  console.log('');
+  console.log('══════════════════════════════════════════════');
+  console.log('  BLC NEXUS TEST SUITE — PART 1 (A–F)');
+  console.log('  Period: ' + SUITE_PERIOD_ID);
+  console.log('  Started: ' + new Date().toISOString());
+  console.log('══════════════════════════════════════════════');
+
+  for (var i = 0; i < tests.length; i++) {
+    var t = tests[i];
+    console.log('');
+    console.log('Running: ' + t.name);
+    var result = { passed: 0, failed: 0 };
+    try {
+      result = t.fn();
+    } catch (e) {
+      console.log('  UNHANDLED EXCEPTION in ' + t.name + ': ' + e.message);
+      result.failed++;
+    }
+    totalPassed += result.passed;
+    totalFailed += result.failed;
+    suiteResults.push({
+      name: t.name, passed: result.passed, failed: result.failed,
+      status: (result.failed === 0) ? 'PASS' : 'FAIL'
+    });
+  }
+
+  console.log('');
+  console.log('══════════════════════════════════════════════');
+  console.log('  PART 1 SUMMARY (A–F)');
+  console.log('══════════════════════════════════════════════');
+  for (var j = 0; j < suiteResults.length; j++) {
+    var r = suiteResults[j];
+    console.log('  [' + r.status + '] ' + r.name +
+               ' (' + r.passed + ' passed, ' + r.failed + ' failed)');
+  }
+  console.log('──────────────────────────────────────────────');
+  console.log('  TOTAL: ' + totalPassed + ' passed, ' + totalFailed + ' failed');
+  console.log('  ' + (totalFailed === 0 ? 'Part 1 PASSED — run Part 2 next' :
+                                          'FAILURES in Part 1 — fix before running Part 2'));
+  console.log('══════════════════════════════════════════════');
+
+  return { totalPassed: totalPassed, totalFailed: totalFailed };
+}
+
+/**
+ * Runs tests G–L (Payroll, Bonus, State Machine, Validation, Period Boundary, RBAC Guard).
+ * Split from runAllTests() to stay within the 6-minute GAS execution limit.
+ * Run runAllTestsPart1() first.
+ */
+function runAllTestsPart2() {
+  var totalPassed = 0;
+  var totalFailed = 0;
+  var suiteResults = [];
+
+  var tests = [
+    { name: 'G — Payroll Run',             fn: testPayrollRun           },
+    { name: 'H — Supervisor Bonus Run',    fn: testBonusRun             },
+    { name: 'I — State Machine Guards',    fn: testStateMachineGuards   },
+    { name: 'J — Validation Rejection',   fn: testValidationRejection  },
+    { name: 'K — Work Log Period Boundary',fn: testWorkLogPeriodBoundary},
+    { name: 'L — Payroll RBAC Guard',      fn: testPayrollRBACGuard     }
+  ];
+
+  console.log('');
+  console.log('══════════════════════════════════════════════');
+  console.log('  BLC NEXUS TEST SUITE — PART 2 (G–L)');
+  console.log('  Period: ' + SUITE_PERIOD_ID);
+  console.log('  Started: ' + new Date().toISOString());
+  console.log('══════════════════════════════════════════════');
+
+  for (var i = 0; i < tests.length; i++) {
+    var t = tests[i];
+    console.log('');
+    console.log('Running: ' + t.name);
+    var result = { passed: 0, failed: 0 };
+    try {
+      result = t.fn();
+    } catch (e) {
+      console.log('  UNHANDLED EXCEPTION in ' + t.name + ': ' + e.message);
+      result.failed++;
+    }
+    totalPassed += result.passed;
+    totalFailed += result.failed;
+    suiteResults.push({
+      name: t.name, passed: result.passed, failed: result.failed,
+      status: (result.failed === 0) ? 'PASS' : 'FAIL'
+    });
+  }
+
+  console.log('');
+  console.log('══════════════════════════════════════════════');
+  console.log('  PART 2 SUMMARY (G–L)');
+  console.log('══════════════════════════════════════════════');
+  for (var j = 0; j < suiteResults.length; j++) {
+    var r = suiteResults[j];
+    console.log('  [' + r.status + '] ' + r.name +
+               ' (' + r.passed + ' passed, ' + r.failed + ' failed)');
+  }
+  console.log('──────────────────────────────────────────────');
+  console.log('  TOTAL: ' + totalPassed + ' passed, ' + totalFailed + ' failed');
+  console.log('  ' + (totalFailed === 0 ? 'Part 2 PASSED — all tests green' :
+                                          'FAILURES in Part 2 — fix before deploying'));
+  console.log('══════════════════════════════════════════════');
+
+  return { totalPassed: totalPassed, totalFailed: totalFailed };
+}
+
+/**
+ * Runs tests A, C, E, F — core lifecycle + accumulation.
+ * ~14 queue drains. Fits within GAS 6-minute limit.
+ * Run before runAllTestsPart1B().
+ */
+function runAllTestsPart1A() {
+  var totalPassed = 0;
+  var totalFailed = 0;
+  var suiteResults = [];
+
+  var tests = [
+    { name: 'A — Job Lifecycle Happy Path', fn: testJobLifecycleHappyPath },
+    { name: 'C — Job Hold / Resume',        fn: testJobHoldResume          },
+    { name: 'E — Idempotency',              fn: testIdempotency            },
+    { name: 'F — Work Log Accumulation',    fn: testWorkLogAccumulation    }
+  ];
+
+  console.log('');
+  console.log('══════════════════════════════════════════════');
+  console.log('  BLC NEXUS TEST SUITE — PART 1A (A, C, E, F)');
+  console.log('  Period: ' + SUITE_PERIOD_ID);
+  console.log('  Started: ' + new Date().toISOString());
+  console.log('══════════════════════════════════════════════');
+
+  for (var i = 0; i < tests.length; i++) {
+    var t = tests[i];
+    console.log('');
+    console.log('Running: ' + t.name);
+    var result = { passed: 0, failed: 0 };
+    try {
+      result = t.fn();
+    } catch (e) {
+      console.log('  UNHANDLED EXCEPTION in ' + t.name + ': ' + e.message);
+      result.failed++;
+    }
+    totalPassed += result.passed;
+    totalFailed += result.failed;
+    suiteResults.push({
+      name: t.name, passed: result.passed, failed: result.failed,
+      status: (result.failed === 0) ? 'PASS' : 'FAIL'
+    });
+  }
+
+  console.log('');
+  console.log('══════════════════════════════════════════════');
+  console.log('  PART 1A SUMMARY (A, C, E, F)');
+  console.log('══════════════════════════════════════════════');
+  for (var j = 0; j < suiteResults.length; j++) {
+    var r = suiteResults[j];
+    console.log('  [' + r.status + '] ' + r.name +
+               ' (' + r.passed + ' passed, ' + r.failed + ' failed)');
+  }
+  console.log('──────────────────────────────────────────────');
+  console.log('  TOTAL: ' + totalPassed + ' passed, ' + totalFailed + ' failed');
+  console.log('  ' + (totalFailed === 0 ? 'Part 1A PASSED — run Part 1B next' :
+                                          'FAILURES in Part 1A — fix before continuing'));
+  console.log('══════════════════════════════════════════════');
+
+  return { totalPassed: totalPassed, totalFailed: totalFailed };
+}
+
+/**
+ * Runs tests B, D — QC rework path + RBAC enforcement.
+ * These are the two heaviest tests (~14 queue drains combined).
+ * Run after runAllTestsPart1A().
+ */
+function runAllTestsPart1B() {
+  var totalPassed = 0;
+  var totalFailed = 0;
+  var suiteResults = [];
+
+  var tests = [
+    { name: 'B — QC Rework Path',   fn: testQCReworkPath    },
+    { name: 'D — RBAC Enforcement', fn: testRBACEnforcement }
+  ];
+
+  console.log('');
+  console.log('══════════════════════════════════════════════');
+  console.log('  BLC NEXUS TEST SUITE — PART 1B (B, D)');
+  console.log('  Period: ' + SUITE_PERIOD_ID);
+  console.log('  Started: ' + new Date().toISOString());
+  console.log('══════════════════════════════════════════════');
+
+  for (var i = 0; i < tests.length; i++) {
+    var t = tests[i];
+    console.log('');
+    console.log('Running: ' + t.name);
+    var result = { passed: 0, failed: 0 };
+    try {
+      result = t.fn();
+    } catch (e) {
+      console.log('  UNHANDLED EXCEPTION in ' + t.name + ': ' + e.message);
+      result.failed++;
+    }
+    totalPassed += result.passed;
+    totalFailed += result.failed;
+    suiteResults.push({
+      name: t.name, passed: result.passed, failed: result.failed,
+      status: (result.failed === 0) ? 'PASS' : 'FAIL'
+    });
+  }
+
+  console.log('');
+  console.log('══════════════════════════════════════════════');
+  console.log('  PART 1B SUMMARY (B, D)');
+  console.log('══════════════════════════════════════════════');
+  for (var j = 0; j < suiteResults.length; j++) {
+    var r = suiteResults[j];
+    console.log('  [' + r.status + '] ' + r.name +
+               ' (' + r.passed + ' passed, ' + r.failed + ' failed)');
+  }
+  console.log('──────────────────────────────────────────────');
+  console.log('  TOTAL: ' + totalPassed + ' passed, ' + totalFailed + ' failed');
+  console.log('  ' + (totalFailed === 0 ? 'Part 1B PASSED — run Part 2 next' :
+                                          'FAILURES in Part 1B — fix before continuing'));
   console.log('══════════════════════════════════════════════');
 
   return { totalPassed: totalPassed, totalFailed: totalFailed };
