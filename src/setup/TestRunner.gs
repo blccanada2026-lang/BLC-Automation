@@ -3045,6 +3045,26 @@ function runNormalizeAll() {
 }
 
 /**
+ * Creates (or recreates) the MIGRATION_EXCEPTION_REPORT sheet with correct headers.
+ * Safe to run multiple times — clears and rewrites the header row.
+ * Uses SpreadsheetApp directly — this is a setup/diagnostic function, not a production data write.
+ */
+function runCreateExceptionReport() {
+  var headers = [
+    'exception_id', 'source_table', 'source_row_ref', 'entity_type',
+    'failure_reason', 'raw_data_snapshot', 'suggested_fix',
+    'owner', 'severity', 'retry_eligible', 'retry_status',
+    'created_at', 'resolved_at', 'resolved_by', 'notes'
+  ];
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('MIGRATION_EXCEPTION_REPORT') || ss.insertSheet('MIGRATION_EXCEPTION_REPORT');
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  console.log('MIGRATION_EXCEPTION_REPORT created with ' + headers.length + ' columns');
+}
+
+/**
  * Replays all VALID normalized rows into FACT/DIM tables (Phase E Layer 3).
  * Order: STAFF → CLIENT → JOB → WORK_LOG → BILLING → PAYROLL.
  * Idempotent — already replayed rows are skipped.

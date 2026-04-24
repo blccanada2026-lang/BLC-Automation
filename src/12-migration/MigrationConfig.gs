@@ -88,9 +88,10 @@ var MigrationConfig = (function () {
 
   // ── Table names (migration-specific) ─────────────────────
   var TABLES = {
-    RAW_IMPORT: 'MIGRATION_RAW_IMPORT',
-    NORMALIZED: 'MIGRATION_NORMALIZED',
-    AUDIT_LOG:  'MIGRATION_AUDIT_LOG'
+    RAW_IMPORT:       'MIGRATION_RAW_IMPORT',
+    NORMALIZED:       'MIGRATION_NORMALIZED',
+    AUDIT_LOG:        'MIGRATION_AUDIT_LOG',
+    EXCEPTION_REPORT: 'MIGRATION_EXCEPTION_REPORT'
   };
 
   // ── Source table names (Stacey tabs — confirmed 2026-04-17) ─

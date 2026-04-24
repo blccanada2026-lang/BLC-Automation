@@ -375,6 +375,13 @@ var SCHEMAS = {
   'MIGRATION_AUDIT_LOG': [
     'audit_id', 'migration_batch', 'phase', 'event_type',
     'message', 'details_json', 'created_at', 'created_by'
+  ],
+
+  'MIGRATION_EXCEPTION_REPORT': [
+    'exception_id', 'source_table', 'source_row_ref', 'entity_type',
+    'failure_reason', 'raw_data_snapshot', 'suggested_fix',
+    'owner', 'severity', 'retry_eligible', 'retry_status',
+    'created_at', 'resolved_at', 'resolved_by', 'notes'
   ]
 
 };
