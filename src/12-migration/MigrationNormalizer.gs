@@ -72,7 +72,9 @@ var MigrationNormalizer = (function () {
     'project manager':   'PM',
     'pm':                'PM',
     'designer':          'DESIGNER',
+    'senior designer':   'DESIGNER',
     'qc':                'QC',
+    'qc reviewer':       'QC',
     'ceo':               'CEO',
     'admin':             'ADMIN'
   };
@@ -422,5 +424,83 @@ var MigrationNormalizer = (function () {
     return { normalized: normalized, invalid: invalid, skipped: skipped, partial: partial };
   }
 
-  return { normalizeAll: normalizeAll };
+  /**
+   * Re-normalizes rows that previously failed validation.
+   * Use after fixing ROLE_MAP or column alias maps — re-reads the original
+   * raw_json and updates the MIGRATION_NORMALIZED row in place.
+   * Only processes INVALID rows; VALID and PENDING rows are untouched.
+   *
+   * @param {string} actorEmail
+   * @returns {{ fixed: number, stillInvalid: number }}
+   */
+  function reNormalizeInvalid(actorEmail) {
+    var actor = RBAC.resolveActor(actorEmail);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
+    RBAC.enforceFinancialAccess(actor);
+
+    var batch = MigrationConfig.getBatch();
+
+    var rawRows  = DAL.readAll(MigrationConfig.TABLES.RAW_IMPORT,  { callerModule: MODULE });
+    var normRows = DAL.readAll(MigrationConfig.TABLES.NORMALIZED,   { callerModule: MODULE });
+
+    var rawByKey = {};
+    (rawRows || []).forEach(function (r) { rawByKey[r.import_key] = r; });
+
+    var invalidRows = (normRows || []).filter(function (r) {
+      return r.migration_batch === batch && r.validation_status === 'INVALID';
+    });
+
+    var nameCodeMap = buildNameCodeMap_(rawRows || []);
+    var fixed       = 0;
+    var stillInvalid = 0;
+
+    invalidRows.forEach(function (normRow) {
+      var rawRow = rawByKey[normRow.import_key];
+      if (!rawRow) return;
+
+      var entityType = detectEntityType_(rawRow.source_tab);
+      if (!entityType) return;
+
+      var rawObj = {};
+      try { rawObj = JSON.parse(rawRow.raw_json || '{}'); } catch (e) { return; }
+
+      var fieldMap = ENTITY_MAPS[entityType];
+      var payload  = applyMap_(rawObj, fieldMap);
+
+      if (entityType === 'STAFF')     payload = postProcessStaff_(payload);
+      if (entityType === 'WORK_LOG') {
+        if (payload.person_code) {
+          var nameKey = String(payload.person_code).trim().toLowerCase();
+          if (nameCodeMap[nameKey]) payload.person_code = nameCodeMap[nameKey];
+        }
+        if (!payload.actor_role) payload.actor_role = detectDefaultRole_(rawRow.source_tab);
+      }
+
+      var validation = MigrationValidator.validate(entityType, payload);
+      var valStatus  = validation.valid ? 'VALID' : 'INVALID';
+
+      DAL.updateWhere(
+        MigrationConfig.TABLES.NORMALIZED,
+        { norm_id: normRow.norm_id },
+        {
+          normalized_json:   JSON.stringify(payload),
+          validation_status: valStatus,
+          validation_notes:  validation.errors.join('; '),
+          normalized_at:     new Date().toISOString(),
+          normalized_by:     actorEmail
+        },
+        { callerModule: MODULE }
+      );
+
+      if (validation.valid) { fixed++; } else { stillInvalid++; }
+    });
+
+    Logger.info('RENORMALIZE_INVALID_COMPLETE', {
+      module: MODULE, batch: batch, fixed: fixed, stillInvalid: stillInvalid
+    });
+
+    return { fixed: fixed, stillInvalid: stillInvalid };
+  }
+
+  return { normalizeAll: normalizeAll, reNormalizeInvalid: reNormalizeInvalid };
 }());
