@@ -24,6 +24,8 @@ var MigrationValidator = (function () {
     required_(payload, 'person_code', errors);
     required_(payload, 'name', errors);
     required_(payload, 'role', errors);
+    required_(payload, 'pay_design', errors);
+    required_(payload, 'pay_qc', errors);
     // email is not present in Stacey STAFF_ROSTER — omit from required check
     if (payload.role && VALID_ROLES.indexOf(payload.role) === -1) {
       errors.push('role "' + payload.role + '" is not a valid role');
