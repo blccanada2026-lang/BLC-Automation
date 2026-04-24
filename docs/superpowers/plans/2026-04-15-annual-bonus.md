@@ -27,7 +27,7 @@
 **Files:**
 - Modify: `src/10-payroll/QuarterlyBonusEngine.gs` (lines 435–622)
 
-- [ ] **Step 1: Add counters and return value to `runAnnualBonus_`**
+- [x] **Step 1: Add counters and return value to `runAnnualBonus_`**
 
   Replace the entire `runAnnualBonus_` function body. The function currently returns `undefined`. Changes: add `written = 0` and `skipped = 0` at the top; increment `skipped++` on the duplicate path; increment `written++` after `DAL.appendRow`; return `{ written, skipped, year }` at the end.
 
@@ -118,7 +118,7 @@
   }
   ```
 
-- [ ] **Step 2: Propagate return value through the public `runAnnualBonus`**
+- [x] **Step 2: Propagate return value through the public `runAnnualBonus`**
 
   Replace the `runAnnualBonus` public function (currently at line ~617):
 
@@ -137,7 +137,7 @@
   }
   ```
 
-- [ ] **Step 3: Add a test function to TestRunner.gs**
+- [x] **Step 3: Add a test function to TestRunner.gs**
 
   Append this function at the bottom of `src/setup/TestRunner.gs`:
 
@@ -173,7 +173,7 @@
   }
   ```
 
-- [ ] **Step 4: Run the test from Apps Script editor**
+- [ ] **Step 4: Run the test from Apps Script editor** ← PENDING: manual step, requires GAS editor
 
   Open the Apps Script editor → select `testAnnualBonus` → Run.
 
@@ -195,7 +195,7 @@
   ✅ PASS
   ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add src/10-payroll/QuarterlyBonusEngine.gs src/setup/TestRunner.gs
@@ -209,7 +209,7 @@
 **Files:**
 - Modify: `src/07-portal/Portal.gs`
 
-- [ ] **Step 1: Add the portal function**
+- [x] **Step 1: Add the portal function**
 
   In `src/07-portal/Portal.gs`, add the following block immediately after the `portal_runQuarterlyBonus` function (search for `portal_runQuarterlyBonus` to find the insertion point):
 
@@ -233,7 +233,7 @@
   }
   ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
   ```bash
   git add src/07-portal/Portal.gs
@@ -247,7 +247,7 @@
 **Files:**
 - Modify: `src/07-portal/PortalData.gs` (function `getLeaderDashboard`, lines 273–353)
 
-- [ ] **Step 1: Add annual bonus map read after the payroll status block**
+- [x] **Step 1: Add annual bonus map read after the payroll status block**
 
   In `getLeaderDashboard`, the current section 3 (lines 328–353) reads from `MART_PAYROLL_SUMMARY` and builds `payrollStatus`. Add a new section 4 immediately after the `payrollStatus` build, before the `return JSON.stringify(...)` call:
 
@@ -267,7 +267,7 @@
     } catch (e) { /* FACT_QUARTERLY_BONUS may be empty */ }
   ```
 
-- [ ] **Step 2: Add `annual_bonus_inr` field to each payroll_status row**
+- [x] **Step 2: Add `annual_bonus_inr` field to each payroll_status row**
 
   In the same function, find the `payrollStatus.push(...)` call (currently inside the `martRows` loop). Add `annual_bonus_inr` to the object:
 
@@ -284,7 +284,7 @@
         });
   ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
   ```bash
   git add src/07-portal/PortalData.gs
@@ -298,7 +298,7 @@
 **Files:**
 - Modify: `src/07-portal/PortalView.html`
 
-- [ ] **Step 1: Add the button HTML**
+- [x] **Step 1: Add the button HTML**
 
   Find line 345 (the "Run Quarterly Bonus" button). Insert the new button immediately after it:
 
@@ -307,7 +307,7 @@
         <button class="btn-muted btn-sm" id="btn-run-annual-bonus" style="display:none">🎁 Run Annual Bonus</button>
   ```
 
-- [ ] **Step 2: Add the event listener**
+- [x] **Step 2: Add the event listener**
 
   Find line 866 (the `btn-run-quarterly-bonus` listener). Add the new listener immediately after it:
 
@@ -316,7 +316,7 @@
   document.getElementById('btn-run-annual-bonus').addEventListener('click',    runAnnualBonus);
   ```
 
-- [ ] **Step 3: Add to `onDataLoaded` visibility block**
+- [x] **Step 3: Add to `onDataLoaded` visibility block**
 
   Find line 948 (the `btn-run-quarterly-bonus` visibility line). Add the new line immediately after it:
 
@@ -325,7 +325,7 @@
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-annual-bonus').style.display      = 'inline-block';
   ```
 
-- [ ] **Step 4: Add to `allBtns` in `renderPortal_`**
+- [x] **Step 4: Add to `allBtns` in `renderPortal_`**
 
   Find line 1187 (the `allBtns` array). Add `'btn-run-annual-bonus'` to the list:
 
@@ -336,7 +336,7 @@
                  'btn-run-quarterly-bonus','btn-run-annual-bonus','btn-approve-payroll','lbl-test-mode'];
   ```
 
-- [ ] **Step 5: Add the `runAnnualBonus()` JS function**
+- [x] **Step 5: Add the `runAnnualBonus()` JS function**
 
   Find the `runQuarterlyBonus()` function (search for `function runQuarterlyBonus`). Add the following function immediately after its closing brace:
 
@@ -377,7 +377,7 @@
   }
   ```
 
-- [ ] **Step 6: Add "Annual Bonus" column to payroll status table header**
+- [x] **Step 6: Add "Annual Bonus" column to payroll status table header**
 
   Find line 2304 (the `['Person', 'Base INR', 'Bonus INR', 'Total INR', 'Status']` header array). Replace it:
 
@@ -385,7 +385,7 @@
   ['Person', 'Base INR', 'Bonus INR', 'Annual Bonus', 'Total INR', 'Status'].forEach(function(h) {
   ```
 
-- [ ] **Step 7: Add "Annual Bonus" cell to payroll status table rows**
+- [x] **Step 7: Add "Annual Bonus" cell to payroll status table rows**
 
   Find the data row rendering (around line 2322). Currently it renders `[baseInr, row.supervisor_bonus || 0, row.total_pay || 0]` as cells. Replace that block with one that includes the annual bonus cell:
 
@@ -410,7 +410,7 @@
       ptr.appendChild(totalTd);
   ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
   ```bash
   git add src/07-portal/PortalView.html
@@ -423,12 +423,12 @@
 
 After all tasks are complete, verify:
 
-- [ ] `runAnnualBonus` returns `{ written, skipped, year }` (not `undefined`)
-- [ ] `portal_runAnnualBonus` is callable from the portal (GAS `google.script.run`)
-- [ ] `getLeaderDashboard` response includes `annual_bonus_inr` on every payroll row
-- [ ] `btn-run-annual-bonus` appears in the leader dashboard for CEO and is hidden for other roles
-- [ ] December warning does NOT appear when running in December; warning DOES appear in all other months
-- [ ] Payroll table has 6 columns: Person, Base INR, Bonus INR, Annual Bonus, Total INR, Status
-- [ ] "—" shown in grey when `annual_bonus_inr === 0`; formatted INR shown when > 0
-- [ ] Running annual bonus twice: second run toast says "0 written, N skipped"
-- [ ] `testAnnualBonus()` passes in Apps Script editor
+- [x] `runAnnualBonus` returns `{ written, skipped, year }` (not `undefined`)
+- [x] `portal_runAnnualBonus` is callable from the portal (GAS `google.script.run`)
+- [x] `getLeaderDashboard` response includes `annual_bonus_inr` on every payroll row
+- [x] `btn-run-annual-bonus` appears in the leader dashboard for CEO and is hidden for other roles
+- [x] December warning does NOT appear when running in December; warning DOES appear in all other months
+- [x] Payroll table has 6 columns: Person, Base INR, Bonus INR, Annual Bonus, Total INR, Status
+- [x] "—" shown in grey when `annual_bonus_inr === 0`; formatted INR shown when > 0
+- [x] Running annual bonus twice: second run toast says "0 written, N skipped"
+- [x] `testAnnualBonus()` passes in Apps Script editor — written=5 skipped=0 on first run, written=0 skipped=5 on second run (2026-04-15)
