@@ -3441,6 +3441,27 @@ function runNormalizeAll() {
 }
 
 /**
+ * Re-normalizes only INVALID rows in MIGRATION_NORMALIZED.
+ * Run after fixing ROLE_MAP or column alias maps to recover previously blocked rows.
+ * Reports fixed vs still-invalid counts.
+ */
+function runReNormalizeInvalid() {
+  header_('RE-NORMALIZE INVALID — RUNNING');
+  try {
+    var result = MigrationNormalizer.reNormalizeInvalid(Session.getActiveUser().getEmail());
+    pass_('fixed=' + result.fixed + ' stillInvalid=' + result.stillInvalid);
+    if (result.stillInvalid > 0) {
+      info_('Some rows still INVALID — check MIGRATION_NORMALIZED.validation_notes and MIGRATION_EXCEPTION_REPORT');
+    } else {
+      pass_('All previously INVALID rows resolved — run runReplayAll() to continue');
+    }
+  } catch (e) {
+    fail_('runReNormalizeInvalid threw: ' + e.message);
+  }
+  line_();
+}
+
+/**
  * Creates (or recreates) the MIGRATION_EXCEPTION_REPORT sheet with correct headers.
  * Safe to run multiple times — clears and rewrites the header row.
  * Uses SpreadsheetApp directly — this is a setup/diagnostic function, not a production data write.
