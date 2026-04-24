@@ -793,6 +793,7 @@ function seedDimStaffRoster_() {
     ['RKG',  'RaviKumar Gummadi', 'ravigummadi12@gmail.com',           'DESIGNER',    'BCH', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
     ['NMM',  'Nitesh Mishra',     'nitishrickybahl.nrb@gmail.com',     'DESIGNER',    'PBG', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
     ['AR001','Abhisek Rit',       'abhisek.architect@gmail.com',       'DESIGNER',    'SGO', 'SGO', 'INR', 350, 350, 'TRUE',  'TRUE',  '2026-03-12', ''],
+    ['BIT',  'Bittu Dalui',      'bittudalui2002@gmail.com',          'DESIGNER',    'SVN', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
     // Inactive (active='FALSE', effective_to='2025-12-31')
     ['SKR',  'Sai Kris',          'sai.kris@bluelotuscanada.ca',       'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
     ['SMB',  'Sammy Banerjee',    'sammy@bluelotuscanada.ca',          'DESIGNER',    '',    'SGO', 'INR', 450, 450, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
