@@ -24,6 +24,8 @@ var MigrationValidator = (function () {
     required_(payload, 'person_code', errors);
     required_(payload, 'name', errors);
     required_(payload, 'role', errors);
+    required_(payload, 'pay_design', errors);
+    required_(payload, 'pay_qc', errors);
     // email is not present in Stacey STAFF_ROSTER — omit from required check
     if (payload.role && VALID_ROLES.indexOf(payload.role) === -1) {
       errors.push('role "' + payload.role + '" is not a valid role');
@@ -48,6 +50,10 @@ var MigrationValidator = (function () {
     if (payload.hours !== undefined && payload.hours !== null &&
         (isNaN(Number(payload.hours)) || Number(payload.hours) < 0)) {
       errors.push('hours must be a non-negative number, got: ' + payload.hours);
+    }
+    // person_code containing a space indicates name-to-code resolution failed
+    if (payload.person_code && String(payload.person_code).indexOf(' ') !== -1) {
+      errors.push('person_code appears to be an unresolved name: "' + payload.person_code + '" — check STAFF_ROSTER name match');
     }
   }
 
