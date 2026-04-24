@@ -76,18 +76,19 @@ var StaceyAuditor = (function () {
     var actor = RBAC.resolveActor(actorEmail);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
 
-    var n     = sampleSize || 5;
-    var sheet = getStaceySheet_(tabName);
-    var last  = sheet.getLastRow();
+    var n         = sampleSize || 5;
+    var sheet     = getStaceySheet_(tabName);
+    var last      = sheet.getLastRow();
+    var headerRow = MigrationConfig.getHeaderRow(tabName); // 2 for STAFF_ROSTER (title on row 1)
 
-    if (last < 1) {
+    if (last < headerRow + 1) {
       Logger.warn('STACEY_SAMPLE_EMPTY', { module: MODULE, tab: tabName });
       return { headers: [], rows: [] };
     }
 
-    var endRow   = Math.min(last, n + 1);
+    var endRow   = Math.min(last, headerRow + n);
     var numCols  = sheet.getLastColumn();
-    var rawData  = sheet.getRange(1, 1, endRow, numCols).getValues();
+    var rawData  = sheet.getRange(headerRow, 1, endRow - headerRow + 1, numCols).getValues();
     var headers  = rawData[0].map(function (h) { return String(h).trim(); });
     var dataRows = rawData.slice(1).map(function (row) {
       var obj = {};

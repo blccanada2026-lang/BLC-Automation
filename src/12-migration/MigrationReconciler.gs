@@ -45,7 +45,7 @@ var MigrationReconciler = (function () {
                  if (r.validation_status === 'INVALID') byEntity[key].invalid++;
                  if (r.replay_status === 'REPLAYED')    byEntity[key].replayed++;
                  if (r.replay_status === 'FAILED')      byEntity[key].failed++;
-                 if (r.replay_status === 'PENDING')     byEntity[key].pending++;
+                 if (r.replay_status === 'PENDING' && r.validation_status !== 'INVALID') byEntity[key].pending++;
                });
     return byEntity;
   }
