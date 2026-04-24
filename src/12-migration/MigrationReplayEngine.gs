@@ -352,10 +352,10 @@ var MigrationReplayEngine = (function () {
 
         try {
           var result = handler(payload, batch, actorEmail);
+          markReplayed_(row.norm_id, actorEmail); // always sync status — data written in prior run or just now
           if (result.skipped) {
             skipped++;
           } else {
-            markReplayed_(row.norm_id, actorEmail);
             replayed++;
           }
         } catch (e) {
