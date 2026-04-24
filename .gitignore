@@ -1,1 +1,9 @@
 .worktrees/
+
+# Local tooling — not application source
+.mcp.json
+.playwright-mcp/
+code-review-graph/
+.claude/mcp.json
+.claude/settings_backup.json
+.claude/rules/code-graph-first.md
