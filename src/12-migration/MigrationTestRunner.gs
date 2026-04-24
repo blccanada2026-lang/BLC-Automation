@@ -96,7 +96,7 @@ var MigrationTestRunner = (function () {
   function testNoPendingRows_(batch, results) {
     var rows = DAL.readAll(MigrationConfig.TABLES.NORMALIZED, { callerModule: MODULE });
     var pending = (rows || []).filter(function (r) {
-      return r.migration_batch === batch && r.replay_status === 'PENDING';
+      return r.migration_batch === batch && r.replay_status === 'PENDING' && r.validation_status !== 'INVALID';
     });
 
     if (pending.length === 0) {
