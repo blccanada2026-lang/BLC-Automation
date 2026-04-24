@@ -2337,14 +2337,16 @@ function testWorkLogPeriodBoundary() {
       { periodId: SUITE_PERIOD_ID, callerModule: 'TestRunner' }
     );
     var boundaryLog = workLogs.filter(function(r) {
-      return r.work_date === periodBoundaryDate || String(r.work_date).indexOf(periodBoundaryDate) === 0;
+      var wd = r.work_date instanceof Date ? Utilities.formatDate(r.work_date, 'America/Regina', 'yyyy-MM-dd') : String(r.work_date);
+      return wd === periodBoundaryDate || wd.indexOf(periodBoundaryDate) === 0;
     });
     assert_(results, counters, 'Period-boundary work log row written to FACT_WORK_LOGS',
       workLogs.length >= 1, 'workLogs.length=' + workLogs.length);
     assert_(results, counters, 'Period-boundary work log has hours = 1.0',
       workLogs.some(function(r) {
+        var wd = r.work_date instanceof Date ? Utilities.formatDate(r.work_date, 'America/Regina', 'yyyy-MM-dd') : String(r.work_date);
         return Math.abs(parseFloat(r.hours) - 1.0) < 0.01 &&
-               (r.work_date === periodBoundaryDate || String(r.work_date).indexOf(periodBoundaryDate) === 0);
+               (wd === periodBoundaryDate || wd.indexOf(periodBoundaryDate) === 0);
       }),
       'logs found: ' + workLogs.map(function(r) { return r.work_date + ':' + r.hours; }).join(','));
 
@@ -3040,6 +3042,26 @@ function runNormalizeAll() {
     fail_('runNormalizeAll threw: ' + e.message);
   }
   line_();
+}
+
+/**
+ * Creates (or recreates) the MIGRATION_EXCEPTION_REPORT sheet with correct headers.
+ * Safe to run multiple times — clears and rewrites the header row.
+ * Uses SpreadsheetApp directly — this is a setup/diagnostic function, not a production data write.
+ */
+function runCreateExceptionReport() {
+  var headers = [
+    'exception_id', 'source_table', 'source_row_ref', 'entity_type',
+    'failure_reason', 'raw_data_snapshot', 'suggested_fix',
+    'owner', 'severity', 'retry_eligible', 'retry_status',
+    'created_at', 'resolved_at', 'resolved_by', 'notes'
+  ];
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('MIGRATION_EXCEPTION_REPORT') || ss.insertSheet('MIGRATION_EXCEPTION_REPORT');
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  console.log('MIGRATION_EXCEPTION_REPORT created with ' + headers.length + ' columns');
 }
 
 /**

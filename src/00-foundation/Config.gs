@@ -213,9 +213,10 @@ var Config = (function () {
     // Migration tables — used exclusively by src/12-migration/
     // Raw import landing zone, normalised staging, and audit trail
     // for the Stacey V2 → Nexus V3 migration.
-    MIGRATION_RAW_IMPORT: 'MIGRATION_RAW_IMPORT',
-    MIGRATION_NORMALIZED: 'MIGRATION_NORMALIZED',
-    MIGRATION_AUDIT_LOG:  'MIGRATION_AUDIT_LOG'
+    MIGRATION_RAW_IMPORT:       'MIGRATION_RAW_IMPORT',
+    MIGRATION_NORMALIZED:       'MIGRATION_NORMALIZED',
+    MIGRATION_AUDIT_LOG:        'MIGRATION_AUDIT_LOG',
+    MIGRATION_EXCEPTION_REPORT: 'MIGRATION_EXCEPTION_REPORT'
 
   };
 

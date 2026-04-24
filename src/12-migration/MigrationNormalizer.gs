@@ -133,6 +133,48 @@ var MigrationNormalizer = (function () {
     return 'DESIGNER';
   }
 
+  // Classifies exception severity based on entity type and validation error content.
+  // BLOCKER: required financial/identity fields missing. HIGH: period unresolvable.
+  // MEDIUM: optional fields on completed jobs. LOW: everything else.
+  function classifySeverity_(entityType, errors) {
+    var errorStr = errors.join(' ');
+    if (entityType === 'STAFF' && errorStr.indexOf('pay_design') !== -1) return 'BLOCKER';
+    if (entityType === 'STAFF' && errorStr.indexOf('pay_qc') !== -1)     return 'BLOCKER';
+    if (entityType === 'JOB'   && errorStr.indexOf('client_code') !== -1) return 'BLOCKER';
+    if (entityType === 'WORK_LOG' && errorStr.indexOf('period_id') !== -1) return 'HIGH';
+    if (entityType === 'JOB') return 'MEDIUM';
+    return 'LOW';
+  }
+
+  // Writes a row to MIGRATION_EXCEPTION_REPORT for a failed normalisation.
+  // Wrapped in try/catch so a write failure here never aborts the main loop.
+  function writeException_(importKey, sourceTab, entityType, errors, rawObj) {
+    try {
+      var severity = classifySeverity_(entityType, errors);
+      DAL.appendRow(MigrationConfig.TABLES.EXCEPTION_REPORT, {
+        exception_id:      Identifiers.generateId(),
+        source_table:      sourceTab,
+        source_row_ref:    importKey,
+        entity_type:       entityType,
+        failure_reason:    errors.join('; '),
+        raw_data_snapshot: JSON.stringify(rawObj).substring(0, 500),
+        suggested_fix:     severity === 'BLOCKER'
+          ? 'Required field missing — fix in source and re-run normalizeAll'
+          : 'Review raw data snapshot and correct mapping or source value',
+        owner:             severity === 'BLOCKER' ? 'CEO' : 'SYSTEM',
+        severity:          severity,
+        retry_eligible:    'TRUE',
+        retry_status:      'PENDING',
+        created_at:        new Date().toISOString(),
+        resolved_at:       '',
+        resolved_by:       '',
+        notes:             ''
+      }, { callerModule: MODULE });
+    } catch (e) {
+      Logger.warn('EXCEPTION_REPORT_WRITE_FAILED', { module: MODULE, importKey: importKey, error: e.message });
+    }
+  }
+
   /**
    * Strips currency symbols (₹, $, C$, USD) and whitespace from a rate string,
    * returning a plain numeric string.
@@ -343,7 +385,10 @@ var MigrationNormalizer = (function () {
       var valStatus   = validation.valid ? 'VALID' : 'INVALID';
       var valNotes    = validation.errors.join('; ');
 
-      if (!validation.valid) invalid++;
+      if (!validation.valid) {
+        invalid++;
+        writeException_(raw.import_key, raw.source_tab, entityType, validation.errors, rawObj);
+      }
 
       buffer.push({
         norm_id:           Identifiers.generateId(),
