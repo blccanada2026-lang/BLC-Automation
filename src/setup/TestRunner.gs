@@ -2337,14 +2337,16 @@ function testWorkLogPeriodBoundary() {
       { periodId: SUITE_PERIOD_ID, callerModule: 'TestRunner' }
     );
     var boundaryLog = workLogs.filter(function(r) {
-      return r.work_date === periodBoundaryDate || String(r.work_date).indexOf(periodBoundaryDate) === 0;
+      var wd = r.work_date instanceof Date ? Utilities.formatDate(r.work_date, 'America/Regina', 'yyyy-MM-dd') : String(r.work_date);
+      return wd === periodBoundaryDate || wd.indexOf(periodBoundaryDate) === 0;
     });
     assert_(results, counters, 'Period-boundary work log row written to FACT_WORK_LOGS',
       workLogs.length >= 1, 'workLogs.length=' + workLogs.length);
     assert_(results, counters, 'Period-boundary work log has hours = 1.0',
       workLogs.some(function(r) {
+        var wd = r.work_date instanceof Date ? Utilities.formatDate(r.work_date, 'America/Regina', 'yyyy-MM-dd') : String(r.work_date);
         return Math.abs(parseFloat(r.hours) - 1.0) < 0.01 &&
-               (r.work_date === periodBoundaryDate || String(r.work_date).indexOf(periodBoundaryDate) === 0);
+               (wd === periodBoundaryDate || wd.indexOf(periodBoundaryDate) === 0);
       }),
       'logs found: ' + workLogs.map(function(r) { return r.work_date + ':' + r.hours; }).join(','));
 
