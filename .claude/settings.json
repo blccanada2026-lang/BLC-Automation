@@ -10,9 +10,11 @@
     "reporting": "Looker Studio",
     "accounting": "Xero (external)"
   },
-  "agents": { "directory": ".claude/agents", "default": "architect" },
-  "rules": { "directory": ".claude/rules", "enforced": true },
-  "hooks": { "directory": ".claude/hooks", "enforced": true },
+  "projectConfig": {
+    "agents": { "directory": ".claude/agents", "default": "architect" },
+    "rules": { "directory": ".claude/rules", "enforced": true },
+    "hooks": { "directory": ".claude/hooks", "enforced": true }
+  },
   "environments": ["DEV", "STAGING", "PROD"],
   "current_environment": "DEV"
 }
