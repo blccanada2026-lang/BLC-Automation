@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BLC — Intake Queue</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      background: #f5f5f5;
+      color: #333;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: #1a73e8;
+      color: #fff;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header h1 { font-size: 20px; font-weight: 600; }
+    .header .subtitle { font-size: 13px; opacity: 0.85; margin-top: 2px; }
+    .header .user-badge {
+      background: rgba(255,255,255,0.2);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+    }
+
+    /* ── Loading / Error states ── */
+    .state-box {
+      max-width: 600px;
+      margin: 60px auto;
+      text-align: center;
+      padding: 24px;
+    }
+    .state-box .icon { font-size: 48px; margin-bottom: 12px; }
+    .state-box h2 { font-size: 20px; margin-bottom: 8px; color: #444; }
+    .state-box p { color: #888; font-size: 14px; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 4px solid #e0e0e0;
+      border-top-color: #1a73e8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Content area ── */
+    .content { padding: 20px 24px; }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: bold;
+      color: #555;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      background: #1a73e8;
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: normal;
+    }
+    .badge.urgent { background: #d93025; }
+
+    /* ── Job cards (mobile-first) ── */
+    .job-list { display: flex; flex-direction: column; gap: 16px; }
+
+    .job-card {
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid #e0e0e0;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .job-card.is-urgent { border-left: 4px solid #d93025; }
+    .job-card.is-done { opacity: 0.45; }
+
+    .job-card-header {
+      background: #f8f9fa;
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .job-number { font-size: 18px; font-weight: bold; color: #1a73e8; }
+    .job-name { font-size: 12px; color: #666; margin-top: 2px; }
+    .job-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+    .tag-client  { background: #e8f0fe; color: #1a73e8; }
+    .tag-product { background: #e6f4ea; color: #137333; }
+    .tag-urgent  { background: #fce8e6; color: #d93025; }
+
+    .job-card-body { padding: 12px 16px; }
+
+    .info-row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .info-item { display: flex; flex-direction: column; }
+    .info-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+    .info-value { font-size: 13px; font-weight: 500; margin-top: 2px; }
+    .info-value.due-urgent { color: #d93025; font-weight: bold; }
+
+    .notes-row {
+      background: #fffde7;
+      border: 1px solid #fff9c4;
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: #555;
+      margin-bottom: 12px;
+    }
+    .notes-row strong { color: #333; }
+
+    .alloc-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      align-items: end;
+      margin-top: 8px;
+    }
+    @media (max-width: 600px) {
+      .alloc-row { grid-template-columns: 1fr; }
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      color: #888;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .form-group select,
+    .form-group input[type="date"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      background: #fff;
+    }
+    .form-group select:focus,
+    .form-group input:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(26,115,232,0.15);
+    }
+
+    .btn-allocate {
+      width: 100%;
+      padding: 9px 16px;
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-allocate:hover:not(:disabled) { background: #1557b0; }
+    .btn-allocate:disabled { background: #9e9e9e; cursor: not-allowed; }
+
+    /* ── MiTek entry panel ── */
+    .mitek-panel {
+      background: #fff;
+      border: 2px solid #1a73e8;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .mitek-panel-header {
+      background: #1a73e8;
+      color: #fff;
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+    .mitek-panel-header h3 { font-size: 14px; font-weight: 600; }
+    .mitek-panel-header .hint { font-size: 12px; opacity: 0.8; }
+    .mitek-panel-body { padding: 16px; display: none; }
+    .mitek-panel-body.open { display: block; }
+    .mitek-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    @media (max-width: 600px) { .mitek-grid { grid-template-columns: 1fr; } }
+    .mitek-grid .span2 { grid-column: span 2; }
+    .mitek-grid .span3 { grid-column: span 3; }
+    .mitek-submit-row { display: flex; gap: 12px; align-items: center; margin-top: 4px; }
+    .btn-mitek-submit {
+      padding: 9px 24px;
+      background: #137333;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-mitek-submit:hover:not(:disabled) { background: #0d5724; }
+    .btn-mitek-submit:disabled { background: #9e9e9e; cursor: not-allowed; }
+    .btn-mitek-clear {
+      padding: 9px 16px;
+      background: #fff;
+      color: #555;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .mitek-status { font-size: 13px; }
+    .mitek-status.success { color: #0f9d58; font-weight: bold; }
+    .mitek-status.error   { color: #d93025; }
+    .urgent-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      user-select: none;
+    }
+    .urgent-toggle input { cursor: pointer; width: 16px; height: 16px; }
+    .urgent-toggle.checked { border-color: #d93025; background: #fce8e6; color: #d93025; font-weight: bold; }
+
+    .alloc-status {
+      margin-top: 6px;
+      font-size: 12px;
+      min-height: 16px;
+    }
+    .alloc-status.success { color: #0f9d58; font-weight: bold; }
+    .alloc-status.error   { color: #d93025; }
+
+    /* ── Empty state ── */
+    .empty-state {
+      text-align: center;
+      padding: 48px 24px;
+      color: #888;
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state h3 { font-size: 18px; color: #555; margin-bottom: 8px; }
+    .empty-state p { font-size: 13px; }
+
+    /* ── Refresh button ── */
+    .toolbar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 14px;
+    }
+    .btn-refresh {
+      padding: 7px 16px;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      color: #555;
+    }
+    .btn-refresh:hover { background: #f1f3f4; }
+
+    /* ── Tab navigation ── */
+    .tab-bar {
+      display: flex;
+      background: #1557b0;
+      padding: 0 24px;
+      gap: 4px;
+    }
+    .tab-btn {
+      padding: 10px 20px;
+      background: transparent;
+      border: none;
+      color: rgba(255,255,255,0.7);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: #fff; }
+    .tab-btn.active {
+      color: #fff;
+      border-bottom-color: #fff;
+    }
+
+    /* ── Supervisor change form ── */
+    .sc-card {
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid #e0e0e0;
+      max-width: 640px;
+      margin: 24px auto;
+      overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .sc-card-header {
+      background: #f8f9fa;
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .sc-card-header h3 { font-size: 16px; color: #333; margin: 0 0 4px; }
+    .sc-card-header p  { font-size: 12px; color: #888; margin: 0; }
+    .sc-card-body { padding: 20px; }
+
+    .sc-form-group { margin-bottom: 16px; }
+    .sc-form-group label {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+      margin-bottom: 5px;
+      font-weight: 600;
+    }
+    .sc-form-group select,
+    .sc-form-group input[type="date"],
+    .sc-form-group textarea {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      background: #fff;
+      font-family: inherit;
+    }
+    .sc-form-group select:focus,
+    .sc-form-group input:focus,
+    .sc-form-group textarea:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(26,115,232,0.15);
+    }
+    .sc-current-sup {
+      background: #f0f4ff;
+      border: 1px solid #c5d9ff;
+      border-radius: 4px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #333;
+      margin-bottom: 16px;
+    }
+    .sc-current-sup span { color: #888; font-size: 12px; display: block; margin-bottom: 2px; }
+    .sc-current-sup strong { font-size: 14px; }
+
+    .btn-sc-submit {
+      width: 100%;
+      padding: 11px;
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-sc-submit:hover:not(:disabled) { background: #1557b0; }
+    .btn-sc-submit:disabled { background: #9e9e9e; cursor: not-allowed; }
+
+    .sc-result {
+      margin-top: 12px;
+      padding: 12px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      display: none;
+    }
+    .sc-result.success { background: #e6f4ea; color: #137333; border: 1px solid #b7dfbf; }
+    .sc-result.error   { background: #fce8e6; color: #c5221f; border: 1px solid #f5c0bc; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div>
+    <div class="h1" style="font-size:20px;font-weight:600;">BLC — Project Manager Portal</div>
+    <div class="subtitle" id="headerSubtitle">Allocate pending jobs from email</div>
+  </div>
+  <div class="user-badge" id="userBadge">Loading…</div>
+</div>
+
+<!-- Tab navigation -->
+<div class="tab-bar">
+  <button class="tab-btn active" id="tab-intake" onclick="switchTab('intake')">
+    📋 Intake Queue
+  </button>
+  <button class="tab-btn" id="tab-supervisor" onclick="switchTab('supervisor')">
+    👤 Supervisor Change
+  </button>
+</div>
+
+<!-- Loading state -->
+<div class="state-box" id="loadingState">
+  <div class="spinner"></div>
+  <h2>Loading queue…</h2>
+  <p>Fetching pending jobs from the inbox.</p>
+</div>
+
+<!-- Error state -->
+<div class="state-box" id="errorState" style="display:none;">
+  <div class="icon">🔒</div>
+  <h2>Access Denied</h2>
+  <p id="errorMsg">You do not have permission to view this page.</p>
+</div>
+
+<!-- Supervisor Change Section -->
+<div id="supervisorSection" style="display:none;">
+  <div class="content">
+    <div class="sc-card">
+      <div class="sc-card-header">
+        <h3>Request Supervisor Change</h3>
+        <p>Changes require approval from Raj before they take effect. An email will be sent automatically.</p>
+      </div>
+      <div class="sc-card-body" id="scFormBody">
+        <div class="state-box" id="scLoading">
+          <div class="spinner"></div>
+          <h2>Loading…</h2>
+        </div>
+        <div id="scForm" style="display:none;">
+          <div class="sc-form-group">
+            <label>Designer <span style="color:#d93025;">*</span></label>
+            <select id="sc-designer" onchange="onDesignerSelect()">
+              <option value="">— Select designer —</option>
+            </select>
+          </div>
+
+          <div class="sc-current-sup" id="scCurrentSup" style="display:none;">
+            <span>Current Supervisor</span>
+            <strong id="scCurrentSupName">—</strong>
+          </div>
+
+          <div class="sc-form-group">
+            <label>New Supervisor <span style="color:#d93025;">*</span></label>
+            <select id="sc-new-sup">
+              <option value="">— Select new supervisor —</option>
+            </select>
+          </div>
+
+          <div class="sc-form-group">
+            <label>Effective Date <span style="color:#d93025;">*</span></label>
+            <input type="date" id="sc-effective-date">
+          </div>
+
+          <div class="sc-form-group">
+            <label>Reason / Notes</label>
+            <textarea id="sc-notes" rows="3"
+              placeholder="e.g. Designer moving to a different client team, TL restructure…"
+              style="resize:vertical;"></textarea>
+          </div>
+
+          <button class="btn-sc-submit" id="scSubmitBtn" onclick="submitSupervisorChange()">
+            Submit for Approval
+          </button>
+          <div class="sc-result" id="scResult"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Main content -->
+<div class="content" id="mainContent" style="display:none;">
+  <div class="toolbar">
+    <button class="btn-refresh" onclick="loadQueue()">↻ Refresh</button>
+  </div>
+
+  <!-- MiTek entry panel -->
+  <div class="mitek-panel" id="mitekPanel">
+    <div class="mitek-panel-header" onclick="toggleMitek()">
+      <div>
+        <h3>➕ Add Job Manually</h3>
+        <div class="hint">MiTek (SBS / MATIX-SK) · Alpine iCommand (NORSPAN) · WhatsApp</div>
+      </div>
+      <span id="mitekToggleIcon">▼</span>
+    </div>
+    <div class="mitek-panel-body" id="mitekBody">
+      <div class="mitek-grid">
+        <div class="form-group">
+          <label>Job # <span style="color:#d93025;">*</span></label>
+          <input type="text" id="mk-jobnum"
+            placeholder="SBS: 2601-0883-A · MATIX: 160769 · NORSPAN: Q260161"
+            style="text-transform:uppercase;">
+        </div>
+        <div class="form-group">
+          <label>Client <span style="color:#d93025;">*</span></label>
+          <select id="mk-client">
+            <option value="">— Select —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Product <span style="color:#d93025;">*</span></label>
+          <select id="mk-product">
+            <option value="">— Select —</option>
+            <option value="Roof Truss">Roof Truss</option>
+            <option value="Floor Truss">Floor Truss</option>
+            <option value="Wall Frame">Wall Frame</option>
+            <option value="I-Joist Floor">I-Joist Floor</option>
+            <option value="Lumber Estimation">Lumber Estimation</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Due Date</label>
+          <input type="date" id="mk-duedate">
+        </div>
+        <div class="form-group span2">
+          <label>Job Name</label>
+          <input type="text" id="mk-jobname" placeholder="e.g. Wells Crossing Lot 00.0038 Roof">
+        </div>
+        <div class="form-group span2">
+          <label>Model Name</label>
+          <input type="text" id="mk-model" placeholder="e.g. Stonehaven Rev.3">
+        </div>
+        <div class="form-group">
+          <label>Entered By</label>
+          <select id="mk-enteredby">
+            <option value="">— Select —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Source System</label>
+          <select id="mk-source">
+            <option value="MiTek">MiTek (SBS / MATIX-SK)</option>
+            <option value="Alpine">Alpine iCommand (NORSPAN)</option>
+            <option value="WhatsApp">WhatsApp message</option>
+            <option value="Email">Email</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-group span2">
+          <label>Notes</label>
+          <input type="text" id="mk-notes" placeholder="e.g. FTO Request, Submittals, job description...">
+        </div>
+      </div>
+      <div class="mitek-submit-row">
+        <label class="urgent-toggle" id="mk-urgent-label">
+          <input type="checkbox" id="mk-urgent" onchange="toggleUrgentStyle()">
+          🔴 Mark as Urgent (FTO / Rush)
+        </label>
+        <button class="btn-mitek-submit" id="mk-submit-btn" onclick="submitMitek()">
+          Add to Queue
+        </button>
+        <button class="btn-mitek-clear" onclick="clearMitek()">Clear</button>
+        <span class="mitek-status" id="mk-status"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">
+    Pending Jobs
+    <span class="badge" id="pendingCount">0</span>
+    <span class="badge urgent" id="urgentCount" style="display:none;">0 URGENT</span>
+  </div>
+
+  <div class="job-list" id="jobList"></div>
+</div>
+
+
+<script>
+  var _designers   = [];
+  var _allocatedBy = [];
+  var _defaultDate = "";
+
+  // Default expected date = today + 14 days
+  (function() {
+    var d = new Date();
+    d.setDate(d.getDate() + 14);
+    _defaultDate = d.toISOString().split("T")[0];
+  })();
+
+  // ── Load queue on page open ─────────────────────────────────
+  function loadQueue() {
+    document.getElementById("loadingState").style.display = "block";
+    document.getElementById("mainContent").style.display  = "none";
+    document.getElementById("errorState").style.display   = "none";
+
+    google.script.run
+      .withSuccessHandler(renderQueue)
+      .withFailureHandler(function(err) {
+        showError("Failed to load: " + err.message);
+      })
+      .getIntakeQueueData();
+  }
+
+  // ── Render the queue ────────────────────────────────────────
+  function renderQueue(data) {
+    document.getElementById("loadingState").style.display = "none";
+
+    if (!data.ok) {
+      showError(data.error || "Unknown error");
+      return;
+    }
+
+    document.getElementById("userBadge").textContent = data.userName + " (" + data.role + ")";
+    _scRequestedBy = data.userName || '';
+    _designers    = data.designers   || [];
+    _allocatedBy  = data.allocatedBy || [];
+    _mitekAllocBy = _allocatedBy;
+
+    var jobs     = data.pendingJobs || [];
+    var urgent   = jobs.filter(function(j) { return j.urgent === "Yes"; }).length;
+
+    document.getElementById("pendingCount").textContent = jobs.length;
+    if (urgent > 0) {
+      var ub = document.getElementById("urgentCount");
+      ub.textContent = urgent + " URGENT";
+      ub.style.display = "inline-block";
+    }
+
+    document.getElementById("mainContent").style.display = "block";
+
+    var list = document.getElementById("jobList");
+    list.innerHTML = "";
+
+    if (jobs.length === 0) {
+      list.innerHTML =
+        '<div class="empty-state">' +
+          '<div class="icon">✅</div>' +
+          '<h3>Queue is empty</h3>' +
+          '<p>No pending jobs. New jobs appear here automatically when emails arrive.</p>' +
+        '</div>';
+      return;
+    }
+
+    jobs.forEach(function(job, idx) {
+      list.appendChild(buildJobCard(job, idx));
+    });
+  }
+
+  // ── Build a single job card ─────────────────────────────────
+  function buildJobCard(job, idx) {
+    var card = document.createElement("div");
+    card.className = "job-card" + (job.urgent === "Yes" ? " is-urgent" : "");
+    card.id = "card-" + idx;
+
+    var dueDateStr = "";
+    if (job.dueDate) {
+      try { dueDateStr = new Date(job.dueDate).toLocaleDateString("en-CA"); }
+      catch(e) { dueDateStr = String(job.dueDate); }
+    }
+
+    var emailDateStr = "";
+    if (job.sourceEmailDate) {
+      try { emailDateStr = new Date(job.sourceEmailDate).toLocaleDateString("en-CA"); }
+      catch(e) { emailDateStr = String(job.sourceEmailDate); }
+    }
+
+    var designerOpts = _designers.map(function(d) {
+      return '<option value="' + esc(d) + '">' + esc(d) + '</option>';
+    }).join("");
+
+    var allocByOpts = _allocatedBy.map(function(d) {
+      return '<option value="' + esc(d) + '">' + esc(d) + '</option>';
+    }).join("");
+
+    card.innerHTML =
+      // Header
+      '<div class="job-card-header">' +
+        '<div>' +
+          '<div class="job-number">' + esc(job.jobNumber) + '</div>' +
+          (job.jobName ? '<div class="job-name">' + esc(job.jobName) + '</div>' : '') +
+          '<div class="job-badges">' +
+            '<span class="tag tag-client">' + esc(job.clientCode) + '</span>' +
+            '<span class="tag tag-product">' + esc(job.productType) + '</span>' +
+            (job.urgent === "Yes" ? '<span class="tag tag-urgent">URGENT</span>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div style="font-size:11px;color:#888;text-align:right;">' +
+          '<div>ID: ' + esc(job.intakeId) + '</div>' +
+          (emailDateStr ? '<div>Received: ' + emailDateStr + '</div>' : '') +
+        '</div>' +
+      '</div>' +
+
+      // Body
+      '<div class="job-card-body">' +
+
+        // Info row
+        '<div class="info-row">' +
+          (dueDateStr ?
+            '<div class="info-item">' +
+              '<span class="info-label">Due Date</span>' +
+              '<span class="info-value' + (job.urgent === "Yes" ? " due-urgent" : "") + '">' + dueDateStr + '</span>' +
+            '</div>' : '') +
+          (job.sourceFrom ?
+            '<div class="info-item">' +
+              '<span class="info-label">From</span>' +
+              '<span class="info-value">' + esc(job.sourceFrom) + '</span>' +
+            '</div>' : '') +
+        '</div>' +
+
+        // Notes
+        (job.notes ?
+          '<div class="notes-row"><strong>Notes:</strong> ' + esc(job.notes) + '</div>' : '') +
+
+        // Allocation controls
+        '<div class="alloc-row">' +
+          '<div class="form-group">' +
+            '<label>Designer</label>' +
+            '<select id="designer-' + idx + '">' +
+              '<option value="">— Select —</option>' + designerOpts +
+            '</select>' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label>Expected Completion</label>' +
+            '<input type="date" id="expdate-' + idx + '" value="' + (dueDateStr || _defaultDate) + '">' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label>Allocated By</label>' +
+            '<select id="allocby-' + idx + '">' +
+              '<option value="">— Select —</option>' + allocByOpts +
+            '</select>' +
+          '</div>' +
+        '</div>' +
+
+        '<div style="margin-top:12px;">' +
+          '<button class="btn-allocate" id="btn-' + idx + '" ' +
+            'onclick="doAllocate(' + idx + ',\'' + esc(job.intakeId) + '\',\'' +
+              esc(job.jobNumber) + '\',\'' + esc(job.clientCode) + '\',\'' +
+              esc(job.productType) + '\',\'' + escStr(job.notes) + '\')">' +
+            'Allocate Job' +
+          '</button>' +
+          '<div class="alloc-status" id="status-' + idx + '"></div>' +
+        '</div>' +
+
+      '</div>';
+
+    return card;
+  }
+
+  // ── Allocate a job ──────────────────────────────────────────
+  function doAllocate(idx, intakeId, jobNumber, clientCode, productType, notes) {
+    var designer = document.getElementById("designer-" + idx).value;
+    var expDate  = document.getElementById("expdate-"  + idx).value;
+    var allocBy  = document.getElementById("allocby-"  + idx).value;
+    var btn      = document.getElementById("btn-"      + idx);
+    var statusEl = document.getElementById("status-"   + idx);
+
+    if (!designer) { setStatus(statusEl, "error", "Please select a designer."); return; }
+    if (!allocBy)  { setStatus(statusEl, "error", "Please select Allocated By."); return; }
+
+    btn.disabled = true;
+    btn.textContent = "Allocating…";
+    statusEl.className = "alloc-status";
+    statusEl.textContent = "";
+
+    var payload = {
+      intakeId:           intakeId,
+      jobNumber:          jobNumber,
+      clientCode:         clientCode,
+      productType:        productType,
+      designerName:       designer,
+      expectedCompletion: expDate,
+      allocatedBy:        allocBy,
+      notes:              notes
+    };
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.ok) {
+          setStatus(statusEl, "success", result.msg);
+          btn.textContent = "✓ Done";
+          btn.style.background = "#0f9d58";
+          document.getElementById("card-" + idx).classList.add("is-done");
+        } else {
+          setStatus(statusEl, "error", result.msg);
+          btn.disabled = false;
+          btn.textContent = "Allocate Job";
+        }
+      })
+      .withFailureHandler(function(err) {
+        setStatus(statusEl, "error", "Error: " + err.message);
+        btn.disabled = false;
+        btn.textContent = "Allocate Job";
+      })
+      .allocateIntakeJob(payload);
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────
+  function setStatus(el, type, msg) {
+    el.className = "alloc-status " + type;
+    el.textContent = msg;
+  }
+
+  function showError(msg) {
+    document.getElementById("loadingState").style.display = "none";
+    document.getElementById("mainContent").style.display  = "none";
+    var err = document.getElementById("errorState");
+    err.style.display = "block";
+    document.getElementById("errorMsg").textContent = msg;
+  }
+
+  function esc(str) {
+    return String(str || "")
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
+      .replace(/'/g,"&#39;");
+  }
+
+  function escStr(str) {
+    // For use inside JS string literals (single-quoted onclick attributes)
+    return String(str || "").replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+  }
+
+  // ── MiTek panel functions ───────────────────────────────────
+  var _mitekOpen = false;
+  var _mitekLoaded = false;
+
+  function toggleMitek() {
+    _mitekOpen = !_mitekOpen;
+    document.getElementById("mitekBody").className =
+      "mitek-panel-body" + (_mitekOpen ? " open" : "");
+    document.getElementById("mitekToggleIcon").textContent =
+      _mitekOpen ? "▲" : "▼";
+
+    // Load dropdown data on first open
+    if (_mitekOpen && !_mitekLoaded) {
+      google.script.run
+        .withSuccessHandler(function(data) {
+          if (!data.ok) return;
+          _mitekLoaded = true;
+
+          // Populate client dropdown
+          var clientSel = document.getElementById("mk-client");
+          (data.mitekClients || []).forEach(function(c) {
+            var o = document.createElement("option");
+            o.value = c; o.textContent = c;
+            clientSel.appendChild(o);
+          });
+
+          // Populate entered-by dropdown (reuse allocatedBy from queue data)
+          var bySel = document.getElementById("mk-enteredby");
+          (_mitekAllocBy || []).forEach(function(n) {
+            var o = document.createElement("option");
+            o.value = n; o.textContent = n;
+            bySel.appendChild(o);
+          });
+        })
+        .getMitekFormData();
+    }
+  }
+
+  function toggleUrgentStyle() {
+    var cb    = document.getElementById("mk-urgent");
+    var label = document.getElementById("mk-urgent-label");
+    if (cb.checked) label.classList.add("checked");
+    else            label.classList.remove("checked");
+  }
+
+  function clearMitek() {
+    ["mk-jobnum","mk-jobname","mk-model","mk-notes"].forEach(function(id) {
+      document.getElementById(id).value = "";
+    });
+    ["mk-client","mk-product","mk-enteredby"].forEach(function(id) {
+      document.getElementById(id).selectedIndex = 0;
+    });
+    document.getElementById("mk-duedate").value = "";
+    document.getElementById("mk-urgent").checked = false;
+    document.getElementById("mk-urgent-label").classList.remove("checked");
+    document.getElementById("mk-status").textContent = "";
+    document.getElementById("mk-status").className = "mitek-status";
+  }
+
+  function submitMitek() {
+    var jobNum  = document.getElementById("mk-jobnum").value.trim().toUpperCase();
+    var client  = document.getElementById("mk-client").value;
+    var product = document.getElementById("mk-product").value;
+    var dueDate = document.getElementById("mk-duedate").value;
+    var jobName = document.getElementById("mk-jobname").value.trim();
+    var model   = document.getElementById("mk-model").value.trim();
+    var notes   = document.getElementById("mk-notes").value.trim();
+    var by      = document.getElementById("mk-enteredby").value;
+    var source  = document.getElementById("mk-source").value;
+    var urgent  = document.getElementById("mk-urgent").checked;
+    var statusEl = document.getElementById("mk-status");
+    var btn      = document.getElementById("mk-submit-btn");
+
+    if (!jobNum)  { setMitekStatus("error","Job number is required."); return; }
+    if (!client)  { setMitekStatus("error","Select a client."); return; }
+    if (!product) { setMitekStatus("error","Select a product type."); return; }
+
+    btn.disabled = true;
+    btn.textContent = "Adding…";
+    statusEl.className = "mitek-status";
+    statusEl.textContent = "";
+
+    var payload = {
+      jobNumber:   jobNum,
+      clientCode:  client,
+      product:     product,
+      dueDate:     dueDate,
+      jobName:     jobName,
+      modelName:   model,
+      notes:       notes,
+      enteredBy:   by,
+      source:      source,
+      urgent:      urgent
+    };
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        btn.disabled = false;
+        btn.textContent = "Add to Queue";
+        if (result.ok) {
+          setMitekStatus("success", result.msg + " Refreshing queue…");
+          clearMitek();
+          setTimeout(loadQueue, 1200);
+        } else {
+          setMitekStatus("error", result.msg);
+        }
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false;
+        btn.textContent = "Add to Queue";
+        setMitekStatus("error", "Error: " + err.message);
+      })
+      .submitMitekJob(payload);
+  }
+
+  function setMitekStatus(type, msg) {
+    var el = document.getElementById("mk-status");
+    el.className = "mitek-status " + type;
+    el.textContent = msg;
+  }
+
+  // Store allocatedBy list for MiTek "Entered By" dropdown
+  var _mitekAllocBy = [];
+
+  // ── Tab switching ────────────────────────────────────────────
+  var _scLoaded = false;
+  var _scDesigners = [];
+  var _scSupervisors = [];
+
+  function switchTab(tab) {
+    var isIntake = (tab === 'intake');
+    document.getElementById('tab-intake').className    = 'tab-btn' + (isIntake ? ' active' : '');
+    document.getElementById('tab-supervisor').className = 'tab-btn' + (!isIntake ? ' active' : '');
+    document.getElementById('mainContent').style.display    = isIntake ? 'block' : 'none';
+    document.getElementById('loadingState').style.display   = 'none';
+    document.getElementById('errorState').style.display     = 'none';
+    document.getElementById('supervisorSection').style.display = !isIntake ? 'block' : 'none';
+    document.getElementById('headerSubtitle').textContent =
+      isIntake ? 'Allocate pending jobs from email' : 'Request a supervisor change for a designer';
+
+    if (!isIntake && !_scLoaded) loadSupervisorForm();
+  }
+
+  // ── Load supervisor form data ────────────────────────────────
+  function loadSupervisorForm() {
+    document.getElementById('scLoading').style.display = 'block';
+    document.getElementById('scForm').style.display    = 'none';
+
+    google.script.run
+      .withSuccessHandler(function(data) {
+        document.getElementById('scLoading').style.display = 'none';
+        if (!data.ok) {
+          showScError(data.error || 'Failed to load form data.');
+          return;
+        }
+
+        _scDesigners   = data.designers   || [];
+        _scSupervisors = data.supervisors  || [];
+        _scLoaded      = true;
+
+        // Populate designer dropdown
+        var dSel = document.getElementById('sc-designer');
+        dSel.innerHTML = '<option value="">— Select designer —</option>';
+        _scDesigners.forEach(function(d) {
+          var o = document.createElement('option');
+          o.value = JSON.stringify(d);
+          o.textContent = d.name + ' (' + d.role + ')';
+          dSel.appendChild(o);
+        });
+
+        // Populate new supervisor dropdown
+        var sSel = document.getElementById('sc-new-sup');
+        sSel.innerHTML = '<option value="">— Select new supervisor —</option>';
+        _scSupervisors.forEach(function(s) {
+          var o = document.createElement('option');
+          o.value = JSON.stringify(s);
+          o.textContent = s.name;
+          sSel.appendChild(o);
+        });
+
+        // Default effective date = today
+        var today = new Date().toISOString().split('T')[0];
+        document.getElementById('sc-effective-date').value = today;
+
+        document.getElementById('scForm').style.display = 'block';
+      })
+      .withFailureHandler(function(err) {
+        document.getElementById('scLoading').style.display = 'none';
+        showScError('Failed to load: ' + err.message);
+      })
+      .getSupervisorChangeFormData();
+  }
+
+  function onDesignerSelect() {
+    var val = document.getElementById('sc-designer').value;
+    var supBox = document.getElementById('scCurrentSup');
+    if (!val) { supBox.style.display = 'none'; return; }
+    try {
+      var d = JSON.parse(val);
+      document.getElementById('scCurrentSupName').textContent = d.currentSupName || '(None assigned)';
+      supBox.style.display = 'block';
+      // Pre-remove the current supervisor from new-sup dropdown to avoid same-person selection
+      var sSel = document.getElementById('sc-new-sup');
+      for (var i = 0; i < sSel.options.length; i++) {
+        if (!sSel.options[i].value) continue;
+        try {
+          var s = JSON.parse(sSel.options[i].value);
+          sSel.options[i].disabled = (s.designerId === d.currentSupId);
+        } catch(e) {}
+      }
+    } catch(e) {}
+  }
+
+  function submitSupervisorChange() {
+    var designerVal = document.getElementById('sc-designer').value;
+    var newSupVal   = document.getElementById('sc-new-sup').value;
+    var effDate     = document.getElementById('sc-effective-date').value;
+    var notes       = document.getElementById('sc-notes').value.trim();
+    var btn         = document.getElementById('scSubmitBtn');
+    var resultEl    = document.getElementById('scResult');
+
+    if (!designerVal) { showScResult('error', 'Please select a designer.'); return; }
+    if (!newSupVal)   { showScResult('error', 'Please select a new supervisor.'); return; }
+    if (!effDate)     { showScResult('error', 'Please set an effective date.'); return; }
+
+    var designer = JSON.parse(designerVal);
+    var newSup   = JSON.parse(newSupVal);
+
+    if (designer.currentSupId === newSup.designerId) {
+      showScResult('error', newSup.name + ' is already the current supervisor for ' + designer.name + '.');
+      return;
+    }
+
+    var payload = {
+      requestedBy:  _scRequestedBy || 'Sarty Gosh',
+      designerId:   designer.designerId,
+      designerName: designer.name,
+      newSupId:     newSup.designerId,
+      newSupName:   newSup.name,
+      effectiveDate:effDate,
+      notes:        notes
+    };
+
+    btn.disabled = true;
+    btn.textContent = 'Submitting…';
+    resultEl.style.display = 'none';
+
+    google.script.run
+      .withSuccessHandler(function(reqId) {
+        btn.disabled = false;
+        btn.textContent = 'Submit for Approval';
+        showScResult('success',
+          '✅ Request submitted (ID: ' + reqId + ').\n' +
+          'Raj has been notified by email. The change will take effect once approved.'
+        );
+        // Reset form
+        document.getElementById('sc-designer').selectedIndex = 0;
+        document.getElementById('sc-new-sup').selectedIndex  = 0;
+        document.getElementById('sc-notes').value = '';
+        document.getElementById('scCurrentSup').style.display = 'none';
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Submit for Approval';
+        showScResult('error', 'Submission failed: ' + err.message);
+      })
+      .submitSupervisorChangeRequest(payload);
+  }
+
+  function showScResult(type, msg) {
+    var el = document.getElementById('scResult');
+    el.className = 'sc-result ' + type;
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function showScError(msg) {
+    document.getElementById('scForm').innerHTML =
+      '<div style="color:#c5221f;padding:16px;text-align:center;">' +
+      '⚠️ ' + esc(msg) + '</div>';
+    document.getElementById('scForm').style.display = 'block';
+  }
+
+  var _scRequestedBy = '';
+
+  // ── Auto-load on page open ──────────────────────────────────
+  window.onload = function() {
+    loadQueue();
+  };
+</script>
+</body>
+</html>

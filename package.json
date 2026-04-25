@@ -1,0 +1,26 @@
+{
+  "name": "blc-jobmanagement",
+  "version": "1.0.0",
+  "description": "",
+  "main": "AllocationSystem.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:verbose": "jest --verbose"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blccanada2026-lang/BLC-Automation.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/blccanada2026-lang/BLC-Automation/issues"
+  },
+  "homepage": "https://github.com/blccanada2026-lang/BLC-Automation#readme",
+  "devDependencies": {
+    "jest": "^30.3.0"
+  }
+}

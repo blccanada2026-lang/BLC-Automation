@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLC CEO Dashboard v4</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0a0a0f;
+    --ink2: #1a1a2e;
+    --surface: #f5f3ee;
+    --card: #ffffff;
+    --gold: #c9a84c;
+    --gold2: #e8c96a;
+    --teal: #1a7a6e;
+    --teal2: #25a898;
+    --red: #c0392b;
+    --amber: #e67e22;
+    --green: #1a7a6e;
+    --muted: #7a7a8a;
+    --border: #e2dfd6;
+    --shadow: 0 2px 20px rgba(10,10,15,0.08);
+    --shadow-lg: 0 8px 40px rgba(10,10,15,0.14);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Outfit', sans-serif;
+    background: var(--surface);
+    color: var(--ink);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* HEADER */
+  .header {
+    background: var(--ink2);
+    padding: 0 24px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    border-bottom: 2px solid var(--gold);
+  }
+  .header-inner {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    gap: 16px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo-mark {
+    width: 38px; height: 38px;
+    background: var(--gold);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'DM Serif Display', serif;
+    font-size: 18px;
+    color: var(--ink2);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .logo-text {
+    font-family: 'DM Serif Display', serif;
+    font-size: 20px;
+    color: #fff;
+    line-height: 1.1;
+  }
+  .logo-sub {
+    font-family: 'Outfit', sans-serif;
+    font-size: 10px;
+    color: var(--gold2);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(26,122,110,0.25);
+    border: 1px solid var(--teal2);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--teal2);
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .live-dot {
+    width: 7px; height: 7px;
+    background: var(--teal2);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+  .timestamp {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+  }
+  .refresh-btn {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .refresh-btn:hover { background: rgba(255,255,255,0.15); }
+  .refresh-btn svg { transition: transform 0.4s; }
+  .refresh-btn.spinning svg { transform: rotate(360deg); }
+
+  /* MAIN LAYOUT */
+  .main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 28px 20px 60px;
+  }
+
+  /* LOADING */
+  .loading-overlay {
+    position: fixed; inset: 0;
+    background: var(--ink2);
+    z-index: 999;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 20px;
+    transition: opacity 0.5s;
+  }
+  .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+  .loading-logo {
+    font-family: 'DM Serif Display', serif;
+    font-size: 48px;
+    color: var(--gold);
+  }
+  .loading-text {
+    font-size: 13px;
+    color: rgba(255,255,255,0.5);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  .loading-bar {
+    width: 200px; height: 2px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .loading-bar-fill {
+    height: 100%;
+    background: var(--gold);
+    width: 0%;
+    animation: load 1.8s ease forwards;
+  }
+  @keyframes load { to { width: 100%; } }
+
+  /* SECTION HEADERS */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+    margin-top: 36px;
+  }
+  .section-header:first-child { margin-top: 0; }
+  .section-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .section-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 22px;
+    color: var(--ink2);
+  }
+  .section-pill {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-left: auto;
+  }
+
+  /* KPI ROW */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .kpi-card {
+    background: var(--card);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+    animation: fadeUp 0.5s ease both;
+  }
+  .kpi-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .kpi-card.gold::before { background: linear-gradient(90deg, var(--gold), var(--gold2)); }
+  .kpi-card.teal::before { background: linear-gradient(90deg, var(--teal), var(--teal2)); }
+  .kpi-card.red::before { background: var(--red); }
+  .kpi-card.amber::before { background: var(--amber); }
+  .kpi-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .kpi-value {
+    font-family: 'DM Serif Display', serif;
+    font-size: 34px;
+    line-height: 1;
+    color: var(--ink2);
+    margin-bottom: 6px;
+  }
+  .kpi-value.loading-val { color: var(--border); }
+  .kpi-sub {
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .delta-up { color: var(--teal); font-weight: 600; }
+  .delta-down { color: var(--red); font-weight: 600; }
+  .delta-neutral { color: var(--muted); }
+
+  /* GRID LAYOUTS */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 900px) {
+    .two-col { grid-template-columns: 1fr; }
+    .three-col { grid-template-columns: 1fr; }
+  }
+
+  /* CARDS */
+  .card {
+    background: var(--card);
+    border-radius: 14px;
+    padding: 22px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+    animation: fadeUp 0.5s ease both;
+  }
+  .card-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* CLIENT REVENUE BARS */
+  .client-bar-row {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .client-bar-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .client-bar-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .client-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink2);
+  }
+  .client-val {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--ink2);
+    font-weight: 500;
+  }
+  .client-bar-track {
+    height: 8px;
+    background: var(--surface);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .client-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 1s ease;
+  }
+
+  /* DESIGNER TABLE */
+  .designer-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .designer-table th {
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0 8px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .designer-table th:last-child { text-align: right; }
+  .designer-table td {
+    padding: 10px 8px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--surface);
+    vertical-align: middle;
+  }
+  .designer-table td:last-child { text-align: right; }
+  .designer-table tr:last-child td { border-bottom: none; }
+  .rank-num {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    width: 24px;
+    display: inline-block;
+  }
+  .designer-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .pill-green { background: #e8f7f4; color: var(--teal); }
+  .pill-amber { background: #fef3e2; color: var(--amber); }
+  .pill-red { background: #fdecea; color: var(--red); }
+
+  /* REWORK RING */
+  .ring-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 30px;
+    flex-wrap: wrap;
+  }
+  .ring-wrap {
+    position: relative;
+    width: 120px; height: 120px;
+  }
+  .ring-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring-track { fill: none; stroke: var(--surface); stroke-width: 10; }
+  .ring-fill { fill: none; stroke-width: 10; stroke-linecap: round; transition: stroke-dasharray 1.2s ease; }
+  .ring-center {
+    position: absolute;
+    inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .ring-pct {
+    font-family: 'DM Serif Display', serif;
+    font-size: 24px;
+    color: var(--ink2);
+    line-height: 1;
+  }
+  .ring-lbl {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .ring-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .ring-leg-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .ring-leg-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* SNAPSHOT TABLE */
+  .snapshot-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .snapshot-table th {
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0 10px 10px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .snapshot-table th:not(:first-child) { text-align: right; }
+  .snapshot-table td {
+    padding: 11px 10px;
+    border-bottom: 1px solid var(--surface);
+    white-space: nowrap;
+  }
+  .snapshot-table td:not(:first-child) { text-align: right; font-family: 'DM Mono', monospace; font-size: 12px; }
+  .snapshot-table tr:last-child td { border-bottom: none; font-weight: 600; background: #fafaf7; }
+  .snapshot-table tr:last-child td:first-child { border-radius: 8px 0 0 8px; }
+  .snapshot-table tr:last-child td:last-child { border-radius: 0 8px 8px 0; }
+  .period-name { font-weight: 600; color: var(--ink2); }
+  .period-current { color: var(--gold); }
+  .table-wrap { overflow-x: auto; }
+
+  /* ALERTS */
+  .alerts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .alert-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    border-left: 4px solid;
+    animation: fadeUp 0.4s ease both;
+  }
+  .alert-item.red { background: #fdecea; border-color: var(--red); }
+  .alert-item.amber { background: #fef3e2; border-color: var(--amber); }
+  .alert-item.green { background: #e8f7f4; border-color: var(--teal); }
+  .alert-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+  .alert-title { font-size: 13px; font-weight: 600; color: var(--ink2); margin-bottom: 2px; }
+  .alert-desc { font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .no-alerts {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .no-alerts-icon { font-size: 36px; margin-bottom: 10px; }
+
+  /* PROGRESS BARS (efficiency) */
+  .progress-row {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .progress-item {}
+  .progress-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .progress-label { font-size: 12px; font-weight: 500; color: var(--ink2); }
+  .progress-val { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--muted); }
+  .progress-track {
+    height: 6px;
+    background: var(--surface);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--teal), var(--teal2));
+    transition: width 1s ease;
+  }
+
+  /* FOOTER */
+  .footer {
+    text-align: center;
+    padding: 20px;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+  }
+
+  /* ERROR STATE */
+  .error-banner {
+    background: #fdecea;
+    border: 1px solid var(--red);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    color: var(--red);
+    display: none;
+  }
+  .error-banner.visible { display: block; }
+
+  /* MOBILE */
+  @media (max-width: 600px) {
+    .header-inner { height: 56px; }
+    .logo-text { font-size: 17px; }
+    .timestamp { display: none; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .kpi-value { font-size: 26px; }
+    .main { padding: 18px 14px 50px; }
+    .card { padding: 16px; }
+    .section-title { font-size: 18px; }
+  }
+
+  /* STAGGER ANIMATION */
+  .kpi-card:nth-child(1) { animation-delay: 0.05s; }
+  .kpi-card:nth-child(2) { animation-delay: 0.1s; }
+  .kpi-card:nth-child(3) { animation-delay: 0.15s; }
+  .kpi-card:nth-child(4) { animation-delay: 0.2s; }
+  .kpi-card:nth-child(5) { animation-delay: 0.25s; }
+</style>
+</head>
+<body>
+
+<!-- LOADING SCREEN -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-logo">BLC</div>
+  <div class="loading-text">Loading CEO Dashboard</div>
+  <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+</div>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-mark">BLC</div>
+      <div>
+        <div class="logo-text">Blue Lotus</div>
+        <div class="logo-sub">CEO Dashboard</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="live-badge"><div class="live-dot"></div>Live</div>
+      <span class="timestamp" id="lastUpdated">—</span>
+      <button class="refresh-btn" id="refreshBtn" onclick="loadDashboard()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+        </svg>
+        Refresh
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="main">
+
+  <div class="error-banner" id="errorBanner">
+    ⚠️ ERROR DETAIL: <span id="errorDetail">checking...</span>
+
+  </div>
+
+  <!-- PANEL 1: REVENUE -->
+  <div class="section-header">
+    <div class="section-icon" style="background:#fdf3e0;">💰</div>
+    <div class="section-title">Revenue Snapshot</div>
+    <span class="section-pill" style="background:#fdf3e0;color:var(--gold);">This Billing Period</span>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi-card gold">
+      <div class="kpi-label">Total Billable Hours</div>
+      <div class="kpi-value" id="kpi-totalHours">—</div>
+      <div class="kpi-sub"><span id="kpi-hoursDelta" class="delta-neutral">—</span> vs last period</div>
+    </div>
+    <div class="kpi-card gold">
+      <div class="kpi-label">Revenue This Period</div>
+      <div class="kpi-value" id="kpi-revenue">—</div>
+      <div class="kpi-sub"><span id="kpi-revDelta" class="delta-neutral">—</span> vs last period</div>
+    </div>
+    <div class="kpi-card teal">
+      <div class="kpi-label">Jobs Completed</div>
+      <div class="kpi-value" id="kpi-completed">—</div>
+      <div class="kpi-sub"><span id="kpi-completedDelta" class="delta-neutral">—</span> vs last period</div>
+    </div>
+    <div class="kpi-card teal">
+      <div class="kpi-label">Jobs In Progress</div>
+      <div class="kpi-value" id="kpi-inProgress">—</div>
+      <div class="kpi-sub">Active right now</div>
+    </div>
+    <div class="kpi-card amber">
+      <div class="kpi-label">Avg Hours / Job</div>
+      <div class="kpi-value" id="kpi-avgHrs">—</div>
+      <div class="kpi-sub">All product types</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title"><div class="card-title-dot" style="background:var(--gold)"></div>Revenue by Client (Hours)</div>
+      <div class="client-bar-row" id="clientBars">
+        <div style="color:var(--muted);font-size:13px;text-align:center;padding:20px 0">Loading...</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><div class="card-title-dot" style="background:var(--teal)"></div>Designer Throughput (Jobs Completed)</div>
+      <div class="table-wrap">
+        <table class="designer-table" id="throughputTable">
+          <thead><tr><th>#</th><th>Designer</th><th>Jobs</th><th>Hours</th><th>Status</th></tr></thead>
+          <tbody id="throughputBody"><tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL 2: EFFICIENCY -->
+  <div class="section-header">
+    <div class="section-icon" style="background:#e8f7f4;">⚡</div>
+    <div class="section-title">Efficiency</div>
+    <span class="section-pill" style="background:#e8f7f4;color:var(--teal);">Throughput & Cycle Time</span>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi-card teal">
+      <div class="kpi-label">Avg Hours — Roof Truss</div>
+      <div class="kpi-value" id="kpi-roofAvg">—</div>
+      <div class="kpi-sub">hrs per job</div>
+    </div>
+    <div class="kpi-card teal">
+      <div class="kpi-label">Avg Hours — Floor Truss</div>
+      <div class="kpi-value" id="kpi-floorAvg">—</div>
+      <div class="kpi-sub">hrs per job</div>
+    </div>
+    <div class="kpi-card teal">
+      <div class="kpi-label">Avg Hours — Wall Frame</div>
+      <div class="kpi-value" id="kpi-wallAvg">—</div>
+      <div class="kpi-sub">hrs per job</div>
+    </div>
+    <div class="kpi-card amber">
+      <div class="kpi-label">Jobs Allocated</div>
+      <div class="kpi-value" id="kpi-allocated">—</div>
+      <div class="kpi-sub">Awaiting start</div>
+    </div>
+    <div class="kpi-card amber">
+      <div class="kpi-label">Ready for QC</div>
+      <div class="kpi-value" id="kpi-readyQC">—</div>
+      <div class="kpi-sub">Awaiting review</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title"><div class="card-title-dot" style="background:var(--teal)"></div>Capacity Utilisation by Designer</div>
+      <div class="progress-row" id="capacityBars">
+        <div style="color:var(--muted);font-size:13px;text-align:center;padding:20px 0">Loading...</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><div class="card-title-dot" style="background:var(--amber)"></div>Pipeline Status Breakdown</div>
+      <div class="client-bar-row" id="pipelineBars">
+        <div style="color:var(--muted);font-size:13px;text-align:center;padding:20px 0">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL 3: QUALITY -->
+  <div class="section-header">
+    <div class="section-icon" style="background:#fdecea;">🎯</div>
+    <div class="section-title">Quality</div>
+    <span class="section-pill" style="background:#fdecea;color:var(--red);">Rework & QC</span>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi-card red">
+      <div class="kpi-label">Overall Rework Rate</div>
+      <div class="kpi-value" id="kpi-reworkRate">—</div>
+      <div class="kpi-sub">Target: &lt;10%</div>
+    </div>
+    <div class="kpi-card red">
+      <div class="kpi-label">Rework Hours Lost</div>
+      <div class="kpi-value" id="kpi-reworkHrs">—</div>
+      <div class="kpi-sub">Non-billable cost</div>
+    </div>
+    <div class="kpi-card teal">
+      <div class="kpi-label">First-Pass Quality</div>
+      <div class="kpi-value" id="kpi-firstPass">—</div>
+      <div class="kpi-sub">Jobs passing QC first try</div>
+    </div>
+    <div class="kpi-card amber">
+      <div class="kpi-label">Major Rework</div>
+      <div class="kpi-value" id="kpi-majorRework">—</div>
+      <div class="kpi-sub">Jobs returned major</div>
+    </div>
+    <div class="kpi-card amber">
+      <div class="kpi-label">Minor Rework</div>
+      <div class="kpi-value" id="kpi-minorRework">—</div>
+      <div class="kpi-sub">Jobs returned minor</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title"><div class="card-title-dot" style="background:var(--red)"></div>Rework Rate by Designer</div>
+      <div class="table-wrap">
+        <table class="designer-table" id="reworkTable">
+          <thead><tr><th>Designer</th><th>Completed</th><th>Rework</th><th>Rate</th></tr></thead>
+          <tbody id="reworkBody"><tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><div class="card-title-dot" style="background:var(--red)"></div>Rework Rate by Client</div>
+      <div class="client-bar-row" id="reworkClientBars">
+        <div style="color:var(--muted);font-size:13px;text-align:center;padding:20px 0">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL 4: SNAPSHOT TABLE -->
+  <div class="section-header">
+    <div class="section-icon" style="background:#f0eef8;">📊</div>
+    <div class="section-title">Month-on-Month Snapshot</div>
+    <span class="section-pill" style="background:#f0eef8;color:#6c5ce7;">Rolling 6 Periods</span>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="table-wrap">
+      <table class="snapshot-table" id="snapshotTable">
+        <thead><tr>
+          <th>Period</th><th>Jobs In</th><th>Completed</th><th>Total Hrs</th><th>Revenue $</th><th>Rework %</th><th>Avg Hrs/Job</th><th>MoM Growth</th>
+        </tr></thead>
+        <tbody id="snapshotBody"><tr><td colspan="8" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PANEL 5: ALERTS -->
+  <div class="section-header">
+    <div class="section-icon" style="background:#fdecea;">🚨</div>
+    <div class="section-title">Alerts — Action Required</div>
+    <span class="section-pill" style="background:#fdecea;color:var(--red);" id="alertCount">0 Alerts</span>
+  </div>
+
+  <div class="alerts-list" id="alertsList">
+    <div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Loading...</div>
+  </div>
+
+</main>
+
+<footer class="footer">
+  Blue Lotus Consulting Corporation &nbsp;•&nbsp; CEO Dashboard &nbsp;•&nbsp; Confidential
+</footer>
+
+<script>
+// Billing rates per client ($/hr) — update to match your CONFIG tab
+const BILLING_RATES = {
+  'SBS': 85,
+  'TITAN': 90,
+  'MATIX-SK': 80,
+  'NORSPAN-MB': 80
+};
+
+// ============================================================
+// DEMO DATA — used if no Apps Script URL is configured
+// ============================================================
+function getDemoData() {
+  return {
+    currentPeriod: 'Mar 1-15 2026',
+    kpis: {
+      totalHours: 312,
+      lastPeriodHours: 287,
+      completed: 24,
+      lastPeriodCompleted: 21,
+      inProgress: 18,
+      avgHrsPerJob: 13.0,
+      roofAvg: 14.2,
+      floorAvg: 10.8,
+      wallAvg: 8.5,
+      allocated: 7,
+      readyQC: 4,
+      reworkRate: 12.5,
+      reworkHours: 28,
+      majorRework: 2,
+      minorRework: 4
+    },
+    clientHours: [
+      { name: 'SBS', hours: 142 },
+      { name: 'TITAN', hours: 89 },
+      { name: 'MATIX-SK', hours: 51 },
+      { name: 'NORSPAN-MB', hours: 30 }
+    ],
+    designerStats: [
+      { name: 'Abhijit Bera', completed: 7, hours: 98, inProgress: 3, rework: 0 },
+      { name: 'Pabitra Ghosh', completed: 5, hours: 72, inProgress: 2, rework: 1 },
+      { name: 'Priyanka', completed: 4, hours: 58, inProgress: 4, rework: 0 },
+      { name: 'Sayan', completed: 3, hours: 42, inProgress: 2, rework: 1 },
+      { name: 'Vani KV', completed: 2, hours: 28, inProgress: 3, rework: 0 },
+      { name: 'Nitesh', completed: 2, hours: 7, inProgress: 2, rework: 1 },
+      { name: 'Bharath', completed: 1, hours: 7, inProgress: 2, rework: 0 }
+    ],
+    pipeline: [
+      { status: 'Allocated', count: 7 },
+      { status: 'Picked Up', count: 5 },
+      { status: 'In Design', count: 9 },
+      { status: 'Ready for QC', count: 4 },
+      { status: 'QC In Progress', count: 2 }
+    ],
+    clientRework: [
+      { name: 'SBS', completed: 14, rework: 2 },
+      { name: 'TITAN', completed: 6, rework: 1 },
+      { name: 'MATIX-SK', completed: 3, rework: 1 },
+      { name: 'NORSPAN-MB', completed: 1, rework: 0 }
+    ],
+    snapshot: [
+      { period: 'Oct 1-15 2025', jobsIn: 18, completed: 16, hours: 198, reworkRate: 18.8, avgHrs: 12.4 },
+      { period: 'Nov 1-15 2025', jobsIn: 20, completed: 17, hours: 214, reworkRate: 17.6, avgHrs: 12.6 },
+      { period: 'Dec 1-15 2025', jobsIn: 19, completed: 16, hours: 205, reworkRate: 12.5, avgHrs: 12.8 },
+      { period: 'Jan 1-15 2026', jobsIn: 22, completed: 18, hours: 238, reworkRate: 11.1, avgHrs: 13.2 },
+      { period: 'Feb 16-End 2026', jobsIn: 25, completed: 21, hours: 287, reworkRate: 9.5, avgHrs: 13.7 },
+      { period: 'Mar 1-15 2026', jobsIn: 27, completed: 24, hours: 312, reworkRate: 12.5, avgHrs: 13.0, isCurrent: true }
+    ],
+    alerts: [
+      { level: 'amber', icon: '⏰', title: 'Job Overdue: 3 jobs past Expected Completion', desc: 'SBS-160822, TITAN-2602-44, MATIX-SK-0312 are past due date and still In Design.' },
+      { level: 'amber', icon: '🔄', title: 'Nitesh: Rework rate above 20%', desc: '1 rework in 2 completed jobs this period. Monitor closely.' },
+      { level: 'green', icon: '✅', title: 'All systems operational', desc: 'No critical flags this period.' }
+    ]
+  };
+}
+
+// ============================================================
+// FETCH DATA FROM APPS SCRIPT USING google.script.run
+// This is the correct method when HTML is served by Apps Script
+// ============================================================
+function fetchData() {
+  return new Promise(function(resolve) {
+    if (typeof google === 'undefined' || !google.script) {
+      // Not running inside Apps Script — use demo data
+      console.log('Running outside Apps Script, using demo data.');
+      resolve(getDemoData());
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function(data) {
+        if (!data) {
+          resolve(getDemoData());
+        } else {
+          resolve(data);
+        }
+      })
+      .withFailureHandler(function(err) {
+        document.getElementById('errorBanner').classList.add('visible');
+        document.getElementById('errorDetail').textContent = err.message || 'Unknown error';
+        resolve(getDemoData());
+      })
+      .buildCEODashboardData();
+  });
+}
+
+// ============================================================
+// RENDER HELPERS
+// ============================================================
+function fmt(n, decimals=0) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return Number(n).toLocaleString('en-CA', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+function fmtMoney(n) {
+  if (!n) return '—';
+  return '$' + Number(n).toLocaleString('en-CA', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+function fmtPct(n) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return Number(n).toFixed(1) + '%';
+}
+function delta(current, last) {
+  if (!last || !current) return { text: '—', cls: 'delta-neutral' };
+  const d = ((current - last) / last * 100).toFixed(1);
+  const sign = d >= 0 ? '+' : '';
+  return { text: sign + d + '%', cls: d >= 0 ? 'delta-up' : 'delta-down' };
+}
+function calcRevenue(clientHours) {
+  return clientHours.reduce((sum, c) => sum + (c.hours * (BILLING_RATES[c.name] || 85)), 0);
+}
+
+// ============================================================
+// RENDER FUNCTIONS
+// ============================================================
+function renderKPIs(data) {
+  const k = data.kpis;
+  document.getElementById('kpi-totalHours').textContent = fmt(k.totalHours);
+  const hDelta = delta(k.totalHours, k.lastPeriodHours);
+  const el = document.getElementById('kpi-hoursDelta');
+  el.textContent = hDelta.text; el.className = hDelta.cls;
+
+  const rev = calcRevenue(data.clientHours);
+  const lastRev = k.lastPeriodHours * 85;
+  document.getElementById('kpi-revenue').textContent = fmtMoney(rev);
+  const rDelta = delta(rev, lastRev);
+  const rEl = document.getElementById('kpi-revDelta');
+  rEl.textContent = rDelta.text; rEl.className = rDelta.cls;
+
+  document.getElementById('kpi-completed').textContent = fmt(k.completed);
+  const cDelta = delta(k.completed, k.lastPeriodCompleted);
+  const cEl = document.getElementById('kpi-completedDelta');
+  cEl.textContent = cDelta.text; cEl.className = cDelta.cls;
+
+  document.getElementById('kpi-inProgress').textContent = fmt(k.inProgress);
+  document.getElementById('kpi-avgHrs').textContent = fmt(k.avgHrsPerJob, 1);
+
+  document.getElementById('kpi-roofAvg').textContent = fmt(k.roofAvg, 1);
+  document.getElementById('kpi-floorAvg').textContent = fmt(k.floorAvg, 1);
+  document.getElementById('kpi-wallAvg').textContent = fmt(k.wallAvg, 1);
+  document.getElementById('kpi-allocated').textContent = fmt(k.allocated);
+  document.getElementById('kpi-readyQC').textContent = fmt(k.readyQC);
+
+  document.getElementById('kpi-reworkRate').textContent = fmtPct(k.reworkRate);
+  document.getElementById('kpi-reworkHrs').textContent = fmt(k.reworkHours);
+  document.getElementById('kpi-firstPass').textContent = fmtPct(100 - k.reworkRate);
+  document.getElementById('kpi-majorRework').textContent = fmt(k.majorRework);
+  document.getElementById('kpi-minorRework').textContent = fmt(k.minorRework);
+}
+
+function renderClientBars(data) {
+  const clients = data.clientHours;
+  const maxHrs = Math.max(...clients.map(c => c.hours));
+  const colors = ['#c9a84c','#1a7a6e','#e67e22','#6c5ce7'];
+  const container = document.getElementById('clientBars');
+  container.innerHTML = clients.map((c, i) => `
+    <div class="client-bar-item">
+      <div class="client-bar-meta">
+        <span class="client-name">${c.name}</span>
+        <span class="client-val">${fmt(c.hours)} hrs &nbsp; ${fmtMoney(c.hours * (BILLING_RATES[c.name]||85))}</span>
+      </div>
+      <div class="client-bar-track">
+        <div class="client-bar-fill" style="width:${(c.hours/maxHrs*100).toFixed(1)}%;background:${colors[i%colors.length]}"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderThroughput(data) {
+  const sorted = [...data.designerStats].sort((a,b) => b.completed - a.completed);
+  const tbody = document.getElementById('throughputBody');
+  tbody.innerHTML = sorted.map((d, i) => {
+    const rate = d.completed > 0 ? (d.rework / d.completed * 100) : 0;
+    const pill = rate === 0 ? 'pill-green' : rate > 20 ? 'pill-red' : 'pill-amber';
+    const pillTxt = rate === 0 ? 'Clean' : rate > 20 ? 'Watch' : 'OK';
+    return `<tr>
+      <td><span class="rank-num">${i+1}.</span></td>
+      <td>${d.name}</td>
+      <td>${fmt(d.completed)}</td>
+      <td>${fmt(d.hours)}</td>
+      <td><span class="designer-pill ${pill}">${pillTxt}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderCapacityBars(data) {
+  const maxJobs = Math.max(...data.designerStats.map(d => d.inProgress));
+  const container = document.getElementById('capacityBars');
+  container.innerHTML = data.designerStats.map(d => `
+    <div class="progress-item">
+      <div class="progress-meta">
+        <span class="progress-label">${d.name}</span>
+        <span class="progress-val">${d.inProgress} active job${d.inProgress !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" style="width:${maxJobs > 0 ? (d.inProgress/maxJobs*100).toFixed(1) : 0}%"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderPipeline(data) {
+  const total = data.pipeline.reduce((s, p) => s + p.count, 0);
+  const colors = { 'Allocated':'#6c5ce7','Picked Up':'#c9a84c','In Design':'#e67e22','Ready for QC':'#1a7a6e','QC In Progress':'#25a898' };
+  const container = document.getElementById('pipelineBars');
+  container.innerHTML = data.pipeline.map(p => `
+    <div class="client-bar-item">
+      <div class="client-bar-meta">
+        <span class="client-name">${p.status}</span>
+        <span class="client-val">${p.count} job${p.count !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="client-bar-track">
+        <div class="client-bar-fill" style="width:${total > 0 ? (p.count/total*100).toFixed(1) : 0}%;background:${colors[p.status]||'#aaa'}"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderReworkByDesigner(data) {
+  const tbody = document.getElementById('reworkBody');
+  tbody.innerHTML = data.designerStats.map(d => {
+    const rate = d.completed > 0 ? (d.rework / d.completed * 100) : 0;
+    const cls = rate === 0 ? 'delta-up' : rate > 20 ? 'delta-down' : '';
+    return `<tr>
+      <td>${d.name}</td>
+      <td>${fmt(d.completed)}</td>
+      <td>${fmt(d.rework)}</td>
+      <td style="font-weight:600" class="${cls}">${fmtPct(rate)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderReworkByClient(data) {
+  const container = document.getElementById('reworkClientBars');
+  container.innerHTML = data.clientRework.map(c => {
+    const rate = c.completed > 0 ? (c.rework / c.completed * 100) : 0;
+    const color = rate === 0 ? 'var(--teal)' : rate > 20 ? 'var(--red)' : 'var(--amber)';
+    return `
+      <div class="client-bar-item">
+        <div class="client-bar-meta">
+          <span class="client-name">${c.name}</span>
+          <span class="client-val" style="color:${color};font-weight:600">${fmtPct(rate)} (${c.rework}/${c.completed})</span>
+        </div>
+        <div class="client-bar-track">
+          <div class="client-bar-fill" style="width:${rate.toFixed(1)}%;background:${color}"></div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderSnapshot(data) {
+  const tbody = document.getElementById('snapshotBody');
+  let lastRevenue = null;
+  tbody.innerHTML = data.snapshot.map(row => {
+    const rev = (row.hours || 0) * 85;
+    const momDelta = lastRevenue ? delta(rev, lastRevenue) : { text: '—', cls: 'delta-neutral' };
+    lastRevenue = rev;
+    const isCurrent = row.isCurrent;
+    return `<tr ${isCurrent ? 'style="background:#fffdf5"' : ''}>
+      <td class="period-name ${isCurrent ? 'period-current' : ''}">${row.period}${isCurrent ? ' ●' : ''}</td>
+      <td>${fmt(row.jobsIn)}</td>
+      <td>${fmt(row.completed)}</td>
+      <td>${fmt(row.hours)}</td>
+      <td>${fmtMoney(rev)}</td>
+      <td style="color:${row.reworkRate > 15 ? 'var(--red)' : row.reworkRate > 10 ? 'var(--amber)' : 'var(--teal)'}">${fmtPct(row.reworkRate)}</td>
+      <td>${fmt(row.avgHrs, 1)}</td>
+      <td class="${momDelta.cls}">${momDelta.text}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderAlerts(data) {
+  const container = document.getElementById('alertsList');
+  const countEl = document.getElementById('alertCount');
+  const realAlerts = data.alerts.filter(a => a.level !== 'green');
+  countEl.textContent = realAlerts.length + ' Alert' + (realAlerts.length !== 1 ? 's' : '');
+
+  if (data.alerts.length === 0) {
+    container.innerHTML = `<div class="no-alerts"><div class="no-alerts-icon">✅</div>No alerts — all systems healthy this period.</div>`;
+    return;
+  }
+  container.innerHTML = data.alerts.map((a, i) => `
+    <div class="alert-item ${a.level}" style="animation-delay:${i*0.08}s">
+      <div class="alert-icon">${a.icon}</div>
+      <div>
+        <div class="alert-title">${a.title}</div>
+        <div class="alert-desc">${a.desc}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============================================================
+// MAIN LOAD
+// ============================================================
+function loadDashboard() {
+  var btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning');
+
+  fetchData().then(function(data) {
+    renderKPIs(data);
+    renderClientBars(data);
+    renderThroughput(data);
+    renderCapacityBars(data);
+    renderPipeline(data);
+    renderReworkByDesigner(data);
+    renderReworkByClient(data);
+    renderSnapshot(data);
+    renderAlerts(data);
+
+    var now = new Date();
+    document.getElementById('lastUpdated').textContent =
+      now.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
+
+    btn.classList.remove('spinning');
+
+    setTimeout(function() {
+      document.getElementById('loadingOverlay').classList.add('hidden');
+    }, 400);
+  });
+}
+
+// Auto-refresh every 5 minutes
+setInterval(loadDashboard, 5 * 60 * 1000);
+
+// Initial load
+window.addEventListener('load', loadDashboard);
+</script>
+</body>
+</html>

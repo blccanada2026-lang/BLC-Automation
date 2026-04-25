@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>BLC Client Quarterly Rating</title>
+  <style>
+    body        { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; color: #333; }
+    h1          { color: #2c5282; border-bottom: 2px solid #2c5282; padding-bottom: 10px; }
+    .card       { background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0; }
+    .score-row  { display: flex; align-items: center; margin: 10px 0; gap: 16px; }
+    .score-label { flex: 1; font-size: 14px; }
+    .stars      { display: flex; gap: 8px; }
+    .star       { font-size: 24px; cursor: pointer; color: #cbd5e0; user-select: none; }
+    .star.on    { color: #f6ad55; }
+    label       { display: block; font-size: 13px; color: #718096; margin-top: 12px; }
+    textarea    { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e0; border-radius: 4px; padding: 8px; min-height: 60px; margin-top: 4px; }
+    button      { background: #2c5282; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 16px; margin-top: 16px; }
+    button:hover { background: #2a4a7f; }
+    .msg-ok     { color: green; font-weight: bold; margin-top: 10px; }
+    .msg-err    { color: red;   font-weight: bold; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>BLC Client Quarterly Rating</h1>
+  <p id="loading">Loading your rating form...</p>
+  <div id="main" style="display:none;">
+    <p>Quarter: <strong id="quarter-info"></strong></p>
+    <p id="client-info"></p>
+    <div id="ratee-forms"></div>
+    <button onclick="submitAll()">Submit Ratings</button>
+    <p id="status-msg"></p>
+  </div>
+  <script>
+    // All server-supplied data set via textContent only — never via innerHTML string concat.
+    var params      = new URLSearchParams(window.location.search);
+    var TOKEN       = params.get('token')   || '';
+    var QUARTER_KEY = params.get('quarter') || '';
+    var reportees   = [];
+    var ratings     = {};  // { personId: { scores: [0,0,0,0,0], notes: '' } }
+
+    var SCORE_LABELS = [
+      'Quality & Accuracy',
+      'Adherence to SOP',
+      'Turn Around Time & Reliability',
+      'Communication & Responsiveness',
+      'Overall Satisfaction'
+    ];
+
+    google.script.run
+      .withSuccessHandler(onDataLoaded)
+      .withFailureHandler(function (err) {
+        document.getElementById('loading').textContent = 'Error: ' + err.message;
+      })
+      .getClientRatingData(TOKEN, QUARTER_KEY);
+
+    function onDataLoaded(data) {
+      if (data.error) {
+        document.getElementById('loading').textContent = data.error;
+        return;
+      }
+      reportees = data.reportees;
+
+      document.getElementById('quarter-info').textContent = data.quarterKey;
+      // Client name set via textContent (safe)
+      var clientInfoEl = document.getElementById('client-info');
+      clientInfoEl.textContent = 'Rating for: ' + data.clientName;
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('main').style.display    = 'block';
+      renderForms();
+    }
+
+    function renderForms() {
+      var container = document.getElementById('ratee-forms');
+      while (container.firstChild) { container.removeChild(container.firstChild); }
+
+      reportees.forEach(function (ratee) {
+        ratings[ratee.personId] = { scores: [0,0,0,0,0], notes: '' };
+
+        var card = document.createElement('div');
+        card.className = 'card';
+
+        var heading = document.createElement('h3');
+        heading.textContent = ratee.personName;   // textContent only — safe
+        card.appendChild(heading);
+
+        SCORE_LABELS.forEach(function (labelText, idx) {
+          var row = document.createElement('div');
+          row.className = 'score-row';
+
+          var lbl = document.createElement('span');
+          lbl.className = 'score-label';
+          lbl.textContent = labelText;
+          row.appendChild(lbl);
+
+          var starsDiv = document.createElement('div');
+          starsDiv.className = 'stars';
+          starsDiv.id = 'stars-' + ratee.personId + '-' + idx;
+
+          for (var n = 1; n <= 5; n++) {
+            (function (starVal) {
+              var star = document.createElement('span');
+              star.className = 'star';
+              star.textContent = '\u2605';
+              star.setAttribute('data-ratee', ratee.personId);
+              star.setAttribute('data-idx', String(idx));
+              star.setAttribute('data-val', String(starVal));
+              star.addEventListener('click', function () { setStar(this); });
+              starsDiv.appendChild(star);
+            })(n);
+          }
+          row.appendChild(starsDiv);
+          card.appendChild(row);
+        });
+
+        appendTextarea(card, 'Additional Comments (optional)', 'notes-' + ratee.personId, function (v) {
+          ratings[ratee.personId].notes = v;
+        });
+
+        container.appendChild(card);
+      });
+    }
+
+    function appendTextarea(parent, labelText, id, onInput) {
+      var lbl = document.createElement('label');
+      lbl.textContent = labelText;
+      parent.appendChild(lbl);
+      var ta = document.createElement('textarea');
+      ta.id = id;
+      ta.addEventListener('input', function () { onInput(this.value); });
+      parent.appendChild(ta);
+    }
+
+    function setStar(starEl) {
+      var rateeId = starEl.getAttribute('data-ratee');
+      var idx     = parseInt(starEl.getAttribute('data-idx'), 10);
+      var val     = parseInt(starEl.getAttribute('data-val'), 10);
+      ratings[rateeId].scores[idx] = val;
+
+      var starsDiv = document.getElementById('stars-' + rateeId + '-' + idx);
+      var stars    = starsDiv.querySelectorAll('.star');
+      for (var i = 0; i < stars.length; i++) {
+        if (i < val) { stars[i].classList.add('on'); }
+        else         { stars[i].classList.remove('on'); }
+      }
+    }
+
+    function setStatus(text, isError) {
+      var el = document.getElementById('status-msg');
+      el.textContent = text;
+      el.className   = isError ? 'msg-err' : 'msg-ok';
+    }
+
+    function submitAll() {
+      var incomplete = [];
+      reportees.forEach(function (ratee) {
+        var r = ratings[ratee.personId];
+        var allScored = r.scores.every(function (s) { return s > 0; });
+        if (!allScored) incomplete.push(ratee.personName);
+      });
+      if (incomplete.length > 0) {
+        setStatus('Please complete all scores for: ' + incomplete.join(', '), true);
+        return;
+      }
+
+      setStatus('Submitting...', false);
+      var total    = reportees.length;
+      var done     = 0;
+      var hadError = false;
+
+      reportees.forEach(function (ratee) {
+        var r = ratings[ratee.personId];
+        google.script.run
+          .withSuccessHandler(function () {
+            done++;
+            if (done === total && !hadError) setStatus('Thank you for your ratings!', false);
+          })
+          .withFailureHandler(function (err) {
+            hadError = true;
+            setStatus('Error: ' + err.message, true);
+          })
+          .submitClientRating({
+            token       : TOKEN,
+            quarterKey  : QUARTER_KEY,
+            rateeId     : ratee.personId,
+            rateeName   : ratee.personName,
+            scores      : r.scores,
+            notes       : r.notes
+          });
+      });
+    }
+  </script>
+</body>
+</html>
