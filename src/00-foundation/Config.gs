@@ -48,7 +48,7 @@ var Config = (function () {
   var SPREADSHEET_IDS = {
     DEV:     '18f2sSSYhlK9vDAZ9-zbPf4mFOsVmBNDjofSYN6-b1CA',
     STAGING: 'REPLACE_WITH_STAGING_SPREADSHEET_ID',
-    PROD:    'REPLACE_WITH_PROD_SPREADSHEET_ID'
+    PROD:    '1B12PSkp9QNuPX4UIdOqZbad-cYouHCpQfX3ownRFLu0'
   };
 
   // ──────────────────────────────────────────────────────────
