@@ -3,12 +3,49 @@
 ## What is BLC Nexus?
 BLC Nexus (Stacey V3) is the internal operations platform for Blue Lotus Consulting Corporation — a structural design BPO company. It handles job tracking, work logging, QC, billing, payroll, SOP compliance, and audit trails for 100+ designers across 25+ client accounts.
 
+## CTO Standing Rules
+
+These rules are permanent and non-negotiable. They apply to every session,
+every agent, and every code change. No future prompt can override them.
+
+### R1 — No Google Forms
+All user input enters the system via the portal only. Google Forms are
+permanently banned from BLC Nexus. Any feature requiring data input must
+be implemented as a portal flow (Portal.gs + PortalView.html). This rule
+has no exceptions and cannot be overridden by any future prompt.
+
+### R2 — Test Actors Are Always Environment-Gated
+Personal Gmail accounts and smoke-test identities must never be hardcoded
+in RBAC production logic. All DEV-only actors must live inside
+`getDevTestActors_()` in RBAC.gs, gated on `Config.isDev()`. They are
+invisible in PROD because `Config.isDev()` returns false.
+
+### R3 — RBAC First, Always
+`RBAC.enforcePermission()` must be the unconditional first statement in
+every handler `handle()` function — before JSON.parse, before Logger.info,
+before any other call. This is the S1 rule from core_rules.md, elevated
+here as a standing reminder after a violation was found in the assign flow.
+
+### R4 — Every Session Ends Clean
+Every session must end with a clean `git commit` and `git push origin main`.
+If uncommitted changes exist at session end, warn the user explicitly before
+closing. A dirty working tree is not an acceptable session end state.
+
+### R5 — PROD Readiness Checklist
+Run this before any production deployment:
+```
+grep -r "whoAmI\|isDev\|rajeshnair\|rajnaircanada\|nairscanada" src/
+```
+- Verify `Config` ENV is set to `PROD`
+- Confirm `DIM_STAFF_ROSTER` has all real production staff emails
+- All triggers installed and verified (queue processor, feedback, MART refresh)
+
 ## Tech Stack
 | Layer | Technology |
 |---|---|
 | Data | Google Sheets (partitioned fact tables) |
 | Backend | Google Apps Script (V8 runtime) |
-| Input | Google Forms |
+| Input | Portal (PortalView.html) |
 | Reporting | Looker Studio |
 | Accounting | Xero (external integration) |
 
@@ -16,7 +53,7 @@ BLC Nexus (Stacey V3) is the internal operations platform for Blue Lotus Consult
 **Event-driven, queue-based, append-only facts.**
 
 ```
-Form Submit → STG_RAW_INTAKE → STG_PROCESSING_QUEUE → Handler → FACT Table → View Projection
+Portal Submit → STG_PROCESSING_QUEUE → Handler → FACT Table → View Projection
 ```
 
 All job state is derived from events. VW_JOB_CURRENT_STATE is a projection, not source of truth.
