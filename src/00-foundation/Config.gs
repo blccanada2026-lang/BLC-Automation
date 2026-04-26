@@ -285,6 +285,7 @@ var Config = (function () {
   // ──────────────────────────────────────────────────────────
   var FORM_TYPES = {
     JOB_CREATE:    'JOB_CREATE',
+    JOB_ALLOCATE:  'JOB_ALLOCATE',
     JOB_START:     'JOB_START',
     WORK_LOG:      'WORK_LOG',
     QC_SUBMIT:     'QC_SUBMIT',
