@@ -991,7 +991,7 @@ function onDataLoaded(jsonStr) {
   if (_data.perms.canCreateJob)  document.getElementById('btn-create-job').style.display     = 'inline-block';
   if (_data.perms.canCreateJob)  document.getElementById('btn-sbs-intake').style.display      = 'inline-block';
   if (_data.perms.canViewAll)    document.getElementById('btn-process-queue').style.display   = 'inline-block';
-  if (_data.perms.canCreateJob)  document.getElementById('btn-clients').style.display         = 'inline-block';
+  if (_data.perms.canManageStaff) document.getElementById('btn-clients').style.display        = 'inline-block';
   if (_data.perms.isLeader)      document.getElementById('btn-leader-dash').style.display     = 'inline-block';
   if (_data.perms.canManageStaff) document.getElementById('btn-staff-panel').style.display    = 'inline-block';
   if (_data.perms.canViewAll)    document.getElementById('btn-preview-as').style.display      = 'inline-block';
@@ -1016,7 +1016,7 @@ function onDataLoaded(jsonStr) {
   if (_data.perms.isLeader) {
     _dashVisible = true;
     document.getElementById('leader-dashboard').style.display = 'block';
-    renderWorkloadPanel(_data.jobs);
+    renderWorkloadPanel(_data.jobs, _data.staffNameMap || {});
     loadLeaderDashboard();
   }
 
@@ -1256,7 +1256,7 @@ function renderPortal_(data) {
   if (perms.canCreateJob)    document.getElementById('btn-create-job').style.display   = 'inline-block';
   if (perms.canCreateJob)    document.getElementById('btn-sbs-intake').style.display    = 'inline-block';
   if (perms.canViewAll)      document.getElementById('btn-process-queue').style.display = 'inline-block';
-  if (perms.canCreateJob)    document.getElementById('btn-clients').style.display       = 'inline-block';
+  if (perms.canManageStaff)  document.getElementById('btn-clients').style.display       = 'inline-block';
   if (perms.isLeader)        document.getElementById('btn-leader-dash').style.display   = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-staff-panel').style.display   = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-run-quarterly-bonus').style.display = 'inline-block';
@@ -1270,7 +1270,7 @@ function renderPortal_(data) {
 
   if (perms.isLeader) {
     document.getElementById('leader-dashboard').style.display = 'block';
-    renderWorkloadPanel(data.jobs);
+    renderWorkloadPanel(data.jobs, data.staffNameMap || {});
   } else {
     document.getElementById('leader-dashboard').style.display = 'none';
   }
@@ -1285,7 +1285,8 @@ function exitPreview() {
 var ACTIVE_STATES = { IN_PROGRESS: true, QC_REVIEW: true, ALLOCATED: true,
                       ON_HOLD: true, CLIENT_RETURN: true };
 
-function renderWorkloadPanel(jobs) {
+function renderWorkloadPanel(jobs, nameMap) {
+  nameMap = nameMap || {};
   var body = document.getElementById('dash-workload-body');
   if (!body) return;
   while (body.firstChild) body.removeChild(body.firstChild);
@@ -1337,7 +1338,7 @@ function renderWorkloadPanel(jobs) {
     var c    = counts[code];
     var tr   = document.createElement('tr');
 
-    var cells = [code, c.IN_PROGRESS, c.QC_REVIEW, c.ON_HOLD, c.ALLOCATED, c.total];
+    var cells = [nameMap[code] || code, c.IN_PROGRESS, c.QC_REVIEW, c.ON_HOLD, c.ALLOCATED, c.total];
     for (var ci = 0; ci < cells.length; ci++) {
       var td = document.createElement('td');
       td.textContent = cells[ci];

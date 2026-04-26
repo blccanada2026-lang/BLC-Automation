@@ -176,13 +176,16 @@ var JobAssignHandler = (function () {
   function handle(queueItem, actor) {
     var queueId = queueItem.queue_id || '(unknown)';
 
+    // ── Step 1: Enforce JOB_ALLOCATE permission ─────────────
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.JOB_ALLOCATE);
+
     Logger.info('JOB_ASSIGN_START', {
       module:   'JobAssignHandler',
       message:  'Starting job assign handler',
       queue_id: queueId
     });
 
-    // ── Step 1: Parse payload_json ──────────────────────────
+    // ── Step 2: Parse payload_json ──────────────────────────
     var rawPayload = queueItem.payload_json || '{}';
     var payload    = null;
 
@@ -195,7 +198,7 @@ var JobAssignHandler = (function () {
       );
     }
 
-    // ── Step 2: Validate payload ────────────────────────────
+    // ── Step 3: Validate payload ────────────────────────────
     var cleanPayload = ValidationEngine.validate(
       JOB_ALLOCATE_SCHEMA,
       payload,
@@ -213,10 +216,7 @@ var JobAssignHandler = (function () {
       designer_code: designerCode
     });
 
-    // ── Step 3: Enforce JOB_ALLOCATE permission ─────────────
-    RBAC.enforcePermission(actor, RBAC.ACTIONS.JOB_ALLOCATE);
-
-    // ── Step 3b: Idempotency check (before any state reads) ──
+    // ── Step 4: Idempotency check (before any state reads) ──
     var idempotencyKey = buildIdempotencyKey_(queueId);
 
     if (isDuplicate_(idempotencyKey)) {
@@ -229,7 +229,7 @@ var JobAssignHandler = (function () {
       return 'DUPLICATE';
     }
 
-    // ── Step 4: Look up job in VW_JOB_CURRENT_STATE ─────────
+    // ── Step 5: Look up job in VW_JOB_CURRENT_STATE ─────────
     var view = StateMachine.getJobView(jobNumber);
 
     if (!view) {
@@ -245,17 +245,17 @@ var JobAssignHandler = (function () {
       current_state: view.current_state
     });
 
-    // ── Step 5: Assert INTAKE_RECEIVED → ALLOCATED ──────────
+    // ── Step 6: Assert INTAKE_RECEIVED → ALLOCATED ──────────
     StateMachine.assertTransition(
       view.current_state,
       Config.STATES.ALLOCATED,
       { jobNumber: jobNumber }
     );
 
-    // ── Step 6: Validate designer is active ─────────────────
+    // ── Step 7: Validate designer is active ─────────────────
     assertDesignerActive_(designerCode);
 
-    // ── Step 7: Ensure FACT_JOB_EVENTS partition ───────────
+    // ── Step 8: Ensure FACT_JOB_EVENTS partition ───────────
     var periodId = Identifiers.generateCurrentPeriodId();
 
     DAL.ensurePartition(
@@ -319,10 +319,10 @@ var JobAssignHandler = (function () {
     try {
       QueueProcessor.registerHandler(Config.FORM_TYPES.JOB_ALLOCATE, handle);
     } catch (e) {
-      console.log(
-        '[JobAssignHandler REGISTRATION FAILED] ' + e.message +
-        ' — JOB_ALLOCATE items will not be processed.'
-      );
+      Logger.warn('HANDLER_REGISTRATION_FAILED', {
+        module:  'JobAssignHandler',
+        message: e.message
+      });
     }
   }());
 

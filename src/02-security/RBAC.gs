@@ -486,6 +486,21 @@ var RBAC = (function () {
     'test.qc@blclotus.com':       { personCode: 'TQ0', role: ROLES.QC,        displayName: 'Test QC' }
   };
 
+  /**
+   * Returns DEV-only smoke test actors. Returns {} in PROD and TEST environments.
+   * These identities are not in DIM_STAFF_ROSTER — they exist only to allow
+   * portal testing via personal Google accounts during local DEV sessions.
+   * @returns {Object}  email → actor map, or {} in non-DEV environments
+   */
+  function getDevTestActors_() {
+    if (!Config.isDev()) return {};
+    return {
+      'rajeshnair34@gmail.com':  { personCode: 'RPM', role: ROLES.PM,        displayName: 'Raj (PM)' },
+      'rajnaircanada@gmail.com': { personCode: 'RND', role: ROLES.DESIGNER,  displayName: 'Raj (Designer)' },
+      'nairscanada@gmail.com':   { personCode: 'NTL', role: ROLES.TEAM_LEAD, displayName: 'Raj (TL)' }
+    };
+  }
+
   // ============================================================
   // SECTION 7: PRIVATE HELPERS
   // ============================================================
@@ -634,7 +649,8 @@ var RBAC = (function () {
    */
   function lookupMockActor_(email) {
     if (!email) return null;
-    return MOCK_ACTOR_MAP[email.toLowerCase().trim()] || null;
+    var key = email.toLowerCase().trim();
+    return MOCK_ACTOR_MAP[key] || getDevTestActors_()[key] || null;
   }
 
   // ============================================================

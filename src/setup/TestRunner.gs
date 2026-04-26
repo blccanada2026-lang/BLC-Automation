@@ -329,6 +329,32 @@ function seedTestStaff() {
       pm_code:         'SGO',
       bonus_eligible:  'FALSE',
       effective_from:  '2024-01-01'
+    },
+    {
+      person_code:     'RND',
+      name:            'Raj (Designer)',
+      email:           'rajnaircanada@gmail.com',
+      role:            'DESIGNER',
+      pay_currency:    'INR',
+      pay_design:      500,
+      pay_qc:          400,
+      supervisor_code: 'SDA',
+      pm_code:         'SGO',
+      bonus_eligible:  'FALSE',
+      effective_from:  '2024-01-01'
+    },
+    {
+      person_code:     'NTL',
+      name:            'Raj (TL)',
+      email:           'nairscanada@gmail.com',
+      role:            'TEAM_LEAD',
+      pay_currency:    'INR',
+      pay_design:      700,
+      pay_qc:          0,
+      supervisor_code: '',
+      pm_code:         'SGO',
+      bonus_eligible:  'FALSE',
+      effective_from:  '2024-01-01'
     }
   ];
 
