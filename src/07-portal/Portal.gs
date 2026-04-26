@@ -83,6 +83,14 @@ function portal_getViewData() {
   return PortalData.getViewData(email);
 }
 
+/** DEV diagnostic — remove before PROD. Returns session email for debugging. */
+function portal_whoAmI() {
+  return JSON.stringify({
+    activeUser:    Session.getActiveUser().getEmail(),
+    effectiveUser: Session.getEffectiveUser().getEmail()
+  });
+}
+
 // ============================================================
 // portal_submitAction — submits a job action to the queue
 // ============================================================

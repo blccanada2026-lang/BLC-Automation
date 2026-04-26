@@ -72,9 +72,10 @@ var PortalData = (function () {
         displayName: actor.displayName,
         scope:       actor.scope
       },
-      jobs:  jobs,
-      stats: stats,
-      perms: perms
+      jobs:         jobs,
+      stats:        stats,
+      perms:        perms,
+      staffNameMap: buildStaffNameMap_()
     });
   }
 
@@ -185,6 +186,26 @@ var PortalData = (function () {
       byState[state] = (byState[state] || 0) + 1;
     }
     return { total: jobs.length, byState: byState };
+  }
+
+  // ============================================================
+  // SECTION 3b: buildStaffNameMap_
+  // ============================================================
+
+  /** Returns { personCode: displayName, email: displayName } for all staff. Fails silently. */
+  function buildStaffNameMap_() {
+    var map = {};
+    try {
+      var rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
+      for (var i = 0; i < rows.length; i++) {
+        var code  = String(rows[i].person_code || '').trim();
+        var email = String(rows[i].email       || '').toLowerCase().trim();
+        var name  = String(rows[i].name        || code);
+        if (code)  map[code]  = name;
+        if (email) map[email] = name;
+      }
+    } catch (e) { /* non-fatal — caller falls back to person_code */ }
+    return map;
   }
 
   // ============================================================
@@ -761,6 +782,7 @@ var PortalData = (function () {
       jobs:              jobs,
       stats:             stats,
       perms:             perms,
+      staffNameMap:      buildStaffNameMap_(),
       previewMode:       true,
       previewPersonCode: targetPersonCode
     });
