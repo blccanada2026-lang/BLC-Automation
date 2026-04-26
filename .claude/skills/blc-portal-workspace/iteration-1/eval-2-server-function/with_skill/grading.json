@@ -1,0 +1,15 @@
+{
+  "eval_id": 2,
+  "run": "with_skill",
+  "assertions": [
+    { "text": "Function is not nested inside a class or IIFE — top-level global", "passed": true, "evidence": "Function declared at module level, no wrapping IIFE or class" },
+    { "text": "First statement is var email = Session.getActiveUser().getEmail()", "passed": true, "evidence": "var email = Session.getActiveUser().getEmail(); is line 1 of function body" },
+    { "text": "Returns JSON.stringify(...) not a raw object", "passed": true, "evidence": "return JSON.stringify(rows)" },
+    { "text": "Calls QuarterlyBonusEngine.previewQuarterlyBonus — no business logic inline", "passed": true, "evidence": "Single delegation call; parseInt(year, 10) for type safety only" },
+    { "text": "Has /** ... */ JSDoc block above the function", "passed": true, "evidence": "Full JSDoc with @param and @returns" },
+    { "text": "Function is named portal_previewQuarterlyBonus", "passed": true, "evidence": "function portal_previewQuarterlyBonus(quarter, year)" }
+  ],
+  "pass_count": 6,
+  "total": 6,
+  "pass_rate": 1.0
+}

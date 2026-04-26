@@ -1,0 +1,49 @@
+{
+  "skill_name": "blc-portal",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add a new portal section to PortalView.html that shows an 'Admin Tools' panel. It should only be visible to CEO and ADMIN roles. It needs two buttons: 'Rebuild Views' (calls portal_rebuildViews) and 'Refresh Dashboard' (calls portal_refreshDashboard). Show a spinner while the operation runs and display the result in a status message below the buttons.",
+      "expected_output": "HTML section with role check, two buttons, google.script.run calls with withSuccessHandler/withFailureHandler, loading state, and result display. Uses correct CSS button classes, ES5 var syntax, no CDN.",
+      "files": [],
+      "assertions": [
+        { "name": "uses-var-not-let", "description": "No let or const in JS block — ES5 only" },
+        { "name": "google-script-run-pattern", "description": "Uses .withSuccessHandler(...).withFailureHandler(...) on google.script.run" },
+        { "name": "role-check-present", "description": "Checks actor.role === 'CEO' or 'ADMIN' before showing the panel" },
+        { "name": "correct-button-classes", "description": "Buttons use .btn-primary / .btn-success / .btn-warning / .btn-danger classes" },
+        { "name": "no-cdn", "description": "No http:// or https:// URL references (no external CDN)" },
+        { "name": "loading-state", "description": "Shows a spinner or loading indicator while the call is in flight" },
+        { "name": "result-display", "description": "Renders server response in a status element after the call completes" }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a new portal_* server function to Portal.gs that lets the CEO preview the quarterly bonus for a given quarter and year before running it. The function should accept quarter (e.g. 'Q2') and year (e.g. 2026) as separate parameters. It calls QuarterlyBonusEngine.previewQuarterlyBonus. Also write the corresponding PortalData helper if needed.",
+      "expected_output": "Top-level global function portal_previewQuarterlyBonus(quarter, year) in Portal.gs. First line is Session.getActiveUser().getEmail(). Delegates to QuarterlyBonusEngine. Returns JSON.stringify. No business logic in Portal.gs itself. JSDoc present.",
+      "files": [],
+      "assertions": [
+        { "name": "top-level-global", "description": "Function is not nested inside a class or IIFE" },
+        { "name": "first-line-session", "description": "First statement is var email = Session.getActiveUser().getEmail()" },
+        { "name": "returns-json-stringify", "description": "Returns JSON.stringify(...) not a raw object" },
+        { "name": "delegates-to-module", "description": "Calls QuarterlyBonusEngine.previewQuarterlyBonus — no business logic inline" },
+        { "name": "jsdoc-present", "description": "Has /** ... */ JSDoc block above the function" },
+        { "name": "portal-prefix-naming", "description": "Function is named portal_previewQuarterlyBonus" }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Create a new standalone page QuarterlyBonus.html (served at ?page=quarterly-bonus) that displays the quarterly bonus preview for CEOs. The page should load via portal_previewQuarterlyBonus, render results in a data table with columns: Person, Role, Design Hours, Bonus (INR). Include the correct doGet routing in Portal.gs and use the BLC design system — dark header, same colour tokens, table-wrap pattern.",
+      "expected_output": "New HTML file with correct :root tokens, header, table-wrap pattern, google.script.run call (ES5), doGet route added for 'quarterly-bonus', no CDN.",
+      "files": [],
+      "assertions": [
+        { "name": "root-tokens-present", "description": ":root block defines --c-primary, --c-secondary, --c-bg, --c-surface" },
+        { "name": "table-wrap-pattern", "description": "Uses .table-wrap + table + th/td structure matching skill convention" },
+        { "name": "no-cdn", "description": "No external URL references" },
+        { "name": "es5-only", "description": "No let, const, arrow functions, or template literals" },
+        { "name": "doget-route-present", "description": "doGet snippet checks page === 'quarterly-bonus'" },
+        { "name": "google-script-run-pattern", "description": "Uses .withSuccessHandler and .withFailureHandler" },
+        { "name": "header-uses-c-primary", "description": "Header background uses var(--c-primary) or #1a3c5e" }
+      ]
+    }
+  ]
+}

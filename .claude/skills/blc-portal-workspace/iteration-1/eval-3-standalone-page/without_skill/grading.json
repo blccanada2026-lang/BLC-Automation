@@ -1,0 +1,9 @@
+{
+  "eval_id": 3,
+  "run": "without_skill",
+  "assertions": [],
+  "pass_count": 0,
+  "total": 0,
+  "pass_rate": null,
+  "note": "Agent hit API usage limit — no output produced. Eval skipped."
+}

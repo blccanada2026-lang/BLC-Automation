@@ -1,0 +1,16 @@
+{
+  "eval_id": 3,
+  "run": "with_skill",
+  "assertions": [
+    { "text": ":root block defines --c-primary, --c-secondary, --c-bg, --c-surface", "passed": true, "evidence": "All four tokens present with correct values in :root" },
+    { "text": "Uses .table-wrap + table + th/td structure matching skill convention", "passed": true, "evidence": ".table-wrap div wrapping table with th/td styling verbatim from skill" },
+    { "text": "No external URL references", "passed": true, "evidence": "No http/https URLs in file" },
+    { "text": "No let, const, arrow functions, or template literals", "passed": true, "evidence": "All var; function expressions only; string concatenation not template literals" },
+    { "text": "doGet snippet checks page === 'quarterly-bonus'", "passed": true, "evidence": "if (page === 'quarterly-bonus') branch in doGet_snippet.gs" },
+    { "text": "Uses .withSuccessHandler and .withFailureHandler", "passed": true, "evidence": "Both handlers present on all google.script.run calls" },
+    { "text": "Header background uses var(--c-primary) or #1a3c5e", "passed": true, "evidence": "header { background: var(--c-primary); }" }
+  ],
+  "pass_count": 7,
+  "total": 7,
+  "pass_rate": 1.0
+}

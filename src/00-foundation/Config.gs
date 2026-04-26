@@ -112,7 +112,7 @@ var Config = (function () {
       protectionLevel: 'PROTECTED',
 
       triggers: {
-        queueProcessorMinutes:  3,  // faster queue drain in prod
+        queueProcessorMinutes:  5,
         healthMonitorMinutes:  10,
         archivalHour:           4
       },

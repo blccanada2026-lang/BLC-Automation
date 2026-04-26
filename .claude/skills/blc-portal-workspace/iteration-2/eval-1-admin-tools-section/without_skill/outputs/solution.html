@@ -1,0 +1,82 @@
+<!-- ══ ADMIN TOOLS PANEL (iteration-2 baseline — no skill) ═════════════════════ -->
+<!-- Role-gating via perms.canManageStaff — as produced by the baseline agent   -->
+
+<style>
+  #admin-tools-panel { display: none; margin-top: 24px; }
+  .admin-tools-hdr { display: flex; justify-content: space-between; align-items: center;
+                     margin-bottom: 14px; }
+  .admin-tools-hdr h2 { font-size: 15px; font-weight: 700; }
+  .admin-panel { background: var(--c-surface); border: 1px solid var(--c-border);
+                 border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
+  .admin-panel-actions { display: flex; gap: 8px; align-items: center; }
+  .admin-spinner { display: none; width: 14px; height: 14px; border: 2px solid #ddd;
+                   border-top-color: var(--c-secondary); border-radius: 50%;
+                   animation: spin .7s linear infinite; }
+  .admin-status { margin-top: 14px; font-size: 13px; min-height: 20px; color: var(--c-muted); }
+</style>
+
+<div id="admin-tools-panel">
+  <div class="admin-tools-hdr"><h2>Admin Tools</h2></div>
+  <div class="admin-panel">
+    <div class="admin-panel-actions">
+      <button class="btn-danger btn-sm" id="btn-rebuild"  onclick="adminRebuildViews()">Rebuild Views</button>
+      <button class="btn-primary btn-sm" id="btn-refresh" onclick="adminRefreshDashboard()">Refresh Dashboard</button>
+      <div class="admin-spinner" id="admin-spinner"></div>
+    </div>
+    <div class="admin-status" id="admin-status"></div>
+  </div>
+</div>
+
+<script>
+  // Integration: call from onDataLoaded() after portal_getViewData resolves.
+  // Uses perms.canManageStaff to gate visibility.
+  function maybeShowAdminTools(data) {
+    if (data.perms.canManageStaff) {
+      document.getElementById('admin-tools-panel').style.display = 'block';
+    }
+  }
+
+  function adminSetStatus(msg) {
+    document.getElementById('admin-status').textContent = msg;
+  }
+
+  function adminSetBusy(on) {
+    document.getElementById('btn-rebuild').disabled  = on;
+    document.getElementById('btn-refresh').disabled  = on;
+    document.getElementById('admin-spinner').style.display = on ? 'inline-block' : 'none';
+  }
+
+  function adminRebuildViews() {
+    adminSetBusy(true);
+    adminSetStatus('Rebuilding views\u2026');
+    google.script.run
+      .withSuccessHandler(function(json) {
+        adminSetBusy(false);
+        var r = JSON.parse(json);
+        adminSetStatus('Views rebuilt \u2014 ' + r.vw_job + ' job rows (' +
+                       Math.round(r.elapsed_ms / 1000) + 's)');
+      })
+      .withFailureHandler(function(err) {
+        adminSetBusy(false);
+        adminSetStatus('Rebuild failed: ' + err.message);
+      })
+      .portal_rebuildViews();
+  }
+
+  function adminRefreshDashboard() {
+    adminSetBusy(true);
+    adminSetStatus('Refreshing dashboard\u2026');
+    google.script.run
+      .withSuccessHandler(function(json) {
+        adminSetBusy(false);
+        var r = JSON.parse(json);
+        adminSetStatus('Dashboard refreshed \u2014 ' + r.periods + ' periods (' +
+                       Math.round(r.elapsed_ms / 1000) + 's)');
+      })
+      .withFailureHandler(function(err) {
+        adminSetBusy(false);
+        adminSetStatus('Refresh failed: ' + err.message);
+      })
+      .portal_refreshDashboard();
+  }
+</script>
