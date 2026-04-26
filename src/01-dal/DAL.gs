@@ -98,7 +98,7 @@ var DAL = (function () {
     // ── FACT tables (handlers + migration only) ─────────────
     // These tables are append-only (Rule A5). updateWhere() is
     // hard-blocked regardless of what callerModule is passed.
-    'FACT_JOB_EVENTS':       ['JobCreateHandler', 'JobStartHandler', 'JobHoldHandler',
+    'FACT_JOB_EVENTS':       ['JobCreateHandler', 'JobAssignHandler', 'JobStartHandler', 'JobHoldHandler',
                               'JobResumeHandler', 'ClientReturnHandler',
                               'EventReplayEngine', 'MigrationEngine', 'MigrationReplayEngine'],
     'FACT_WORK_LOGS':        ['WorkLogHandler', 'MigrationEngine', 'MigrationReplayEngine'],
@@ -108,7 +108,7 @@ var DAL = (function () {
     'FACT_SOP_SUBMISSIONS':  ['SOPHandler', 'MigrationEngine'],
 
     // ── View tables (rebuilt projections) ───────────────────
-    'VW_JOB_CURRENT_STATE':  ['EventReplayEngine', 'JobCreateHandler', 'JobStartHandler',
+    'VW_JOB_CURRENT_STATE':  ['EventReplayEngine', 'JobCreateHandler', 'JobAssignHandler', 'JobStartHandler',
                               'JobHoldHandler', 'JobResumeHandler', 'ClientReturnHandler', 'QCHandler',
                               'BillingEngine'],
     'VW_DESIGNER_WORKLOAD':  ['EventReplayEngine', 'ReportingEngine'],

@@ -204,6 +204,8 @@ var PortalData = (function () {
     var role = actor.role || '';
     return {
       canCreateJob:      RBAC.hasPermission(actor, RBAC.ACTIONS.JOB_CREATE),
+      canAssign:         RBAC.hasPermission(actor, RBAC.ACTIONS.JOB_ALLOCATE),
+      canStart:          RBAC.hasPermission(actor, RBAC.ACTIONS.JOB_START),
       canViewAll:        actor.scope === RBAC.SCOPES.ALL || actor.scope === RBAC.SCOPES.TEAM,
       isQcReviewer:      RBAC.hasPermission(actor, RBAC.ACTIONS.QC_APPROVE),
       isDesigner:        role === 'DESIGNER' || role === 'TEAM_LEAD',
@@ -707,7 +709,8 @@ var PortalData = (function () {
     submitRating:         submitRating,
     sendRatingRequests:   sendRatingRequests,
     getViewDataAs:        getViewDataAs,
-    getMyRateesAs:        getMyRateesAs
+    getMyRateesAs:        getMyRateesAs,
+    getActiveDesigners:   getActiveDesigners
   };
 
   // ============================================================
@@ -797,6 +800,44 @@ var PortalData = (function () {
     if (!targetEmail) throw new Error('Person not found: ' + targetPersonCode);
 
     return getMyRatees(targetEmail, quarterPeriodId);
+  }
+
+  // ============================================================
+  // SECTION 10: getActiveDesigners
+  // ============================================================
+
+  /**
+   * Returns active staff eligible to be assigned jobs (DESIGNER or TEAM_LEAD).
+   * Requires JOB_ALLOCATE permission (CEO, PM, TEAM_LEAD).
+   *
+   * @param {string} email
+   * @returns {Object[]}  Array of { personCode, name, role }
+   */
+  function getActiveDesigners(email) {
+    var actor = RBAC.resolveActor(email);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.JOB_ALLOCATE);
+
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') return [];
+      throw e;
+    }
+
+    var result = [];
+    for (var i = 0; i < rows.length; i++) {
+      var row  = rows[i];
+      var role = String(row.role || '').trim().toUpperCase();
+      if (String(row.active || '').toUpperCase() !== 'TRUE') continue;
+      if (role !== 'DESIGNER' && role !== 'TEAM_LEAD') continue;
+      result.push({
+        personCode: String(row.person_code || '').trim(),
+        name:       String(row.name || '').trim(),
+        role:       role
+      });
+    }
+    return result;
   }
 
 }());

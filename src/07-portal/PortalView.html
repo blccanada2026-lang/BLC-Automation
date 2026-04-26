@@ -729,6 +729,51 @@
   </div>
 </div>
 
+<!-- ══ ASSIGN MODAL ══════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-assign">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Assign Job</h3>
+      <button class="modal-close" data-close="modal-assign">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-job-info" id="assign-job-info"></div>
+      <div class="field" style="margin-top:14px">
+        <label>Assign To <span style="color:var(--c-danger)">*</span></label>
+        <select id="assign-designer"></select>
+      </div>
+      <div class="field">
+        <label>Notes (optional)</label>
+        <textarea id="assign-notes" rows="2" maxlength="500"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-assign">Cancel</button>
+      <button class="btn-primary" id="btn-submit-assign">Assign Job</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ START MODAL ════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-start">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Start Job</h3>
+      <button class="modal-close" data-close="modal-start">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-job-info" id="start-job-info"></div>
+      <p style="color:var(--c-muted);font-size:13px;margin-top:12px">
+        Mark this job as in progress. Place it on hold first if you need to pause later.
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-start">Cancel</button>
+      <button class="btn-success" id="btn-submit-start">Start Job</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ QC REVIEW MODAL ═══════════════════════════════════════ -->
 <div class="modal-backdrop" id="modal-qc-review">
   <div class="modal">
@@ -850,6 +895,8 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-process-queue').addEventListener('click', processQueue);
   document.getElementById('btn-create-job').addEventListener('click', function() { openModal('modal-create'); });
 
+  document.getElementById('btn-submit-assign').addEventListener('click',    submitAssign);
+  document.getElementById('btn-submit-start').addEventListener('click',     submitStart);
   document.getElementById('btn-submit-create').addEventListener('click',    submitCreateJob);
   document.getElementById('btn-submit-work-log').addEventListener('click',  submitWorkLog);
   document.getElementById('btn-submit-qc').addEventListener('click',        submitForQC);
@@ -901,6 +948,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!action || !jobNum) return;
 
     switch (action) {
+      case 'assign':      openAssign(jobNum);    break;
+      case 'start':       openStart(jobNum);     break;
       case 'work-log':    openWorkLog(jobNum);   break;
       case 'submit-qc':   openSubmitQC(jobNum);  break;
       case 'qc-review':   openQCReview(jobNum);  break;
@@ -1422,6 +1471,12 @@ function buildActionButtons(job, perms) {
 
   if (isTerminal) return buttons;
 
+  if (perms.canAssign && state === 'INTAKE_RECEIVED') {
+    buttons.push(makeActionBtn('Assign',  'btn-primary', 'assign', job.job_number));
+  }
+  if (perms.canStart && state === 'ALLOCATED') {
+    buttons.push(makeActionBtn('Start',   'btn-success', 'start',  job.job_number));
+  }
   if (perms.isDesigner && (state === 'IN_PROGRESS' || state === 'ALLOCATED')) {
     buttons.push(makeActionBtn('Log Work',   'btn-muted',    'work-log',  job.job_number));
   }
@@ -1526,6 +1581,53 @@ function openQCReview(jobNumber) {
   openModal('modal-qc-review');
 }
 
+function openAssign(jobNumber) {
+  _activeJob = findJob(jobNumber);
+  if (!_activeJob) return;
+  setModalJobInfo('assign-job-info', _activeJob);
+  document.getElementById('assign-notes').value = '';
+
+  var sel = document.getElementById('assign-designer');
+  while (sel.firstChild) sel.removeChild(sel.firstChild);
+  var loadingOpt = document.createElement('option');
+  loadingOpt.textContent = 'Loading\u2026';
+  loadingOpt.disabled    = true;
+  sel.appendChild(loadingOpt);
+
+  openModal('modal-assign');
+
+  google.script.run
+    .withSuccessHandler(function(json) {
+      var designers = JSON.parse(json);
+      while (sel.firstChild) sel.removeChild(sel.firstChild);
+      if (designers.length === 0) {
+        var emptyOpt = document.createElement('option');
+        emptyOpt.textContent = 'No active designers found';
+        emptyOpt.disabled    = true;
+        sel.appendChild(emptyOpt);
+        return;
+      }
+      designers.forEach(function(d) {
+        var opt = document.createElement('option');
+        opt.value       = d.personCode;
+        opt.textContent = d.name + ' (' + d.role + ')';
+        sel.appendChild(opt);
+      });
+    })
+    .withFailureHandler(function(err) {
+      closeModal('modal-assign');
+      showToast('Could not load designers: ' + (err.message || String(err)), 'error');
+    })
+    .portal_getActiveDesigners();
+}
+
+function openStart(jobNumber) {
+  _activeJob = findJob(jobNumber);
+  if (!_activeJob) return;
+  setModalJobInfo('start-job-info', _activeJob);
+  openModal('modal-start');
+}
+
 // ── Submit Handlers ────────────────────────────────────────────
 function submitCreateJob() {
   var client   = val('create-client');
@@ -1609,6 +1711,24 @@ function submitQCReview() {
     ? _activeJob.job_number + ' approved — marked as completed.'
     : _activeJob.job_number + ' returned for rework.';
   submitAction('QC_SUBMIT', payload, msg);
+}
+
+function submitAssign() {
+  if (!_activeJob) return;
+  var designerCode = document.getElementById('assign-designer').value;
+  if (!designerCode) return showToast('Please select a designer.', 'error');
+  var notes   = val('assign-notes');
+  var payload = { job_number: _activeJob.job_number, designer_code: designerCode };
+  if (notes) payload.notes = notes;
+  closeModal('modal-assign');
+  submitAction('JOB_ALLOCATE', payload, _activeJob.job_number + ' assigned.');
+}
+
+function submitStart() {
+  if (!_activeJob) return;
+  closeModal('modal-start');
+  submitAction('JOB_START', { job_number: _activeJob.job_number },
+               _activeJob.job_number + ' started.');
 }
 
 // ── Core submit helper ─────────────────────────────────────────

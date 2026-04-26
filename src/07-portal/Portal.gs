@@ -204,6 +204,20 @@ function portal_bulkOnboardStaff() {
 }
 
 // ============================================================
+// portal_getActiveDesigners — returns assignable staff (CEO/PM/TL)
+// ============================================================
+
+/**
+ * Returns active DESIGNER and TEAM_LEAD staff for job assignment.
+ * Requires JOB_ALLOCATE permission.
+ * @returns {string}  JSON array of { personCode, name, role }
+ */
+function portal_getActiveDesigners() {
+  var email = Session.getActiveUser().getEmail();
+  return JSON.stringify(PortalData.getActiveDesigners(email));
+}
+
+// ============================================================
 // portal_getStaffList — returns all active staff (CEO/Admin)
 // ============================================================
 
