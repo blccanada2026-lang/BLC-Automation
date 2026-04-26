@@ -1,0 +1,14 @@
+{
+  "eval_id": 1,
+  "eval_name": "admin-tools-section",
+  "prompt": "Add a new portal section to PortalView.html that shows an 'Admin Tools' panel. It should only be visible to CEO and ADMIN roles. It needs two buttons: 'Rebuild Views' (calls portal_rebuildViews) and 'Refresh Dashboard' (calls portal_refreshDashboard). Show a spinner while the operation runs and display the result in a status message below the buttons.",
+  "assertions": [
+    { "text": "No let or const in JS block — ES5 only", "passed": null, "evidence": null },
+    { "text": "Uses .withSuccessHandler(...).withFailureHandler(...) on google.script.run", "passed": null, "evidence": null },
+    { "text": "Checks actor.role === 'CEO' or 'ADMIN' before showing the panel", "passed": null, "evidence": null },
+    { "text": "Buttons use .btn-primary / .btn-success / .btn-warning / .btn-danger classes", "passed": null, "evidence": null },
+    { "text": "No http:// or https:// URL references (no external CDN)", "passed": null, "evidence": null },
+    { "text": "Shows a spinner or loading indicator while the call is in flight", "passed": null, "evidence": null },
+    { "text": "Renders server response in a status element after the call completes", "passed": null, "evidence": null }
+  ]
+}

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BLC Nexus — Quarterly Bonus Preview</title>
+  <style>
+    :root {
+      --c-primary:   #1a3c5e;
+      --c-secondary: #2d6a9f;
+      --c-accent:    #f59e0b;
+      --c-bg:        #f1f5f9;
+      --c-surface:   #ffffff;
+      --c-border:    #e2e8f0;
+      --c-text:      #1e293b;
+      --c-muted:     #64748b;
+      --c-success:   #10b981;
+      --c-danger:    #ef4444;
+      --c-warning:   #f59e0b;
+      --radius:      6px;
+      --shadow:      0 1px 3px rgba(0,0,0,0.1);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: var(--c-bg); color: var(--c-text); font-size: 14px; line-height: 1.5; }
+    button { cursor: pointer; font-family: inherit; font-size: 13px; border: none;
+             border-radius: var(--radius); padding: 6px 14px; transition: opacity .15s; }
+    button:hover { opacity: .85; }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+    select { font-family: inherit; font-size: 13px; border: 1px solid var(--c-border);
+             border-radius: var(--radius); padding: 6px 10px; outline: none;
+             background: var(--c-surface); color: var(--c-text); transition: border-color .15s; }
+    select:focus { border-color: var(--c-secondary); }
+
+    header { background: var(--c-primary); color: #fff; padding: 0 24px; height: 56px;
+             display: flex; align-items: center; justify-content: space-between;
+             box-shadow: 0 2px 4px rgba(0,0,0,.2); }
+    .header-brand h1 { font-size: 16px; font-weight: 700; letter-spacing: .02em; }
+    .header-user { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+    .role-badge { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25);
+                  border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 700;
+                  letter-spacing: .06em; text-transform: uppercase; }
+
+    main { max-width: 1280px; margin: 0 auto; padding: 24px 20px; }
+
+    .toolbar { display: flex; align-items: center; justify-content: space-between;
+               margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .toolbar h2 { font-size: 15px; font-weight: 700; }
+    .toolbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .selector-group { display: flex; align-items: center; gap: 6px; }
+    .selector-group label { font-size: 12px; font-weight: 600; color: var(--c-muted);
+                            text-transform: uppercase; letter-spacing: .04em; }
+    .btn-primary { background: var(--c-secondary); color: #fff; }
+
+    .stats-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .stat-card { background: var(--c-surface); border: 1px solid var(--c-border);
+                 border-radius: var(--radius); padding: 14px 20px; min-width: 120px;
+                 box-shadow: var(--shadow); flex: 1; }
+    .stat-value { font-size: 28px; font-weight: 700; color: var(--c-primary); }
+    .stat-label { font-size: 11px; color: var(--c-muted); text-transform: uppercase;
+                  letter-spacing: .06em; margin-top: 2px; }
+
+    .table-wrap { background: var(--c-surface); border: 1px solid var(--c-border);
+                  border-radius: var(--radius); box-shadow: var(--shadow); overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f8fafc; text-align: left; padding: 10px 14px; font-size: 11px;
+         font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+         color: var(--c-muted); border-bottom: 1px solid var(--c-border); }
+    td { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8fafc; }
+    .totals-row td { font-weight: 700; background: #f8fafc;
+                     border-top: 2px solid var(--c-border); border-bottom: none; }
+
+    .badge { display: inline-block; padding: 3px 9px; border-radius: 12px;
+             font-size: 11px; font-weight: 700; letter-spacing: .04em; white-space: nowrap; }
+    .badge-DESIGNER  { background: #dbeafe; color: #1d4ed8; }
+    .badge-TEAM_LEAD { background: #ede9fe; color: #7c3aed; }
+    .badge-PM        { background: #d1fae5; color: #065f46; }
+    .badge-QC        { background: #fce7f3; color: #9d174d; }
+
+    .state-row td { text-align: center; padding: 32px 14px;
+                    color: var(--c-muted); font-size: 13px; }
+    .loading-spinner { display: inline-block; width: 14px; height: 14px;
+                       border: 2px solid var(--c-border); border-top-color: var(--c-secondary);
+                       border-radius: 50%; animation: spin .7s linear infinite;
+                       vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .notif { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px;
+             border-radius: var(--radius); font-size: 13px; font-weight: 600;
+             box-shadow: 0 4px 12px rgba(0,0,0,.15); z-index: 200; transition: opacity .3s; }
+    .notif-ok  { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+    .notif-err { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-brand"><h1>BLC Nexus — Quarterly Bonus Preview</h1></div>
+    <div class="header-user">
+      <span class="role-badge" id="role-badge">CEO</span>
+      <span id="user-email">Loading...</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="toolbar">
+      <h2>Quarterly Bonus Preview</h2>
+      <div class="toolbar-actions">
+        <div class="selector-group">
+          <label for="sel-quarter">Quarter</label>
+          <select id="sel-quarter">
+            <option value="Q1">Q1 (Jan–Mar)</option>
+            <option value="Q2">Q2 (Apr–Jun)</option>
+            <option value="Q3">Q3 (Jul–Sep)</option>
+            <option value="Q4" selected>Q4 (Oct–Dec)</option>
+          </select>
+        </div>
+        <div class="selector-group">
+          <label for="sel-year">Year</label>
+          <select id="sel-year"><!-- populated by JS --></select>
+        </div>
+        <button class="btn-primary" id="btn-load" onclick="loadBonus()">Load Preview</button>
+      </div>
+    </div>
+
+    <div class="stats-bar" id="stats-bar" style="display:none">
+      <div class="stat-card">
+        <div class="stat-value" id="stat-headcount">—</div>
+        <div class="stat-label">Staff</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-hours">—</div>
+        <div class="stat-label">Design Hours</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-total">—</div>
+        <div class="stat-label">Total Bonus (INR)</div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Person</th>
+            <th>Role</th>
+            <th>Design Hours</th>
+            <th>Bonus (INR)</th>
+          </tr>
+        </thead>
+        <tbody id="bonus-table-body"><!-- populated by JS --></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    var PARAM_QUARTER = (typeof INJECTED_QUARTER !== 'undefined' ? INJECTED_QUARTER : '') || '';
+    var PARAM_YEAR    = (typeof INJECTED_YEAR    !== 'undefined' ? INJECTED_YEAR    : '') || '';
+
+    function el(tag) { return document.createElement(tag); }
+
+    function tdText(str) {
+      var td = el('td');
+      td.textContent = String(str === null || str === undefined ? '' : str);
+      return td;
+    }
+
+    function tdBadge(role) {
+      var td   = el('td');
+      var span = el('span');
+      span.className   = 'badge badge-' + (role || 'DESIGNER');
+      span.textContent = role || '—';
+      td.appendChild(span);
+      return td;
+    }
+
+    function formatInr(n) {
+      return '\u20B9 ' + parseFloat(n || 0).toLocaleString('en-IN', {
+        minimumFractionDigits: 2, maximumFractionDigits: 2
+      });
+    }
+
+    function formatHours(h) { return parseFloat(h || 0).toFixed(2) + ' h'; }
+
+    function showNotif(msg, isErr) {
+      var d = el('div');
+      d.className   = 'notif ' + (isErr ? 'notif-err' : 'notif-ok');
+      d.textContent = msg;
+      document.body.appendChild(d);
+      setTimeout(function() { d.style.opacity = '0'; }, 2800);
+      setTimeout(function() { d.parentNode && d.parentNode.removeChild(d); }, 3200);
+    }
+
+    function clearTable() {
+      var tbody = document.getElementById('bonus-table-body');
+      while (tbody.firstChild) { tbody.removeChild(tbody.firstChild); }
+      return tbody;
+    }
+
+    function setStateRow(msg, isLoading) {
+      var tbody = clearTable();
+      var tr = el('tr'); tr.className = 'state-row';
+      var td = el('td'); td.setAttribute('colspan', '4');
+      if (isLoading) { var s = el('span'); s.className = 'loading-spinner'; td.appendChild(s); }
+      td.appendChild(document.createTextNode(msg));
+      tr.appendChild(td); tbody.appendChild(tr);
+    }
+
+    function setLoading(on) {
+      document.getElementById('btn-load').disabled = on;
+      if (on) {
+        setStateRow('Loading bonus data...', true);
+        document.getElementById('stats-bar').style.display = 'none';
+      }
+    }
+
+    function renderTable(rows) {
+      var tbody      = clearTable();
+      var totalHours = 0;
+      var totalBonus = 0;
+
+      if (!rows || rows.length === 0) {
+        setStateRow('No bonus data for this period.', false);
+        return;
+      }
+
+      for (var i = 0; i < rows.length; i++) {
+        var r  = rows[i];
+        var dh = parseFloat(r.design_hours || 0);
+        var bn = parseFloat(r.bonus_inr    || 0);
+        totalHours += dh;
+        totalBonus += bn;
+
+        var tr = el('tr');
+        tr.appendChild(tdText(r.name || r.person_code || '—'));
+        tr.appendChild(tdBadge(r.role));
+        tr.appendChild(tdText(formatHours(dh)));
+        tr.appendChild(tdText(formatInr(bn)));
+        tbody.appendChild(tr);
+      }
+
+      var totTr  = el('tr'); totTr.className = 'totals-row';
+      var totLbl = el('td'); totLbl.setAttribute('colspan', '2');
+      totLbl.textContent = 'Total (' + rows.length + ' staff)';
+      totTr.appendChild(totLbl);
+      totTr.appendChild(tdText(formatHours(totalHours)));
+      totTr.appendChild(tdText(formatInr(totalBonus)));
+      tbody.appendChild(totTr);
+
+      document.getElementById('stat-headcount').textContent = rows.length;
+      document.getElementById('stat-hours').textContent     = formatHours(totalHours);
+      document.getElementById('stat-total').textContent     = formatInr(totalBonus);
+      document.getElementById('stats-bar').style.display    = 'flex';
+    }
+
+    function loadBonus() {
+      var quarter = document.getElementById('sel-quarter').value;
+      var year    = parseInt(document.getElementById('sel-year').value, 10);
+      if (!quarter || !year) { showNotif('Select a quarter and year.', true); return; }
+      setLoading(true);
+      google.script.run
+        .withSuccessHandler(function(json) {
+          setLoading(false);
+          try { renderTable(JSON.parse(json)); }
+          catch (e) { showNotif('Invalid server response.', true); setStateRow('Parse error.', false); }
+        })
+        .withFailureHandler(function(err) {
+          setLoading(false);
+          var msg = (err && err.message) ? err.message : 'An error occurred.';
+          showNotif(msg, true);
+          setStateRow('Error: ' + msg, false);
+        })
+        .portal_previewQuarterlyBonus(quarter, year);
+    }
+
+    (function populateYears() {
+      var sel = document.getElementById('sel-year');
+      var cur = new Date().getFullYear();
+      for (var y = cur; y >= cur - 4; y--) {
+        var opt = el('option');
+        opt.value       = String(y);
+        opt.textContent = String(y);
+        if (y === cur) { opt.selected = true; }
+        sel.appendChild(opt);
+      }
+    })();
+
+    (function applyInjected() {
+      if (PARAM_QUARTER) {
+        var qs = document.getElementById('sel-quarter');
+        for (var i = 0; i < qs.options.length; i++) {
+          if (qs.options[i].value === PARAM_QUARTER) { qs.selectedIndex = i; break; }
+        }
+      }
+      if (PARAM_YEAR) {
+        var ys = document.getElementById('sel-year');
+        for (var j = 0; j < ys.options.length; j++) {
+          if (ys.options[j].value === PARAM_YEAR) { ys.selectedIndex = j; break; }
+        }
+      }
+      if (PARAM_QUARTER && PARAM_YEAR) { loadBonus(); }
+      else { setStateRow('Select a quarter and year, then click Load Preview.', false); }
+    })();
+
+    google.script.run
+      .withSuccessHandler(function(json) {
+        var data  = JSON.parse(json);
+        var actor = data.actor || {};
+        var emailEl = document.getElementById('user-email');
+        var badgeEl = document.getElementById('role-badge');
+        if (emailEl) { emailEl.textContent = actor.displayName || actor.email || ''; }
+        if (badgeEl && actor.role) { badgeEl.textContent = actor.role; }
+      })
+      .withFailureHandler(function() {})
+      .portal_getViewData();
+  </script>
+
+</body>
+</html>

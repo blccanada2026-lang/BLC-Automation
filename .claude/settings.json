@@ -16,5 +16,10 @@
     "hooks": { "directory": ".claude/hooks", "enforced": true }
   },
   "environments": ["DEV", "STAGING", "PROD"],
-  "current_environment": "DEV"
+  "current_environment": "DEV",
+  "permissions": {
+    "allow": [
+      "Write(.claude/skills/blc-portal-workspace/**)"
+    ]
+  }
 }

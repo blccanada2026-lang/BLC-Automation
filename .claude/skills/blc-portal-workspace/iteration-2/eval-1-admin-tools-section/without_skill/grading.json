@@ -1,0 +1,13 @@
+{
+  "eval_id": 1, "iteration": 2, "run": "without_skill",
+  "assertions": [
+    { "text": "No let or const in JS block — ES5 only", "passed": true, "evidence": "All var declarations" },
+    { "text": "Uses .withSuccessHandler(...).withFailureHandler(...) on google.script.run", "passed": true, "evidence": "Both handlers on both calls" },
+    { "text": "Checks actor.role === 'CEO' or 'ADMIN' before showing the panel", "passed": false, "evidence": "Uses data.perms.canManageStaff — field does not exist in real codebase (real perms has canCreateJob, canViewAll, isQcReviewer, isDesigner). Panel would never show." },
+    { "text": "Buttons use .btn-primary / .btn-success / .btn-warning / .btn-danger classes", "passed": true, "evidence": "btn-danger btn-sm and btn-primary btn-sm" },
+    { "text": "No http:// or https:// URL references (no external CDN)", "passed": true, "evidence": "No external URLs" },
+    { "text": "Shows a spinner or loading indicator while the call is in flight", "passed": true, "evidence": "admin-spinner toggled in adminSetBusy()" },
+    { "text": "Renders server response in a status element after the call completes", "passed": true, "evidence": "adminSetStatus() sets textContent on success and failure" }
+  ],
+  "pass_count": 6, "total": 7, "pass_rate": 0.857
+}
