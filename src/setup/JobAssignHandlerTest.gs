@@ -26,17 +26,7 @@
 //   Run seedTestStaff() from TestRunner.gs if DS1 is missing.
 // ============================================================
 
-// ── Local assert helper ────────────────────────────────────
-// Mirrors assert_() in TestRunner.gs but scoped to this file.
-function assertT_(results, counters, label, condition, detail) {
-  if (condition) {
-    results.push('  PASS: ' + label);
-    counters.passed++;
-  } else {
-    results.push('  FAIL: ' + label + (detail ? ' — ' + detail : ''));
-    counters.failed++;
-  }
-}
+// assertH_() and printResultsH_() are defined in TestHarness.gs (shared harness).
 
 // ── Constants ─────────────────────────────────────────────
 var T_PERIOD_ID     = '2026-04';
@@ -79,17 +69,17 @@ function testJobAssignHandler_happyPath() {
       payload:        T_CREATE_UNALLOCATED,
       source:         'TEST'
     });
-    assertT_(results, counters, 'JOB_CREATE intake ok', createResult.ok === true,
+    assertH_(results, counters, 'JOB_CREATE intake ok', createResult.ok === true,
              JSON.stringify(createResult));
     processQueueFresh_();
 
     var jobNumber = getLatestJobNumber_();
-    assertT_(results, counters, 'Job number exists after create', !!jobNumber,
+    assertH_(results, counters, 'Job number exists after create', !!jobNumber,
              'jobNumber=' + jobNumber);
     if (!jobNumber) { results.push('  SKIP: no job_number'); return counters; }
 
     var vwAfterCreate = StateMachine.getJobView(jobNumber);
-    assertT_(results, counters, 'VW state = INTAKE_RECEIVED after unallocated create',
+    assertH_(results, counters, 'VW state = INTAKE_RECEIVED after unallocated create',
       vwAfterCreate && vwAfterCreate.current_state === Config.STATES.INTAKE_RECEIVED,
       vwAfterCreate ? vwAfterCreate.current_state : 'null');
 
@@ -100,16 +90,16 @@ function testJobAssignHandler_happyPath() {
       payload:        { job_number: jobNumber, designer_code: T_DESIGNER_CODE, notes: 'Test assign' },
       source:         'TEST'
     });
-    assertT_(results, counters, 'JOB_ALLOCATE intake returns ok=true',
+    assertH_(results, counters, 'JOB_ALLOCATE intake returns ok=true',
       assignResult.ok === true, JSON.stringify(assignResult));
     processQueueFresh_();
 
     // ── Verify VW ───────────────────────────────────────────
     var vwAfterAssign = StateMachine.getJobView(jobNumber);
-    assertT_(results, counters, 'VW state = ALLOCATED after assign',
+    assertH_(results, counters, 'VW state = ALLOCATED after assign',
       vwAfterAssign && vwAfterAssign.current_state === Config.STATES.ALLOCATED,
       vwAfterAssign ? vwAfterAssign.current_state : 'null');
-    assertT_(results, counters, 'VW allocated_to = DS1 after assign',
+    assertH_(results, counters, 'VW allocated_to = DS1 after assign',
       vwAfterAssign && String(vwAfterAssign.allocated_to || '') === T_DESIGNER_CODE,
       vwAfterAssign ? String(vwAfterAssign.allocated_to) : 'null');
 
@@ -125,9 +115,9 @@ function testJobAssignHandler_happyPath() {
         allocEvent = events[i]; break;
       }
     }
-    assertT_(results, counters, 'FACT_JOB_EVENTS has JOB_ALLOCATED row', !!allocEvent,
+    assertH_(results, counters, 'FACT_JOB_EVENTS has JOB_ALLOCATED row', !!allocEvent,
       'events found: ' + events.map(function(e) { return e.event_type; }).join(','));
-    assertT_(results, counters, 'JOB_ALLOCATED event has correct client_code',
+    assertH_(results, counters, 'JOB_ALLOCATED event has correct client_code',
       allocEvent && allocEvent.client_code === T_CREATE_UNALLOCATED.client_code,
       allocEvent ? allocEvent.client_code : 'null');
 
@@ -136,7 +126,7 @@ function testJobAssignHandler_happyPath() {
     counters.failed++;
   }
 
-  printResults_('testJobAssignHandler_happyPath', results, counters);
+  printResultsH_('testJobAssignHandler_happyPath', results, counters);
   return counters;
 }
 
@@ -166,7 +156,7 @@ function testJobAssignHandler_rbacDenial() {
     if (!createResult.ok) {
       results.push('  SKIP: setup JOB_CREATE failed');
       counters.failed++;
-      printResults_('testJobAssignHandler_rbacDenial', results, counters);
+      printResultsH_('testJobAssignHandler_rbacDenial', results, counters);
       return counters;
     }
     processQueueFresh_();
@@ -175,7 +165,7 @@ function testJobAssignHandler_rbacDenial() {
     if (!jobNumber) {
       results.push('  SKIP: no job_number after create');
       counters.failed++;
-      printResults_('testJobAssignHandler_rbacDenial', results, counters);
+      printResultsH_('testJobAssignHandler_rbacDenial', results, counters);
       return counters;
     }
 
@@ -195,18 +185,18 @@ function testJobAssignHandler_rbacDenial() {
       { callerModule: 'JobAssignHandlerTest' }
     );
     var queueItem = queueItems.length > 0 ? queueItems[0] : null;
-    assertT_(results, counters, 'Queue item exists', !!queueItem, 'queueId=' + assignResult.queueId);
-    assertT_(results, counters, 'Queue item not completed (RBAC denial queued for retry)',
+    assertH_(results, counters, 'Queue item exists', !!queueItem, 'queueId=' + assignResult.queueId);
+    assertH_(results, counters, 'Queue item not completed (RBAC denial queued for retry)',
       queueItem && queueItem.status !== 'COMPLETED',
       queueItem ? queueItem.status : 'null');
-    assertT_(results, counters, 'Queue item error_message has retry metadata',
+    assertH_(results, counters, 'Queue item error_message has retry metadata',
       queueItem && (String(queueItem.error_message || '').indexOf('attempt') !== -1 ||
                     String(queueItem.error_message || '').indexOf('exception') !== -1),
       queueItem ? String(queueItem.error_message) : 'no error_message');
 
     // VW state must still be INTAKE_RECEIVED
     var vw = StateMachine.getJobView(jobNumber);
-    assertT_(results, counters, 'VW state unchanged (still INTAKE_RECEIVED)',
+    assertH_(results, counters, 'VW state unchanged (still INTAKE_RECEIVED)',
       vw && vw.current_state === Config.STATES.INTAKE_RECEIVED,
       vw ? vw.current_state : 'null');
 
@@ -215,7 +205,7 @@ function testJobAssignHandler_rbacDenial() {
     counters.failed++;
   }
 
-  printResults_('testJobAssignHandler_rbacDenial', results, counters);
+  printResultsH_('testJobAssignHandler_rbacDenial', results, counters);
   return counters;
 }
 
@@ -244,7 +234,7 @@ function testJobAssignHandler_invalidDesigner() {
     if (!createResult.ok) {
       results.push('  SKIP: setup JOB_CREATE failed');
       counters.failed++;
-      printResults_('testJobAssignHandler_invalidDesigner', results, counters);
+      printResultsH_('testJobAssignHandler_invalidDesigner', results, counters);
       return counters;
     }
     processQueueFresh_();
@@ -253,7 +243,7 @@ function testJobAssignHandler_invalidDesigner() {
     if (!jobNumber) {
       results.push('  SKIP: no job_number after create');
       counters.failed++;
-      printResults_('testJobAssignHandler_invalidDesigner', results, counters);
+      printResultsH_('testJobAssignHandler_invalidDesigner', results, counters);
       return counters;
     }
 
@@ -271,17 +261,17 @@ function testJobAssignHandler_invalidDesigner() {
       { callerModule: 'JobAssignHandlerTest' }
     );
     var queueItem = queueItems.length > 0 ? queueItems[0] : null;
-    assertT_(results, counters, 'Queue item exists', !!queueItem);
-    assertT_(results, counters, 'Queue item not completed (invalid designer queued for retry)',
+    assertH_(results, counters, 'Queue item exists', !!queueItem);
+    assertH_(results, counters, 'Queue item not completed (invalid designer queued for retry)',
       queueItem && queueItem.status !== 'COMPLETED',
       queueItem ? queueItem.status : 'null');
-    assertT_(results, counters, 'Queue item error_message has retry metadata',
+    assertH_(results, counters, 'Queue item error_message has retry metadata',
       queueItem && (String(queueItem.error_message || '').indexOf('attempt') !== -1 ||
                     String(queueItem.error_message || '').indexOf('exception') !== -1),
       queueItem ? String(queueItem.error_message) : 'no error_message');
 
     var vw = StateMachine.getJobView(jobNumber);
-    assertT_(results, counters, 'VW state unchanged (still INTAKE_RECEIVED)',
+    assertH_(results, counters, 'VW state unchanged (still INTAKE_RECEIVED)',
       vw && vw.current_state === Config.STATES.INTAKE_RECEIVED,
       vw ? vw.current_state : 'null');
 
@@ -290,7 +280,7 @@ function testJobAssignHandler_invalidDesigner() {
     counters.failed++;
   }
 
-  printResults_('testJobAssignHandler_invalidDesigner', results, counters);
+  printResultsH_('testJobAssignHandler_invalidDesigner', results, counters);
   return counters;
 }
 
@@ -328,7 +318,7 @@ function testJobAssignHandler_wrongState() {
     if (!createResult.ok) {
       results.push('  SKIP: setup JOB_CREATE failed');
       counters.failed++;
-      printResults_('testJobAssignHandler_wrongState', results, counters);
+      printResultsH_('testJobAssignHandler_wrongState', results, counters);
       return counters;
     }
     processQueueFresh_();
@@ -337,12 +327,12 @@ function testJobAssignHandler_wrongState() {
     if (!jobNumber) {
       results.push('  SKIP: no job_number after create');
       counters.failed++;
-      printResults_('testJobAssignHandler_wrongState', results, counters);
+      printResultsH_('testJobAssignHandler_wrongState', results, counters);
       return counters;
     }
 
     var vwBefore = StateMachine.getJobView(jobNumber);
-    assertT_(results, counters, 'Prerequisite: VW state = ALLOCATED before test',
+    assertH_(results, counters, 'Prerequisite: VW state = ALLOCATED before test',
       vwBefore && vwBefore.current_state === Config.STATES.ALLOCATED,
       vwBefore ? vwBefore.current_state : 'null');
 
@@ -361,17 +351,17 @@ function testJobAssignHandler_wrongState() {
       { callerModule: 'JobAssignHandlerTest' }
     );
     var queueItem = queueItems.length > 0 ? queueItems[0] : null;
-    assertT_(results, counters, 'Queue item not completed (invalid transition queued for retry)',
+    assertH_(results, counters, 'Queue item not completed (invalid transition queued for retry)',
       queueItem && queueItem.status !== 'COMPLETED',
       queueItem ? queueItem.status : 'null');
-    assertT_(results, counters, 'Queue item error_message has retry metadata',
+    assertH_(results, counters, 'Queue item error_message has retry metadata',
       queueItem && (String(queueItem.error_message || '').indexOf('attempt') !== -1 ||
                     String(queueItem.error_message || '').indexOf('exception') !== -1),
       queueItem ? String(queueItem.error_message) : 'no error_message');
 
     // VW state must still be ALLOCATED (unchanged)
     var vwAfter = StateMachine.getJobView(jobNumber);
-    assertT_(results, counters, 'VW state unchanged (still ALLOCATED)',
+    assertH_(results, counters, 'VW state unchanged (still ALLOCATED)',
       vwAfter && vwAfter.current_state === Config.STATES.ALLOCATED,
       vwAfter ? vwAfter.current_state : 'null');
 
@@ -380,7 +370,7 @@ function testJobAssignHandler_wrongState() {
     counters.failed++;
   }
 
-  printResults_('testJobAssignHandler_wrongState', results, counters);
+  printResultsH_('testJobAssignHandler_wrongState', results, counters);
   return counters;
 }
 
@@ -410,7 +400,7 @@ function testJobAssignHandler_duplicate() {
     if (!createResult.ok) {
       results.push('  SKIP: setup JOB_CREATE failed');
       counters.failed++;
-      printResults_('testJobAssignHandler_duplicate', results, counters);
+      printResultsH_('testJobAssignHandler_duplicate', results, counters);
       return counters;
     }
     processQueueFresh_();
@@ -419,7 +409,7 @@ function testJobAssignHandler_duplicate() {
     if (!jobNumber) {
       results.push('  SKIP: no job_number after create');
       counters.failed++;
-      printResults_('testJobAssignHandler_duplicate', results, counters);
+      printResultsH_('testJobAssignHandler_duplicate', results, counters);
       return counters;
     }
 
@@ -433,7 +423,7 @@ function testJobAssignHandler_duplicate() {
     processQueueFresh_();
 
     var vwAfterFirst = StateMachine.getJobView(jobNumber);
-    assertT_(results, counters, 'First assign: VW state = ALLOCATED',
+    assertH_(results, counters, 'First assign: VW state = ALLOCATED',
       vwAfterFirst && vwAfterFirst.current_state === Config.STATES.ALLOCATED,
       vwAfterFirst ? vwAfterFirst.current_state : 'null');
 
@@ -447,7 +437,7 @@ function testJobAssignHandler_duplicate() {
     for (var i = 0; i < eventsBefore.length; i++) {
       if (eventsBefore[i].event_type === Constants.EVENT_TYPES.JOB_ALLOCATED) allocCountBefore++;
     }
-    assertT_(results, counters, 'Exactly 1 JOB_ALLOCATED event after first assign',
+    assertH_(results, counters, 'Exactly 1 JOB_ALLOCATED event after first assign',
       allocCountBefore === 1, 'count=' + allocCountBefore);
 
     // Simulate a duplicate: directly call handle() with the same queue_id
@@ -460,14 +450,14 @@ function testJobAssignHandler_duplicate() {
     if (firstQueueItems.length === 0) {
       results.push('  SKIP: cannot find original queue item for duplicate test');
       counters.failed++;
-      printResults_('testJobAssignHandler_duplicate', results, counters);
+      printResultsH_('testJobAssignHandler_duplicate', results, counters);
       return counters;
     }
 
     var fakeActor = RBAC.resolveActor(T_PM_EMAIL);
     var dupeReturn = JobAssignHandler.handle(firstQueueItems[0], fakeActor);
 
-    assertT_(results, counters, 'Direct re-handle() returns DUPLICATE',
+    assertH_(results, counters, 'Direct re-handle() returns DUPLICATE',
       dupeReturn === 'DUPLICATE', 'returned: ' + dupeReturn);
 
     // FACT event count must still be 1 — no duplicate row written
@@ -480,7 +470,7 @@ function testJobAssignHandler_duplicate() {
     for (var j = 0; j < eventsAfter.length; j++) {
       if (eventsAfter[j].event_type === Constants.EVENT_TYPES.JOB_ALLOCATED) allocCountAfter++;
     }
-    assertT_(results, counters, 'Still exactly 1 JOB_ALLOCATED event after duplicate replay',
+    assertH_(results, counters, 'Still exactly 1 JOB_ALLOCATED event after duplicate replay',
       allocCountAfter === 1, 'count=' + allocCountAfter);
 
   } catch (e) {
@@ -488,7 +478,7 @@ function testJobAssignHandler_duplicate() {
     counters.failed++;
   }
 
-  printResults_('testJobAssignHandler_duplicate', results, counters);
+  printResultsH_('testJobAssignHandler_duplicate', results, counters);
   return counters;
 }
 
@@ -523,15 +513,15 @@ function testJobStartHandler_happyPath() {
       payload:        allocPayload,
       source:         'TEST'
     });
-    assertT_(results, counters, 'JOB_CREATE intake ok', createResult.ok === true);
+    assertH_(results, counters, 'JOB_CREATE intake ok', createResult.ok === true);
     processQueueFresh_();
 
     var jobNumber = getLatestJobNumber_();
-    assertT_(results, counters, 'Job number exists', !!jobNumber, 'jobNumber=' + jobNumber);
+    assertH_(results, counters, 'Job number exists', !!jobNumber, 'jobNumber=' + jobNumber);
     if (!jobNumber) { results.push('  SKIP: no job_number'); return counters; }
 
     var vwAlloc = StateMachine.getJobView(jobNumber);
-    assertT_(results, counters, 'VW state = ALLOCATED before start',
+    assertH_(results, counters, 'VW state = ALLOCATED before start',
       vwAlloc && vwAlloc.current_state === Config.STATES.ALLOCATED,
       vwAlloc ? vwAlloc.current_state : 'null');
 
@@ -542,11 +532,11 @@ function testJobStartHandler_happyPath() {
       payload:        { job_number: jobNumber, notes: 'Regression test' },
       source:         'TEST'
     });
-    assertT_(results, counters, 'JOB_START intake ok', startResult.ok === true);
+    assertH_(results, counters, 'JOB_START intake ok', startResult.ok === true);
     processQueueFresh_();
 
     var vwStarted = StateMachine.getJobView(jobNumber);
-    assertT_(results, counters, 'VW state = IN_PROGRESS after start',
+    assertH_(results, counters, 'VW state = IN_PROGRESS after start',
       vwStarted && vwStarted.current_state === Config.STATES.IN_PROGRESS,
       vwStarted ? vwStarted.current_state : 'null');
 
@@ -559,7 +549,7 @@ function testJobStartHandler_happyPath() {
     for (var i = 0; i < events.length; i++) {
       if (events[i].event_type === Constants.EVENT_TYPES.JOB_STARTED) { hasStarted = true; break; }
     }
-    assertT_(results, counters, 'FACT_JOB_EVENTS has JOB_STARTED row', hasStarted,
+    assertH_(results, counters, 'FACT_JOB_EVENTS has JOB_STARTED row', hasStarted,
       'events: ' + events.map(function(e) { return e.event_type; }).join(','));
 
   } catch (e) {
@@ -567,7 +557,7 @@ function testJobStartHandler_happyPath() {
     counters.failed++;
   }
 
-  printResults_('testJobStartHandler_happyPath', results, counters);
+  printResultsH_('testJobStartHandler_happyPath', results, counters);
   return counters;
 }
 
@@ -587,9 +577,9 @@ function testPortalData_getActiveDesigners() {
     // PM has JOB_ALLOCATE permission — call should succeed
     var list = PortalData.getActiveDesigners(T_PM_EMAIL);
 
-    assertT_(results, counters, 'Returns an array', Array.isArray(list),
+    assertH_(results, counters, 'Returns an array', Array.isArray(list),
       'type=' + typeof list);
-    assertT_(results, counters, 'Array has at least one entry (DS1 must exist)',
+    assertH_(results, counters, 'Array has at least one entry (DS1 must exist)',
       list.length >= 1, 'length=' + list.length);
 
     // Every entry must have required fields
@@ -598,7 +588,7 @@ function testPortalData_getActiveDesigners() {
       var d = list[i];
       if (!d.personCode || !d.name || !d.role) { allHaveFields = false; break; }
     }
-    assertT_(results, counters, 'Every entry has personCode + name + role', allHaveFields,
+    assertH_(results, counters, 'Every entry has personCode + name + role', allHaveFields,
       'entries: ' + JSON.stringify(list));
 
     // Only DESIGNER or TEAM_LEAD roles allowed
@@ -607,7 +597,7 @@ function testPortalData_getActiveDesigners() {
       var r = String(list[j].role || '').toUpperCase();
       if (r !== 'DESIGNER' && r !== 'TEAM_LEAD') { onlyAllowedRoles = false; break; }
     }
-    assertT_(results, counters, 'All entries have role DESIGNER or TEAM_LEAD', onlyAllowedRoles,
+    assertH_(results, counters, 'All entries have role DESIGNER or TEAM_LEAD', onlyAllowedRoles,
       'roles: ' + list.map(function(d) { return d.role; }).join(','));
 
     // DS1 must appear in the list
@@ -615,7 +605,7 @@ function testPortalData_getActiveDesigners() {
     for (var k = 0; k < list.length; k++) {
       if (list[k].personCode === T_DESIGNER_CODE) { hasDs1 = true; break; }
     }
-    assertT_(results, counters, 'DS1 (active DESIGNER) is in the result', hasDs1,
+    assertH_(results, counters, 'DS1 (active DESIGNER) is in the result', hasDs1,
       'personCodes: ' + list.map(function(d) { return d.personCode; }).join(','));
 
     // RBAC denial: DESIGNER email has no JOB_ALLOCATE permission
@@ -625,14 +615,14 @@ function testPortalData_getActiveDesigners() {
     } catch (e) {
       denied = true;
     }
-    assertT_(results, counters, 'RBAC: DESIGNER email throws on getActiveDesigners', denied);
+    assertH_(results, counters, 'RBAC: DESIGNER email throws on getActiveDesigners', denied);
 
   } catch (e) {
     results.push('  FAIL: unexpected exception — ' + e.message);
     counters.failed++;
   }
 
-  printResults_('testPortalData_getActiveDesigners', results, counters);
+  printResultsH_('testPortalData_getActiveDesigners', results, counters);
   return counters;
 }
 
@@ -683,10 +673,4 @@ function runJobAssignTests() {
   console.log('═══════════════════════════════════════════════════════');
 }
 
-// ── Internal print helper ──────────────────────────────────
-function printResults_(testName, results, counters) {
-  console.log('');
-  console.log('── ' + testName + ' ──');
-  for (var i = 0; i < results.length; i++) { console.log(results[i]); }
-  console.log('  result: ' + counters.passed + ' passed, ' + counters.failed + ' failed');
-}
+// printResultsH_() is defined in TestHarness.gs (shared harness).
