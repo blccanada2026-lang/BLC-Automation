@@ -1020,6 +1020,14 @@ function onDataLoaded(jsonStr) {
     loadLeaderDashboard();
   }
 
+  // Paystub confirmation banner
+  if (_data.paystub_pending) {
+    var now = new Date();
+    var mo  = String(now.getMonth() + 1); if (mo.length < 2) mo = '0' + mo;
+    document.getElementById('banner-period').textContent = now.getFullYear() + '-' + mo;
+    document.getElementById('paystub-banner').style.display = 'flex';
+  }
+
   document.getElementById('main-content').style.display = 'block';
   showLoading(false);
 }
