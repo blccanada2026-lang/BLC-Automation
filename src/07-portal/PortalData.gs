@@ -551,7 +551,8 @@ var PortalData = (function () {
     var avgRaw        = (sq + ss + sc + si) / 4;
     var avgNormalized = Math.round(((avgRaw - 1) / 4) * 10000) / 10000;
 
-    var idempotencyKey = 'PERF_RATING|' + actor.personCode + '|' + rateeCode + '|' + qPid;
+    var idempotencyKey = 'PERF_RATING|' + actor.personCode + '|' + rateeCode + '|' + qPid + '|' + Identifiers.generateId();
+    IdempotencyEngine.checkAndMark(idempotencyKey);
 
     DAL.appendRow(Config.TABLES.FACT_PERFORMANCE_RATINGS, {
       rating_id:            Identifiers.generateId(),
