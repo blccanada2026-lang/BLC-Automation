@@ -39,6 +39,8 @@ grep -r "whoAmI\|isDev\|rajeshnair\|rajnaircanada\|nairscanada" src/
 - Verify `Config` ENV is set to `PROD`
 - Confirm `DIM_STAFF_ROSTER` has all real production staff emails
 - All triggers installed and verified (queue processor, feedback, MART refresh)
+- Run `setPortalBaseUrl(url)` with the PROD deployment `/exec` URL (required for rating request emails; throws if missing)
+- Run `installFeedbackTrigger()` from Apps Script editor (required for feedback form submissions to be processed)
 
 ## Tech Stack
 | Layer | Technology |

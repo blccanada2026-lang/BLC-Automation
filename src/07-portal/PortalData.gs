@@ -63,7 +63,10 @@ var PortalData = (function () {
     // ── 4. Build permission flags for the UI ─────────────────
     var perms = buildPerms_(actor);
 
-    // ── 5. Serialise and return ───────────────────────────────
+    // ── 5. Check paystub confirmation status ─────────────────
+    var paystubPending = checkPaystubPending_(actor);
+
+    // ── 6. Serialise and return ───────────────────────────────
     return JSON.stringify({
       actor: {
         email:       actor.email,
@@ -72,10 +75,11 @@ var PortalData = (function () {
         displayName: actor.displayName,
         scope:       actor.scope
       },
-      jobs:         jobs,
-      stats:        stats,
-      perms:        perms,
-      staffNameMap: buildStaffNameMap_()
+      jobs:            jobs,
+      stats:           stats,
+      perms:           perms,
+      staffNameMap:    buildStaffNameMap_(),
+      paystub_pending: paystubPending
     });
   }
 
@@ -229,12 +233,43 @@ var PortalData = (function () {
       canStart:          RBAC.hasPermission(actor, RBAC.ACTIONS.JOB_START),
       canViewAll:        actor.scope === RBAC.SCOPES.ALL || actor.scope === RBAC.SCOPES.TEAM,
       isQcReviewer:      RBAC.hasPermission(actor, RBAC.ACTIONS.QC_APPROVE),
-      isDesigner:        role === 'DESIGNER' || role === 'TEAM_LEAD',
+      isDesigner:        role === 'DESIGNER' || role === 'TEAM_LEAD' || role === 'QC',
       isLeader:          role === 'CEO' || role === 'PM' || role === 'TEAM_LEAD',
       canRunPayroll:     role === 'CEO',
       canApprovePayroll: role === 'CEO',
       canManageStaff:    role === 'CEO' || role === 'ADMIN'
     };
+  }
+
+  // ============================================================
+  // SECTION 4b: checkPaystubPending_
+  // ============================================================
+
+  /**
+   * Returns true if the actor has a PENDING_CONFIRMATION payroll record
+   * for the current period. Fails silently — a missing table returns false.
+   *
+   * @param {Object} actor
+   * @returns {boolean}
+   */
+  function checkPaystubPending_(actor) {
+    try {
+      var periodId = Identifiers.generateCurrentPeriodId();
+      var rows = DAL.readAll(Config.TABLES.FACT_PAYROLL_LEDGER, {
+        callerModule: 'PortalData',
+        periodId:     periodId
+      });
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (String(r.person_code || '').trim()  === actor.personCode &&
+            String(r.event_type  || '').trim()  === 'PAYROLL_CALCULATED' &&
+            String(r.status      || '').trim()  === 'PENDING_CONFIRMATION' &&
+            String(r.period_id   || '').trim()  === periodId) {
+          return true;
+        }
+      }
+    } catch (e) { /* FACT_PAYROLL_LEDGER may not exist yet */ }
+    return false;
   }
 
   // ============================================================
