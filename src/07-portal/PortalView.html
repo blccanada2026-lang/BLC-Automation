@@ -575,8 +575,8 @@
 <!-- ══ BULK IMPORT MODAL ═════════════════════════════════════ -->
 <div class="modal-backdrop" id="modal-bulk-import">
   <div class="modal" style="max-width:640px">
-    <div class="modal-hdr">
-      <span class="modal-title">Bulk Staff Import</span>
+    <div class="modal-header">
+      <h3>Bulk Staff Import</h3>
       <button class="modal-close" data-close="modal-bulk-import">✕</button>
     </div>
     <div class="modal-body">
@@ -990,11 +990,11 @@ function onDataLoaded(jsonStr) {
   // Toolbar buttons
   if (_data.perms.canCreateJob)  document.getElementById('btn-create-job').style.display     = 'inline-block';
   if (_data.perms.canCreateJob)  document.getElementById('btn-sbs-intake').style.display      = 'inline-block';
-  if (_data.perms.canViewAll)    document.getElementById('btn-process-queue').style.display   = 'inline-block';
+  if (_data.perms.canRunPayroll) document.getElementById('btn-process-queue').style.display   = 'inline-block';
   if (_data.perms.canManageStaff) document.getElementById('btn-clients').style.display        = 'inline-block';
   if (_data.perms.isLeader)      document.getElementById('btn-leader-dash').style.display     = 'inline-block';
   if (_data.perms.canManageStaff) document.getElementById('btn-staff-panel').style.display    = 'inline-block';
-  if (_data.perms.canViewAll)    document.getElementById('btn-preview-as').style.display      = 'inline-block';
+  if (_data.perms.canRunPayroll) document.getElementById('btn-preview-as').style.display      = 'inline-block';
 
   // Leader dashboard payroll action buttons
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-feedback').style.display   = 'inline-block';
@@ -1231,6 +1231,7 @@ function loadPreviewAs_(personCode, name, role) {
         banner.style.display = 'flex';
         document.getElementById('preview-banner-name').textContent = name;
         document.getElementById('preview-banner-role').textContent = role;
+        _dashData = null;
         _data = data;
         renderPortal_(data);
       } catch(e) { showToast('Preview failed: ' + e.message, 'error'); }
@@ -1263,7 +1264,7 @@ function renderPortal_(data) {
 
   if (perms.canCreateJob)    document.getElementById('btn-create-job').style.display   = 'inline-block';
   if (perms.canCreateJob)    document.getElementById('btn-sbs-intake').style.display    = 'inline-block';
-  if (perms.canViewAll)      document.getElementById('btn-process-queue').style.display = 'inline-block';
+  if (perms.canRunPayroll)   document.getElementById('btn-process-queue').style.display = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-clients').style.display       = 'inline-block';
   if (perms.isLeader)        document.getElementById('btn-leader-dash').style.display   = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-staff-panel').style.display   = 'inline-block';
@@ -1279,6 +1280,7 @@ function renderPortal_(data) {
   if (perms.isLeader) {
     document.getElementById('leader-dashboard').style.display = 'block';
     renderWorkloadPanel(data.jobs, data.staffNameMap || {});
+    loadLeaderDashboard();
   } else {
     document.getElementById('leader-dashboard').style.display = 'none';
   }
