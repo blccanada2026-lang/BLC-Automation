@@ -1,6 +1,6 @@
 node_modules/**
 tests/**
-src/setup/**
+setup/**
 package.json
 package-lock.json
 .gitignore
