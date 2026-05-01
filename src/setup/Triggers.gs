@@ -47,6 +47,7 @@ var INTAKE_FORM_ID = '11MmM7Cux1hBaBB14X9-HcG-8roPgPDK8s0qOJrisuEA';
 // ── Trigger function name constants ───────────────────────────
 var TRIGGER_FN_QUEUE    = 'runQueueProcessor';
 var TRIGGER_FN_INTAKE   = 'onIntakeFormSubmit';
+var TRIGGER_FN_HEALTH   = 'runDailyHealthCheck';
 
 // ============================================================
 // INTERNAL HELPERS
@@ -152,6 +153,28 @@ function installFormTrigger(formId) {
 }
 
 // ============================================================
+// INSTALL: DAILY HEALTH CHECK TRIGGER
+// ============================================================
+
+/**
+ * Installs the daily health check trigger (6am, every day).
+ * Idempotent — skips if trigger already exists.
+ */
+function installHealthCheckTrigger() {
+  console.log('[Triggers] Installing daily health check trigger…');
+  if (triggerExists_(TRIGGER_FN_HEALTH)) {
+    console.log('  ✅ Already installed — skipping.');
+    return;
+  }
+  ScriptApp.newTrigger(TRIGGER_FN_HEALTH)
+    .timeBased()
+    .atHour(6)
+    .everyDays(1)
+    .create();
+  console.log('  ➕ Installed: ' + TRIGGER_FN_HEALTH + ' daily at 6am');
+}
+
+// ============================================================
 // LIST TRIGGERS
 // ============================================================
 
@@ -231,6 +254,17 @@ function runInstallFormTrigger() {
   console.log('BLC Nexus — Install Form Trigger');
   console.log('═══════════════════════════════════════════');
   installFormTrigger();
+  console.log('═══════════════════════════════════════════');
+}
+
+/**
+ * Public entry point — run once after initial setup.
+ */
+function runInstallHealthCheckTrigger() {
+  console.log('═══════════════════════════════════════════');
+  console.log('BLC Nexus — Install Health Check Trigger');
+  console.log('═══════════════════════════════════════════');
+  installHealthCheckTrigger();
   console.log('═══════════════════════════════════════════');
 }
 
