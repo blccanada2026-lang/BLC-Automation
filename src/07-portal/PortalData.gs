@@ -759,15 +759,17 @@ var PortalData = (function () {
   // PUBLIC API
   // ============================================================
   return {
-    getViewData:          getViewData,
-    writeQueueItem:       writeQueueItem,
-    getLeaderDashboard:   getLeaderDashboard,
-    getMyRatees:          getMyRatees,
-    submitRating:         submitRating,
-    sendRatingRequests:   sendRatingRequests,
-    getViewDataAs:        getViewDataAs,
-    getMyRateesAs:        getMyRateesAs,
-    getActiveDesigners:   getActiveDesigners
+    getViewData:              getViewData,
+    writeQueueItem:           writeQueueItem,
+    getLeaderDashboard:       getLeaderDashboard,
+    getMyRatees:              getMyRatees,
+    submitRating:             submitRating,
+    sendRatingRequests:       sendRatingRequests,
+    getViewDataAs:            getViewDataAs,
+    getMyRateesAs:            getMyRateesAs,
+    getActiveDesigners:       getActiveDesigners,
+    getClientList:            getClientList,
+    getDesignersForClient:    getDesignersForClient
   };
 
   // ============================================================
@@ -889,6 +891,97 @@ var PortalData = (function () {
       var role = String(row.role || '').trim().toUpperCase();
       if (String(row.active || '').toUpperCase() !== 'TRUE') continue;
       if (role !== 'DESIGNER' && role !== 'TEAM_LEAD') continue;
+      result.push({
+        personCode: String(row.person_code || '').trim(),
+        name:       String(row.name || '').trim(),
+        role:       role
+      });
+    }
+    return result;
+  }
+
+  // ============================================================
+  // SECTION 11: getClientList
+  // ============================================================
+
+  /**
+   * Returns active client names and codes for job creation dropdowns.
+   * Uses JOB_CREATE permission so PM and TL can also populate the dropdown.
+   *
+   * @param {string} email
+   * @returns {Object[]}  Array of { client_code, client_name }
+   */
+  function getClientList(email) {
+    var actor = RBAC.resolveActor(email);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.JOB_CREATE);
+
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.DIM_CLIENT_MASTER, { callerModule: 'PortalData' });
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') return [];
+      throw e;
+    }
+
+    var result = [];
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i].active || '').toUpperCase() !== 'TRUE') continue;
+      result.push({
+        client_code: String(rows[i].client_code || '').toUpperCase().trim(),
+        client_name: String(rows[i].client_name || '').trim()
+      });
+    }
+    return result;
+  }
+
+  // ============================================================
+  // SECTION 12: getDesignersForClient
+  // ============================================================
+
+  /**
+   * Returns designers assigned to a specific client via REF_ACCOUNT_DESIGNER_MAP.
+   * Falls back to all active DESIGNERs if no mapping exists for the client.
+   * Requires JOB_ALLOCATE permission (CEO, PM, TEAM_LEAD).
+   *
+   * @param {string} email
+   * @param {string} clientCode
+   * @returns {Object[]}  Array of { personCode, name, role }
+   */
+  function getDesignersForClient(email, clientCode) {
+    var actor = RBAC.resolveActor(email);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.JOB_ALLOCATE);
+
+    var mapRows;
+    try {
+      mapRows = DAL.readAll(Config.TABLES.REF_ACCOUNT_DESIGNER_MAP, { callerModule: 'PortalData' });
+    } catch (e) {
+      mapRows = [];
+    }
+
+    var assignedCodes = {};
+    for (var m = 0; m < mapRows.length; m++) {
+      if (String(mapRows[m].client_code || '').trim().toUpperCase() === clientCode.toUpperCase()) {
+        assignedCodes[String(mapRows[m].designer_code || '').trim().toUpperCase()] = true;
+      }
+    }
+
+    var rosterRows;
+    try {
+      rosterRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') return [];
+      throw e;
+    }
+
+    var hasMappings = Object.keys(assignedCodes).length > 0;
+    var result = [];
+    for (var i = 0; i < rosterRows.length; i++) {
+      var row  = rosterRows[i];
+      var role = String(row.role || '').trim().toUpperCase();
+      if (String(row.active || '').toUpperCase() !== 'TRUE') continue;
+      if (role !== 'DESIGNER' && role !== 'TEAM_LEAD') continue;
+      var code = String(row.person_code || '').trim().toUpperCase();
+      if (hasMappings && !assignedCodes[code]) continue;
       result.push({
         personCode: String(row.person_code || '').trim(),
         name:       String(row.name || '').trim(),

@@ -218,6 +218,37 @@ function portal_getActiveDesigners() {
 }
 
 // ============================================================
+// portal_getClientList — returns active clients for job creation
+// ============================================================
+
+/**
+ * Returns active client names and codes for the job creation dropdown.
+ * Requires JOB_CREATE permission (CEO, PM, TEAM_LEAD).
+ * @returns {string}  JSON array of { client_code, client_name }
+ */
+function portal_getClientList() {
+  var email = Session.getActiveUser().getEmail();
+  return JSON.stringify(PortalData.getClientList(email));
+}
+
+// ============================================================
+// portal_getDesignersForClient — returns designers for a client
+// ============================================================
+
+/**
+ * Returns designers assigned to a client via REF_ACCOUNT_DESIGNER_MAP.
+ * Falls back to all active DESIGNERs if no mapping found.
+ * Requires JOB_ALLOCATE permission.
+ *
+ * @param {string} clientCode
+ * @returns {string}  JSON array of { personCode, name, role }
+ */
+function portal_getDesignersForClient(clientCode) {
+  var email = Session.getActiveUser().getEmail();
+  return JSON.stringify(PortalData.getDesignersForClient(email, clientCode));
+}
+
+// ============================================================
 // portal_getStaffList — returns all active staff (CEO/Admin)
 // ============================================================
 

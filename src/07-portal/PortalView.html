@@ -618,8 +618,10 @@
       <button class="modal-close" data-close="modal-create">✕</button>
     </div>
     <div class="modal-body">
-      <div class="field"><label>Client Code</label>
-        <input id="create-client" placeholder="e.g. AXYZCO" maxlength="20"></div>
+      <div class="field"><label>Client</label>
+        <select id="create-client">
+          <option value="">— Loading clients… —</option>
+        </select></div>
       <div class="field"><label>Job Type</label>
         <select id="create-job-type">
           <option value="DESIGN">DESIGN</option>
@@ -627,12 +629,18 @@
           <option value="PRINT">PRINT</option>
           <option value="RUSH">RUSH</option>
         </select></div>
+      <div class="field"><label>Client Job Ref</label>
+        <input id="create-job-ref" placeholder="Client's own PO / job reference" maxlength="50"></div>
       <div class="field"><label>Product Code</label>
         <input id="create-product" placeholder="e.g. LOGO" maxlength="30"></div>
       <div class="field"><label>Quantity</label>
         <input id="create-qty" type="number" value="1" min="1" max="999"></div>
-      <div class="field"><label>Assign To (email, optional)</label>
-        <input id="create-assigned" placeholder="designer@blclotus.com"></div>
+      <div class="field"><label>Due Date (optional)</label>
+        <input id="create-due-date" type="date"></div>
+      <div class="field"><label>Assign Designer (optional)</label>
+        <select id="create-designer">
+          <option value="">— Select client first —</option>
+        </select></div>
       <div class="field"><label>Notes (optional)</label>
         <textarea id="create-notes" rows="2" maxlength="500"></textarea></div>
     </div>
@@ -880,7 +888,8 @@ var VALID_STATES = {
 
 // ── App state ─────────────────────────────────────────────────
 var _data      = null;   // { actor, jobs, stats, perms }
-var _activeJob = null;   // job object for the currently-open modal
+var _activeJob             = null;   // job object for the currently-open modal
+var _pendingAssignDesigner = null;   // designer code to assign after JOB_CREATE queues
 
 // ── Bootstrap ─────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function () {
@@ -893,7 +902,9 @@ document.addEventListener('DOMContentLoaded', function () {
   // ── Button wiring ──────────────────────────────────────
   document.getElementById('btn-refresh').addEventListener('click', loadData);
   document.getElementById('btn-process-queue').addEventListener('click', processQueue);
-  document.getElementById('btn-create-job').addEventListener('click', function() { openModal('modal-create'); });
+  document.getElementById('btn-create-job').addEventListener('click', openCreateModal);
+
+  document.getElementById('create-client').addEventListener('change', onCreateClientChange);
 
   document.getElementById('btn-submit-assign').addEventListener('click',    submitAssign);
   document.getElementById('btn-submit-start').addEventListener('click',     submitStart);
@@ -1639,25 +1650,92 @@ function openStart(jobNumber) {
   openModal('modal-start');
 }
 
+// ── Create Job Modal helpers ────────────────────────────────────
+function buildOption(value, label) {
+  var opt = document.createElement('option');
+  opt.value       = value;
+  opt.textContent = label;
+  return opt;
+}
+
+function clearSelect(selEl, placeholder) {
+  while (selEl.firstChild) selEl.removeChild(selEl.firstChild);
+  selEl.appendChild(buildOption('', placeholder));
+}
+
+function openCreateModal() {
+  var sel  = document.getElementById('create-client');
+  var dsel = document.getElementById('create-designer');
+  clearSelect(sel,  '— Loading clients… —');
+  clearSelect(dsel, '— Select client first —');
+  openModal('modal-create');
+
+  google.script.run
+    .withSuccessHandler(function(json) {
+      var clients = JSON.parse(json);
+      clearSelect(sel, '— Select client —');
+      for (var i = 0; i < clients.length; i++) {
+        sel.appendChild(buildOption(clients[i].client_code,
+          clients[i].client_name + ' (' + clients[i].client_code + ')'));
+      }
+    })
+    .withFailureHandler(function() {
+      clearSelect(sel, '— Error loading clients —');
+    })
+    .portal_getClientList();
+}
+
+function onCreateClientChange() {
+  var clientCode = val('create-client');
+  var dsel = document.getElementById('create-designer');
+  if (!clientCode) {
+    clearSelect(dsel, '— Select client first —');
+    return;
+  }
+  clearSelect(dsel, '— Loading designers… —');
+  google.script.run
+    .withSuccessHandler(function(json) {
+      var designers = JSON.parse(json);
+      clearSelect(dsel, '— Unassigned —');
+      for (var i = 0; i < designers.length; i++) {
+        dsel.appendChild(buildOption(designers[i].personCode,
+          designers[i].name + ' (' + designers[i].personCode + ')'));
+      }
+    })
+    .withFailureHandler(function() {
+      clearSelect(dsel, '— Error loading designers —');
+    })
+    .portal_getDesignersForClient(clientCode);
+}
+
 // ── Submit Handlers ────────────────────────────────────────────
 function submitCreateJob() {
   var client   = val('create-client');
   var jobType  = val('create-job-type');
+  var jobRef   = val('create-job-ref');
   var product  = val('create-product');
   var qty      = parseInt(document.getElementById('create-qty').value, 10);
-  var assigned = val('create-assigned');
+  var dueDate  = val('create-due-date');
+  var designer = val('create-designer');
   var notes    = val('create-notes');
 
-  if (!client)  return showToast('Client Code is required.', 'error');
+  if (!client)  return showToast('Please select a client.', 'error');
   if (!product) return showToast('Product Code is required.', 'error');
   if (isNaN(qty) || qty < 1) return showToast('Quantity must be at least 1.', 'error');
 
   var payload = { client_code: client, job_type: jobType, product_code: product, quantity: qty };
-  if (assigned) payload.allocated_to = assigned;
-  if (notes)    payload.notes = notes;
+  if (jobRef)  payload.client_job_ref = jobRef;
+  if (dueDate) payload.target_date    = dueDate;
+  if (notes)   payload.notes          = notes;
 
   closeModal('modal-create');
-  submitAction('JOB_CREATE', payload, 'Job created successfully.');
+
+  if (designer) {
+    _pendingAssignDesigner = designer;
+    submitAction('JOB_CREATE', payload, 'Job created. Assign designer from the jobs table once it appears.');
+  } else {
+    submitAction('JOB_CREATE', payload, 'Job created successfully.');
+  }
 }
 
 function submitWorkLog() {
