@@ -690,12 +690,14 @@ function seedAccountDesignerMap_() {
   var DEFAULT_FROM = '2025-01-01';
   var ROWS = [
     // ── SBS ──────────────────────────────────────────────────────────────────
-    ['SBS', 'SGO',   'SUPERVISOR', DEFAULT_FROM, '', 'PM on SBS'],
+    ['SBS', 'SGO',   'DESIGNER',   DEFAULT_FROM, '', 'PM on SBS — visible in assignment dropdown'],
     ['SBS', 'BCH',   'DESIGNER',   DEFAULT_FROM, '', 'Team Lead'],
     ['SBS', 'SDA',   'DESIGNER',   DEFAULT_FROM, '', 'Team Lead'],
     ['SBS', 'SVN',   'DESIGNER',   DEFAULT_FROM, '', 'Team Lead'],
     ['SBS', 'PBG',   'DESIGNER',   DEFAULT_FROM, '', 'Team Lead'],
     ['SBS', 'JYS',   'DESIGNER',   DEFAULT_FROM, '', 'Senior Designer'],
+    ['SBS', 'DBG',   'DESIGNER',   DEFAULT_FROM, '', 'Senior Designer'],
+    ['SBS', 'BIT',   'DESIGNER',   DEFAULT_FROM, '', 'Designer'],
     ['SBS', 'ABB',   'DESIGNER',   DEFAULT_FROM, '', 'Designer'],
     ['SBS', 'SYR',   'DESIGNER',   DEFAULT_FROM, '', 'Designer'],
     ['SBS', 'BSG',   'DESIGNER',   DEFAULT_FROM, '', 'Designer'],
