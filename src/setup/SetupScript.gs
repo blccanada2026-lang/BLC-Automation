@@ -635,9 +635,10 @@ function seedClientIntakeConfig_() {
     ['SBS', 'Due Date',      'target_date',   'DATE_ISO',  'FALSE', 2, '',    'MM/DD/YYYY → YYYY-MM-DD'],
     ['SBS', 'Notes',         'job_type',      'UPPERCASE', 'TRUE',  3, '',    'Submittal badge → SUBMITTAL'],
     ['SBS', 'Product',       'product_code',  'UPPERCASE', 'TRUE',  4, '',    'Roof → ROOF, Floor → FLOOR'],
-    ['SBS', 'Job Name',      'notes',         'TRIM',      'FALSE', 5, '',    'Primary job description'],
-    ['SBS', 'Customer',      'notes',         'TRIM',      'FALSE', 6, '',    'SBS customer/division — appended to notes'],
-    ['SBS', 'Model',         'notes',         'TRIM',      'FALSE', 7, '',    'House model — appended to notes']
+    ['SBS', 'Design/Estimator', 'designer_name', 'TRIM',    'FALSE', 5, '',    'Designer display name — resolved to allocated_to via DIM_STAFF_ROSTER'],
+    ['SBS', 'Job Name',      'notes',         'TRIM',      'FALSE', 6, '',    'Primary job description'],
+    ['SBS', 'Customer',      'notes',         'TRIM',      'FALSE', 7, '',    'SBS customer/division — appended to notes'],
+    ['SBS', 'Model',         'notes',         'TRIM',      'FALSE', 8, '',    'House model — appended to notes']
   ];
 
   // Build a set of existing (client_code|source_column|target_field) keys

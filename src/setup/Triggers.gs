@@ -298,6 +298,31 @@ function runRemoveAllTriggers() {
 // ============================================================
 
 /**
+ * Adds the Design/Estimator → designer_name config row to DIM_CLIENT_INTAKE_CONFIG
+ * for SBS. Run once from the Apps Script editor. Idempotent.
+ */
+function runAddSbsDesignerConfig() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('DIM_CLIENT_INTAKE_CONFIG');
+  if (!sheet) {
+    console.log('ERROR: DIM_CLIENT_INTAKE_CONFIG sheet not found.');
+    return;
+  }
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    var data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if (data[i][0] === 'SBS' && data[i][1] === 'Design/Estimator' && data[i][2] === 'designer_name') {
+        console.log('Already present — nothing to do.');
+        return;
+      }
+    }
+  }
+  sheet.appendRow(['SBS', 'Design/Estimator', 'designer_name', 'TRIM', 'FALSE', 5, '', 'Designer display name — resolved to allocated_to via DIM_STAFF_ROSTER']);
+  console.log('Added: SBS | Design/Estimator → designer_name');
+}
+
+/**
  * Adds client_job_ref and target_date columns to VW_JOB_CURRENT_STATE.
  * Run once from the Apps Script editor. Safe to re-run — skips
  * columns that already exist.
