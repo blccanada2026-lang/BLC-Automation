@@ -294,6 +294,48 @@ function runRemoveAllTriggers() {
 }
 
 // ============================================================
+// DESIGNER NAME RESOLUTION DIAGNOSTIC
+// ============================================================
+
+/**
+ * Prints the name→code map built from DIM_STAFF_ROSTER and tests
+ * how "Sarty Gosh - BL" resolves. Run from Apps Script editor.
+ */
+function runDiagnoseDesignerResolution() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('DIM_STAFF_ROSTER');
+  if (!sheet) { console.log('ERROR: DIM_STAFF_ROSTER not found.'); return; }
+
+  var data    = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var nameIdx = headers.indexOf('name');
+  var codeIdx = headers.indexOf('person_code');
+
+  if (nameIdx === -1 || codeIdx === -1) {
+    console.log('ERROR: name or person_code column not found. Headers: ' + headers.join(', '));
+    return;
+  }
+
+  console.log('=== DIM_STAFF_ROSTER name→code map ===');
+  var nameMap = {};
+  for (var i = 1; i < data.length; i++) {
+    var code = String(data[i][codeIdx] || '').trim();
+    var name = String(data[i][nameIdx] || '').trim();
+    if (code && name) {
+      nameMap[name.toLowerCase()] = code;
+      console.log('  "' + name.toLowerCase() + '" → ' + code);
+    }
+  }
+
+  console.log('');
+  console.log('=== Resolution test: "Sarty Gosh - BL" ===');
+  var raw     = 'Sarty Gosh - BL';
+  var stripped = raw.replace(/\s*-\s*\w+\s*$/, '').trim().toLowerCase();
+  console.log('  Stripped: "' + stripped + '"');
+  console.log('  Resolved: ' + (nameMap[stripped] || 'NOT FOUND'));
+}
+
+// ============================================================
 // SBS INTAKE TEST
 // ============================================================
 
