@@ -116,6 +116,18 @@ var PortalData = (function () {
     return set;
   }
 
+  function buildStaffNameMap_() {
+    var map = {};
+    try {
+      var rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
+      for (var i = 0; i < rows.length; i++) {
+        var code = String(rows[i].person_code || '').trim().toUpperCase();
+        if (code) map[code] = String(rows[i].name || '').trim();
+      }
+    } catch (e) { /* fail open */ }
+    return map;
+  }
+
   function loadJobs_(actor) {
     var allRows;
     try {
@@ -126,6 +138,12 @@ var PortalData = (function () {
     }
 
     if (!allRows || allRows.length === 0) return [];
+
+    var staffNames = buildStaffNameMap_();
+    for (var n = 0; n < allRows.length; n++) {
+      var code = String(allRows[n].allocated_to || '').trim().toUpperCase();
+      allRows[n].assigned_name = staffNames[code] || allRows[n].allocated_to || '';
+    }
 
     // Scope filter
     var role = actor.role;
