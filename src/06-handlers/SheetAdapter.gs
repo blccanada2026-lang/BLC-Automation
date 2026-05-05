@@ -267,6 +267,18 @@ var SheetAdapter = (function () {
     // ── Load client mapping config ───────────────────────────
     var clientConfig = loadClientConfig_(clientCode);
 
+    // ── Build designer name → person_code map ────────────────
+    // Used to resolve designer_name field (e.g. "Sarty Gosh - BL") to allocated_to.
+    var designerNameMap_ = {};
+    try {
+      var rosterRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE });
+      for (var d = 0; d < rosterRows.length; d++) {
+        var rCode = String(rosterRows[d].person_code || '').trim();
+        var rName = String(rosterRows[d].name        || '').trim().toLowerCase();
+        if (rCode && rName) designerNameMap_[rName] = rCode;
+      }
+    } catch (e) { /* fail open — assignment will be skipped if map unavailable */ }
+
     // ── Read all rows from the intake sheet ──────────────────
     var allRows = DAL.readAll(tableName);
 
@@ -330,6 +342,25 @@ var SheetAdapter = (function () {
 
         errorLog.push({ key: uniqueKey, errors: mapped.errors });
         continue;
+      }
+
+      // ── Resolve designer_name → allocated_to ─────────────
+      // Config rows may map a display-name column (e.g. "Design/Estimator")
+      // to the special field "designer_name". Strip client suffixes like
+      // " - BL", normalise to lowercase, and look up in DIM_STAFF_ROSTER.
+      if (mapped.payload.designer_name) {
+        var rawName     = String(mapped.payload.designer_name).trim();
+        var stripped    = rawName.replace(/\s*-\s*\w+\s*$/, '').trim().toLowerCase();
+        var resolvedCode = designerNameMap_[stripped] || '';
+        if (resolvedCode) {
+          mapped.payload.allocated_to = resolvedCode;
+        } else {
+          Logger.warn('SHEET_ADAPTER_DESIGNER_UNRESOLVED', {
+            module: MODULE, unique_key: uniqueKey, raw_name: rawName,
+            message: 'Designer name could not be resolved to a person_code — job will be unassigned'
+          });
+        }
+        delete mapped.payload.designer_name;
       }
 
       // ── Submit via IntakeService ───────────────────────────
