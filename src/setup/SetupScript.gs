@@ -291,7 +291,8 @@ var SCHEMAS = {
   'VW_JOB_CURRENT_STATE': [
     'job_number', 'client_code', 'job_type', 'product_code',
     'quantity', 'current_state', 'prev_state', 'allocated_to', 'period_id',
-    'created_at', 'updated_at', 'rework_cycle', 'client_return_count'
+    'created_at', 'updated_at', 'rework_cycle', 'client_return_count',
+    'client_job_ref', 'target_date'
   ],
 
   'VW_DESIGNER_WORKLOAD': [

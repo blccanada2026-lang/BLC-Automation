@@ -303,7 +303,8 @@
       <thead>
         <tr>
           <th>Job #</th><th>Client</th><th>Product</th><th>Qty</th>
-          <th>State</th><th>Assigned</th><th>Updated</th><th>Actions</th>
+          <th>Client Ref</th><th>Due Date</th>
+          <th>State</th><th>Assigned</th><th>Actions</th>
         </tr>
       </thead>
       <tbody id="jobs-tbody"></tbody>
@@ -1417,7 +1418,7 @@ function renderJobs(jobs, actor, perms) {
   if (!jobs || jobs.length === 0) {
     var row = document.createElement('tr');
     var td  = document.createElement('td');
-    td.colSpan = 8;
+    td.colSpan = 9;
     td.className = 'empty-cell';
     var icon = document.createElement('span');
     icon.className   = 'icon';
@@ -1455,6 +1456,30 @@ function buildJobRow(job, actor, perms) {
   // Qty
   tr.appendChild(makeTextCell(String(job.quantity || '—')));
 
+  // Client Ref
+  tr.appendChild(makeCell(function(td) {
+    td.style.fontSize = '12px';
+    td.style.color    = 'var(--c-muted)';
+    td.textContent    = job.client_job_ref || '—';
+  }));
+
+  // Due Date
+  tr.appendChild(makeCell(function(td) {
+    td.style.fontSize = '12px';
+    var d = job.target_date || '';
+    if (d) {
+      var today = new Date();
+      today.setHours(0,0,0,0);
+      var due = new Date(d);
+      if (due < today) td.style.color = 'var(--c-danger)';
+      else if ((due - today) <= 2 * 86400000) td.style.color = 'var(--c-warning)';
+      else td.style.color = 'var(--c-muted)';
+    } else {
+      td.style.color = 'var(--c-muted)';
+    }
+    td.textContent = d ? formatDate(d) : '—';
+  }));
+
   // State + rework badge
   tr.appendChild(makeCell(function(td) {
     td.appendChild(makeStateBadge(job.current_state));
@@ -1472,14 +1497,7 @@ function buildJobRow(job, actor, perms) {
   tr.appendChild(makeCell(function(td) {
     td.style.fontSize = '12px';
     td.style.color    = 'var(--c-muted)';
-    td.textContent    = shortEmail(job.allocated_to);
-  }));
-
-  // Updated
-  tr.appendChild(makeCell(function(td) {
-    td.style.fontSize = '12px';
-    td.style.color    = 'var(--c-muted)';
-    td.textContent    = formatDate(job.updated_at);
+    td.textContent    = job.assigned_name || '—';
   }));
 
   // Actions

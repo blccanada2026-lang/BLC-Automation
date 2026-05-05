@@ -458,7 +458,9 @@ var JobCreateHandler = (function () {
       created_at:          eventRow.timestamp,
       updated_at:          eventRow.timestamp,
       rework_cycle:        0,
-      client_return_count: 0
+      client_return_count: 0,
+      client_job_ref:      cleanPayload.client_job_ref    || '',
+      target_date:         cleanPayload.target_date       || ''
     };
 
     DAL.appendRow(
