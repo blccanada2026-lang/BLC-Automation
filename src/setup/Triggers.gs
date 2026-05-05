@@ -292,3 +292,31 @@ function runRemoveAllTriggers() {
   console.log('Run runInstallTriggers() to restore.');
   console.log('═══════════════════════════════════════════');
 }
+
+// ============================================================
+// ONE-TIME SCHEMA PATCH
+// ============================================================
+
+/**
+ * Adds client_job_ref and target_date columns to VW_JOB_CURRENT_STATE.
+ * Run once from the Apps Script editor. Safe to re-run — skips
+ * columns that already exist.
+ */
+function runAddJobTableColumns() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet()
+                .getSheetByName('VW_JOB_CURRENT_STATE');
+  if (!sheet) {
+    console.log('ERROR: VW_JOB_CURRENT_STATE sheet not found.');
+    return;
+  }
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var newCols = ['client_job_ref', 'target_date'];
+  var added   = [];
+  newCols.forEach(function(col) {
+    if (headers.indexOf(col) === -1) {
+      sheet.getRange(1, sheet.getLastColumn() + 1).setValue(col);
+      added.push(col);
+    }
+  });
+  console.log(added.length ? 'Added: ' + added.join(', ') : 'Already present — nothing to do.');
+}
