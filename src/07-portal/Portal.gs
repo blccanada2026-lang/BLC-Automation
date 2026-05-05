@@ -129,6 +129,62 @@ function portal_submitAction(formType, payloadJson) {
 }
 
 // ============================================================
+// portal_createJob — synchronous create + optional assign
+// ============================================================
+
+/**
+ * Creates a job and optionally assigns it to a designer in one call.
+ * Calls handlers directly (no queue round-trip) so the job_number
+ * is returned immediately to the client.
+ *
+ * @param {string} payloadJson   JSON: JOB_CREATE payload fields
+ * @param {string} designerCode  person_code to assign (empty = skip assign)
+ * @returns {string}  JSON: { ok: true, job_number }
+ */
+function portal_createJob(payloadJson, designerCode) {
+  var email = Session.getActiveUser().getEmail();
+  var actor = RBAC.resolveActor(email);
+
+  var payload;
+  try { payload = JSON.parse(payloadJson); }
+  catch (e) { throw new Error('portal_createJob: invalid JSON payload.'); }
+
+  var now      = new Date().toISOString();
+  var queueId  = Identifiers.generateId();
+
+  var createItem = {
+    queue_id:        queueId,
+    form_type:       'JOB_CREATE',
+    submitter_email: email,
+    status:          'PROCESSING',
+    attempt_count:   1,
+    payload_json:    JSON.stringify(payload),
+    error_message:   '',
+    created_at:      now,
+    updated_at:      now
+  };
+
+  var jobNumber = JobCreateHandler.handle(createItem, actor);
+
+  if (jobNumber && jobNumber !== 'DUPLICATE' && designerCode) {
+    var assignItem = {
+      queue_id:        Identifiers.generateId(),
+      form_type:       'JOB_ALLOCATE',
+      submitter_email: email,
+      status:          'PROCESSING',
+      attempt_count:   1,
+      payload_json:    JSON.stringify({ job_number: jobNumber, designer_code: designerCode }),
+      error_message:   '',
+      created_at:      now,
+      updated_at:      now
+    };
+    JobAssignHandler.handle(assignItem, actor);
+  }
+
+  return JSON.stringify({ ok: true, job_number: jobNumber || '' });
+}
+
+// ============================================================
 // portal_processQueue — manual queue drain (dev helper)
 // ============================================================
 
