@@ -294,6 +294,40 @@ function runRemoveAllTriggers() {
 }
 
 // ============================================================
+// SBS INTAKE TEST
+// ============================================================
+
+/**
+ * Seeds one test row into STG_INTAKE_SBS for designer auto-assign testing.
+ * Run from Apps Script editor, then click "Process SBS Jobs" in the portal.
+ * Safe to re-run — adds a new row each time (use a unique Job # to avoid
+ * idempotency collisions with previous test runs).
+ */
+function runSeedSbsTestRow() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('STG_INTAKE_SBS');
+  if (!sheet) {
+    console.log('ERROR: STG_INTAKE_SBS sheet not found.');
+    return;
+  }
+  var jobRef = 'TEST-' + new Date().getTime();
+  // Columns: Job #, Customer, Due Date, Notes, Product, Design/Estimator, Job Name, Model, _status, _queue_id, _queued_at, _error
+  sheet.appendRow([
+    jobRef,
+    'Test Customer',
+    '12/31/2026',
+    'Submittal',
+    'Roof',
+    'Sarty Gosh - BL',
+    'Test auto-assign row',
+    'TestModel',
+    '', '', '', ''
+  ]);
+  console.log('Test row added: ' + jobRef + ' | Roof | Sarty Gosh - BL');
+  console.log('Now go to the portal and click "Process SBS Jobs".');
+}
+
+// ============================================================
 // ONE-TIME SCHEMA PATCH
 // ============================================================
 
