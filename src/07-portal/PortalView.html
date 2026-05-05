@@ -1625,13 +1625,14 @@ function openAssign(jobNumber) {
 
   openModal('modal-assign');
 
+  var clientCode = _activeJob.client_code || '';
   google.script.run
     .withSuccessHandler(function(json) {
       var designers = JSON.parse(json);
       while (sel.firstChild) sel.removeChild(sel.firstChild);
       if (designers.length === 0) {
         var emptyOpt = document.createElement('option');
-        emptyOpt.textContent = 'No active designers found';
+        emptyOpt.textContent = 'No designers found for this account';
         emptyOpt.disabled    = true;
         sel.appendChild(emptyOpt);
         return;
@@ -1647,7 +1648,7 @@ function openAssign(jobNumber) {
       closeModal('modal-assign');
       showToast('Could not load designers: ' + (err.message || String(err)), 'error');
     })
-    .portal_getActiveDesigners();
+    .portal_getDesignersForClient(clientCode);
 }
 
 function openStart(jobNumber) {
@@ -1738,8 +1739,19 @@ function submitCreateJob() {
   closeModal('modal-create');
 
   if (designer) {
-    _pendingAssignDesigner = designer;
-    submitAction('JOB_CREATE', payload, 'Job created. Assign designer from the jobs table once it appears.');
+    showLoading(true);
+    google.script.run
+      .withSuccessHandler(function(json) {
+        showLoading(false);
+        var result = JSON.parse(json);
+        loadData();
+        showToast((result.job_number || 'Job') + ' created and assigned.', 'success');
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        showToast(err.message || 'Job creation failed.', 'error');
+      })
+      .portal_createJob(JSON.stringify(payload), designer);
   } else {
     submitAction('JOB_CREATE', payload, 'Job created successfully.');
   }
