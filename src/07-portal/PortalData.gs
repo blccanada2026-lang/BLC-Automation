@@ -981,7 +981,8 @@ var PortalData = (function () {
       if (String(row.active || '').toUpperCase() !== 'TRUE') continue;
       if (role !== 'DESIGNER' && role !== 'TEAM_LEAD' && role !== 'PM') continue;
       var code = String(row.person_code || '').trim().toUpperCase();
-      if (hasMappings && !assignedCodes[code]) continue;
+      // PMs always appear for every account (overflow coverage) — mapping filter only applies to DESIGNER/TL
+      if (role !== 'PM' && hasMappings && !assignedCodes[code]) continue;
       result.push({
         personCode: String(row.person_code || '').trim(),
         name:       String(row.name || '').trim(),
