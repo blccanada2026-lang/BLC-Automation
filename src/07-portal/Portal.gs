@@ -692,6 +692,7 @@ function setPortalBaseUrl(url) {
 function portal_processSbsIntake() {
   var email  = Session.getActiveUser().getEmail();
   var result = SheetAdapter.processSbsIntake(email);
+  try { QueueProcessor.processQueue(); } catch (e) { /* non-fatal */ }
   return JSON.stringify(result);
 }
 
