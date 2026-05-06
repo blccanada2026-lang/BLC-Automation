@@ -38,6 +38,7 @@ var Constants = (function () {
     JOB_RESUMED:             'JOB_RESUMED',
     JOB_COMPLETED:           'JOB_COMPLETED',
     JOB_REWORKED:            'JOB_REWORKED',
+    JOB_UPDATED:             'JOB_UPDATED',
     // ── QC ──────────────────────────────────────────────────
     QC_SUBMITTED:            'QC_SUBMITTED',
     QC_APPROVED:             'QC_APPROVED',
