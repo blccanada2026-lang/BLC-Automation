@@ -675,6 +675,35 @@ function setPortalBaseUrl(url) {
 }
 
 // ============================================================
+// portal_editJob — updates mutable metadata on an existing job
+// ============================================================
+
+/**
+ * Updates target_date, notes, and/or client_job_ref on an existing job.
+ * Appends a JOB_UPDATED audit event and patches VW_JOB_CURRENT_STATE.
+ * CEO / PM / TEAM_LEAD only. INVOICED jobs are locked.
+ *
+ * @param {string} payloadJson  JSON: { job_number, target_date?, notes?, client_job_ref? }
+ * @returns {string}  JSON: { ok: true, job_number }
+ */
+function portal_editJob(payloadJson) {
+  var email = Session.getActiveUser().getEmail();
+  var payload;
+  try { payload = JSON.parse(payloadJson); }
+  catch (e) { throw new Error('portal_editJob: invalid JSON payload.'); }
+
+  if (!payload.job_number) throw new Error('portal_editJob: job_number is required.');
+
+  var changes = {};
+  if (payload.hasOwnProperty('target_date'))    changes.target_date    = payload.target_date    || '';
+  if (payload.hasOwnProperty('notes'))          changes.notes          = payload.notes          || '';
+  if (payload.hasOwnProperty('client_job_ref')) changes.client_job_ref = payload.client_job_ref || '';
+
+  var result = PortalData.editJob(email, payload.job_number, changes);
+  return JSON.stringify(result);
+}
+
+// ============================================================
 // portal_processSbsIntake — bulk intake from STG_INTAKE_SBS
 // ============================================================
 
