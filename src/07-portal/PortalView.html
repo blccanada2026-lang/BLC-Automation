@@ -770,6 +770,29 @@
   </div>
 </div>
 
+<!-- ══ EDIT JOB MODAL ════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-edit-job">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Edit Job</h3>
+      <button class="modal-close" data-close="modal-edit-job">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-job-info" id="edit-job-info"></div>
+      <div class="field" style="margin-top:14px"><label>Client Job Ref</label>
+        <input id="edit-job-ref" maxlength="50" placeholder="Client's PO / reference number"></div>
+      <div class="field"><label>Due Date</label>
+        <input id="edit-due-date" type="date"></div>
+      <div class="field"><label>Notes</label>
+        <textarea id="edit-notes" rows="3" maxlength="500"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-edit-job">Cancel</button>
+      <button class="btn-primary" id="btn-submit-edit-job">Save Changes</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ START MODAL ════════════════════════════════════════════ -->
 <div class="modal-backdrop" id="modal-start">
   <div class="modal">
@@ -914,6 +937,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   document.getElementById('create-client').addEventListener('change', onCreateClientChange);
 
+  document.getElementById('btn-submit-edit-job').addEventListener('click',  submitEditJob);
   document.getElementById('btn-submit-assign').addEventListener('click',    submitAssign);
   document.getElementById('btn-submit-start').addEventListener('click',     submitStart);
   document.getElementById('btn-submit-create').addEventListener('click',    submitCreateJob);
@@ -967,6 +991,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!action || !jobNum) return;
 
     switch (action) {
+      case 'edit':        openEditJob(jobNum);   break;
       case 'assign':      openAssign(jobNum);    break;
       case 'start':       openStart(jobNum);     break;
       case 'work-log':    openWorkLog(jobNum);   break;
@@ -1518,6 +1543,9 @@ function buildActionButtons(job, perms) {
 
   if (isTerminal) return buttons;
 
+  if (perms.canCreateJob) {
+    buttons.push(makeActionBtn('Edit', 'btn-muted', 'edit', job.job_number));
+  }
   if (perms.canAssign && state === 'INTAKE_RECEIVED') {
     buttons.push(makeActionBtn('Assign',  'btn-primary', 'assign', job.job_number));
   }
@@ -1674,6 +1702,44 @@ function openStart(jobNumber) {
   if (!_activeJob) return;
   setModalJobInfo('start-job-info', _activeJob);
   openModal('modal-start');
+}
+
+function openEditJob(jobNumber) {
+  _activeJob = findJob(jobNumber);
+  if (!_activeJob) return;
+  setModalJobInfo('edit-job-info', _activeJob);
+  document.getElementById('edit-job-ref').value  = _activeJob.client_job_ref || '';
+  document.getElementById('edit-due-date').value = _activeJob.target_date    || '';
+  document.getElementById('edit-notes').value    = _activeJob.notes          || '';
+  openModal('modal-edit-job');
+}
+
+function submitEditJob() {
+  if (!_activeJob) return;
+  var jobRef  = document.getElementById('edit-job-ref').value.trim();
+  var dueDate = document.getElementById('edit-due-date').value.trim();
+  var notes   = document.getElementById('edit-notes').value.trim();
+
+  var payload = {
+    job_number:      _activeJob.job_number,
+    client_job_ref:  jobRef,
+    target_date:     dueDate,
+    notes:           notes
+  };
+
+  closeModal('modal-edit-job');
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function() {
+      showLoading(false);
+      showToast(_activeJob.job_number + ' updated.', 'success');
+      loadData();
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Update failed: ' + (err.message || String(err)), 'error');
+    })
+    .portal_editJob(JSON.stringify(payload));
 }
 
 // ── Create Job Modal helpers ────────────────────────────────────
