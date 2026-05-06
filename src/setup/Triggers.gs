@@ -298,6 +298,42 @@ function runRemoveAllTriggers() {
 // ============================================================
 
 /**
+ * Traces the full SBS intake mapping for one row — shows config rows,
+ * raw column values, and the final payload that would be submitted.
+ */
+function runDiagnoseSbsMapping() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1. Show DIM_CLIENT_INTAKE_CONFIG rows for SBS
+  var cfgSheet = ss.getSheetByName('DIM_CLIENT_INTAKE_CONFIG');
+  var cfgData  = cfgSheet.getDataRange().getValues();
+  var cfgHdrs  = cfgData[0];
+  console.log('=== DIM_CLIENT_INTAKE_CONFIG rows for SBS ===');
+  for (var i = 1; i < cfgData.length; i++) {
+    if (String(cfgData[i][0]).toUpperCase() === 'SBS') {
+      console.log('  ' + JSON.stringify(cfgData[i]));
+    }
+  }
+
+  // 2. Show last row of STG_INTAKE_SBS (most recent test row)
+  var sbsSheet = ss.getSheetByName('STG_INTAKE_SBS');
+  var sbsData  = sbsSheet.getDataRange().getValues();
+  var sbsHdrs  = sbsData[0];
+  var lastRow  = sbsData[sbsData.length - 1];
+  console.log('');
+  console.log('=== STG_INTAKE_SBS last row ===');
+  console.log('  Headers: ' + JSON.stringify(sbsHdrs));
+  console.log('  Values:  ' + JSON.stringify(lastRow));
+
+  // 3. Show what the Design/Estimator column value is
+  var deIdx = sbsHdrs.indexOf('Design/Estimator');
+  console.log('');
+  console.log('=== Design/Estimator column ===');
+  console.log('  Column index: ' + deIdx);
+  console.log('  Value in last row: "' + lastRow[deIdx] + '"');
+}
+
+/**
  * Prints the name→code map built from DIM_STAFF_ROSTER and tests
  * how "Sarty Gosh - BL" resolves. Run from Apps Script editor.
  */
