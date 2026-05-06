@@ -277,7 +277,10 @@ var SheetAdapter = (function () {
         var rName = String(rosterRows[d].name        || '').trim().toLowerCase();
         if (rCode && rName) designerNameMap_[rName] = rCode;
       }
-    } catch (e) { /* fail open — assignment will be skipped if map unavailable */ }
+      console.log('[SheetAdapter] Designer name map built: ' + Object.keys(designerNameMap_).length + ' entries');
+    } catch (e) {
+      console.log('[SheetAdapter] ERROR building designer name map: ' + e.message);
+    }
 
     // ── Read all rows from the intake sheet ──────────────────
     var allRows = DAL.readAll(tableName);
@@ -348,10 +351,12 @@ var SheetAdapter = (function () {
       // Config rows may map a display-name column (e.g. "Design/Estimator")
       // to the special field "designer_name". Strip client suffixes like
       // " - BL", normalise to lowercase, and look up in DIM_STAFF_ROSTER.
+      console.log('[SheetAdapter] payload keys: ' + Object.keys(mapped.payload).join(', '));
       if (mapped.payload.designer_name) {
-        var rawName     = String(mapped.payload.designer_name).trim();
-        var stripped    = rawName.replace(/\s*-\s*\w+\s*$/, '').trim().toLowerCase();
+        var rawName      = String(mapped.payload.designer_name).trim();
+        var stripped     = rawName.replace(/\s*-\s*\w+\s*$/, '').trim().toLowerCase();
         var resolvedCode = designerNameMap_[stripped] || '';
+        console.log('[SheetAdapter] Resolving "' + rawName + '" → stripped: "' + stripped + '" → code: "' + (resolvedCode || 'NOT FOUND') + '"');
         if (resolvedCode) {
           mapped.payload.allocated_to = resolvedCode;
         } else {
@@ -361,6 +366,8 @@ var SheetAdapter = (function () {
           });
         }
         delete mapped.payload.designer_name;
+      } else {
+        console.log('[SheetAdapter] designer_name not in payload — skipping resolution');
       }
 
       // ── Submit via IntakeService ───────────────────────────
