@@ -100,7 +100,8 @@ var DAL = (function () {
     // hard-blocked regardless of what callerModule is passed.
     'FACT_JOB_EVENTS':       ['JobCreateHandler', 'JobAssignHandler', 'JobStartHandler', 'JobHoldHandler',
                               'JobResumeHandler', 'ClientReturnHandler',
-                              'EventReplayEngine', 'MigrationEngine', 'MigrationReplayEngine'],
+                              'EventReplayEngine', 'MigrationEngine', 'MigrationReplayEngine',
+                              'JobUpdateHandler'],
     'FACT_WORK_LOGS':        ['WorkLogHandler', 'MigrationEngine', 'MigrationReplayEngine'],
     'FACT_QC_EVENTS':        ['QCHandler', 'MigrationEngine'],
     'FACT_BILLING_LEDGER':   ['BillingEngine', 'MigrationEngine', 'MigrationReplayEngine'],
@@ -110,7 +111,7 @@ var DAL = (function () {
     // ── View tables (rebuilt projections) ───────────────────
     'VW_JOB_CURRENT_STATE':  ['EventReplayEngine', 'JobCreateHandler', 'JobAssignHandler', 'JobStartHandler',
                               'JobHoldHandler', 'JobResumeHandler', 'ClientReturnHandler', 'QCHandler',
-                              'BillingEngine'],
+                              'BillingEngine', 'JobUpdateHandler'],
     'VW_DESIGNER_WORKLOAD':  ['EventReplayEngine', 'ReportingEngine'],
 
     // ── Mart tables (reporting aggregates) ──────────────────

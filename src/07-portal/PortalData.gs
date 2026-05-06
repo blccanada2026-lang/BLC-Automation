@@ -969,10 +969,7 @@ var PortalData = (function () {
   // ============================================================
   // SECTION 9: editJob
   //
-  // Updates mutable metadata fields on an existing job.
-  // Appends a JOB_UPDATED event to FACT_JOB_EVENTS and patches
-  // the VW_JOB_CURRENT_STATE row. Terminal jobs (INVOICED) are
-  // locked. CEO / PM / TEAM_LEAD only (JOB_CREATE permission).
+  // Delegates to JobUpdateHandler.handle() — all logic lives there.
   // ============================================================
 
   /**
@@ -984,65 +981,7 @@ var PortalData = (function () {
    * @returns {{ ok: boolean, job_number: string }}
    */
   function editJob(email, jobNumber, changes) {
-    var actor = RBAC.resolveActor(email);
-    RBAC.enforcePermission(actor, RBAC.ACTIONS.JOB_CREATE);
-
-    if (!jobNumber) throw new Error('editJob: job_number is required.');
-    changes = changes || {};
-
-    // ── Load existing VW row ──────────────────────────────────
-    var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: 'PortalData' });
-    var vwRow  = null;
-    for (var i = 0; i < vwRows.length; i++) {
-      if (String(vwRows[i].job_number || '') === jobNumber) { vwRow = vwRows[i]; break; }
-    }
-    if (!vwRow) throw new Error('editJob: job not found: ' + jobNumber);
-    if (vwRow.current_state === 'INVOICED') throw new Error('editJob: INVOICED jobs cannot be edited.');
-
-    var now      = new Date().toISOString();
-    var periodId = Identifiers.generateCurrentPeriodId();
-
-    // ── Append audit event ────────────────────────────────────
-    var eventRow = {
-      event_id:        Identifiers.generateId(),
-      job_number:      jobNumber,
-      period_id:       periodId,
-      event_type:      'JOB_UPDATED',
-      timestamp:       now,
-      actor_code:      actor.personCode || '',
-      actor_role:      actor.role       || '',
-      client_code:     vwRow.client_code     || '',
-      job_type:        vwRow.job_type        || '',
-      product_code:    vwRow.product_code    || '',
-      quantity:        vwRow.quantity        || 0,
-      client_job_ref:  changes.hasOwnProperty('client_job_ref') ? (changes.client_job_ref || '') : (vwRow.client_job_ref || ''),
-      target_date:     changes.hasOwnProperty('target_date')    ? (changes.target_date    || '') : (vwRow.target_date    || ''),
-      notes:           changes.hasOwnProperty('notes')          ? (changes.notes          || '') : (vwRow.notes          || ''),
-      idempotency_key: '',
-      payload_json:    JSON.stringify(changes)
-    };
-
-    DAL.appendRow(Config.TABLES.FACT_JOB_EVENTS, eventRow, { callerModule: 'PortalData' });
-
-    // ── Patch VW row ──────────────────────────────────────────
-    var vwUpdate = { updated_at: now };
-    if (changes.hasOwnProperty('target_date'))    vwUpdate.target_date    = changes.target_date    || '';
-    if (changes.hasOwnProperty('notes'))          vwUpdate.notes          = changes.notes          || '';
-    if (changes.hasOwnProperty('client_job_ref')) vwUpdate.client_job_ref = changes.client_job_ref || '';
-
-    DAL.updateWhere(
-      Config.TABLES.VW_JOB_CURRENT_STATE,
-      { job_number: jobNumber },
-      vwUpdate,
-      { callerModule: 'PortalData' }
-    );
-
-    Logger.info('JOB_UPDATED', {
-      module: 'PortalData', job_number: jobNumber, actor: email,
-      changes: JSON.stringify(changes)
-    });
-
-    return { ok: true, job_number: jobNumber };
+    return JobUpdateHandler.handle(email, jobNumber, changes);
   }
 
   function getDesignersForClient(email, clientCode) {
