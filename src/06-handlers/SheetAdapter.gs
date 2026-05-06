@@ -277,9 +277,7 @@ var SheetAdapter = (function () {
         var rName = String(rosterRows[d].name        || '').trim().toLowerCase();
         if (rCode && rName) designerNameMap_[rName] = rCode;
       }
-      console.log('[SheetAdapter] Designer name map built: ' + Object.keys(designerNameMap_).length + ' entries');
     } catch (e) {
-      console.log('[SheetAdapter] ERROR building designer name map: ' + e.message);
     }
 
     // ── Read all rows from the intake sheet ──────────────────
@@ -351,12 +349,10 @@ var SheetAdapter = (function () {
       // Config rows may map a display-name column (e.g. "Design/Estimator")
       // to the special field "designer_name". Strip client suffixes like
       // " - BL", normalise to lowercase, and look up in DIM_STAFF_ROSTER.
-      console.log('[SheetAdapter] payload keys: ' + Object.keys(mapped.payload).join(', '));
       if (mapped.payload.designer_name) {
         var rawName      = String(mapped.payload.designer_name).trim();
         var stripped     = rawName.replace(/\s*-\s*\w+\s*$/, '').trim().toLowerCase();
         var resolvedCode = designerNameMap_[stripped] || '';
-        console.log('[SheetAdapter] Resolving "' + rawName + '" → stripped: "' + stripped + '" → code: "' + (resolvedCode || 'NOT FOUND') + '"');
         if (resolvedCode) {
           mapped.payload.allocated_to = resolvedCode;
         } else {
@@ -366,54 +362,100 @@ var SheetAdapter = (function () {
           });
         }
         delete mapped.payload.designer_name;
+      }
+
+      // ── Submit: direct handler path (with assign) or queue path ─
+      // When allocated_to is resolved we call JobCreateHandler + JobAssignHandler
+      // directly so we can chain create→assign in one step (same pattern as
+      // portal_createJob). Without a designer, we use IntakeService queue.
+      var queueIdForStatus = '';
+
+      if (mapped.payload.allocated_to) {
+        // Direct create + assign
+        var designerCode = mapped.payload.allocated_to;
+        delete mapped.payload.allocated_to; // handler ignores it; assign is separate
+
+        var createItem = {
+          queue_id:        Identifiers.generateId(),
+          form_type:       Config.FORM_TYPES.JOB_CREATE,
+          submitter_email: actorEmail,
+          status:          'PROCESSING',
+          attempt_count:   1,
+          payload_json:    JSON.stringify(mapped.payload),
+          error_message:   '',
+          created_at:      now,
+          updated_at:      now
+        };
+        queueIdForStatus = createItem.queue_id;
+
+        var jobNumber;
+        try {
+          jobNumber = JobCreateHandler.handle(createItem, actor);
+        } catch (e) {
+          var ceMsg = 'Create error: ' + e.message;
+          var ceFilter = {};
+          ceFilter[uniqueKeyField] = uniqueKey;
+          Logger.error('SHEET_ADAPTER_CREATE_FAIL', { module: MODULE, unique_key: uniqueKey, message: ceMsg });
+          DAL.updateWhere(tableName, ceFilter, { '_status': 'ERROR: ' + e.message, '_error': e.message, '_queued_at': now }, { callerModule: MODULE });
+          errorLog.push({ key: uniqueKey, errors: [ceMsg] });
+          continue;
+        }
+
+        if (!jobNumber || jobNumber === 'DUPLICATE') {
+          var dupFilter = {};
+          dupFilter[uniqueKeyField] = uniqueKey;
+          DAL.updateWhere(tableName, dupFilter, { '_status': 'QUEUED', '_queue_id': queueIdForStatus, '_queued_at': now, '_error': '' }, { callerModule: MODULE });
+          queued++;
+          continue;
+        }
+
+        // Assign the designer
+        try {
+          var assignItem = {
+            queue_id:        Identifiers.generateId(),
+            form_type:       'JOB_ALLOCATE',
+            submitter_email: actorEmail,
+            status:          'PROCESSING',
+            attempt_count:   1,
+            payload_json:    JSON.stringify({ job_number: jobNumber, designer_code: designerCode }),
+            error_message:   '',
+            created_at:      now,
+            updated_at:      now
+          };
+          JobAssignHandler.handle(assignItem, actor);
+        } catch (e) {
+          Logger.warn('SHEET_ADAPTER_ASSIGN_FAIL', { module: MODULE, unique_key: uniqueKey, job_number: jobNumber, message: e.message });
+          // Non-fatal — job was created; assignment failed
+        }
+
       } else {
-        console.log('[SheetAdapter] designer_name not in payload — skipping resolution');
-      }
+        // No designer — queue via IntakeService as before
+        var result;
+        try {
+          result = IntakeService.processSubmission({
+            formType:       Config.FORM_TYPES.JOB_CREATE,
+            submitterEmail: actorEmail,
+            payload:        mapped.payload,
+            source:         'SHEET_ADAPTER'
+          });
+        } catch (e) {
+          var submitErrMsg   = 'Submit error: ' + e.message;
+          var submitErrFilter = {};
+          submitErrFilter[uniqueKeyField] = uniqueKey;
+          Logger.error('SHEET_ADAPTER_SUBMIT_FAIL', { module: MODULE, unique_key: uniqueKey, client_code: clientCode, message: submitErrMsg });
+          DAL.updateWhere(tableName, submitErrFilter, { '_status': 'ERROR: ' + e.message, '_error': e.message, '_queued_at': now }, { callerModule: MODULE });
+          errorLog.push({ key: uniqueKey, errors: [submitErrMsg] });
+          continue;
+        }
 
-      // ── Submit via IntakeService ───────────────────────────
-      var result;
-      try {
-        result = IntakeService.processSubmission({
-          formType:       Config.FORM_TYPES.JOB_CREATE,
-          submitterEmail: actorEmail,
-          payload:        mapped.payload,
-          source:         'SHEET_ADAPTER'
-        });
-      } catch (e) {
-        var submitErrMsg   = 'Submit error: ' + e.message;
-        var submitErrFilter = {};
-        submitErrFilter[uniqueKeyField] = uniqueKey;
-
-        Logger.error('SHEET_ADAPTER_SUBMIT_FAIL', {
-          module: MODULE, unique_key: uniqueKey, client_code: clientCode,
-          message: submitErrMsg
-        });
-
-        DAL.updateWhere(
-          tableName,
-          submitErrFilter,
-          { '_status': 'ERROR: ' + e.message, '_error': e.message, '_queued_at': now },
-          { callerModule: MODULE }
-        );
-
-        errorLog.push({ key: uniqueKey, errors: [submitErrMsg] });
-        continue;
-      }
-
-      if (!result.ok) {
-        var rejectMsg    = 'Intake rejected — check _SYS_LOGS for detail';
-        var rejectFilter = {};
-        rejectFilter[uniqueKeyField] = uniqueKey;
-
-        DAL.updateWhere(
-          tableName,
-          rejectFilter,
-          { '_status': 'ERROR: ' + rejectMsg, '_error': rejectMsg, '_queued_at': now },
-          { callerModule: MODULE }
-        );
-
-        errorLog.push({ key: uniqueKey, errors: [rejectMsg] });
-        continue;
+        if (!result.ok) {
+          var rejectFilter = {};
+          rejectFilter[uniqueKeyField] = uniqueKey;
+          DAL.updateWhere(tableName, rejectFilter, { '_status': 'ERROR: Intake rejected', '_error': 'Intake rejected', '_queued_at': now }, { callerModule: MODULE });
+          errorLog.push({ key: uniqueKey, errors: ['Intake rejected'] });
+          continue;
+        }
+        queueIdForStatus = result.queueId;
       }
 
       // ── Write QUEUED status back ───────────────────────────
@@ -425,7 +467,7 @@ var SheetAdapter = (function () {
         successFilter,
         {
           '_status':    'QUEUED',
-          '_queue_id':  result.queueId,
+          '_queue_id':  queueIdForStatus,
           '_queued_at': now,
           '_error':     ''
         },

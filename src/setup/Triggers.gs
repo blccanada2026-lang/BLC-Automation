@@ -376,6 +376,16 @@ function runDiagnoseDesignerResolution() {
 // ============================================================
 
 /**
+ * Runs SBS intake directly from the editor so console.log output is visible.
+ * Run runSeedSbsTestRow() first to add a pending row.
+ */
+function runTestSbsIntake() {
+  var email  = Session.getActiveUser().getEmail();
+  var result = SheetAdapter.processSbsIntake(email);
+  console.log('Result: ' + JSON.stringify(result));
+}
+
+/**
  * Seeds one test row into STG_INTAKE_SBS for designer auto-assign testing.
  * Run from Apps Script editor, then click "Process SBS Jobs" in the portal.
  * Safe to re-run — adds a new row each time (use a unique Job # to avoid
@@ -403,6 +413,28 @@ function runSeedSbsTestRow() {
   ]);
   console.log('Test row added: ' + jobRef + ' | Roof | Sarty Gosh - BL');
   console.log('Now go to the portal and click "Process SBS Jobs".');
+}
+
+/**
+ * Resets ALL rows in STG_INTAKE_SBS back to PENDING so they can be reprocessed.
+ * Run from the Apps Script editor when retesting SBS intake changes.
+ */
+function runResetSbsRows() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('STG_INTAKE_SBS');
+  if (!sheet) { console.log('ERROR: STG_INTAKE_SBS not found.'); return; }
+  var data    = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var statusCol = headers.indexOf('_status');
+  if (statusCol === -1) { console.log('ERROR: _status column not found.'); return; }
+  var cleared = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][statusCol]).trim() !== '') {
+      sheet.getRange(i + 1, statusCol + 1).setValue('');
+      cleared++;
+    }
+  }
+  console.log('Reset ' + cleared + ' row(s) to pending. Now run runTestSbsIntake().');
 }
 
 // ============================================================
