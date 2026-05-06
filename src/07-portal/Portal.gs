@@ -543,6 +543,24 @@ function portal_refreshDashboard() {
 }
 
 // ============================================================
+// portal_runBillingRun — CEO triggers billing run for the period
+// ============================================================
+
+/**
+ * Runs the billing engine for the given period.
+ * Reads FACT_WORK_LOGS + DIM_CLIENT_RATES, writes FACT_BILLING_LEDGER,
+ * marks jobs INVOICED in VW_JOB_CURRENT_STATE.
+ * CEO only (BILLING_RUN permission).
+ *
+ * @param {string} periodId  e.g. '2026-04' (pass '' for current period)
+ * @returns {string}  JSON: { billed, skipped, errors[], period_id }
+ */
+function portal_runBillingRun(periodId) {
+  var email  = Session.getActiveUser().getEmail();
+  var result = BillingEngine.runBillingRun(email, { periodId: periodId || '' });
+  return JSON.stringify(result);
+}
+
 // portal_runBonusRun — CEO triggers supervisor bonus run
 // ============================================================
 

@@ -342,6 +342,7 @@
       <div class="dash-actions">
         <button class="btn-muted btn-sm" id="btn-send-feedback" style="display:none">✉ Send Feedback Requests</button>
         <button class="btn-muted btn-sm" id="btn-send-ratings" style="display:none">📋 Send Rating Requests</button>
+        <button class="btn-warning btn-sm" id="btn-run-billing" style="display:none">🧾 Run Billing</button>
         <button class="btn-muted btn-sm" id="btn-run-bonus" style="display:none">💰 Run Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-quarterly-bonus" style="display:none">🏆 Run Quarterly Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-annual-bonus" style="display:none">🎁 Run Annual Bonus</button>
@@ -955,6 +956,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-send-feedback').addEventListener('click',     sendFeedbackRequests);
   document.getElementById('btn-send-ratings').addEventListener('click',      sendRatingRequests);
   document.getElementById('btn-sbs-intake').addEventListener('click',        processSbsIntake);
+  document.getElementById('btn-run-billing').addEventListener('click',       runBillingRun);
   document.getElementById('btn-run-bonus').addEventListener('click',         runBonusRun);
   document.getElementById('btn-run-quarterly-bonus').addEventListener('click', runQuarterlyBonus);
   document.getElementById('btn-run-annual-bonus').addEventListener('click',    runAnnualBonus);
@@ -1043,6 +1045,7 @@ function onDataLoaded(jsonStr) {
   // Leader dashboard payroll action buttons
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-feedback').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-ratings').style.display    = 'inline-block';
+  if (_data.perms.canRunPayroll)     document.getElementById('btn-run-billing').style.display            = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-bonus').style.display              = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-quarterly-bonus').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-annual-bonus').style.display      = 'inline-block';
@@ -1294,7 +1297,7 @@ function renderPortal_(data) {
   // Hide ALL toolbar + dashboard action buttons before re-showing what this role gets
   var allBtns = ['btn-create-job','btn-sbs-intake','btn-process-queue','btn-clients',
                  'btn-leader-dash','btn-staff-panel',
-                 'btn-send-feedback','btn-send-ratings','btn-run-bonus',
+                 'btn-send-feedback','btn-send-ratings','btn-run-billing','btn-run-bonus',
                  'btn-run-quarterly-bonus','btn-run-annual-bonus','btn-rebuild-views',
                  'btn-refresh-dashboard',
                  'btn-approve-payroll','lbl-test-mode'];
@@ -1312,6 +1315,7 @@ function renderPortal_(data) {
   if (perms.canManageStaff)  document.getElementById('btn-clients').style.display       = 'inline-block';
   if (perms.isLeader)        document.getElementById('btn-leader-dash').style.display   = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-staff-panel').style.display   = 'inline-block';
+  if (perms.canRunPayroll)   document.getElementById('btn-run-billing').style.display         = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-run-quarterly-bonus').style.display = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-run-annual-bonus').style.display    = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-rebuild-views').style.display        = 'inline-block';
@@ -2714,6 +2718,25 @@ function confirmPaystub() {
 }
 
 // ── CEO Payroll Actions ────────────────────────────────────────
+
+function runBillingRun() {
+  if (!confirm('Run billing for the current period?\n\nThis will calculate amounts from FACT_WORK_LOGS, write to FACT_BILLING_LEDGER, and mark completed jobs as INVOICED.\n\nThis cannot be undone.')) return;
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      try {
+        var result = JSON.parse(json);
+        showToast('Billing run complete: ' + result.billed + ' job(s) billed.', 'success');
+        loadData();
+      } catch(e) { showToast('Billing run complete.', 'success'); }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Billing run error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_runBillingRun('');
+}
 
 function runBonusRun() {
   if (!confirm('Run supervisor bonus calculations for the current period?\n\nThis will calculate INR 25 × supervised design hours for all TLs and PMs.')) return;
