@@ -441,55 +441,20 @@ var RBAC = (function () {
   };
 
   // ============================================================
-  // SECTION 6: MOCK EMAIL → ACTOR MAP (Phase 1)
+  // SECTION 6: PRIVILEGED ACTORS + ROSTER LOOKUP (Phase 2)
   //
-  // Used by resolveActor_() until DIM_STAFF_ROSTER is live.
-  // Contains test/dev actor definitions only — no production emails.
-  //
-  // PHASE 2 MIGRATION: Replace resolveActor_() with a DAL.readWhere
-  //   call. This mock block can be deleted entirely. The public API
-  //   (resolveActor, getUserRole) does not change.
-  //
-  // !! DO NOT add real production email addresses here !!
-  //    Use DIM_STAFF_ROSTER for production actor resolution.
+  // CEO and SYSTEM are not in DIM_STAFF_ROSTER — hardcoded here.
+  // All other actors are resolved live from DIM_STAFF_ROSTER via DAL.
   // ============================================================
 
-  var MOCK_ACTOR_MAP = {
-    // ── System / automation ──────────────────────────────────
-    'system@blclotus.com':        { personCode: 'SYS', role: ROLES.SYSTEM,    displayName: 'System Automation' },
-    // ── CEO / Founder ────────────────────────────────────────
-    'ceo@blclotus.com':                { personCode: 'CEO', role: ROLES.CEO, displayName: 'BLC CEO' },
-    'founder@blclotus.com':            { personCode: 'CEO', role: ROLES.CEO, displayName: 'BLC Founder' },
-    'raj.nair@bluelotuscanada.ca':     { personCode: 'RAJ', role: ROLES.CEO, displayName: 'Raj Nair' },
-    'blccanada2026@gmail.com':         { personCode: 'RAJ', role: ROLES.CEO, displayName: 'Raj Nair' },
-    // ── Project Manager ──────────────────────────────────────
-    'pm@blclotus.com':            { personCode: 'PMG', role: ROLES.PM,        displayName: 'Project Manager' },
-    'sarty@blclotus.com':         { personCode: 'SGO', role: ROLES.PM,        displayName: 'Sarty Gosh' },
-    'sarthakaespl@gmail.com':     { personCode: 'SGO', role: ROLES.PM,        displayName: 'Sarthak Ghosh' },
-    // ── Team Leads ───────────────────────────────────────────
-    'teamlead@blclotus.com':      { personCode: 'TL1', role: ROLES.TEAM_LEAD, displayName: 'Team Lead' },
-    'bharathchunarkar121@gmail.com': { personCode: 'BCH', role: ROLES.TEAM_LEAD, displayName: 'Bharath Charles' },
-    'samar.das1995@gmail.com':       { personCode: 'SDA', role: ROLES.TEAM_LEAD, displayName: 'Samar Kumar Das' },
-    'pabitra8846@gmail.com':         { personCode: 'PBG', role: ROLES.TEAM_LEAD, displayName: 'Pabitra Ghosh' },
-    'subonath2018@gmail.com':        { personCode: 'SVN', role: ROLES.TEAM_LEAD, displayName: 'Savvy Nath' },
-    // ── Designers ────────────────────────────────────────────
-    'designer@blclotus.com':      { personCode: 'DS1', role: ROLES.DESIGNER,  displayName: 'Designer' },
-    'designer2@blclotus.com':     { personCode: 'DS2', role: ROLES.DESIGNER,  displayName: 'Designer 2' },
-    // ── QC Reviewers ─────────────────────────────────────────
-    'qc@blclotus.com':            { personCode: 'QC1', role: ROLES.QC,        displayName: 'QC Reviewer' },
-    // ── Admin ────────────────────────────────────────────────
-    'admin@blclotus.com':         { personCode: 'ADM', role: ROLES.ADMIN,     displayName: 'System Admin' },
-    // ── Test actors (used in tests/ only) ────────────────────
-    'test.ceo@blclotus.com':      { personCode: 'TC0', role: ROLES.CEO,       displayName: 'Test CEO' },
-    'test.pm@blclotus.com':       { personCode: 'TP0', role: ROLES.PM,        displayName: 'Test PM' },
-    'test.designer@blclotus.com': { personCode: 'TD0', role: ROLES.DESIGNER,  displayName: 'Test Designer' },
-    'test.qc@blclotus.com':       { personCode: 'TQ0', role: ROLES.QC,        displayName: 'Test QC' }
+  var PRIVILEGED_ACTORS = {
+    'system@blclotus.com':         { personCode: 'SYS', role: ROLES.SYSTEM, displayName: 'System Automation' },
+    'raj.nair@bluelotuscanada.ca': { personCode: 'RAJ', role: ROLES.CEO,    displayName: 'Raj Nair' },
+    'blccanada2026@gmail.com':     { personCode: 'RAJ', role: ROLES.CEO,    displayName: 'Raj Nair' }
   };
 
   /**
-   * Returns DEV-only smoke test actors. Returns {} in PROD and TEST environments.
-   * These identities are not in DIM_STAFF_ROSTER — they exist only to allow
-   * portal testing via personal Google accounts during local DEV sessions.
+   * Returns DEV-only smoke test actors. Returns {} in PROD.
    * @returns {Object}  email → actor map, or {} in non-DEV environments
    */
   function getDevTestActors_() {
@@ -499,6 +464,44 @@ var RBAC = (function () {
       'rajnaircanada@gmail.com': { personCode: 'RND', role: ROLES.DESIGNER,  displayName: 'Raj (Designer)' },
       'nairscanada@gmail.com':   { personCode: 'NTL', role: ROLES.TEAM_LEAD, displayName: 'Raj (TL)' }
     };
+  }
+
+  /**
+   * Resolves an actor by email. Checks privileged actors first, then
+   * DEV test actors, then live DIM_STAFF_ROSTER lookup via DAL.
+   * Returns null if the email is not recognised or inactive.
+   *
+   * @param {string} email  Normalised email address
+   * @returns {Object|null}  { personCode, role, displayName } or null
+   */
+  function lookupActor_(email) {
+    if (!email) return null;
+
+    if (PRIVILEGED_ACTORS[email]) return PRIVILEGED_ACTORS[email];
+
+    var devActor = getDevTestActors_()[email];
+    if (devActor) return devActor;
+
+    try {
+      var rows = DAL.readWhere(Config.TABLES.DIM_STAFF_ROSTER, { email: email });
+      if (!rows || rows.length === 0) return null;
+      var row = null;
+      for (var i = 0; i < rows.length; i++) {
+        var active = rows[i].active;
+        if (active === true || String(active).toUpperCase() === 'TRUE') {
+          row = rows[i]; break;
+        }
+      }
+      if (!row) return null;
+      return {
+        personCode:  String(row.person_code || ''),
+        role:        String(row.role        || ROLES.DESIGNER),
+        displayName: String(row.name        || email)
+      };
+    } catch (e) {
+      Logger.warn('RBAC_ROSTER_LOOKUP_FAILED', { email: email, error: e.message });
+      return null;
+    }
   }
 
   // ============================================================
@@ -633,24 +636,12 @@ var RBAC = (function () {
   }
 
   /**
-   * Resolves an actor object (Phase 1: mock map; Phase 2: DAL lookup).
-   * Returns null if the email is not recognised.
-   *
-   * ── PHASE 2 MIGRATION ──
-   * Replace this function body with:
-   *   var rows = DAL.readWhere(Config.TABLES.DIM_STAFF_ROSTER, { email: email, active: 'TRUE' });
-   *   if (!rows.length) return null;
-   *   var r = rows[0];
-   *   return { email: email, personCode: r.person_code, role: r.role, displayName: r.full_name };
-   * ───────────────────────
-   *
-   * @param {string} email  Google account email address
-   * @returns {Object|null}  { personCode, role, displayName } or null
+   * Retained as a thin alias for lookupActor_() so call sites need no change.
+   * @param {string} email
+   * @returns {Object|null}
    */
   function lookupMockActor_(email) {
-    if (!email) return null;
-    var key = email.toLowerCase().trim();
-    return MOCK_ACTOR_MAP[key] || getDevTestActors_()[key] || null;
+    return lookupActor_(email ? email.toLowerCase().trim() : email);
   }
 
   // ============================================================
