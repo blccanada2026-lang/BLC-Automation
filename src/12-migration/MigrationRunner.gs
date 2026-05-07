@@ -22,6 +22,50 @@
 
 var MIGRATION_RUNNER_EMAIL_ = 'blccanada2026@gmail.com';
 
+// norm_ids of rows intentionally ignored (test data + zero-hour entries).
+// These are INVALID rows that will never be replayed — marking them IGNORED
+// keeps the MIGRATION_NORMALIZED sheet clean and explicit.
+var IGNORED_NORM_IDS_ = [
+  // ── TEST data (fake staff, test jobs, form placeholders) ──────
+  '18eb919d-1d0f-4454-bc1b-0f8a27050924', // STAFF ROW-21 (blank row)
+  '465c286d-72f3-4ea3-834a-903f374f1ea4', // STAFF ROW-22 (blank row)
+  'fa224805-8e54-42da-b525-73345ea5e64e', // JOB TEST-004
+  '9d34055d-adb7-4c9d-b36e-45871aab31f2', // JOB TEST-005
+  '328bb308-d19b-41ba-8b3b-e351521f8a67', // JOB TEST-ALLOC-002
+  'a62eebf4-cd4c-4bbb-8528-44eb844d7999', // WORK_LOG TEST DESIGNER2 ROW-2
+  'f7a12c3c-3d0a-4ab0-9acd-0f2fa0d44167', // WORK_LOG TEST DESIGNER2 ROW-3
+  '1cb1c3b4-52f1-4212-ab81-f368a140ac1e', // WORK_LOG TEST DESIGNER2 ROW-4
+  'da712686-c6b4-4b95-8229-0d3f4f1a3804', // WORK_LOG Test Designer ROW-5
+  '3822e77c-81fa-4e8a-8a9b-952a9ae1026b', // WORK_LOG Test Designer ROW-6
+  'aca401f2-68d0-4066-b31f-1dd9804fd967', // WORK_LOG TEST DESIGNER2 ROW-7
+  'f6f43954-05b8-4e52-88ee-c17e4a957c87', // WORK_LOG TEST DESIGNER2 ROW-8
+  '9ad6466e-f40e-4a9a-bf05-c225ccc5869f', // WORK_LOG Test Designer ROW-9
+  'bb5dafb1-68b8-4ff0-a8f0-9570e18830ba', // WORK_LOG Test Designer ROW-10 (hours="abc")
+  '8a7b8235-e518-4657-9c28-3aea727987f1', // QC "Option 1" TEST-001 ROW-2
+  '79cf5d95-0d87-4fd9-949b-6d617d9758ff', // QC "Option 1" TEST-002 ROW-3
+  'f50537e3-7111-442c-a04c-f26c594ed2a2', // QC "Option 1" TEST-002 ROW-4
+  '16947c63-e940-44d3-9d9a-cc14fcfdb03f', // QC "Option 1" TEST-003 ROW-5
+  'd3dab549-0f04-41b6-8e40-a9e018845305', // QC "Option 1" TEST-003 ROW-6
+  // ── Zero-hour designer work logs ─────────────────────────────
+  '55f3c945-6b95-4bdd-bf6d-785ef477a09a', // ABB 2602-2065-B 0hrs
+  '07a570ab-ab8f-4a34-89f9-2f04dbc8d22e', // ABB 2602-2065-E 0hrs
+  '94c0bf9c-44da-42fa-bf82-d56dd65a9859', // RKG Q260156 0hrs
+  '56a7f654-b07b-440c-a837-8afbda2fde73', // RKG Q260156 0hrs (dup)
+  '218f3cfe-2fc7-49a2-97bd-5a1188043937', // RKU 2603-3222-A 0hrs
+  '47b10413-7072-4f7d-a840-c690fabf133b', // ABB 2603-4048-A 0hrs
+  // ── Zero-hour QC logs (SVN spot-checks, BCH) ─────────────────
+  'b145c6a4-193d-4931-8336-50c2ccc17f07', // SVN QC 2603-2478-C 0hrs
+  'f06c8f46-055b-40e8-850d-aaa98d2dda65', // SVN QC 2603-2479-C 0hrs
+  '16039958-b4d2-4288-a00f-b87534252c8c', // SVN QC 2603-2477-A 0hrs
+  'd9a1d113-57b0-4707-bdea-98459c53ca15', // SVN QC 2603-2478-A 0hrs
+  '3d2bc997-603c-4fc4-9cef-34a0f8cd40f8', // SVN QC 2603-2479-A 0hrs
+  '1e39d738-4309-4638-9937-3d7547bc7e56', // SVN QC 2603-2477-B 0hrs
+  '2257e8ff-bd9b-4e3a-9ce0-a1b51a612c2d', // SVN QC 2603-2478-B 0hrs
+  '137bdfb2-fa08-4496-b534-a94959b0e444', // SVN QC 2603-2479-B 0hrs
+  '6049cd25-2023-4900-9081-c096f7bb8769', // BCH QC 2602-1916-M 0hrs
+  '30dd6d33-4d32-4c42-9768-823d5bece4e5'  // BCH QC Q24403A 0hrs
+];
+
 // ── STEP 1 ────────────────────────────────────────────────────
 /**
  * Enables backdating + relaxed idempotency for migration period.
@@ -167,6 +211,40 @@ function runMigrationVerify() {
   } catch (e) {
     console.log('  ❌ Verification failed: ' + e.message);
   }
+  console.log('═══════════════════════════════════════════');
+}
+
+// ── MARK IGNORED ──────────────────────────────────────────────
+/**
+ * Marks known-bad rows (test data + zero-hour entries) as IGNORED
+ * in MIGRATION_NORMALIZED so they are excluded from future replays
+ * and reconciliation reports.
+ */
+function runMarkIgnoredRows() {
+  console.log('═══════════════════════════════════════════');
+  console.log('[MigrationRunner] Marking ' + IGNORED_NORM_IDS_.length + ' rows as IGNORED…');
+  console.log('═══════════════════════════════════════════');
+
+  var marked = 0;
+  var failed = 0;
+
+  IGNORED_NORM_IDS_.forEach(function (normId) {
+    try {
+      DAL.updateWhere(
+        MigrationConfig.TABLES.NORMALIZED,
+        { norm_id: normId },
+        { replay_status: 'IGNORED', replay_error: 'Intentionally ignored: test data or zero-hour entry' },
+        { callerModule: 'MigrationReconciler' }
+      );
+      marked++;
+    } catch (e) {
+      console.log('  ⚠️  Could not mark ' + normId.substring(0, 8) + '… : ' + e.message);
+      failed++;
+    }
+  });
+
+  console.log('  ✅ Marked IGNORED: ' + marked);
+  if (failed > 0) console.log('  ⚠️  Failed: ' + failed);
   console.log('═══════════════════════════════════════════');
 }
 
