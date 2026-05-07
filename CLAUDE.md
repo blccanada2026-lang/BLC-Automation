@@ -313,6 +313,7 @@ All records also store: `bank_country`, `bank_city`, `bank_address`, `ofx_recipi
 ---
 
 ## Pending Features (not yet built)
+- [ ] Leader Dashboard: TL-grouped team hours view — break the flat Team Hours table into per-TL sections (e.g. "SVN's team: X hrs, PBG's team: Y hrs"). Currently all staff shown in one flat list sorted by total hours. Requested 2026-05-07.
 - [x] Staff onboarding: DIM_STAFF_ROSTER, DIM_STAFF_BANKING, DIM_STAFF_CONTRACTS, contract generation
 - [x] Bulk staff import: STG_STAFF_IMPORT staging sheet + portal "Bulk Import from Sheet" button
 - [x] Leader Dashboard: team hours + payroll status per period (CEO/PM/TL)
