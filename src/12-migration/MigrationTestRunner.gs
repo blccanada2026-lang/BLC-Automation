@@ -122,7 +122,13 @@ var MigrationTestRunner = (function () {
 
     var untagged = 0;
     tables.forEach(function (tableName) {
-      var rows = DAL.readAll(tableName, { callerModule: MODULE });
+      var rows;
+      try {
+        rows = DAL.readAll(tableName, { callerModule: MODULE });
+      } catch (e) {
+        // Partition may not exist yet (e.g. billing/payroll not yet run) — treat as empty
+        rows = [];
+      }
       (rows || []).filter(function (r) { return r.migration_batch === batch; })
                   .forEach(function (r) {
                     if (!r.migration_batch) untagged++;
