@@ -507,7 +507,7 @@ var MigrationReconFiller = (function () {
    * @returns {{ inserted: number, skipped: number, failed: number }}
    */
   function fillMissing(actorEmail) {
-    var actor = ActorResolver.resolve(actorEmail);
+    var actor = RBAC.resolveActor(actorEmail);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
 
     Logger.info('RECON_FILL_START', {
@@ -538,11 +538,10 @@ var MigrationReconFiller = (function () {
     });
 
     Object.keys(rowsByPeriod).forEach(function (periodId) {
-      var rows      = rowsByPeriod[periodId];
-      var tableName = Config.TABLES.FACT_WORK_LOGS + '|' + periodId;
+      var rows = rowsByPeriod[periodId];
       try {
         DAL.ensurePartition(Config.TABLES.FACT_WORK_LOGS, periodId, MODULE);
-        BatchOperations.appendRows(tableName, rows, { callerModule: MODULE });
+        DAL.appendRows(Config.TABLES.FACT_WORK_LOGS, rows, { callerModule: MODULE, periodId: periodId });
       } catch (e) {
         Logger.error('RECON_FILL_WRITE_FAILED', {
           module:  MODULE,
@@ -567,6 +566,21 @@ var MigrationReconFiller = (function () {
 
   return { fillMissing: fillMissing };
 }());
+
+// ── Clear stuck idempotency keys (run once if filler was run before writes worked) ──
+function runClearReconIdempotencyKeys() {
+  var props = PropertiesService.getScriptProperties();
+  var cleared = 0;
+  for (var i = 0; i <= 430; i++) {
+    var pad = i < 10 ? '000' : i < 100 ? '00' : i < 1000 ? '0' : '';
+    var key = 'IDEM_RECON-' + pad + i;
+    if (props.getProperty(key) !== null) {
+      props.deleteProperty(key);
+      cleared++;
+    }
+  }
+  console.log('[MigrationReconFiller] Cleared ' + cleared + ' idempotency keys.');
+}
 
 // ── Top-level runner ───────────────────────────────────────────
 /**
