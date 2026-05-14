@@ -35,29 +35,27 @@
 ### Actor Mapping
 | Invoice Code | System Actor Code | Notes |
 |---|---|---|
-| PG | ??? | Pabitra Ghosh — actor code UNKNOWN |
-| PS | ??? | Prianka Santra — actor code UNKNOWN |
-| NM | ??? | Nitish Mishra — actor code UNKNOWN; 0 hrs this period |
+| PG | PBG | Confirmed |
+| PS | PRS | Confirmed |
+| NM | NMM | Confirmed |
 | SG | SGO | Confirmed; 0 hrs this period |
-| DS | ??? | Deb Sen — actor code UNKNOWN; 0 hrs this period |
+| DS | DBS | Confirmed |
 
 ---
 
 ### PG — 1 row, 1 hr (QC)
 
-⚠️ Actor code UNKNOWN. All 1 hr BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
 | 2026-04-22 | B600147 | QC | 1 | Roof Truss; invoice shows 2026-05-22 — corrected to 2026-04-22 |
 
-**Subtotal: 1 hr — BLOCKED: actor code unknown**
+**Subtotal: 1 hr**
 
 ---
 
 ### PS — 3 rows, 13 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 13 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -65,7 +63,7 @@
 | 2026-04-22 | B600147 | DESIGNER | 4 | Roof Truss |
 | 2026-04-22 | B600147 | DESIGNER | 2.5 | Roof Truss; D4: second row same job/date |
 
-**Subtotal: 13 hrs — BLOCKED: actor code unknown**
+**Subtotal: 13 hrs**
 
 ---
 
@@ -85,16 +83,16 @@ DB check required at import.
 
 | Designer | System Code | Rows | Hours | Status |
 |---|---|---|---|---|
-| PG | ??? | 1 | 1 | ❌ BLOCKED — actor code unknown |
-| PS | ??? | 3 | 13 | ❌ BLOCKED — actor code unknown |
-| NM | ??? | 0 | 0 | No hrs this period |
+| PG | PBG | 1 | 1 | ✅ Ready to import |
+| PS | PRS | 3 | 13 | ✅ Ready to import |
+| NM | NMM | 0 | 0 | No hrs this period |
 | SG | SGO | 0 | 0 | No hrs this period |
-| DS | ??? | 0 | 0 | No hrs this period |
+| DS | DBS | 0 | 0 | No hrs this period |
 | **TOTAL** | | **4** | **14** | **14 hrs blocked (100%)** |
 
 ### Pre-Import Blockers
-1. Resolve system actor code for PG (Pabitra Ghosh) — 1 hr, 1 row
-2. Resolve system actor code for PS (Prianka Santra) — 13 hrs, 3 rows
+1. ✅ RESOLVED: PG = PBG (Pabitra Ghosh) — 1 hr, 1 row
+2. ✅ RESOLVED: PS = PRS (Prianka Santra) — 13 hrs, 3 rows
 
 ### Import Notes
 - PG B600147 QC: invoice date 2026-05-22 → corrected to 2026-04-22; verify against original PDF at import.

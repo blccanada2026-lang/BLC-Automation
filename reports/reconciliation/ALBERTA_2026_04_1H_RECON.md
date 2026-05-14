@@ -33,15 +33,14 @@
 ### Actor Mapping
 | Invoice Code | System Actor Code | Notes |
 |---|---|---|
-| PS | ??? | Prianka Santra — actor code UNKNOWN |
-| DS | ??? | Deb Sen — actor code UNKNOWN |
+| PS | PRS | Confirmed |
+| DS | DBS | Confirmed |
 | SG | SGO | Confirmed |
 
 ---
 
 ### PS — 4 rows, 17.25 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 17.25 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -50,20 +49,19 @@
 | 2026-04-09 | 261519 | DESIGNER | 5 | Roof Truss |
 | 2026-04-13 | 261519 | DESIGNER | 6.25 | Roof Truss |
 
-**Subtotal: 17.25 hrs — BLOCKED: actor code unknown**
+**Subtotal: 17.25 hrs**
 
 ---
 
 ### DS — 2 rows, 3.75 hrs (all QC)
 
-⚠️ Actor code UNKNOWN. All 3.75 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
 | 2026-04-04 | 161580 | QC | 1.5 | Roof Truss; 16xxxx series job number |
 | 2026-04-15 | 261519 | QC | 2.25 | Roof Truss |
 
-**Subtotal: 3.75 hrs — BLOCKED: actor code unknown**
+**Subtotal: 3.75 hrs**
 
 ---
 
@@ -93,14 +91,14 @@ DB check required at import.
 
 | Designer | System Code | Rows | Hours | Status |
 |---|---|---|---|---|
-| PS | ??? | 4 | 17.25 | ❌ BLOCKED — actor code unknown |
-| DS | ??? | 2 | 3.75 | ❌ BLOCKED — actor code unknown |
+| PS | PRS | 4 | 17.25 | ✅ Ready to import |
+| DS | DBS | 2 | 3.75 | ✅ Ready to import |
 | SG | SGO | 1 | 2.5 | Ready to import (DESIGNER work type) |
 | **TOTAL** | | **7** | **23.5** | **21 hrs blocked** |
 
 ### Pre-Import Blockers
-1. Resolve system actor code for PS (Prianka Santra) — 17.25 hrs, 4 rows
-2. Resolve system actor code for DS (Deb Sen) — 3.75 hrs, 2 rows
+1. ✅ RESOLVED: PS = PRS (Prianka Santra) — 17.25 hrs, 4 rows
+2. ✅ RESOLVED: DS = DBS (Deb Sen) — 3.75 hrs, 2 rows
 
 ### Import Notes
 - SGO row: work_type = DESIGNER (I JOIST Floor 1 Design-Quote).

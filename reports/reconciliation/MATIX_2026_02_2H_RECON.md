@@ -38,15 +38,14 @@
 ### Actor Mapping
 | Invoice Code | System Actor Code | Notes |
 |---|---|---|
-| DG | ??? | Debby Gosh/Ghosh — actor code UNKNOWN (ongoing blocker) |
-| DS | ??? | Deb Sen — actor code UNKNOWN (ongoing blocker) |
+| DG | DBG | Confirmed |
+| DS | DBS | Confirmed |
 | SG | SGO | Confirmed |
 
 ---
 
 ### DG — 42 rows, 77.75 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 77.75 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -93,13 +92,12 @@
 | 2026-02-27 | 160669_MAIN | DESIGNER | 1.5 | Roof Truss; full string is job number |
 | 2026-02-27 | 160669_GARAGE | DESIGNER | 0.75 | Roof Truss; full string is job number |
 
-**Subtotal: 77.75 hrs — BLOCKED: actor code unknown**
+**Subtotal: 77.75 hrs**
 
 ---
 
 ### DS — 13 rows, 59.5 hrs (all DESIGNER, all Roof Truss)
 
-⚠️ Actor code UNKNOWN. All 59.5 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -117,7 +115,7 @@
 | 2026-02-25 | 160691 | DESIGNER | 10 | |
 | 2026-02-26 | 160706 | DESIGNER | 8.5 | |
 
-**Subtotal: 59.5 hrs — BLOCKED: actor code unknown**
+**Subtotal: 59.5 hrs**
 
 ---
 
@@ -156,14 +154,14 @@ DB check required at import.
 
 | Designer | System Code | Rows | Hours | Status |
 |---|---|---|---|---|
-| DG | ??? | 42 | 77.75 | ❌ BLOCKED — actor code unknown |
-| DS | ??? | 13 | 59.5 | ❌ BLOCKED — actor code unknown |
+| DG | DBG | 42 | 77.75 | ✅ Ready to import |
+| DS | DBS | 13 | 59.5 | ✅ Ready to import |
 | SG | SGO | 10 | 5.5 | Ready to import |
 | **TOTAL** | | **65** | **142.75** | **137.25 hrs blocked** |
 
 ### Pre-Import Blockers
-1. Resolve system actor code for DG (Debby Gosh/Ghosh) — 77.75 hrs, 42 rows
-2. Resolve system actor code for DS (Deb Sen) — 59.5 hrs, 13 rows
+1. ✅ RESOLVED: DG = DBG (Debby Gosh/Ghosh) — 77.75 hrs, 42 rows
+2. ✅ RESOLVED: DS = DBS (Deb Sen) — 59.5 hrs, 13 rows
 
 ### Import Notes
 - 160669 job has suffix variants across actors: DG uses 160669_MAIN / 160669_GARAGE; DS uses 160669_Garage / 160669_Main Bldg. Import exact string per row — do not normalise.

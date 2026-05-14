@@ -33,15 +33,14 @@
 ### Actor Mapping
 | Invoice Code | System Actor Code | Notes |
 |---|---|---|
-| DG | ??? | Debby Gosh/Ghosh — actor code UNKNOWN (ongoing blocker) |
-| DS | ??? | Deb Sen — actor code UNKNOWN (ongoing blocker) |
+| DG | DBG | Confirmed |
+| DS | DBS | Confirmed |
 | SG | SGO | Confirmed |
 
 ---
 
 ### DG — 34 rows, 81 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 81 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -80,13 +79,12 @@
 | 2026-01-30 | 160629 | DESIGNER | 6 | I JOIST Floor 1 |
 | 2026-01-30 | 160629 | DESIGNER | 1.5 | Roof Truss |
 
-**Subtotal: 81 hrs — BLOCKED: actor code unknown**
+**Subtotal: 81 hrs**
 
 ---
 
 ### DS — 10 rows, 43 hrs (all DESIGNER, all Roof Truss)
 
-⚠️ Actor code UNKNOWN. All 43 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -101,7 +99,7 @@
 | 2026-01-21 | 160613 | DESIGNER | 3.5 | |
 | 2026-01-30 | 160608_Rev | DESIGNER | 2.5 | Underscore+Rev suffix is part of job number |
 
-**Subtotal: 43 hrs — BLOCKED: actor code unknown**
+**Subtotal: 43 hrs**
 
 ---
 
@@ -134,11 +132,11 @@ DB check required at import.
 
 | Designer | System Code | Rows | Hours | Status |
 |---|---|---|---|---|
-| DG | ??? | 34 | 81 | ❌ BLOCKED — actor code unknown |
-| DS | ??? | 10 | 43 | ❌ BLOCKED — actor code unknown |
+| DG | DBG | 34 | 81 | ✅ Ready to import |
+| DS | DBS | 10 | 43 | ✅ Ready to import |
 | SG | SGO | 4 | 3.5 | Ready to import |
 | **TOTAL** | | **48** | **127.5** | **124 hrs blocked** |
 
 ### Pre-Import Blockers
-1. Resolve system actor code for DG (Debby Gosh/Ghosh) — 81 hrs, 34 rows
-2. Resolve system actor code for DS (Deb Sen) — 43 hrs, 10 rows
+1. ✅ RESOLVED: DG = DBG (Debby Gosh/Ghosh) — 81 hrs, 34 rows
+2. ✅ RESOLVED: DS = DBS (Deb Sen) — 43 hrs, 10 rows

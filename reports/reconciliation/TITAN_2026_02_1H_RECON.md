@@ -35,17 +35,16 @@
 ### Actor Mapping
 | Invoice Code | System Actor Code | Notes |
 |---|---|---|
-| PG | ??? | Pabitra Ghosh — actor code UNKNOWN |
-| PS | ??? | Prianka Santra — actor code UNKNOWN |
-| NM | ??? | Nitish Mishra — actor code UNKNOWN |
+| PG | PBG | Confirmed |
+| PS | PRS | Confirmed |
+| NM | NMM | Confirmed |
 | SG | SGO | Confirmed; 0 hrs this period |
-| DS | ??? | Deb Sen — actor code UNKNOWN; 0 hrs this period |
+| DS | DBS | Confirmed |
 
 ---
 
 ### PG — 3 rows, 2.5 hrs (all QC)
 
-⚠️ Actor code UNKNOWN. All 2.5 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -53,13 +52,12 @@
 | 2026-02-06 | B600037 | QC | 1 | Roof Truss |
 | 2026-02-12 | B600048 | QC | 0.5 | Roof Truss |
 
-**Subtotal: 2.5 hrs — BLOCKED: actor code unknown**
+**Subtotal: 2.5 hrs**
 
 ---
 
 ### PS — 3 rows, 11.5 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 11.5 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -67,20 +65,19 @@
 | 2026-02-05 | B600047 | DESIGNER | 4.5 | Roof Truss |
 | 2026-02-12 | B600050 | DESIGNER | 3 | Roof Truss |
 
-**Subtotal: 11.5 hrs — BLOCKED: actor code unknown**
+**Subtotal: 11.5 hrs**
 
 ---
 
 ### NM — 2 rows, 3.5 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 3.5 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
 | 2026-02-01 | B400161 | DESIGNER | 1.5 | Roof Truss; Design-Production description → DESIGNER |
 | 2026-02-11 | B600048 | DESIGNER | 2 | Roof Truss |
 
-**Subtotal: 3.5 hrs — BLOCKED: actor code unknown**
+**Subtotal: 3.5 hrs**
 
 ---
 
@@ -100,17 +97,17 @@ DB check required at import.
 
 | Designer | System Code | Rows | Hours | Status |
 |---|---|---|---|---|
-| PG | ??? | 3 | 2.5 | ❌ BLOCKED — actor code unknown |
-| PS | ??? | 3 | 11.5 | ❌ BLOCKED — actor code unknown |
-| NM | ??? | 2 | 3.5 | ❌ BLOCKED — actor code unknown |
+| PG | PBG | 3 | 2.5 | ✅ Ready to import |
+| PS | PRS | 3 | 11.5 | ✅ Ready to import |
+| NM | NMM | 2 | 3.5 | ✅ Ready to import |
 | SG | SGO | 0 | 0 | No hrs this period |
-| DS | ??? | 0 | 0 | No hrs this period |
+| DS | DBS | 0 | 0 | No hrs this period |
 | **TOTAL** | | **8** | **17.5** | **17.5 hrs blocked (100%)** |
 
 ### Pre-Import Blockers
-1. Resolve system actor code for PG (Pabitra Ghosh) — 2.5 hrs, 3 rows
-2. Resolve system actor code for PS (Prianka Santra) — 11.5 hrs, 3 rows
-3. Resolve system actor code for NM (Nitish Mishra) — 3.5 hrs, 2 rows
+1. ✅ RESOLVED: PG = PBG (Pabitra Ghosh) — 2.5 hrs, 3 rows
+2. ✅ RESOLVED: PS = PRS (Prianka Santra) — 11.5 hrs, 3 rows
+3. ✅ RESOLVED: NM = NMM (Nitish Mishra) — 3.5 hrs, 2 rows
 
 ### Import Notes
 - NM B400161 Feb 1: Description = "Design-Production" → work_type = DESIGNER.

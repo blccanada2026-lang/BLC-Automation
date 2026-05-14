@@ -33,15 +33,14 @@
 | Invoice Code | System Actor Code | Notes |
 |---|---|---|
 | BC | BCH | Confirmed |
-| RG | ??? | Ravi Gummadi — actor code UNKNOWN (ongoing blocker) |
-| VK | ??? | Vani KV — actor code UNKNOWN (ongoing blocker) |
+| RG | RKG | Confirmed |
+| VK | VKV | Confirmed |
 | SG | SGO | Confirmed |
 
 ---
 
 ### RG — 23 rows, 71 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 71 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -69,13 +68,12 @@
 | 2026-03-31 | Q260205 | DESIGNER | 0.75 | |
 | 2026-03-31 | Q260206 | DESIGNER | 2.25 | |
 
-**Subtotal: 71 hrs — BLOCKED: actor code unknown**
+**Subtotal: 71 hrs**
 
 ---
 
 ### VK — 14 rows, 19.5 hrs
 
-⚠️ Actor code UNKNOWN. All 19.5 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -94,7 +92,7 @@
 | 2026-03-25 | Q260181 | QC | 1 | |
 | 2026-03-31 | Q260203 | QC | 3 | |
 
-**Subtotal: 19.5 hrs — BLOCKED: actor code unknown**
+**Subtotal: 19.5 hrs**
 
 ---
 
@@ -158,12 +156,12 @@ DB check required at import.
 
 | Designer | System Code | Rows | Hours | Status |
 |---|---|---|---|---|
-| RG | ??? | 23 | 71 | ❌ BLOCKED — actor code unknown |
-| VK | ??? | 14 | 19.5 | ❌ BLOCKED — actor code unknown |
+| RG | RKG | 23 | 71 | ✅ Ready to import |
+| VK | VKV | 14 | 19.5 | ✅ Ready to import |
 | BC | BCH | 25 | 20.75 | Ready to import |
 | SG | SGO | 1 | 0.5 | Ready to import |
 | **TOTAL** | | **63** | **111.75** | **90.5 hrs blocked** |
 
 ### Pre-Import Blockers
-1. Resolve system actor code for RG (Ravi Gummadi) — 71 hrs, 23 rows
-2. Resolve system actor code for VK (Vani KV) — 19.5 hrs, 14 rows
+1. ✅ RESOLVED: RG = RKG (Ravi Gummadi) — 71 hrs, 23 rows
+2. ✅ RESOLVED: VK = VKV (Vani KV) — 19.5 hrs, 14 rows

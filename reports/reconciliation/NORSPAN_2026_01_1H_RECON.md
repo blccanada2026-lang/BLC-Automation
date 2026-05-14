@@ -33,7 +33,7 @@ Assuming all rows missing from DB consistent with pattern from SBS. DB check req
 | Invoice Code | System Actor Code | Notes |
 |---|---|---|
 | BC | BCH | Same Bharath Charles as SBS — confirmed |
-| RG | ??? | Ravi Gummadi — actor code UNKNOWN, new designer for Norspan |
+| RG | RKG | Confirmed |
 
 ### Work Type Mapping
 | Invoice Label | System work_type |
@@ -45,7 +45,6 @@ Assuming all rows missing from DB consistent with pattern from SBS. DB check req
 
 ### RG — 10 rows, 32.5 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 32.5 hrs BLOCKED until system actor code confirmed.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -60,7 +59,7 @@ Assuming all rows missing from DB consistent with pattern from SBS. DB check req
 | 2026-01-10 | Q251145 | DESIGNER | 4 | |
 | 2026-01-15 | Q260021 | DESIGNER | 1 | |
 
-**Subtotal: 32.5 hrs — BLOCKED: actor code unknown**
+**Subtotal: 32.5 hrs**
 
 ---
 
@@ -113,9 +112,9 @@ DB check required at import.
 | Designer | System Code | Rows | Hours | Status |
 |---|---|---|---|---|
 | BC | BCH | 20 | 39 | Ready to import |
-| RG | ??? | 10 | 32.5 | ❌ BLOCKED — actor code unknown |
+| RG | RKG | 10 | 32.5 | ✅ Ready to import |
 | **TOTAL** | | **30** | **71.5** | **32.5 hrs blocked** |
 
 ### Pre-Import Blockers
-1. Resolve system actor code for RG (Ravi Gummadi) — 32.5 hrs, 10 rows
+1. ✅ RESOLVED: RG = RKG (Ravi Gummadi) — 32.5 hrs, 10 rows
 2. Verify RG is in DIM_STAFF_ROSTER for Norspan account
