@@ -229,7 +229,8 @@ function runV3HandlerTests() {
     { name: '4 — JobHoldHandler',    fn: runJobHoldTests    },
     { name: '5 — JobResumeHandler',  fn: runJobResumeTests  },
     { name: '6 — WorkLogHandler',    fn: runWorkLogTests    },
-    { name: '7 — QCHandler',         fn: runQCHandlerTests  }
+    { name: '7 — QCHandler',         fn: runQCHandlerTests  },
+    { name: '8 — JobUpdateHandler',  fn: runJobUpdateTests  }
   ];
 
   var totalPassed = 0;
