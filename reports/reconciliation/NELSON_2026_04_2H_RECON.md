@@ -33,14 +33,13 @@
 | Invoice Code | System Actor Code | Notes |
 |---|---|---|
 | SG | SGO | Confirmed |
-| DS | ??? | Deb Sen — actor code UNKNOWN (ongoing blocker) |
-| AR | ??? | Abhisekh Rit — actor code UNKNOWN (ongoing blocker) |
+| DS | DBS | Confirmed |
+| AR | AR001 | Confirmed |
 
 ---
 
 ### AR — 5 rows, 44 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 44 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -50,19 +49,18 @@
 | 2026-04-20 | 260391B1 | DESIGNER | 12 | |
 | 2026-04-21 | 260391B1 | DESIGNER | 8 | |
 
-**Subtotal: 44 hrs — BLOCKED: actor code unknown**
+**Subtotal: 44 hrs**
 
 ---
 
 ### DS — 1 row, 3 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 3 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
 | 2026-04-17 | 260391B2 | DESIGNER | 3 | |
 
-**Subtotal: 3 hrs — BLOCKED: actor code unknown**
+**Subtotal: 3 hrs**
 
 ---
 
@@ -94,11 +92,11 @@ DB check required at import.
 
 | Designer | System Code | Rows | Hours | Status |
 |---|---|---|---|---|
-| AR | ??? | 5 | 44 | ❌ BLOCKED — actor code unknown |
-| DS | ??? | 1 | 3 | ❌ BLOCKED — actor code unknown |
+| AR | AR001 | 5 | 44 | ✅ Ready to import |
+| DS | DBS | 1 | 3 | ✅ Ready to import |
 | SG | SGO | 3 | 21 | Ready to import |
 | **TOTAL** | | **9** | **68** | **47 hrs blocked** |
 
 ### Pre-Import Blockers
-1. Resolve system actor code for AR (Abhisekh Rit) — 44 hrs, 5 rows
-2. Resolve system actor code for DS (Deb Sen) — 3 hrs, 1 row
+1. ✅ RESOLVED: AR = AR001 (Abhisekh Rit) — 44 hrs, 5 rows
+2. ✅ RESOLVED: DS = DBS (Deb Sen) — 3 hrs, 1 row

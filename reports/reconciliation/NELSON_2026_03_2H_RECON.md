@@ -37,14 +37,13 @@
 | Invoice Code | System Actor Code | Notes |
 |---|---|---|
 | SG | SGO | Confirmed — same Sarty Gosh/Ghosh across all clients |
-| AR | ??? | Abhisekh Rit — actor code UNKNOWN (new blocker) |
-| DS | ??? | Deb Sen — actor code UNKNOWN; 0 hrs this period, no import needed yet |
+| AR | AR001 | Confirmed |
+| DS | DBS | Confirmed |
 
 ---
 
 ### AR — 9 rows, 64 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 64 hrs BLOCKED.
 ⚠️ Invoice shows year 2020 for all AR dates — corrected to 2026.
 
 | work_date | job_number | work_type | hours | notes |
@@ -59,7 +58,7 @@
 | 2026-03-30 | G2602072 | DESIGNER | 10 | Invoice date showed 30-03-2020; corrected to 2026 |
 | 2026-03-31 | G2602072 | DESIGNER | 15 | Invoice date showed 31-03-2020; corrected to 2026 |
 
-**Subtotal: 64 hrs — BLOCKED: actor code unknown**
+**Subtotal: 64 hrs**
 
 ---
 
@@ -98,14 +97,14 @@ DB check required at import.
 
 | Designer | System Code | Rows | Hours | Status |
 |---|---|---|---|---|
-| AR | ??? | 9 | 64 | ❌ BLOCKED — actor code unknown |
+| AR | AR001 | 9 | 64 | ✅ Ready to import |
 | SG | SGO | 4 | 13.5 | Ready to import |
-| DS | ??? | 0 | 0 | No entries this period; actor code TBD |
+| DS | DBS | 0 | 0 | No entries this period; actor code TBD |
 | **TOTAL** | | **13** | **77.5** | **64 hrs blocked** |
 
 ### Pre-Import Blockers
-1. Resolve system actor code for AR (Abhisekh Rit) — 64 hrs, 9 rows
-2. Resolve system actor code for DS (Deb Sen) — 0 hrs this period, but needed for future periods
+1. ✅ RESOLVED: AR = AR001 (Abhisekh Rit) — 64 hrs, 9 rows
+2. ✅ RESOLVED: DS = DBS (Deb Sen) — 0 hrs this period, but needed for future periods
 
 ### Import Notes
 - All AR dates on invoice showed year 2020 — corrected to 2026 in this report. Verify against original PDF at import time.

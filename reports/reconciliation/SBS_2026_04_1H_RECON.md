@@ -45,9 +45,9 @@ ALL 344 rows are missing from the database. This is consistent with all prior SB
 | SN | SVN | — |
 | SB | BSG | BSG job descriptions stripped (text after `_` removed) |
 | PG | PBG | — |
-| JS | ??? | Joy Sarkar — actor code UNKNOWN, first appeared Mar 16–31 |
-| DG | ??? | Debby Ghosh — actor code UNKNOWN, NEW this period |
-| BT | ??? | Bittu Dalui — actor code UNKNOWN, NEW this period |
+| JS | JYS | Confirmed |
+| DG | DBG | Confirmed |
+| BT | BIT | Confirmed |
 
 ### Work Type Mapping
 | Invoice Label | System work_type |
@@ -485,7 +485,7 @@ Note: BSG invoice entries include product descriptions after job number (e.g. "2
 | 2026-04-14 | 2604-4594-A | DESIGNER | 8 | Roof Truss |
 | 2026-04-15 | 2604-4556-A | DESIGNER | 4 | Floor Truss |
 
-**Subtotal: 68 hrs — BLOCKED: actor code unknown**
+**Subtotal: 68 hrs**
 
 ---
 
@@ -513,7 +513,7 @@ All entries are for job 2603-3646-A (normalized from invoice "2603-3646A"). Two 
 | 2026-04-15 | 2603-3646-A | DESIGNER | 1 | I JOIST Floor 1 |
 | 2026-04-15 | 2603-3646-A | DESIGNER | 1 | I JOIST Floor 2; D4 |
 
-**Subtotal: 29 hrs — BLOCKED: actor code unknown**
+**Subtotal: 29 hrs**
 
 ---
 
@@ -528,7 +528,7 @@ All entries are for job 2502-2158-F (normalized from invoice "2502-2158F"), all 
 | 2026-04-14 | 2502-2158-F | DESIGNER | 8 | |
 | 2026-04-15 | 2502-2158-F | DESIGNER | 7 | |
 
-**Subtotal: 17 hrs — BLOCKED: actor code unknown**
+**Subtotal: 17 hrs**
 
 ---
 
@@ -557,9 +557,9 @@ No comparison possible — FACT_WORK_LOGS has zero SBS entries for this period. 
 | SN | SVN | 44 | 87.75 | 87.75 | Ready to import |
 | SB | BSG | 8 | 24.25 | 24.25 | Ready to import |
 | PG | PBG | 16 | 94 | 94 | Ready to import |
-| JS | ??? | 14 | 68 | 68 | ❌ BLOCKED — actor code unknown |
-| DG | ??? | 16 | 29 | 29 | ❌ BLOCKED — actor code unknown |
-| BT | ??? | 3 | 17 | 17 | ❌ BLOCKED — actor code unknown |
+| JS | JYS | 14 | 68 | 68 | ✅ Ready to import |
+| DG | DBG | 16 | 29 | 29 | ✅ Ready to import |
+| BT | BIT | 3 | 17 | 17 | ✅ Ready to import |
 | **TOTAL** | | **344** | **739.75** | **737.5** | **114 hrs blocked** |
 
 ### Key Findings
@@ -572,7 +572,7 @@ No comparison possible — FACT_WORK_LOGS has zero SBS entries for this period. 
 - Normalizations: 2603-3646A→2603-3646-A (DG), 2502-2158F→2502-2158-F (BT), 2604-4645_A→2604-4645-A (ABB).
 
 ### Pre-Import Blockers
-1. Resolve system actor code for JS (Joy Sarkar) — 68 hrs, 14 rows
-2. Resolve system actor code for DG (Debby Ghosh) — 29 hrs, 16 rows
-3. Resolve system actor code for BT (Bittu Dalui) — 17 hrs, 3 rows
+1. ✅ RESOLVED: JS = JYS (Joy Sarkar) — 68 hrs, 14 rows
+2. ✅ RESOLVED: DG = DBG (Debby Ghosh) — 29 hrs, 16 rows
+3. ✅ RESOLVED: BT = BIT (Bittu Dalui) — 17 hrs, 3 rows
 4. Add new employees to DIM_STAFF_ROSTER if not already present

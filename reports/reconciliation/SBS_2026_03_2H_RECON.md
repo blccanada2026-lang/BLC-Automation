@@ -22,7 +22,7 @@ All 393 line items below are absent from the database.
 | SN | SVN | Savvy Nath (TEAM_LEAD) |
 | SB | BSG | Banik Sagar (DESIGNER) |
 | PG | PBG | Pabitra Ghosh (TEAM_LEAD) |
-| JS | ??? | Joy Sarkar (DESIGNER) — ⚠️ NEW EMPLOYEE. System actor code unknown. Verify before import. |
+| JS | JYS | Joy Sarkar (DESIGNER) — ⚠️ NEW EMPLOYEE. System actor code unknown. Verify before import. |
 
 ### Work type mapping
 | Invoice description | work_type |

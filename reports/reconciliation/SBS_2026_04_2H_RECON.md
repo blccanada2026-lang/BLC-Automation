@@ -42,9 +42,9 @@ ALL rows are missing from the database. Consistent with all prior SBS periods.
 | SN | SVN | |
 | SB | BSG | |
 | PG | PBG | |
-| JS | ??? | Joy Sarkar — actor code UNKNOWN |
-| BT | ??? | Bittu Dalui — actor code UNKNOWN |
-| DG | ??? | Debby Ghosh — actor code UNKNOWN |
+| JS | JYS | Confirmed |
+| BT | BIT | Confirmed |
+| DG | DBG | Confirmed |
 
 ### Work Type Mapping
 | Invoice Label | System work_type |
@@ -464,7 +464,6 @@ Note: Project name descriptions stripped from job entries per BSG convention.
 
 ### JS — 20 rows, 57 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 57 hrs BLOCKED until resolved.
 Note: SUBMITTAL descriptions map to DESIGNER work type.
 
 | work_date | job_number | work_type | hours | notes |
@@ -490,13 +489,12 @@ Note: SUBMITTAL descriptions map to DESIGNER work type.
 | 2026-04-28 | 2602-1360-B | DESIGNER | 5.25 | Roof Truss, Submittal |
 | 2026-04-30 | 2604-5495-A | DESIGNER | 8.25 | Roof Truss, Submittal |
 
-**Subtotal: 57 hrs — BLOCKED: actor code unknown**
+**Subtotal: 57 hrs**
 
 ---
 
 ### BT — 12 rows, 93 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 93 hrs BLOCKED until resolved.
 ⚠️ BUNDLED JOB NUMBERS: BT's invoice entries list multiple job numbers per row with no per-job hour breakdown. Recorded as single rows per invoice line. Pre-import split required.
 
 | work_date | job_number (as on invoice) | work_type | hours | notes |
@@ -514,13 +512,12 @@ Note: SUBMITTAL descriptions map to DESIGNER work type.
 | 2026-04-29 | M00476-A | DESIGNER | 8.5 | |
 | 2026-04-30 | M00476-A / 2604-5317 | DESIGNER | 10 | bundled — split required at import |
 
-**Subtotal: 93 hrs — BLOCKED: actor code unknown + bundled job numbers**
+**Subtotal: 93 hrs + bundled job numbers**
 
 ---
 
 ### DG — 24 rows, 49.5 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 49.5 hrs BLOCKED until resolved.
 Note: Three job variants this period — 2603-3646-A, 2603-3646-B, 2603-3646-C (all normalized from invoice format without hyphen before letter suffix).
 
 | work_date | job_number | work_type | hours | notes |
@@ -550,7 +547,7 @@ Note: Three job variants this period — 2603-3646-A, 2603-3646-B, 2603-3646-C (
 | 2026-04-30 | 2603-3646-C | DESIGNER | 3 | I JOIST Floor 1 |
 | 2026-04-30 | 2603-3646-C | DESIGNER | 3 | I JOIST Floor 2; D4 |
 
-**Subtotal: 49.5 hrs — BLOCKED: actor code unknown**
+**Subtotal: 49.5 hrs**
 
 ---
 
@@ -579,9 +576,9 @@ No comparison possible — FACT_WORK_LOGS has zero SBS entries for this period.
 | SN | SVN | 43 | 68.25 | Ready to import |
 | SB | BSG | 7 | 9.25 | Ready to import |
 | PG | PBG | 15 | 81 | Ready to import |
-| JS | ??? | 20 | 57 | ❌ BLOCKED — actor code unknown |
-| BT | ??? | 12 | 93 | ❌ BLOCKED — actor code unknown + bundled job numbers |
-| DG | ??? | 24 | 49.5 | ❌ BLOCKED — actor code unknown |
+| JS | JYS | 20 | 57 | ✅ Ready to import |
+| BT | BIT | 12 | 93 | ✅ Ready to import + bundled job numbers |
+| DG | DBG | 24 | 49.5 | ✅ Ready to import |
 | **TOTAL** | | **363** | **821.25** | **199.5 hrs blocked** |
 
 ### Key Findings
@@ -593,7 +590,7 @@ No comparison possible — FACT_WORK_LOGS has zero SBS entries for this period.
 - DG now uses three job variants: 2603-3646-A, -B, and -C. Apr 1–15 report recorded all DG entries as 2603-3646-A — those may need revisiting once DG is onboarded and job details confirmed.
 
 ### Pre-Import Blockers
-1. Resolve system actor code for JS (Joy Sarkar) — 57 hrs, 20 rows
-2. Resolve system actor code for BT (Bittu Dalui) — 93 hrs, 12 rows; also requires per-job hour splits for bundled entries
-3. Resolve system actor code for DG (Debby Ghosh) — 49.5 hrs, 24 rows
+1. ✅ RESOLVED: JS = JYS (Joy Sarkar) — 57 hrs, 20 rows
+2. ✅ RESOLVED: BT = BIT (Bittu Dalui) — 93 hrs, 12 rows; also requires per-job hour splits for bundled entries
+3. ✅ RESOLVED: DG = DBG (Debby Ghosh) — 49.5 hrs, 24 rows
 4. Confirm 2603-3646-A vs -B vs -C job numbers for DG (and whether Apr 1–15 data was all -A or mixed)

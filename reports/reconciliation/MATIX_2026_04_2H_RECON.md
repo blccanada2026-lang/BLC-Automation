@@ -38,15 +38,14 @@
 ### Actor Mapping
 | Invoice Code | System Actor Code | Notes |
 |---|---|---|
-| DG | ??? | Debby Gosh/Ghosh — actor code UNKNOWN (ongoing blocker) |
-| DS | ??? | Deb Sen — actor code UNKNOWN (ongoing blocker) |
+| DG | DBG | Confirmed |
+| DS | DBS | Confirmed |
 | SG | SGO | Confirmed |
 
 ---
 
 ### DG — 33 rows, 109.75 hrs (all DESIGNER)
 
-⚠️ Actor code UNKNOWN. All 109.75 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -84,13 +83,12 @@
 | 2026-04-30 | 160883 | DESIGNER | 5.5 | I JOIST Floor 1 |
 | 2026-04-30 | 160883 | DESIGNER | 2 | Roof Truss |
 
-**Subtotal: 109.75 hrs — BLOCKED: actor code unknown**
+**Subtotal: 109.75 hrs**
 
 ---
 
 ### DS — 16 rows, 62.25 hrs (all DESIGNER, all Roof Truss)
 
-⚠️ Actor code UNKNOWN. All 62.25 hrs BLOCKED.
 
 | work_date | job_number | work_type | hours | notes |
 |---|---|---|---|---|
@@ -111,7 +109,7 @@
 | 2026-04-30 | 160904 | DESIGNER | 5.5 | Roof Truss |
 | 2026-04-30 | 160905 | DESIGNER | 1.5 | Roof Truss |
 
-**Subtotal: 62.25 hrs — BLOCKED: actor code unknown**
+**Subtotal: 62.25 hrs**
 
 ---
 
@@ -164,14 +162,14 @@ DB check required at import.
 
 | Designer | System Code | Rows | Hours | Status |
 |---|---|---|---|---|
-| DG | ??? | 33 | 109.75 | ❌ BLOCKED — actor code unknown |
-| DS | ??? | 16 | 62.25 | ❌ BLOCKED — actor code unknown |
+| DG | DBG | 33 | 109.75 | ✅ Ready to import |
+| DS | DBS | 16 | 62.25 | ✅ Ready to import |
 | SG | SGO | 24 | 11.25 | Ready to import |
 | **TOTAL** | | **73** | **183.25** | **172 hrs blocked** |
 
 ### Pre-Import Blockers
-1. Resolve system actor code for DG (Debby Gosh/Ghosh) — 109.75 hrs, 33 rows
-2. Resolve system actor code for DS (Deb Sen) — 62.25 hrs, 16 rows
+1. ✅ RESOLVED: DG = DBG (Debby Gosh/Ghosh) — 109.75 hrs, 33 rows
+2. ✅ RESOLVED: DS = DBS (Deb Sen) — 62.25 hrs, 16 rows
 
 ### Import Notes
 - DG Apr 22 "E" row: inferred as 160862_GARAGE — verify against original PDF at import. Pattern confirmed by 160863_GARAG E (Apr 23) and 160864_GARAG E (Apr 24) on same invoice.
