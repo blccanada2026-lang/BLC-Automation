@@ -132,12 +132,29 @@ Mar 1–15 → Mar 16–31 → Apr 1–15 → Apr 16–30
 
 ## Session Resume Instructions
 
+### Phase 1 (DONE): Reconciliation Reports
+All 48 reports are written to reports/reconciliation/. Do not redo them.
+
+### Phase 2 (CURRENT): Data Import — month by month
 At the start of every session:
 1. Read this file (RECONCILIATION_MEMORY.md)
-2. Read MIGRATION_PROGRESS.md
-3. Find the first PENDING period for the next client in order
-4. Resume from there — never redo COMPLETE periods
-5. Process ONE billing period, write output to reports/reconciliation/, update MIGRATION_PROGRESS.md, then STOP
+2. Read MIGRATION_PROGRESS.md — find first PENDING import row
+3. Read the corresponding RECON.md report for that period
+4. Write a SbsReconFiller_{Mon}{Year}.gs file (src/12-migration/) with all entries
+5. Update MIGRATION_PROGRESS.md Import Status → COMPLETE
+6. Commit, then move to next period IF tokens allow
+
+### Import order (SBS only — no blockers on actors Jan–Mar 2026):
+- ✅ Jan 2026 (1H + 2H) → SbsReconFiller_Jan2026.gs — IN_PROGRESS this session
+- ⬜ Feb 2026 (1H + 2H) → SbsReconFiller_Feb2026.gs — next session
+- ⬜ Mar 1–15          → SbsReconFiller_Mar2026_1H.gs — next session
+- ⚠️ Mar 16–31 + Apr   → BLOCKED (JS/DG/BT actor codes unknown — resolve first)
+
+### How to run each filler (in Apps Script editor):
+1. runMigrationEnableOverrides()
+2. runFillSbsJan1H()   ← or the relevant month function
+3. runFillSbsJan2H()
+4. runMigrationDisableOverrides()
 
 ---
 
@@ -161,6 +178,8 @@ Sections per report:
 | D2 | "job assign & help" rows | Write against placeholder job number. Not design time. Work type = ADMIN. |
 | D3 | Duplicate same-person/same-job/same-date entries | Write ALL rows separately if each appears on the invoice |
 | D4 | Multiple same-day entries for same job (e.g. BSG 4× on 01-01) | Write all as separate rows if each is on the invoice |
+| D5 | RKU (Raj Kumar) actor_role | Use 'QC' — paid for QC hours, no supervisor bonus |
+| D6 | BCH job# `2601-038` (Jan 2H, 17-01) | Normalize to `2601-0038` (missing leading zero) |
 
 **Placeholder job number for admin/coordination time (no job#):** `SBS-ADMIN-{YYYY-MM}` — e.g. `SBS-ADMIN-2026-01` for January 2026. Use period-specific placeholder per month.
 
@@ -173,3 +192,4 @@ Sections per report:
 | 2026-05-08 | File created. Inventory completed. 38 invoice files found across 6 clients. |
 | 2026-05-08 | SBS 2026-01 1H reconciliation complete. 293 hrs missing from DB. Decisions D1–D4 confirmed. |
 | 2026-05-08 | Strategy confirmed: ALL reconciliation reports first (all clients/periods), then single import session. Reports are durable on disk — safe across context resets. |
+| 2026-05-15 | All 48 reports COMPLETE. Phase 2 (import) started. D5+D6 confirmed. SbsReconFiller_Jan2026.gs created — 288 entries (107 Jan1H + 181 Jan2H), 871.75 hrs. BLOCKED clients: Norspan/Titan/Nelson/Matix/Alberta/SBS-Apr (unknown actor codes). |
