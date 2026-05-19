@@ -17,8 +17,8 @@
 |---|---|---|---|---|---|---|---|
 | 01 | SBS          | Jan 1–15     | 2026-01 1H  | COMPLETE | COMPLETE | reports/reconciliation/SBS_2026_01_1H_RECON.md | 107 entries, 293 hrs — SbsReconFiller_Jan2026.gs |
 | 02 | SBS          | Jan 16–31    | 2026-01 2H  | COMPLETE | COMPLETE | reports/reconciliation/SBS_2026_01_2H_RECON.md | 181 entries, 578.75 hrs — SbsReconFiller_Jan2026.gs |
-| 03 | SBS          | Feb 1–15     | 2026-02 1H  | COMPLETE | PENDING | reports/reconciliation/SBS_2026_02_1H_RECON.md | 258 entries, 760.5 hrs — SbsReconFiller_Feb2026.gs (ready to run) |
-| 04 | SBS          | Feb 16–28    | 2026-02 2H  | COMPLETE | PENDING | reports/reconciliation/SBS_2026_02_2H_RECON.md | 230 entries, 668.75 hrs — SbsReconFiller_Feb2026.gs (ready to run) |
+| 03 | SBS          | Feb 1–15     | 2026-02 1H  | COMPLETE | COMPLETE | reports/reconciliation/SBS_2026_02_1H_RECON.md | 258 entries, 760.5 hrs — SbsReconFiller_Feb2026.gs |
+| 04 | SBS          | Feb 16–28    | 2026-02 2H  | COMPLETE | COMPLETE | reports/reconciliation/SBS_2026_02_2H_RECON.md | 230 entries, 668.75 hrs — SbsReconFiller_Feb2026.gs |
 | 05 | SBS          | Mar 1–15     | 2026-03 1H  | COMPLETE | PENDING | reports/reconciliation/SBS_2026_03_1H_RECON.md | 642 hrs — future session |
 | 06 | SBS          | Mar 16–31    | 2026-03 2H  | COMPLETE | BLOCKED | reports/reconciliation/SBS_2026_03_2H_RECON.md | ⚠️ JS-Joy Sarkar actor code unknown |
 | 07 | SBS          | Apr 1–15     | 2026-04 1H  | COMPLETE | BLOCKED | reports/reconciliation/SBS_2026_04_1H_RECON.md | ⚠️ DG/BT/JS actor codes unknown (114 hrs blocked) |
