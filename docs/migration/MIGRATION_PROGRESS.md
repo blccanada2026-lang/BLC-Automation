@@ -21,8 +21,8 @@
 | 04 | SBS          | Feb 16–28    | 2026-02 2H  | COMPLETE | COMPLETE | reports/reconciliation/SBS_2026_02_2H_RECON.md | 230 entries, 668.75 hrs — SbsReconFiller_Feb2026.gs |
 | 05 | SBS          | Mar 1–15     | 2026-03 1H  | COMPLETE | COMPLETE | reports/reconciliation/SBS_2026_03_1H_RECON.md | 381 entries, 642 hrs — SbsReconFiller_Mar2026.gs |
 | 06 | SBS          | Mar 16–31    | 2026-03 2H  | COMPLETE | COMPLETE | reports/reconciliation/SBS_2026_03_2H_RECON.md | 393 entries, 571.75 hrs — SbsReconFiller_Mar2026.gs |
-| 07 | SBS          | Apr 1–15     | 2026-04 1H  | COMPLETE | BLOCKED | reports/reconciliation/SBS_2026_04_1H_RECON.md | ⚠️ DG/BT/JS actor codes unknown (114 hrs blocked) |
-| 08 | SBS          | Apr 16–30    | 2026-04 2H  | COMPLETE | BLOCKED | reports/reconciliation/SBS_2026_04_2H_RECON.md | ⚠️ JS/BT/DG actor codes unknown (199.5 hrs blocked) |
+| 07 | SBS          | Apr 1–15     | 2026-04 1H  | COMPLETE | COMPLETE | reports/reconciliation/SBS_2026_04_1H_RECON.md | 344 entries, 739.75 hrs — SbsReconFiller_Apr2026.gs |
+| 08 | SBS          | Apr 16–30    | 2026-04 2H  | COMPLETE | COMPLETE | reports/reconciliation/SBS_2026_04_2H_RECON.md | 362 entries, 821.25 hrs — SbsReconFiller_Apr2026.gs (SDA row count in report off by 1) |
 | 09 | Norspan      | Jan 1–15     | 2026-01 1H  | COMPLETE | BLOCKED | reports/reconciliation/NORSPAN_2026_01_1H_RECON.md | ⚠️ RG-Ravi Gummadi unknown (32.5 hrs blocked) |
 | 10 | Norspan      | Jan 16–31    | 2026-01 2H  | COMPLETE | BLOCKED | reports/reconciliation/NORSPAN_2026_01_2H_RECON.md | ⚠️ RG + VK unknown (78.65 hrs blocked) |
 | 11 | Norspan      | Feb 1–15     | 2026-02 1H  | COMPLETE | BLOCKED | reports/reconciliation/NORSPAN_2026_02_1H_RECON.md | ⚠️ RG + VK unknown (64 hrs blocked) |
