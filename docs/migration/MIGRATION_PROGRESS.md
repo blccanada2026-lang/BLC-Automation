@@ -20,7 +20,7 @@
 | 03 | SBS          | Feb 1–15     | 2026-02 1H  | COMPLETE | COMPLETE | reports/reconciliation/SBS_2026_02_1H_RECON.md | 258 entries, 760.5 hrs — SbsReconFiller_Feb2026.gs |
 | 04 | SBS          | Feb 16–28    | 2026-02 2H  | COMPLETE | COMPLETE | reports/reconciliation/SBS_2026_02_2H_RECON.md | 230 entries, 668.75 hrs — SbsReconFiller_Feb2026.gs |
 | 05 | SBS          | Mar 1–15     | 2026-03 1H  | COMPLETE | COMPLETE | reports/reconciliation/SBS_2026_03_1H_RECON.md | 381 entries, 642 hrs — SbsReconFiller_Mar2026.gs |
-| 06 | SBS          | Mar 16–31    | 2026-03 2H  | COMPLETE | BLOCKED | reports/reconciliation/SBS_2026_03_2H_RECON.md | ⚠️ JS-Joy Sarkar actor code unknown |
+| 06 | SBS          | Mar 16–31    | 2026-03 2H  | COMPLETE | PENDING | reports/reconciliation/SBS_2026_03_2H_RECON.md | 393 entries, 571.75 hrs — SbsReconFiller_Mar2026.gs (ready to run) |
 | 07 | SBS          | Apr 1–15     | 2026-04 1H  | COMPLETE | BLOCKED | reports/reconciliation/SBS_2026_04_1H_RECON.md | ⚠️ DG/BT/JS actor codes unknown (114 hrs blocked) |
 | 08 | SBS          | Apr 16–30    | 2026-04 2H  | COMPLETE | BLOCKED | reports/reconciliation/SBS_2026_04_2H_RECON.md | ⚠️ JS/BT/DG actor codes unknown (199.5 hrs blocked) |
 | 09 | Norspan      | Jan 1–15     | 2026-01 1H  | COMPLETE | BLOCKED | reports/reconciliation/NORSPAN_2026_01_1H_RECON.md | ⚠️ RG-Ravi Gummadi unknown (32.5 hrs blocked) |
