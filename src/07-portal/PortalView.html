@@ -126,6 +126,12 @@
                    text-transform:uppercase; letter-spacing:.06em;
                    color:var(--c-muted); border-bottom:1px solid var(--c-border);
                    background:#f8fafc; text-align:left; }
+    .tl-group          { margin-bottom:20px; }
+    .tl-group-header   { font-size:13px; font-weight:700; margin:0 0 6px 0;
+                         color:var(--c-text); padding:4px 0; }
+    .tl-leader-row td  { background:#f0f4ff; font-weight:600; }
+    .tl-subtotal-row td { font-weight:700; border-top:1px solid var(--c-border);
+                          color:var(--c-text); }
     .dash-tbl td { padding:8px 12px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
     .dash-tbl tr:last-child td { border-bottom:none; }
     .dash-tbl tr:hover td { background:#f8fafc; }
@@ -2563,6 +2569,38 @@ function loadLeaderDashboard() {
   if (_data && _data.perms && _data.perms.isLeader) loadFeedbackStatus();
 }
 
+function renderFlatHours(teamHours, container) {
+  var totalHrs = 0;
+  var tbl = document.createElement('table');
+  tbl.className = 'dash-tbl';
+  var thead = document.createElement('thead');
+  var hr = document.createElement('tr');
+  ['Person', 'Design Hrs', 'QC Hrs', 'Total'].forEach(function(h) {
+    var th = document.createElement('th'); th.textContent = h; hr.appendChild(th);
+  });
+  thead.appendChild(hr);
+  tbl.appendChild(thead);
+  var tbody = document.createElement('tbody');
+  teamHours.forEach(function(row) {
+    totalHrs += row.total_hours || 0;
+    var tr = document.createElement('tr');
+    var nameCell = document.createElement('td');
+    nameCell.textContent = row.name || row.person_code;
+    nameCell.style.fontWeight = '600';
+    tr.appendChild(nameCell);
+    [row.design_hours, row.qc_hours, row.total_hours].forEach(function(v) {
+      var td = document.createElement('td');
+      td.textContent = (v || 0).toFixed(1);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody);
+  container.appendChild(tbl);
+  document.getElementById('dash-hours-total').textContent =
+    'Total: ' + totalHrs.toFixed(1) + ' hrs';
+}
+
 function renderLeaderDashboard(data) {
   document.getElementById('dash-period').textContent = data.period_id || '—';
 
@@ -2570,45 +2608,15 @@ function renderLeaderDashboard(data) {
   var hoursBody = document.getElementById('dash-hours-body');
   while (hoursBody.firstChild) hoursBody.removeChild(hoursBody.firstChild);
 
-  if (!data.team_hours || data.team_hours.length === 0) {
+  if (data.tl_groups && data.tl_groups.length > 0) {
+    renderGroupedHours(data.tl_groups, hoursBody);
+  } else if (data.team_hours && data.team_hours.length > 0) {
+    renderFlatHours(data.team_hours, hoursBody);
+  } else {
     var emptyHours = document.createElement('div');
     emptyHours.className   = 'dash-empty';
     emptyHours.textContent = 'No work logs this period.';
     hoursBody.appendChild(emptyHours);
-  } else {
-    var totalHrs = 0;
-    var tbl = document.createElement('table');
-    tbl.className = 'dash-tbl';
-    var thead = document.createElement('thead');
-    var hr = document.createElement('tr');
-    ['Person', 'Design Hrs', 'QC Hrs', 'Total'].forEach(function(h) {
-      var th = document.createElement('th');
-      th.textContent = h;
-      hr.appendChild(th);
-    });
-    thead.appendChild(hr);
-    tbl.appendChild(thead);
-
-    var tbody = document.createElement('tbody');
-    data.team_hours.forEach(function(row) {
-      totalHrs += row.total_hours || 0;
-      var tr = document.createElement('tr');
-      var nameCell = document.createElement('td');
-      nameCell.textContent = row.name || row.person_code;
-      nameCell.style.fontWeight = '600';
-      tr.appendChild(nameCell);
-      [row.design_hours, row.qc_hours, row.total_hours].forEach(function(v) {
-        var td = document.createElement('td');
-        td.textContent = (v || 0).toFixed(1);
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
-    });
-    tbl.appendChild(tbody);
-    hoursBody.appendChild(tbl);
-
-    document.getElementById('dash-hours-total').textContent =
-      'Total: ' + totalHrs.toFixed(1) + ' hrs';
   }
 
   // ── Payroll Status ──────────────────────────────────────────
