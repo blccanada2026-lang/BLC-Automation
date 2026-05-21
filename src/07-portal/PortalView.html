@@ -132,6 +132,8 @@
     .tl-leader-row td  { background:#f0f4ff; font-weight:600; }
     .tl-subtotal-row td { font-weight:700; border-top:1px solid var(--c-border);
                           color:var(--c-text); }
+    .tl-leader-row:hover td   { background:#e8edff; }
+    .tl-subtotal-row:hover td { background:transparent; }
     .dash-tbl td { padding:8px 12px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
     .dash-tbl tr:last-child td { border-bottom:none; }
     .dash-tbl tr:hover td { background:#f8fafc; }
@@ -2567,6 +2569,86 @@ function loadLeaderDashboard() {
 
   // Load feedback status in parallel (separate call — doesn't block dashboard)
   if (_data && _data.perms && _data.perms.isLeader) loadFeedbackStatus();
+}
+
+function renderGroupedHours(groups, container) {
+  var grandTotal = 0;
+  groups.forEach(function(group) {
+    grandTotal += group.subtotal || 0;
+
+    var groupDiv = document.createElement('div');
+    groupDiv.className = 'tl-group';
+
+    var header = document.createElement('h4');
+    header.className = 'tl-group-header';
+    if (group.leader) {
+      var suffix = group.leader.role === 'TEAM_LEAD' ? ' (TL)' :
+                   group.leader.role === 'PM'        ? ' (PM)' : '';
+      header.textContent = (group.leader.name || group.leader.person_code) + suffix + "'s Team";
+    } else {
+      header.textContent = 'Unassigned';
+    }
+    groupDiv.appendChild(header);
+
+    var tbl = document.createElement('table');
+    tbl.className = 'dash-tbl';
+    var thead = document.createElement('thead');
+    var hrow = document.createElement('tr');
+    ['Person', 'Design Hrs', 'QC Hrs', 'Total'].forEach(function(h) {
+      var th = document.createElement('th'); th.textContent = h; hrow.appendChild(th);
+    });
+    thead.appendChild(hrow);
+    tbl.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+
+    if (group.leader) {
+      var lSuffix = group.leader.role === 'TEAM_LEAD' ? ' (TL)' :
+                    group.leader.role === 'PM'        ? ' (PM)' : '';
+      var ltr = document.createElement('tr');
+      ltr.className = 'tl-leader-row';
+      var ltd = document.createElement('td');
+      ltd.textContent = (group.leader.name || group.leader.person_code) + lSuffix;
+      ltr.appendChild(ltd);
+      [group.leader.design_hours, group.leader.qc_hours, group.leader.total_hours].forEach(function(v) {
+        var td = document.createElement('td');
+        td.textContent = (v || 0).toFixed(1);
+        ltr.appendChild(td);
+      });
+      tbody.appendChild(ltr);
+    }
+
+    group.members.forEach(function(member) {
+      var mtr = document.createElement('tr');
+      var mtd = document.createElement('td');
+      mtd.textContent = member.name || member.person_code;
+      mtr.appendChild(mtd);
+      [member.design_hours, member.qc_hours, member.total_hours].forEach(function(v) {
+        var td = document.createElement('td');
+        td.textContent = (v || 0).toFixed(1);
+        mtr.appendChild(td);
+      });
+      tbody.appendChild(mtr);
+    });
+
+    var str = document.createElement('tr');
+    str.className = 'tl-subtotal-row';
+    var stLabel = document.createElement('td');
+    stLabel.setAttribute('colspan', '3');
+    stLabel.textContent = 'Team Total';
+    str.appendChild(stLabel);
+    var stVal = document.createElement('td');
+    stVal.textContent = (group.subtotal || 0).toFixed(1);
+    str.appendChild(stVal);
+    tbody.appendChild(str);
+
+    tbl.appendChild(tbody);
+    groupDiv.appendChild(tbl);
+    container.appendChild(groupDiv);
+  });
+
+  document.getElementById('dash-hours-total').textContent =
+    'Grand Total: ' + grandTotal.toFixed(1) + ' hrs';
 }
 
 function renderFlatHours(teamHours, container) {
