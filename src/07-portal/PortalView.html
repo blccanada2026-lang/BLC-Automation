@@ -907,6 +907,35 @@
   </div>
 </div>
 
+<!-- ── Quarterly Bonus Quarter Picker ────────────────────────── -->
+<div class="modal-backdrop" id="modal-quarterly-bonus">
+  <div class="modal" style="max-width:340px">
+    <div class="modal-header">
+      <h3>Run Quarterly Bonus</h3>
+      <button class="modal-close" data-close="modal-quarterly-bonus">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom:14px">
+        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px">Quarter</label>
+        <div style="display:flex;gap:8px">
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="qb-quarter" value="Q1"> Q1</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="qb-quarter" value="Q2"> Q2</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="qb-quarter" value="Q3"> Q3</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="qb-quarter" value="Q4"> Q4</label>
+        </div>
+      </div>
+      <div>
+        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Year</label>
+        <input type="number" id="qb-year" min="2024" max="2030" style="width:100%;padding:6px 8px;border:1px solid var(--c-border);border-radius:4px;font-size:13px">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-quarterly-bonus">Cancel</button>
+      <button class="btn-primary" id="btn-qb-confirm">Run Bonus</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Toast Container ───────────────────────────────────────── -->
 <div id="toast-container"></div>
 
@@ -2849,30 +2878,49 @@ function runBonusRun() {
 
 function runQuarterlyBonus() {
   var now     = new Date();
-  var month   = now.getMonth() + 1; // 1-12
+  var month   = now.getMonth() + 1;
   var year    = now.getFullYear();
   var quarter = month <= 3 ? 'Q1' : month <= 6 ? 'Q2' : month <= 9 ? 'Q3' : 'Q4';
 
-  if (!confirm('Run quarterly bonus for ' + quarter + ' ' + year + '?\n\nFormula: client(30%) + error rate(40%) + ratings(30%) × design hours × INR 25.\n\nStaff with incomplete ratings will be marked PENDING.')) return;
-  showLoading(true);
-  google.script.run
-    .withSuccessHandler(function(json) {
-      showLoading(false);
-      try {
-        var result = JSON.parse(json);
-        showToast(
-          'Quarterly bonus complete: ' + result.written + ' calculated, ' +
-          result.pending + ' pending, ' + result.skipped + ' skipped.',
-          result.pending > 0 ? 'warning' : 'success'
-        );
-      } catch(e) { showToast('Quarterly bonus run complete.', 'success'); }
-    })
-    .withFailureHandler(function(err) {
-      showLoading(false);
-      showToast('Quarterly bonus error: ' + (err.message || String(err)), 'error');
-    })
-    .portal_runQuarterlyBonus(quarter, year);
+  // Pre-select current quarter and year
+  document.querySelectorAll('input[name="qb-quarter"]').forEach(function(r) {
+    r.checked = (r.value === quarter);
+  });
+  document.getElementById('qb-year').value = year;
+  openModal('modal-quarterly-bonus');
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('btn-qb-confirm').addEventListener('click', function() {
+    var selected = document.querySelector('input[name="qb-quarter"]:checked');
+    if (!selected) { showToast('Please select a quarter.', 'error'); return; }
+    var quarter = selected.value;
+    var year    = parseInt(document.getElementById('qb-year').value, 10);
+    if (!year || year < 2024) { showToast('Please enter a valid year.', 'error'); return; }
+
+    document.getElementById('modal-quarterly-bonus').classList.remove('open');
+    if (!confirm('Run quarterly bonus for ' + quarter + ' ' + year + '?\n\nFormula: client(30%) + error rate(40%) + ratings(30%) × design hours × INR 25.\n\nStaff with incomplete ratings will be marked PENDING.')) return;
+
+    showLoading(true);
+    google.script.run
+      .withSuccessHandler(function(json) {
+        showLoading(false);
+        try {
+          var result = JSON.parse(json);
+          showToast(
+            'Quarterly bonus complete: ' + result.written + ' calculated, ' +
+            result.pending + ' pending, ' + result.skipped + ' skipped.',
+            result.pending > 0 ? 'warning' : 'success'
+          );
+        } catch(e) { showToast('Quarterly bonus run complete.', 'success'); }
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        showToast('Quarterly bonus error: ' + (err.message || String(err)), 'error');
+      })
+      .portal_runQuarterlyBonus(quarter, year);
+  });
+});
 
 function runAnnualBonus() {
   var now        = new Date();
