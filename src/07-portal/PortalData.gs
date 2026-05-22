@@ -357,9 +357,8 @@ var PortalData = (function () {
 
     // ── 1. Load staff name map ────────────────────────────────
     var staffNameMap = {};
-    var staffRows    = [];
     try {
-      staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
+      var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
       for (var s = 0; s < staffRows.length; s++) {
         var code = String(staffRows[s].person_code || '').trim();
         if (code) staffNameMap[code] = String(staffRows[s].name || code);
@@ -401,9 +400,6 @@ var PortalData = (function () {
       });
     }
     teamHours.sort(function(a, b) { return b.total_hours - a.total_hours; });
-
-    // ── 3b. Build tl_groups from roster + hoursMap ────────────
-    var tlGroups = buildTlGroups_(staffRows, hoursMap, staffNameMap, role, actor.personCode);
 
     // ── 3. Payroll status from MART_PAYROLL_SUMMARY ───────────
     var payrollStatus = [];
@@ -447,7 +443,6 @@ var PortalData = (function () {
 
     return JSON.stringify({
       period_id:      periodId,
-      tl_groups:      tlGroups,
       team_hours:     teamHours,
       payroll_status: payrollStatus
     });
@@ -779,144 +774,6 @@ var PortalData = (function () {
   }
 
   // ============================================================
-  // SECTION: buildTlGroups_
-  // Builds grouped team hours from active DIM_STAFF_ROSTER rows,
-  // then overlays hours from hoursMap. Every active leader gets a
-  // group entry even if no hours have been logged.
-  // ============================================================
-
-  /**
-   * @param {Object[]} staffRows  Rows from DIM_STAFF_ROSTER (may include inactive — filtered here)
-   * @param {Object}   hoursMap   { person_code: { design: N, qc: N } }
-   * @param {Object}   nameMap    { person_code: displayName }
-   * @param {string}   actorRole  RBAC role of requesting actor
-   * @param {string}   actorCode  personCode of requesting actor
-   * @returns {Object[]}  [{ leader, members, subtotal }] sorted desc by subtotal
-   */
-  function buildTlGroups_(staffRows, hoursMap, nameMap, actorRole, actorCode) {
-    var today = new Date().toISOString().substring(0, 10);
-
-    var roleMap        = {};   // person_code → role
-    var rosterByLeader = {};   // leader_code → [{ person_code, name }]
-    var leaderSet      = {};   // leader_code → true
-
-    for (var i = 0; i < staffRows.length; i++) {
-      var s = staffRows[i];
-
-      // Active check (mirrors getMyRatees logic)
-      if (s.active === false || String(s.active).toUpperCase().trim() === 'FALSE') continue;
-      var et = s.effective_to;
-      if (et instanceof Date) {
-        var ey = et.getFullYear(), em = String(et.getMonth()+1), ed = String(et.getDate());
-        if (em.length < 2) em = '0'+em;
-        if (ed.length < 2) ed = '0'+ed;
-        et = ey + '-' + em + '-' + ed;
-      } else {
-        et = String(et || '').trim().substring(0, 10);
-      }
-      if (et && et < today) continue;
-
-      var code = String(s.person_code     || '').trim();
-      var sup  = String(s.supervisor_code || '').trim();
-      var role = String(s.role            || '').toUpperCase().trim();
-      if (!code) continue;
-
-      roleMap[code] = role;
-
-      if (sup) {
-        if (!rosterByLeader[sup]) rosterByLeader[sup] = [];
-        rosterByLeader[sup].push({ person_code: code, name: nameMap[code] || code });
-        leaderSet[sup] = true;
-      }
-    }
-
-    // TEAM_LEAD: build only their own group (synthesized even if empty)
-    var leaderCodes = (actorRole === 'TEAM_LEAD')
-      ? [actorCode]
-      : Object.keys(leaderSet);
-
-    var groups = [];
-
-    for (var l = 0; l < leaderCodes.length; l++) {
-      var lCode = leaderCodes[l];
-      var lh    = hoursMap[lCode] || { design: 0, qc: 0 };
-      var lDes  = Math.round(lh.design * 100) / 100;
-      var lQc   = Math.round(lh.qc    * 100) / 100;
-      var leader = {
-        person_code:  lCode,
-        name:         nameMap[lCode] || lCode,
-        role:         roleMap[lCode] || '',
-        design_hours: lDes,
-        qc_hours:     lQc,
-        total_hours:  Math.round((lDes + lQc) * 100) / 100
-      };
-
-      var reports = rosterByLeader[lCode] || [];
-      var members = [];
-      for (var m = 0; m < reports.length; m++) {
-        var mCode = reports[m].person_code;
-        var mh    = hoursMap[mCode] || { design: 0, qc: 0 };
-        var mDes  = Math.round(mh.design * 100) / 100;
-        var mQc   = Math.round(mh.qc    * 100) / 100;
-        members.push({
-          person_code:  mCode,
-          name:         reports[m].name,
-          design_hours: mDes,
-          qc_hours:     mQc,
-          total_hours:  Math.round((mDes + mQc) * 100) / 100
-        });
-      }
-      members.sort(function(a, b) { return b.total_hours - a.total_hours; });
-
-      var sub = leader.total_hours;
-      for (var ms = 0; ms < members.length; ms++) sub += members[ms].total_hours;
-
-      groups.push({ leader: leader, members: members, subtotal: Math.round(sub * 100) / 100 });
-    }
-
-    // Orphaned entries: hours logged but not assigned to any group (CEO/PM/ADMIN only)
-    if (actorRole !== 'TEAM_LEAD') {
-      var assigned = {};
-      for (var g = 0; g < groups.length; g++) {
-        if (groups[g].leader) assigned[groups[g].leader.person_code] = true;
-        for (var gm = 0; gm < groups[g].members.length; gm++) {
-          assigned[groups[g].members[gm].person_code] = true;
-        }
-      }
-      var orphans = [];
-      var hCodes = Object.keys(hoursMap);
-      for (var o = 0; o < hCodes.length; o++) {
-        if (assigned[hCodes[o]]) continue;
-        var oh   = hoursMap[hCodes[o]];
-        var oDes = Math.round(oh.design * 100) / 100;
-        var oQc  = Math.round(oh.qc    * 100) / 100;
-        orphans.push({
-          person_code:  hCodes[o],
-          name:         nameMap[hCodes[o]] || hCodes[o],
-          design_hours: oDes,
-          qc_hours:     oQc,
-          total_hours:  Math.round((oDes + oQc) * 100) / 100
-        });
-      }
-      if (orphans.length > 0) {
-        orphans.sort(function(a, b) { return b.total_hours - a.total_hours; });
-        var oSub = 0;
-        for (var os = 0; os < orphans.length; os++) oSub += orphans[os].total_hours;
-        groups.push({ leader: null, members: orphans, subtotal: Math.round(oSub * 100) / 100 });
-      }
-    }
-
-    // Sort by subtotal desc; orphan group (leader === null) stays last
-    groups.sort(function(a, b) {
-      if (a.leader === null) return 1;
-      if (b.leader === null) return -1;
-      return b.subtotal - a.subtotal;
-    });
-
-    return groups;
-  }
-
-  // ============================================================
   // PUBLIC API
   // ============================================================
   return {
@@ -1173,39 +1030,3 @@ var PortalData = (function () {
   }
 
 }());
-
-/**
- * Targeted test: verifies getLeaderDashboard emits tl_groups with correct shape.
- * Run from Apps Script editor as an active CEO or PM user (DEV only).
- */
-function testLeaderDashboardGroups() {
-  if (!Config.isDev()) throw new Error('testLeaderDashboardGroups: DEV only');
-  var email = Session.getActiveUser().getEmail();
-  var raw   = PortalData.getLeaderDashboard(email);
-  var data  = JSON.parse(raw);
-
-  if (!Array.isArray(data.tl_groups))  throw new Error('FAIL: tl_groups missing or not array');
-  if (!Array.isArray(data.team_hours)) throw new Error('FAIL: team_hours missing');
-
-  for (var i = 0; i < data.tl_groups.length; i++) {
-    var g = data.tl_groups[i];
-    if (g.leader !== null && typeof g.leader.person_code !== 'string')
-      throw new Error('FAIL: group[' + i + '].leader.person_code not string');
-    if (!Array.isArray(g.members))
-      throw new Error('FAIL: group[' + i + '].members not array');
-    if (typeof g.subtotal !== 'number')
-      throw new Error('FAIL: group[' + i + '].subtotal not number');
-    var expectedSub = (g.leader ? g.leader.total_hours : 0);
-    for (var m = 0; m < g.members.length; m++) expectedSub += g.members[m].total_hours;
-    expectedSub = Math.round(expectedSub * 100) / 100;
-    if (Math.abs(expectedSub - g.subtotal) > 0.01)
-      throw new Error('FAIL: group[' + i + '].subtotal mismatch: got ' + g.subtotal + ', want ' + expectedSub);
-  }
-
-  Logger.info('testLeaderDashboardGroups PASS', {
-    group_count: data.tl_groups.length,
-    team_hours_count: data.team_hours.length,
-    period_id: data.period_id
-  });
-  return 'PASS: ' + data.tl_groups.length + ' groups, ' + data.team_hours.length + ' flat rows';
-}
