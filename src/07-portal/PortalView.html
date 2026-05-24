@@ -2763,15 +2763,18 @@ function runQuarterlyBonus() {
   var year     = now.getFullYear();
   var defaultQ = month <= 3 ? 'Q1' : month <= 6 ? 'Q2' : month <= 9 ? 'Q3' : 'Q4';
 
-  var quarter = window.prompt('Which quarter? (Q1, Q2, Q3, Q4)', defaultQ);
+  var quarter = window.prompt(
+    'Enter quarter to run (Q1 / Q2 / Q3 / Q4) then click OK to confirm.\n\n' +
+    'Formula: client(30%) + error rate(40%) + ratings(30%) × design hrs × INR 25.\n' +
+    'Staff with incomplete ratings will be marked PENDING.\n\nCancel to abort.',
+    defaultQ
+  );
   if (!quarter) return;
   quarter = quarter.toUpperCase().trim();
   if (quarter !== 'Q1' && quarter !== 'Q2' && quarter !== 'Q3' && quarter !== 'Q4') {
     showToast('Invalid quarter. Enter Q1, Q2, Q3, or Q4.', 'error');
     return;
   }
-
-  if (!confirm('Run quarterly bonus for ' + quarter + ' ' + year + '?\n\nFormula: client(30%) + error rate(40%) + ratings(30%) × design hours × INR 25.\n\nStaff with incomplete ratings will be marked PENDING.')) return;
   showLoading(true);
   google.script.run
     .withSuccessHandler(function(json) {
@@ -2974,12 +2977,22 @@ function sendFeedbackRequests() {
 }
 
 function sendRatingRequests() {
-  var testEmail = getTestEmail_();
-  var isTest    = !!testEmail;
-  var msg = isTest
-    ? 'TEST MODE: All rating request emails will go to ' + testEmail + ' (not real TLs/PMs).\n\nProceed?'
-    : 'Send quarterly rating request emails to all active Team Leads and PMs?\n\nEach person will receive a link to submit their ratings for the current period.';
-  if (!confirm(msg)) return;
+  var testEmail  = getTestEmail_();
+  var isTest     = !!testEmail;
+  var now        = new Date();
+  var month      = now.getMonth() + 1;
+  var defaultQ   = month <= 3 ? 'Q1' : month <= 6 ? 'Q2' : month <= 9 ? 'Q3' : 'Q4';
+  var defaultPid = now.getFullYear() + '-' + defaultQ;
+
+  var periodId = window.prompt(
+    'Enter the rating period (e.g. 2026-Q1, 2026-Q2).\n\n' +
+    (isTest ? 'TEST MODE: emails go to ' + testEmail + ' only.\n\n' : '') +
+    'Click OK to send. Cancel to abort.',
+    defaultPid
+  );
+  if (!periodId) return;
+  periodId = periodId.trim();
+
   var btn = document.getElementById('btn-send-ratings');
   btn.textContent = 'Sending…';
   btn.disabled = true;
@@ -2989,7 +3002,7 @@ function sendRatingRequests() {
       btn.disabled = false;
       try {
         var r = JSON.parse(json);
-        showToast(r.emails_sent + ' rating request email(s) sent' + (isTest ? ' (TEST)' : '') + '.', 'success');
+        showToast(r.emails_sent + ' rating request email(s) sent for ' + periodId + (isTest ? ' (TEST)' : '') + '.', 'success');
       } catch(e) { showToast('Rating request emails sent.', 'success'); }
     })
     .withFailureHandler(function(err) {
@@ -2997,7 +3010,7 @@ function sendRatingRequests() {
       btn.disabled = false;
       showToast('Error: ' + (err.message || String(err)), 'error');
     })
-    .portal_sendRatingRequests('', testEmail);
+    .portal_sendRatingRequests(periodId, testEmail);
 }
 
 function loadFeedbackStatus() {
