@@ -212,12 +212,8 @@ var PurgeTool = (function () {
     RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
     RBAC.enforceFinancialAccess(actor);
 
-    var TARGETS = [
-      Config.TABLES.FACT_JOB_EVENTS,
-      Config.TABLES.FACT_WORK_LOGS,
-      Config.TABLES.FACT_BILLING_LEDGER,
-      Config.TABLES.FACT_PAYROLL_LEDGER,
-      Config.TABLES.FACT_QC_EVENTS,
+    // Fixed (non-partitioned) targets
+    var FIXED_TARGETS = [
       Config.TABLES.FACT_CLIENT_FEEDBACK,
       Config.TABLES.FACT_PERFORMANCE_RATINGS,
       Config.TABLES.FACT_QUARTERLY_BONUS,
@@ -229,16 +225,42 @@ var PurgeTool = (function () {
       'MIGRATION_AUDIT_LOG'
     ];
 
+    // Partitioned FACT table prefixes — tabs named e.g. FACT_JOB_EVENTS|2026-01
+    var PARTITIONED_PREFIXES = [
+      'FACT_JOB_EVENTS|',
+      'FACT_WORK_LOGS|',
+      'FACT_QC_EVENTS|',
+      'FACT_BILLING_LEDGER|',
+      'FACT_PAYROLL_LEDGER|',
+      'FACT_SOP_SUBMISSIONS|'
+    ];
+
+    // Discover all partitioned tabs in the spreadsheet
+    var ss            = SpreadsheetApp.getActiveSpreadsheet();
+    var allSheets     = ss.getSheets();
+    var partitioned   = [];
+    allSheets.forEach(function(sheet) {
+      var name = sheet.getName();
+      for (var i = 0; i < PARTITIONED_PREFIXES.length; i++) {
+        if (name.indexOf(PARTITIONED_PREFIXES[i]) === 0) {
+          partitioned.push(name);
+          break;
+        }
+      }
+    });
+
+    var ALL_TARGETS = FIXED_TARGETS.concat(partitioned);
+
     if (dryRun !== false) {
-      console.log('FULL WIPE DRY RUN — targets:');
-      TARGETS.forEach(function(t) { console.log('  ' + t); });
+      console.log('FULL WIPE DRY RUN — ' + ALL_TARGETS.length + ' targets:');
+      ALL_TARGETS.forEach(function(t) { console.log('  ' + t); });
       return { sheetsWiped: [], totalRows: 0 };
     }
 
-    Logger.info('FULL_WIPE_START', { module: MODULE, actor: actorEmail });
+    Logger.info('FULL_WIPE_START', { module: MODULE, actor: actorEmail, targets: ALL_TARGETS.length });
     var totalRows = 0;
     var wiped     = [];
-    TARGETS.forEach(function(name) {
+    ALL_TARGETS.forEach(function(name) {
       var n = wipeSheet_(name);
       if (n > 0) { wiped.push(name); totalRows += n; }
     });
