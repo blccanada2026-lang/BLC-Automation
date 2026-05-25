@@ -467,8 +467,8 @@ var PortalData = (function () {
    * @param {string} quarterPeriodId  e.g. '2026-Q1'
    * @returns {string}  JSON array of { person_code, name, role }
    */
-  function getMyRatees(raterEmail, quarterPeriodId) {
-    var actor = RBAC.resolveActor(raterEmail);
+  function getMyRatees(raterEmail, quarterPeriodId, raterCode) {
+    var actor = raterEmail ? RBAC.resolveActor(raterEmail) : resolveActorByCode_(raterCode);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.RATE_STAFF);
 
     var allStaff;
@@ -538,8 +538,8 @@ var PortalData = (function () {
    * @param {string} payloadJson
    * @returns {string}  JSON: { ok: true }
    */
-  function submitRating(raterEmail, payloadJson) {
-    var actor = RBAC.resolveActor(raterEmail);
+  function submitRating(raterEmail, payloadJson, raterCode) {
+    var actor = raterEmail ? RBAC.resolveActor(raterEmail) : resolveActorByCode_(raterCode);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.RATE_STAFF);
 
     var payload;
@@ -595,6 +595,34 @@ var PortalData = (function () {
   }
 
   // ============================================================
+  // HELPER: resolveActorByCode_
+  // Used when Session.getActiveUser().getEmail() returns '' (e.g. TL/PM
+  // following an emailed link without GAS OAuth session). Reads the
+  // DIM_STAFF_ROSTER row for the person_code, extracts their email, and
+  // delegates to RBAC.resolveActor() so all permission checks are normal.
+  // ============================================================
+
+  function resolveActorByCode_(personCode) {
+    if (!personCode) throw new Error('PortalData: rater identity missing — no session email and no rater code.');
+    var rows;
+    try {
+      rows = DAL.readWhere(Config.TABLES.DIM_STAFF_ROSTER, { person_code: personCode });
+    } catch (e) {
+      throw new Error('PortalData: cannot look up rater code ' + personCode + ': ' + e.message);
+    }
+    if (!rows || rows.length === 0) throw new Error('PortalData: unknown rater code: ' + personCode);
+    var row = null;
+    for (var i = 0; i < rows.length; i++) {
+      var active = rows[i].active;
+      if (active === true || String(active).toUpperCase() === 'TRUE') { row = rows[i]; break; }
+    }
+    if (!row) throw new Error('PortalData: rater ' + personCode + ' is inactive.');
+    var email = String(row.email || '').trim();
+    if (!email) throw new Error('PortalData: rater ' + personCode + ' has no email in roster.');
+    return RBAC.resolveActor(email);
+  }
+
+  // ============================================================
   // HELPER: currentQuarterPeriodId_
   // ============================================================
 
@@ -638,7 +666,8 @@ var PortalData = (function () {
       throw new Error('PORTAL_BASE_URL not set. Run setPortalBaseUrl(url) once from the Apps Script editor.');
     }
 
-    var ratingUrl = portalBaseUrl + '?page=rate-staff&period=' + encodeURIComponent(periodId);
+    var baseRatingUrl = portalBaseUrl + '?page=rate-staff&period=' + encodeURIComponent(periodId);
+    var ceoRatingUrl  = baseRatingUrl; // CEO is session-authenticated; no rater param needed
 
     var allStaff;
     try {
@@ -717,8 +746,8 @@ var PortalData = (function () {
           '<p>Hi,</p>',
           '<p>Please submit your quarterly performance ratings for <strong>' + periodId + '</strong>.</p>',
           '<p>You are rating: <strong>' + ceoRateeNames.join(', ') + '</strong></p>',
-          '<p><a href="' + ratingUrl + '" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:4px;">Submit Ratings</a></p>',
-          '<p>If the button above doesn\'t work: ' + ratingUrl + '</p>',
+          '<p><a href="' + ceoRatingUrl + '" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:4px;">Submit Ratings</a></p>',
+          '<p>If the button above doesn\'t work: ' + ceoRatingUrl + '</p>',
           '<p>Thanks,<br>BLC Nexus</p>'
         ].join('\n')
       });
@@ -732,6 +761,8 @@ var PortalData = (function () {
       var rateeList = raterRatees[raterCode];
       if (!rater || !rater.email || rateeList.length === 0) continue;
 
+      // Embed rater code so the page can identify the user without a GAS OAuth session
+      var raterUrl  = baseRatingUrl + '&rater=' + encodeURIComponent(raterCode);
       var recipient = testEmail || rater.email;
       if (!dryRun) MailApp.sendEmail({
         to:      recipient,
@@ -741,8 +772,8 @@ var PortalData = (function () {
           '<p>Hi ' + rater.name + ',</p>',
           '<p>Please submit your quarterly performance ratings for <strong>' + periodId + '</strong>.</p>',
           '<p>You are rating: <strong>' + rateeList.join(', ') + '</strong></p>',
-          '<p><a href="' + ratingUrl + '" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:4px;">Submit Ratings</a></p>',
-          '<p>If the button above doesn\'t work: ' + ratingUrl + '</p>',
+          '<p><a href="' + raterUrl + '" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:4px;">Submit Ratings</a></p>',
+          '<p>If the button above doesn\'t work: ' + raterUrl + '</p>',
           '<p>Please submit by end of month.</p>',
           '<p>Thanks,<br>BLC Nexus</p>'
         ].join('\n')
