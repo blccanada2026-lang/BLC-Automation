@@ -183,26 +183,102 @@ var PurgeTool = (function () {
     return { tagged: totalTagged, deleted: totalDeleted };
   }
 
-  return { runAudit: runAudit, runPurge: runPurge };
+  // ============================================================
+  // FULL WIPE — pre-migration clean slate
+  // Clears ALL data rows from every FACT, VW, and staging sheet
+  // while keeping the header row intact.
+  // DIM tables (staff, clients, rates) are NOT wiped.
+  // Bypasses DAL directly — approved exception for admin wipe tool.
+  // ============================================================
+
+  function wipeSheet_(sheetName) {
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet) { console.log('WIPE SKIP (not found): ' + sheetName); return 0; }
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) { console.log('WIPE SKIP (empty): ' + sheetName); return 0; }
+    sheet.deleteRows(2, lastRow - 1);
+    console.log('WIPED ' + (lastRow - 1) + ' rows — ' + sheetName);
+    return lastRow - 1;
+  }
+
+  /**
+   * Full pre-migration wipe. Pass dryRun=false to execute.
+   * @param {string}  actorEmail
+   * @param {boolean} dryRun  default true (safe)
+   */
+  function runFullWipe(actorEmail, dryRun) {
+    var actor = RBAC.resolveActor(actorEmail);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
+    RBAC.enforceFinancialAccess(actor);
+
+    var TARGETS = [
+      Config.TABLES.FACT_JOB_EVENTS,
+      Config.TABLES.FACT_WORK_LOGS,
+      Config.TABLES.FACT_BILLING_LEDGER,
+      Config.TABLES.FACT_PAYROLL_LEDGER,
+      Config.TABLES.FACT_QC_EVENTS,
+      Config.TABLES.FACT_CLIENT_FEEDBACK,
+      Config.TABLES.FACT_PERFORMANCE_RATINGS,
+      Config.TABLES.FACT_QUARTERLY_BONUS,
+      Config.TABLES.VW_JOB_CURRENT_STATE,
+      Config.TABLES.STG_PROCESSING_QUEUE,
+      Config.TABLES.STG_RAW_INTAKE,
+      'MIGRATION_RAW_IMPORT',
+      'MIGRATION_NORMALIZED',
+      'MIGRATION_AUDIT_LOG'
+    ];
+
+    if (dryRun !== false) {
+      console.log('FULL WIPE DRY RUN — targets:');
+      TARGETS.forEach(function(t) { console.log('  ' + t); });
+      return { sheetsWiped: [], totalRows: 0 };
+    }
+
+    Logger.info('FULL_WIPE_START', { module: MODULE, actor: actorEmail });
+    var totalRows = 0;
+    var wiped     = [];
+    TARGETS.forEach(function(name) {
+      var n = wipeSheet_(name);
+      if (n > 0) { wiped.push(name); totalRows += n; }
+    });
+    Logger.info('FULL_WIPE_COMPLETE', { module: MODULE, sheets: wiped.length, rows: totalRows });
+    return { sheetsWiped: wiped, totalRows: totalRows };
+  }
+
+  return { runAudit: runAudit, runPurge: runPurge, runFullWipe: runFullWipe };
 }());
 
 // ============================================================
 // TOP-LEVEL RUNNERS — callable from the Apps Script editor
 // ============================================================
 
-/** Step 1: Scan all tables for test/dummy data. Review output before purging. */
+/** Scan tables for test data (dry run — no changes). */
 function runPurgeAudit() {
-  var email = Session.getActiveUser().getEmail();
+  var email  = Session.getActiveUser().getEmail();
   var result = PurgeTool.runAudit(email);
-  console.log('PURGE AUDIT COMPLETE — suspects found: ' + result.total);
+  console.log('PURGE AUDIT — suspects: ' + result.total);
   result.results.forEach(function(r) {
-    if (r.count > 0) console.log('  ' + r.tableName + ': ' + r.count + ' suspect rows');
+    if (r.count > 0) console.log('  ' + r.tableName + ': ' + r.count);
   });
 }
 
-/** Step 2: Execute the purge after reviewing audit output. Tags FACT rows as PURGED. */
+/** Tag matched test rows as PURGED (selective — by prefix/email pattern). */
 function runPurgeExecute() {
-  var email = Session.getActiveUser().getEmail();
+  var email  = Session.getActiveUser().getEmail();
   var result = PurgeTool.runPurge(email, false);
-  console.log('PURGE COMPLETE — tagged: ' + result.tagged + ', deleted: ' + result.deleted);
+  console.log('PURGE DONE — tagged: ' + result.tagged + ', deleted: ' + result.deleted);
+}
+
+/** Preview which sheets would be wiped (no changes). Run before runFullWipeExecute. */
+function runFullWipeDryRun() {
+  var email = Session.getActiveUser().getEmail();
+  PurgeTool.runFullWipe(email, true);
+}
+
+/** WIPE ALL test data rows from FACT/VW/staging sheets. Keeps DIM tables and headers. */
+function runFullWipeExecute() {
+  var email  = Session.getActiveUser().getEmail();
+  var result = PurgeTool.runFullWipe(email, false);
+  console.log('FULL WIPE DONE — ' + result.sheetsWiped.length + ' sheets, ' + result.totalRows + ' rows removed');
 }
