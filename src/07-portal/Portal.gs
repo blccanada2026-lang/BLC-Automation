@@ -44,11 +44,13 @@ function doGet(e) {
   var period = e && e.parameter && e.parameter.period ? e.parameter.period : '';
 
   if (page === 'rate-staff') {
-    var preview = e && e.parameter && e.parameter.preview ? e.parameter.preview : '';
-    var html    = HtmlService.createHtmlOutputFromFile('07-portal/QuarterlyRating');
-    var content = '<script>var INJECTED_PERIOD = '       + JSON.stringify(period)  + ';<\/script>\n'
-                + '<script>var INJECTED_PREVIEW_CODE = ' + JSON.stringify(preview) + ';<\/script>\n'
-                + html.getContent();
+    var preview   = e && e.parameter && e.parameter.preview ? e.parameter.preview : '';
+    var raterCode = e && e.parameter && e.parameter.rater   ? e.parameter.rater   : '';
+    var html      = HtmlService.createHtmlOutputFromFile('07-portal/QuarterlyRating');
+    var content   = '<script>var INJECTED_PERIOD = '       + JSON.stringify(period)    + ';<\/script>\n'
+                  + '<script>var INJECTED_PREVIEW_CODE = ' + JSON.stringify(preview)   + ';<\/script>\n'
+                  + '<script>var INJECTED_RATER_CODE = '   + JSON.stringify(raterCode) + ';<\/script>\n'
+                  + html.getContent();
     return HtmlService.createHtmlOutput(content)
       .setTitle('BLC Quarterly Ratings')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
@@ -607,9 +609,9 @@ function portal_approveAllPayroll(periodId) {
  * @param {string} quarterPeriodId  e.g. '2026-Q1'
  * @returns {string}  JSON array of { person_code, name, role }
  */
-function portal_getMyRatees(quarterPeriodId) {
+function portal_getMyRatees(quarterPeriodId, raterCode) {
   var email = Session.getActiveUser().getEmail();
-  return PortalData.getMyRatees(email, quarterPeriodId);
+  return PortalData.getMyRatees(email, quarterPeriodId, raterCode || null);
 }
 
 // ============================================================
@@ -657,9 +659,9 @@ function portal_getViewDataAs(targetPersonCode) {
  * @param {string} payloadJson  JSON-encoded payload
  * @returns {string}  JSON: { ok: true }
  */
-function portal_submitRating(payloadJson) {
+function portal_submitRating(payloadJson, raterCode) {
   var email = Session.getActiveUser().getEmail();
-  return PortalData.submitRating(email, payloadJson);
+  return PortalData.submitRating(email, payloadJson, raterCode || null);
 }
 
 // ============================================================

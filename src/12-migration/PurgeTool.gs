@@ -185,3 +185,24 @@ var PurgeTool = (function () {
 
   return { runAudit: runAudit, runPurge: runPurge };
 }());
+
+// ============================================================
+// TOP-LEVEL RUNNERS — callable from the Apps Script editor
+// ============================================================
+
+/** Step 1: Scan all tables for test/dummy data. Review output before purging. */
+function runPurgeAudit() {
+  var email = Session.getActiveUser().getEmail();
+  var result = PurgeTool.runAudit(email);
+  Logger.log('PURGE AUDIT COMPLETE — suspects found: ' + result.total);
+  result.results.forEach(function(r) {
+    if (r.count > 0) Logger.log('  ' + r.tableName + ': ' + r.count + ' suspect rows');
+  });
+}
+
+/** Step 2: Execute the purge after reviewing audit output. Tags FACT rows as PURGED. */
+function runPurgeExecute() {
+  var email = Session.getActiveUser().getEmail();
+  var result = PurgeTool.runPurge(email, false);
+  Logger.log('PURGE COMPLETE — tagged: ' + result.tagged + ', deleted: ' + result.deleted);
+}
