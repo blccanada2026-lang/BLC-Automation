@@ -197,9 +197,11 @@ var PurgeTool = (function () {
     if (!sheet) { console.log('WIPE SKIP (not found): ' + sheetName); return 0; }
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) { console.log('WIPE SKIP (empty): ' + sheetName); return 0; }
-    sheet.deleteRows(2, lastRow - 1);
-    console.log('WIPED ' + (lastRow - 1) + ' rows — ' + sheetName);
-    return lastRow - 1;
+    var numRows = lastRow - 1;
+    var numCols = sheet.getLastColumn() || 1;
+    sheet.getRange(2, 1, numRows, numCols).clearContent();
+    console.log('WIPED ' + numRows + ' rows — ' + sheetName);
+    return numRows;
   }
 
   /**
