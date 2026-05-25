@@ -265,3 +265,44 @@ function runMigrationFullPipeline() {
   console.log('');
   console.log('⚠️  IMPORTANT: Run runMigrationDisableOverrides() now!');
 }
+
+/**
+ * Inspects the raw Stacey import rows for the 14 jobs that failed
+ * normalisation with "period_id is required". Logs the full raw_json
+ * for each so we can find any unmapped date columns in the source.
+ */
+function runInspectInvalidJobs() {
+  var INVALID_JOB_NUMBERS = [
+    'B500592', 'P-157', 'P-169', 'B600147', 'B600158',
+    '261508',  '262008',
+    '2690-3898-B',
+    '260522',
+    'Q260254', 'Q260288', 'Q260332',
+    '160958',  '160948'
+  ];
+
+  var rows;
+  try {
+    rows = DAL.readAll('MIGRATION_RAW_IMPORT', { callerModule: 'MigrationRunner' });
+  } catch (e) {
+    console.log('ERROR reading MIGRATION_RAW_IMPORT: ' + e.message);
+    return;
+  }
+
+  var found = 0;
+  (rows || []).forEach(function(r) {
+    var raw;
+    try { raw = JSON.parse(r.raw_json || '{}'); } catch(e) { raw = {}; }
+    var jn = String(raw.Job_Number || raw.job_number || raw.JobNumber || '').trim();
+    if (INVALID_JOB_NUMBERS.indexOf(jn) === -1) return;
+    found++;
+    console.log('JOB: ' + jn + ' | import_key: ' + r.import_key);
+    console.log('  raw_json: ' + r.raw_json);
+  });
+
+  console.log('');
+  console.log('Found ' + found + ' of ' + INVALID_JOB_NUMBERS.length + ' invalid jobs in raw import.');
+  if (found < INVALID_JOB_NUMBERS.length) {
+    console.log('Missing ' + (INVALID_JOB_NUMBERS.length - found) + ' — those jobs may have no date at all in Stacey.');
+  }
+}
