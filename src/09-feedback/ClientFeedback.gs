@@ -898,3 +898,22 @@ var ClientFeedback = (function () {
   };
 
 }());
+
+// ── Editor runners ─────────────────────────────────────────
+
+/** Send Q1 feedback emails to YOUR inbox for review before going live. */
+function runSendFeedbackRequestsTest() {
+  var r = ClientFeedback.sendFeedbackRequests('raj.nair@bluelotuscanada.ca', {
+    periodId:  '2026-01',
+    testEmail: 'raj.nair@bluelotuscanada.ca'
+  });
+  console.log('emails_sent=' + r.emails_sent + '  pairs=' + r.designer_client_pairs);
+}
+
+/** Send Q1 feedback emails to real clients. Only run after reviewing test emails. */
+function runSendFeedbackRequestsLive() {
+  var r = ClientFeedback.sendFeedbackRequests('raj.nair@bluelotuscanada.ca', {
+    periodId: '2026-01'
+  });
+  console.log('emails_sent=' + r.emails_sent + '  pairs=' + r.designer_client_pairs);
+}
