@@ -46,21 +46,50 @@ var MigrationReplayEngine = (function () {
   }
 
   /**
-   * Marks a normalized row as REPLAYED in MIGRATION_NORMALIZED.
+   * Batch-marks a list of norm_ids as REPLAYED in one single sheet read+write.
+   * Direct SpreadsheetApp access — approved exception for migration staging table
+   * (same pattern as PurgeTool.wipeSheet_). Avoids O(n) updateWhere per row.
    *
-   * @param {string} normId      The norm_id of the row to mark
-   * @param {string} actorEmail  Email of the actor running the replay
+   * @param {string[]} normIds     norm_ids to mark REPLAYED
+   * @param {string}   actorEmail  Email of the actor running the replay
    */
-  function markReplayed_(normId, actorEmail) {
+  function batchMarkReplayed_(normIds, actorEmail) {
+    if (!normIds || normIds.length === 0) return;
     try {
-      DAL.updateWhere(
-        MigrationConfig.TABLES.NORMALIZED,
-        { norm_id: normId },
-        { replay_status: 'REPLAYED', replayed_at: new Date().toISOString(), replayed_by: actorEmail },
-        { callerModule: MODULE }
-      );
+      var ss    = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = ss.getSheetByName(MigrationConfig.TABLES.NORMALIZED);
+      if (!sheet) return;
+      var lastRow = sheet.getLastRow();
+      if (lastRow <= 1) return;
+
+      var numCols = sheet.getLastColumn();
+      var data    = sheet.getRange(1, 1, lastRow, numCols).getValues();
+      var headers = data[0];
+
+      var normIdCol    = headers.indexOf('norm_id');
+      var statusCol    = headers.indexOf('replay_status');
+      var replayAtCol  = headers.indexOf('replayed_at');
+      var replayByCol  = headers.indexOf('replayed_by');
+      if (normIdCol < 0 || statusCol < 0) return;
+
+      var idSet = {};
+      normIds.forEach(function (id) { idSet[id] = true; });
+
+      var now     = new Date().toISOString();
+      var changed = false;
+      for (var i = 1; i < data.length; i++) {
+        if (idSet[data[i][normIdCol]]) {
+          data[i][statusCol] = 'REPLAYED';
+          if (replayAtCol >= 0) data[i][replayAtCol] = now;
+          if (replayByCol >= 0) data[i][replayByCol] = actorEmail;
+          changed = true;
+        }
+      }
+      if (changed) {
+        sheet.getRange(1, 1, lastRow, numCols).setValues(data);
+      }
     } catch (e) {
-      Logger.warn('REPLAY_MARK_FAILED', { module: MODULE, normId: normId, error: e.message });
+      Logger.warn('REPLAY_BATCH_MARK_FAILED', { module: MODULE, count: normIds.length, error: e.message });
     }
   }
 
@@ -98,6 +127,8 @@ var MigrationReplayEngine = (function () {
     var idKey = 'MIGR-STAFF-' + payload.person_code + '-' + batch;
     if (!IdempotencyEngine.checkAndMark(idKey)) return { ok: true, skipped: true };
     DAL.appendRow(Config.TABLES.DIM_STAFF_ROSTER, Object.assign({}, payload, {
+      active:          'TRUE',
+      effective_from:  payload.effective_from || '2024-01-01',
       migration_batch: batch,
       created_by:      actorEmail,
       created_at:      new Date().toISOString()
@@ -165,7 +196,7 @@ var MigrationReplayEngine = (function () {
       event_id:        Identifiers.generateId(),
       event_type:      'WORK_LOG_MIGRATED',
       job_number:      payload.job_number,
-      person_code:     payload.person_code,
+      actor_code:      payload.person_code,
       hours:           Number(payload.hours) || 0,
       work_date:       payload.work_date || '',
       actor_role:      payload.actor_role || 'DESIGNER',
@@ -283,12 +314,12 @@ var MigrationReplayEngine = (function () {
    * @param {string} actorEmail  Email of the CEO/ADMIN running the replay
    * @returns {{ replayed: number, skipped: number, failed: number, partial: boolean }}
    */
-  function replayAll(actorEmail) {
+  function replayAll(actorEmail, batchOverride) {
     var actor = RBAC.resolveActor(actorEmail);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
     RBAC.enforceFinancialAccess(actor);
 
-    var batch = MigrationConfig.getBatch();
+    var batch = batchOverride || MigrationConfig.getBatch();
 
     Logger.info('REPLAY_START', { module: MODULE, batch: batch });
 
@@ -298,19 +329,27 @@ var MigrationReplayEngine = (function () {
       return { replayed: 0, skipped: 0, failed: 0, partial: false };
     }
 
-    var replayedIds = loadReplayedIds_(batch);
-    var batchRows   = allNorm.filter(function (r) {
+    // Build replayedIds from the already-loaded allNorm — avoids a second full sheet read.
+    var replayedIds = {};
+    allNorm.forEach(function (r) {
+      if (r.migration_batch === batch && r.replay_status === 'REPLAYED') {
+        replayedIds[r.norm_id] = true;
+      }
+    });
+
+    var batchRows = allNorm.filter(function (r) {
       return r.migration_batch === batch && r.validation_status === 'VALID';
     });
 
     ensureMigrationPartitions_(batchRows);
 
-    var replayed = 0;
-    var skipped  = 0;
-    var failed   = 0;
-    var partial  = false;
-    var runStart = new Date();
-    var LIMIT_MS = 270000; // 4.5 min wall-clock guard
+    var replayed     = 0;
+    var skipped      = 0;
+    var failed       = 0;
+    var partial      = false;
+    var justReplayed = []; // norm_ids to batch-mark at the end
+    var runStart     = new Date();
+    var LIMIT_MS     = 270000; // 4.5 min wall-clock guard
 
     // Process in dependency order: STAFF → CLIENT → JOB → WORK_LOG → BILLING → PAYROLL
     for (var o = 0; o < REPLAY_ORDER.length; o++) {
@@ -352,7 +391,7 @@ var MigrationReplayEngine = (function () {
 
         try {
           var result = handler(payload, batch, actorEmail);
-          markReplayed_(row.norm_id, actorEmail); // always sync status — data written in prior run or just now
+          justReplayed.push(row.norm_id); // batch-mark at end of run
           if (result.skipped) {
             skipped++;
           } else {
@@ -370,6 +409,10 @@ var MigrationReplayEngine = (function () {
       // Stop processing further entity types if quota hit
       if (partial) break;
     }
+
+    // Single batch write to mark all successfully-processed rows as REPLAYED.
+    // One sheet read+write instead of N individual updateWhere calls.
+    batchMarkReplayed_(justReplayed, actorEmail);
 
     Logger.info('REPLAY_COMPLETE', {
       module: MODULE, replayed: replayed, skipped: skipped, failed: failed, partial: partial

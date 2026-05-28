@@ -34,7 +34,7 @@ var MigrationNormalizer = (function () {
   var JOB_MAP = {
     job_number:  ['Job_Number', 'job_number', 'JobNumber'],
     client_code: ['Client_Code', 'client_code', 'ClientCode'],
-    period_id:   ['Billing_Period', 'period_id', 'PeriodId', 'Period'],
+    period_id:   ['Billing_Period', 'period_id', 'PeriodId', 'Period', 'Allocated_Date'],
     status:      ['Status', 'status']
   };
 
@@ -122,8 +122,9 @@ var MigrationNormalizer = (function () {
     if (sourceTab === st.STAFF)     return 'STAFF';
     if (sourceTab === st.CLIENTS)   return 'CLIENT';
     if (sourceTab === st.JOBS)      return 'JOB';
-    if (sourceTab === st.WORK_LOGS) return 'WORK_LOG';
-    if (sourceTab === st.QC_LOGS)   return 'WORK_LOG'; // QC logs → same entity, role=QC
+    // MAY_* tabs stored as 'FORM_Daily_Work_Log|MAY_NSPN' — match by prefix
+    if (sourceTab === st.WORK_LOGS || sourceTab.indexOf(st.WORK_LOGS + '|') === 0) return 'WORK_LOG';
+    if (sourceTab === st.QC_LOGS   || sourceTab.indexOf(st.QC_LOGS   + '|') === 0) return 'WORK_LOG';
     if (sourceTab === st.BILLING)   return 'BILLING';
     if (sourceTab === st.PAYROLL)   return 'PAYROLL';
     return null;
@@ -177,6 +178,23 @@ var MigrationNormalizer = (function () {
     }
   }
 
+  // Known typo corrections for work-log designer names (source data errors).
+  // Maps lowercased typo → lowercased canonical name that will resolve in nameCodeMap.
+  var WORK_LOG_NAME_CORRECTIONS = {
+    'bittuu dalui': 'bittu dalui'
+  };
+
+  // Raw CSV designer strings that couldn't be resolved at import time (BATCH-002).
+  // Keys are the stored person_code value lowercased; values are valid person_codes.
+  var RAW_PERSON_CODE_OVERRIDES_ = {
+    'ar-abhisekh rit':   'AR001',
+    'ps-prianka santra': 'PRS',
+    'ab - abby bera':    'ABB',
+    'skd-sandy das':     'SDA',
+    'nm-nitish mishra':  'NMM',
+    'rg-ravi gummadi':   'RKG'
+  };
+
   /**
    * Strips currency symbols (₹, $, C$, USD) and whitespace from a rate string,
    * returning a plain numeric string.
@@ -184,6 +202,16 @@ var MigrationNormalizer = (function () {
   function parseRate_(val) {
     if (val === undefined || val === null) return val;
     return String(val).replace(/[₹$€£,\s]/g, '').trim();
+  }
+
+  /**
+   * Extracts the leading numeric value from an hours string.
+   * '2 hours' → '2'   '1.5' → '1.5'   '3h' → '3'
+   */
+  function parseHours_(val) {
+    if (val === undefined || val === null) return val;
+    var m = String(val).match(/^(\d+(?:\.\d+)?)/);
+    return m ? m[1] : String(val).trim();
   }
 
   /**
@@ -276,12 +304,12 @@ var MigrationNormalizer = (function () {
    * @param {string} actorEmail
    * @returns {{ normalized: number, invalid: number, skipped: number, partial: boolean }}
    */
-  function normalizeAll(actorEmail) {
+  function normalizeAll(actorEmail, batchOverride) {
     var actor = RBAC.resolveActor(actorEmail);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
     RBAC.enforceFinancialAccess(actor);
 
-    var batch = MigrationConfig.getBatch();
+    var batch = batchOverride || MigrationConfig.getBatch();
 
     Logger.info('NORMALIZER_START', { module: MODULE, batch: batch });
 
@@ -374,10 +402,14 @@ var MigrationNormalizer = (function () {
       }
 
       if (entityType === 'WORK_LOG') {
+        // Normalise hours — strip trailing text ('2 hours' → '2')
+        if (payload.hours !== undefined) payload.hours = parseHours_(payload.hours);
         // Resolve full designer name → person_code if form used a name field
         if (payload.person_code) {
           var nameKey = String(payload.person_code).trim().toLowerCase();
+          if (WORK_LOG_NAME_CORRECTIONS[nameKey]) nameKey = WORK_LOG_NAME_CORRECTIONS[nameKey];
           if (nameCodeMap[nameKey]) payload.person_code = nameCodeMap[nameKey];
+          if (RAW_PERSON_CODE_OVERRIDES_[nameKey]) payload.person_code = RAW_PERSON_CODE_OVERRIDES_[nameKey];
         }
         if (!payload.actor_role) {
           payload.actor_role = detectDefaultRole_(raw.source_tab);
@@ -431,14 +463,15 @@ var MigrationNormalizer = (function () {
    * Only processes INVALID rows; VALID and PENDING rows are untouched.
    *
    * @param {string} actorEmail
+   * @param {string} [batchOverride]  Optional batch ID; defaults to MigrationConfig.getBatch()
    * @returns {{ fixed: number, stillInvalid: number }}
    */
-  function reNormalizeInvalid(actorEmail) {
+  function reNormalizeInvalid(actorEmail, batchOverride) {
     var actor = RBAC.resolveActor(actorEmail);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
     RBAC.enforceFinancialAccess(actor);
 
-    var batch = MigrationConfig.getBatch();
+    var batch = batchOverride || MigrationConfig.getBatch();
 
     var rawRows  = DAL.readAll(MigrationConfig.TABLES.RAW_IMPORT,  { callerModule: MODULE });
     var normRows = DAL.readAll(MigrationConfig.TABLES.NORMALIZED,   { callerModule: MODULE });
@@ -467,11 +500,21 @@ var MigrationNormalizer = (function () {
       var fieldMap = ENTITY_MAPS[entityType];
       var payload  = applyMap_(rawObj, fieldMap);
 
-      if (entityType === 'STAFF')     payload = postProcessStaff_(payload);
+      if (entityType === 'STAFF') payload = postProcessStaff_(payload);
+      if (entityType === 'JOB') {
+        if (payload.period_id) payload.period_id = cleanPeriodId_(payload.period_id);
+        if (!payload.period_id && payload.job_number) {
+          var derived = extractPeriodFromJobNumber_(payload.job_number);
+          if (derived) payload.period_id = derived;
+        }
+      }
       if (entityType === 'WORK_LOG') {
+        if (payload.hours !== undefined) payload.hours = parseHours_(payload.hours);
         if (payload.person_code) {
           var nameKey = String(payload.person_code).trim().toLowerCase();
+          if (WORK_LOG_NAME_CORRECTIONS[nameKey]) nameKey = WORK_LOG_NAME_CORRECTIONS[nameKey];
           if (nameCodeMap[nameKey]) payload.person_code = nameCodeMap[nameKey];
+          if (RAW_PERSON_CODE_OVERRIDES_[nameKey]) payload.person_code = RAW_PERSON_CODE_OVERRIDES_[nameKey];
         }
         if (!payload.actor_role) payload.actor_role = detectDefaultRole_(rawRow.source_tab);
       }

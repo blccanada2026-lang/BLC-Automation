@@ -46,6 +46,23 @@ var IGNORED_NORM_IDS_ = [
   'f50537e3-7111-442c-a04c-f26c594ed2a2', // QC "Option 1" TEST-002 ROW-4
   '16947c63-e940-44d3-9d9a-cc14fcfdb03f', // QC "Option 1" TEST-003 ROW-5
   'd3dab549-0f04-41b6-8e40-a9e018845305', // QC "Option 1" TEST-003 ROW-6
+  // ── TEST data — post-wipe re-normalization (new UUIDs) ───────
+  'c3b01185-2647-44d9-b9dd-108eddc17305', // STAFF blank row (re-norm)
+  '0ecc0297-c3a4-40b1-964a-fc2fce307403', // STAFF blank row (re-norm)
+  '40df3340-c4cf-41d6-aeee-081cc3c91e8e', // WORK_LOG TEST DESIGNER2 TEST-001
+  'b4678d2f-4717-49d0-878b-acb123195e81', // WORK_LOG TEST DESIGNER2 TEST-001
+  'bed6914f-198e-40d8-9c72-7c75cdb6cc46', // WORK_LOG TEST DESIGNER2 TEST-001
+  '5c347abf-a74b-4c70-8c59-9effafffe2ea', // WORK_LOG Test Designer TEST-002
+  '7561eea2-5c8e-4f8d-a0c9-864271a04c62', // WORK_LOG Test Designer TEST-002
+  'f973bbab-ddf4-4785-a89e-42a39c0834ce', // WORK_LOG TEST DESIGNER2 TEST-003
+  '8b2a752e-88f9-4d9e-b6c9-5f3c53622ea8', // WORK_LOG TEST DESIGNER2 TEST-003
+  '3439ac0e-6b52-40cb-a352-cf633d59cfda', // WORK_LOG Test Designer TEST-004
+  '52f110f5-2f58-4ad6-9369-a507c3acff27', // WORK_LOG Test Designer TEST-005 (hours="abc")
+  'e440e744-3200-4aef-bd3d-ce8e6104b3d1', // QC "Option 1" TEST-001
+  '6955f079-511f-47af-aacc-df2e1375cc54', // QC "Option 1" TEST-002
+  '1d42fdf3-c8ac-4cff-b907-be15cfa7f99c', // QC "Option 1" TEST-002
+  'dcd74be0-d94b-4099-bdd1-63f232d45732', // QC "Option 1" TEST-003
+  'a7a8a3aa-d8c2-4bb9-a254-b445bd7497f7', // QC "Option 1" TEST-003
   // ── Zero-hour designer work logs ─────────────────────────────
   '55f3c945-6b95-4bdd-bf6d-785ef477a09a', // ABB 2602-2065-B 0hrs
   '07a570ab-ab8f-4a34-89f9-2f04dbc8d22e', // ABB 2602-2065-E 0hrs
@@ -140,6 +157,31 @@ function runMigrationNormalizeAll() {
     }
   } catch (e) {
     console.log('  ❌ normalizeAll failed: ' + e.message);
+  }
+  console.log('═══════════════════════════════════════════');
+}
+
+/**
+ * Re-normalizes only INVALID rows (retry after fixing STAFF_MAP / column aliases).
+ * Safe to run multiple times — already-VALID rows are not touched.
+ */
+function runReNormalizeInvalid() {
+  console.log('═══════════════════════════════════════════');
+  console.log('[MigrationRunner] reNormalizeInvalid');
+  console.log('  Batch: ' + MigrationConfig.getBatch());
+  console.log('═══════════════════════════════════════════');
+  try {
+    var result = MigrationNormalizer.reNormalizeInvalid(MIGRATION_RUNNER_EMAIL_);
+    console.log('[MigrationRunner] reNormalizeInvalid complete:');
+    console.log('  fixed='       + result.fixed);
+    console.log('  stillInvalid=' + result.stillInvalid);
+    if (result.stillInvalid > 0) {
+      console.log('  ⚠️  ' + result.stillInvalid + ' rows still invalid — check MIGRATION_NORMALIZED for validation_notes.');
+    } else {
+      console.log('  ✅ All previously-invalid rows fixed. Proceed to STEP 4.');
+    }
+  } catch (e) {
+    console.log('  ❌ reNormalizeInvalid failed: ' + e.message);
   }
   console.log('═══════════════════════════════════════════');
 }
@@ -305,4 +347,209 @@ function runInspectInvalidJobs() {
   if (found < INVALID_JOB_NUMBERS.length) {
     console.log('Missing ' + (INVALID_JOB_NUMBERS.length - found) + ' — those jobs may have no date at all in Stacey.');
   }
+}
+
+/** Lists every person_code + name in DIM_STAFF_ROSTER. Run to confirm codes for timesheet import. */
+function runListStaffCodes() {
+  var rows;
+  try { rows = DAL.readAll('DIM_STAFF_ROSTER', { callerModule: 'MigrationRunner' }); }
+  catch (e) { console.log('ERROR: ' + e.message); return; }
+  console.log('DIM_STAFF_ROSTER — ' + (rows || []).length + ' rows:');
+  (rows || []).forEach(function(r) {
+    console.log('  ' + r.person_code + '  |  ' + (r.name || '') + '  |  active=' + r.active);
+  });
+}
+
+/**
+ * Logs the entity_type, validation_notes, and normalized_json for every
+ * INVALID row in MIGRATION_NORMALIZED so we can diagnose remaining failures.
+ */
+function runInspectStillInvalid() {
+  var rows;
+  try {
+    rows = DAL.readAll('MIGRATION_NORMALIZED', { callerModule: 'MigrationRunner' });
+  } catch (e) {
+    console.log('ERROR reading MIGRATION_NORMALIZED: ' + e.message);
+    return;
+  }
+
+  var batch   = MigrationConfig.getBatch();
+  var invalid = (rows || []).filter(function(r) {
+    return r.migration_batch === batch &&
+           r.validation_status === 'INVALID' &&
+           r.replay_status !== 'IGNORED';
+  });
+
+  console.log('Still-invalid rows in MIGRATION_NORMALIZED: ' + invalid.length);
+  invalid.forEach(function(r) {
+    console.log('─────────────────────────────────────────');
+    console.log('  norm_id:   ' + r.norm_id);
+    console.log('  entity:    ' + r.entity_type);
+    console.log('  errors:    ' + r.validation_notes);
+    console.log('  payload:   ' + r.normalized_json);
+  });
+}
+
+/** Count entity types in MIGRATION_NORMALIZED for BATCH-001 to see what was migrated. */
+function runCountBatch001Entities() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('MIGRATION_NORMALIZED');
+  if (!sheet) { console.log('ERROR: MIGRATION_NORMALIZED not found'); return; }
+  var data    = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var batchCol  = headers.indexOf('migration_batch');
+  var entityCol = headers.indexOf('entity_type');
+  var statusCol = headers.indexOf('validation_status');
+  var replayCol = headers.indexOf('replay_status');
+  var counts = {};
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][batchCol] !== 'BATCH-001') continue;
+    var key = (data[i][entityCol] || 'UNKNOWN') + '|valid=' + data[i][statusCol] + '|replay=' + data[i][replayCol];
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  Object.keys(counts).sort().forEach(function(k) { console.log(k + ' → ' + counts[k]); });
+}
+
+/** Inspect first 5 rows of FACT_WORK_LOGS|2026-01 to verify field names and values. */
+function runInspectWorkLogs2601() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('FACT_WORK_LOGS|2026-01');
+  if (!sheet) { console.log('Sheet FACT_WORK_LOGS|2026-01 not found'); return; }
+  var data    = sheet.getDataRange().getValues();
+  var headers = data[0];
+  console.log('Headers: ' + JSON.stringify(headers));
+  console.log('Total rows (incl header): ' + data.length);
+  for (var i = 1; i <= Math.min(3, data.length - 1); i++) {
+    var row = {};
+    headers.forEach(function(h, idx) { row[h] = data[i][idx]; });
+    console.log('Row ' + i + ': ' + JSON.stringify(row));
+  }
+}
+
+/**
+ * Resets replay_status from REPLAYED → null for all BATCH-001 rows in
+ * MIGRATION_NORMALIZED. Use when FACT tables were wiped after a replay run.
+ */
+function runResetBatch001ReplayStatus() {
+  var ss      = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet   = ss.getSheetByName('MIGRATION_NORMALIZED');
+  if (!sheet) { console.log('ERROR: MIGRATION_NORMALIZED not found'); return; }
+
+  var data    = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var batchCol  = headers.indexOf('migration_batch');
+  var statusCol = headers.indexOf('replay_status');
+
+  if (batchCol < 0 || statusCol < 0) {
+    console.log('ERROR: required columns not found. batch=' + batchCol + ' status=' + statusCol);
+    return;
+  }
+
+  var reset = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][batchCol] === 'BATCH-001' && data[i][statusCol] === 'REPLAYED') {
+      sheet.getRange(i + 1, statusCol + 1).setValue('');
+      reset++;
+    }
+  }
+  console.log('Reset ' + reset + ' BATCH-001 rows to blank replay_status. Re-run runMigrationReplayAll.');
+}
+
+/** Resets replay_status only for BATCH-001 WORK_LOG rows so they re-replay with the actor_code fix.
+ *  Leaves STAFF, CLIENT, JOB, BILLING rows as REPLAYED — they won't re-run. */
+function runResetBatch001WorkLogReplayStatus() {
+  var ss      = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet   = ss.getSheetByName('MIGRATION_NORMALIZED');
+  if (!sheet) { console.log('ERROR: MIGRATION_NORMALIZED not found'); return; }
+
+  var data       = sheet.getDataRange().getValues();
+  var headers    = data[0];
+  var batchCol   = headers.indexOf('migration_batch');
+  var statusCol  = headers.indexOf('replay_status');
+  var typeCol    = headers.indexOf('entity_type');
+
+  if (batchCol < 0 || statusCol < 0 || typeCol < 0) {
+    console.log('ERROR: columns not found. batch=' + batchCol + ' status=' + statusCol + ' type=' + typeCol);
+    return;
+  }
+
+  var reset = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][batchCol] === 'BATCH-001' &&
+        data[i][typeCol]  === 'WORK_LOG'  &&
+        data[i][statusCol] === 'REPLAYED') {
+      sheet.getRange(i + 1, statusCol + 1).setValue('');
+      reset++;
+    }
+  }
+  console.log('Reset ' + reset + ' BATCH-001 WORK_LOG rows. Now run runMigrationReplayAll().');
+}
+
+/**
+ * ONE-TIME BACKFILL — sets active='TRUE' and effective_from='2024-01-01' on
+ * DIM_STAFF_ROSTER rows seeded by migration replay (which didn't write these fields).
+ * Safe to re-run — skips rows that already have active='TRUE'.
+ */
+function runBackfillStaffActive() {
+  console.log('═══════════════════════════════════════════');
+  console.log('[MigrationRunner] runBackfillStaffActive');
+  console.log('═══════════════════════════════════════════');
+  var rows;
+  try {
+    rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'MigrationReplayEngine' });
+  } catch (e) {
+    console.log('  ❌ Could not read DIM_STAFF_ROSTER: ' + e.message);
+    return;
+  }
+  var fixed = 0, skipped = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var row  = rows[i];
+    var code = String(row.person_code || '').trim();
+    if (!code) continue;
+    if (String(row.active || '').toUpperCase() === 'TRUE') { skipped++; continue; }
+    var updates = { active: 'TRUE' };
+    if (!row.effective_from && !row.start_date) updates.effective_from = '2024-01-01';
+    DAL.updateWhere(Config.TABLES.DIM_STAFF_ROSTER,
+      { person_code: code }, updates,
+      { callerModule: 'MigrationReplayEngine' });
+    fixed++;
+    console.log('  fixed: ' + code);
+  }
+  console.log('─────────────────────────────────────────');
+  console.log('  fixed=' + fixed + '  already-active=' + skipped);
+  console.log('  ✅ Done. Re-run runPreviewQ1Bonus() to verify.');
+  console.log('═══════════════════════════════════════════');
+}
+
+/**
+ * Clears all BATCH-001 migration idempotency keys from Script Properties
+ * so the replay can be re-run in PROD after being run in DEV.
+ * Safe to run — only deletes keys prefixed with IDEM_MIGR- for BATCH-001.
+ */
+function runClearBatch001IdempotencyKeys() {
+  var props = PropertiesService.getScriptProperties();
+  var all   = props.getKeys();
+  var cleared = 0;
+  all.forEach(function(k) {
+    if (k.indexOf('IDEM_MIGR-') === 0 && k.indexOf('BATCH-001') !== -1) {
+      props.deleteProperty(k);
+      cleared++;
+    }
+  });
+  console.log('Cleared ' + cleared + ' BATCH-001 idempotency keys. Re-run runMigrationReplayAll.');
+}
+
+/** Clears only BATCH-001 work log idempotency keys (MIGR-WL-*) so they can be re-replayed
+ *  with the actor_code fix — leaves STAFF, CLIENT, JOB, BILLING keys untouched. */
+function runClearBatch001WorkLogKeys() {
+  var props = PropertiesService.getScriptProperties();
+  var all   = props.getKeys();
+  var cleared = 0;
+  all.forEach(function(k) {
+    if (k.indexOf('IDEM_MIGR-WL-') === 0 && k.indexOf('BATCH-001') !== -1) {
+      props.deleteProperty(k);
+      cleared++;
+    }
+  });
+  console.log('Cleared ' + cleared + ' BATCH-001 work log keys. Enable overrides then run runMigrationReplayAll().');
 }

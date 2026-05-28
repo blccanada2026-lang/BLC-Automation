@@ -59,6 +59,19 @@ var QuarterlyBonusEngine = (function () {
     return String(year) + '-' + quarter;
   }
 
+  /**
+   * Normalises a Sheets date cell to 'YYYY-MM-DD'.
+   * Google Sheets auto-converts date strings to Date objects on write;
+   * String(dateObject).slice(0,10) gives 'Mon Jan 01', not '2024-01-01'.
+   */
+  function toIsoDate_(val) {
+    if (!val) return '';
+    if (val instanceof Date) {
+      return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    }
+    return String(val).slice(0, 10);
+  }
+
   /** Returns ['2026-01','2026-02','2026-03'] for Q1 2026. */
   function monthPeriodIds_(quarter, year) {
     var months = QUARTER_MONTHS[quarter];
@@ -116,9 +129,7 @@ var QuarterlyBonusEngine = (function () {
 
       for (var i = 0; i < rows.length; i++) {
         var row   = rows[i];
-        // Exclude migrated historical rows from live bonus calculation.
-        if (row.migration_batch) continue;
-        var code  = String(row.actor_code || '').trim();
+        var code  = String(row.actor_code || row.person_code || '').trim();
         var role  = String(row.actor_role || '').toUpperCase();
         var hours = parseFloat(row.hours) || 0;
         if (!code || hours <= 0 || role === 'QC') continue;
@@ -556,7 +567,7 @@ var QuarterlyBonusEngine = (function () {
         pm_code:         String(row.pm_code         || '').trim(),
         bonus_eligible:  String(row.bonus_eligible  || '').toUpperCase() === 'TRUE',
         active:          String(row.active          || ''),
-        start_date:      String(row.effective_from   || row.start_date || '')
+        start_date:      toIsoDate_(row.effective_from || row.start_date)
       };
     }
     return cache;
@@ -644,3 +655,45 @@ var QuarterlyBonusEngine = (function () {
   };
 
 }());
+
+// ── Editor runners ─────────────────────────────────────────
+
+/** Preview Q1 2026 bonus — writes nothing, logs results. */
+function runPreviewQ1Bonus() {
+  var result = QuarterlyBonusEngine.previewQuarterlyBonus('raj.nair@bluelotuscanada.ca', 'Q1', 2026);
+  console.log(JSON.stringify(result, null, 2));
+}
+
+/** Commit Q1 2026 bonus to FACT_PAYROLL_LEDGER. Only run after reviewing preview. */
+function runCommitQ1Bonus() {
+  var result = QuarterlyBonusEngine.runQuarterlyBonus('raj.nair@bluelotuscanada.ca', 'Q1', 2026);
+  console.log(JSON.stringify(result, null, 2));
+}
+
+/** Diagnostic — checks FACT_WORK_LOGS partitions for Q1 2026 and reports row counts. */
+function runDiagnoseQ1Hours() {
+  var periods = ['2026-01', '2026-02', '2026-03'];
+  periods.forEach(function(pid) {
+    try {
+      var rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: 'QuarterlyBonusEngine', periodId: pid });
+      var totalHours = 0;
+      rows.forEach(function(r) { totalHours += parseFloat(r.hours) || 0; });
+      console.log(pid + ': ' + rows.length + ' rows, ' + totalHours + ' total hours');
+      if (rows.length > 0) {
+        var sample = rows[0];
+        console.log('  columns in row 0: ' + Object.keys(sample).join(', '));
+        console.log('  actor_code="' + sample.actor_code + '"  person_code="' + sample.person_code + '"  hours="' + sample.hours + '"');
+        var withCode = 0, withoutCode = 0, hoursWithCode = 0;
+        rows.forEach(function(r) {
+          var code = String(r.actor_code || '').trim();
+          if (code) { withCode++; hoursWithCode += parseFloat(r.hours) || 0; }
+          else { withoutCode++; }
+        });
+        console.log('  rows WITH actor_code: ' + withCode + ' (' + hoursWithCode + ' hrs)');
+        console.log('  rows WITHOUT actor_code: ' + withoutCode);
+      }
+    } catch(e) {
+      console.log(pid + ': ❌ ' + e.message);
+    }
+  });
+}
