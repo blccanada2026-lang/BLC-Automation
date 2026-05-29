@@ -682,6 +682,18 @@ function portal_sendRatingRequests(periodId, testEmail) {
   return JSON.stringify(result);
 }
 
+// portal_getRatingsGaps — returns raters with incomplete submissions (CEO only)
+function portal_getRatingsGaps(quarterPeriodId) {
+  var email = Session.getActiveUser().getEmail();
+  return PortalData.getRatingsGaps(email, quarterPeriodId);
+}
+
+// portal_sendRatingReminder — sends targeted reminder to one rater (CEO only)
+function portal_sendRatingReminder(quarterPeriodId, raterCode) {
+  var email = Session.getActiveUser().getEmail();
+  return PortalData.sendRatingReminder(email, quarterPeriodId, raterCode, null);
+}
+
 /**
  * One-time setup: stores the web app /exec URL in Script Properties.
  * Run this manually from the Apps Script editor after deploying.

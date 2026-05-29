@@ -481,6 +481,7 @@ var PortalData = (function () {
 
     var today  = new Date().toISOString().substring(0, 10);
     var ratees = [];
+    var seen   = {};
     for (var i = 0; i < allStaff.length; i++) {
       var s = allStaff[i];
 
@@ -509,11 +510,11 @@ var PortalData = (function () {
       }
 
       if (include) {
-        ratees.push({
-          person_code: String(s.person_code || ''),
-          name:        String(s.name        || ''),
-          role:        role
-        });
+        var pCode = String(s.person_code || '');
+        if (pCode && !seen[pCode]) {
+          seen[pCode] = true;
+          ratees.push({ person_code: pCode, name: String(s.name || ''), role: role });
+        }
       }
     }
     return JSON.stringify(ratees);
@@ -805,6 +806,159 @@ var PortalData = (function () {
   }
 
   // ============================================================
+  // SECTION 10: getRatingsGaps + sendRatingReminder
+  // ============================================================
+
+  /**
+   * Returns the list of raters who have not yet completed their Q ratings.
+   * CEO only. Used to populate the Ratings Status panel.
+   *
+   * @param {string} actorEmail
+   * @param {string} quarterPeriodId  e.g. '2026-Q1'
+   * @returns {string} JSON array of { rater_code, rater_name, rater_email, pending: [{code,name}] }
+   */
+  function getRatingsGaps(actorEmail, quarterPeriodId) {
+    var actor = RBAC.resolveActor(actorEmail);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.RATE_STAFF);
+
+    var allStaff;
+    try {
+      allStaff = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
+    } catch (e) {
+      return JSON.stringify([]);
+    }
+
+    var today = new Date().toISOString().substring(0, 10);
+    var staffMap = {};
+    for (var i = 0; i < allStaff.length; i++) {
+      var s = allStaff[i];
+      if (s.active === false || String(s.active).toUpperCase().trim() === 'FALSE') continue;
+      var et = s.effective_to;
+      if (et instanceof Date) {
+        var ey = et.getFullYear(), em = String(et.getMonth()+1), ed = String(et.getDate());
+        if (em.length < 2) em = '0'+em; if (ed.length < 2) ed = '0'+ed;
+        et = ey+'-'+em+'-'+ed;
+      } else { et = String(et||'').trim().substring(0,10); }
+      if (et && et < today) continue;
+      var code = String(s.person_code || '').trim();
+      if (!code || staffMap[code]) continue; // deduplicate
+      staffMap[code] = {
+        code:           code,
+        name:           String(s.name  || code),
+        role:           String(s.role  || '').toUpperCase().trim(),
+        email:          String(s.email || '').trim(),
+        supervisorCode: String(s.supervisor_code || '').trim(),
+        pmCode:         String(s.pm_code         || '').trim()
+      };
+    }
+
+    // Build expected submissions: rater_code → [{ code, name }]
+    var expected = {}; // rater_code → [{code, name}]
+    for (var code in staffMap) {
+      var m = staffMap[code];
+      // TL rates their direct reports
+      if (m.supervisorCode && staffMap[m.supervisorCode] && staffMap[m.supervisorCode].role === 'TEAM_LEAD') {
+        var tl = m.supervisorCode;
+        if (!expected[tl]) expected[tl] = [];
+        expected[tl].push({ code: code, name: m.name });
+      }
+      // PM rates their designers
+      if (m.pmCode && staffMap[m.pmCode] && staffMap[m.pmCode].role === 'PM' && m.role === 'DESIGNER') {
+        var pm = m.pmCode;
+        if (!expected[pm]) expected[pm] = [];
+        expected[pm].push({ code: code, name: m.name });
+      }
+      // QC also rated by PM
+      if (m.pmCode && staffMap[m.pmCode] && staffMap[m.pmCode].role === 'PM' && m.role === 'QC') {
+        var pmq = m.pmCode;
+        if (!expected[pmq]) expected[pmq] = [];
+        if (!expected[pmq].some(function(x) { return x.code === code; }))
+          expected[pmq].push({ code: code, name: m.name });
+      }
+    }
+
+    // Load submitted ratings for this quarter
+    var submitted = {}; // rater_code → { ratee_code: true }
+    try {
+      var ratingRows = DAL.readAll(Config.TABLES.FACT_PERFORMANCE_RATINGS, { callerModule: 'PortalData' });
+      ratingRows.forEach(function(r) {
+        if (String(r.period_id || '').trim() !== quarterPeriodId) return;
+        var rc = String(r.rater_code || '').trim();
+        var re = String(r.ratee_code || '').trim();
+        if (!rc || !re) return;
+        if (!submitted[rc]) submitted[rc] = {};
+        submitted[rc][re] = true;
+      });
+    } catch (e) { /* proceed with empty submitted */ }
+
+    // Find gaps
+    var gaps = [];
+    for (var raterCode in expected) {
+      var rater   = staffMap[raterCode];
+      if (!rater) continue;
+      var pending = expected[raterCode].filter(function(ratee) {
+        return !submitted[raterCode] || !submitted[raterCode][ratee.code];
+      });
+      if (pending.length === 0) continue;
+      gaps.push({
+        rater_code:  raterCode,
+        rater_name:  rater.name,
+        rater_role:  rater.role,
+        rater_email: rater.email,
+        pending:     pending
+      });
+    }
+    gaps.sort(function(a, b) { return a.rater_name.localeCompare(b.rater_name); });
+    return JSON.stringify(gaps);
+  }
+
+  /**
+   * Sends a targeted reminder email to a single rater listing their pending ratees.
+   * CEO only.
+   *
+   * @param {string} actorEmail
+   * @param {string} quarterPeriodId  e.g. '2026-Q1'
+   * @param {string} raterCode        person_code of the rater to remind
+   * @param {string} [testEmail]      If set, routes email here instead of rater's real address
+   * @returns {string} JSON { ok, sent_to }
+   */
+  function sendRatingReminder(actorEmail, quarterPeriodId, raterCode, testEmail) {
+    var actor = RBAC.resolveActor(actorEmail);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.RATE_STAFF);
+
+    var gapsJson = getRatingsGaps(actorEmail, quarterPeriodId);
+    var gaps     = JSON.parse(gapsJson);
+    var gap      = null;
+    for (var i = 0; i < gaps.length; i++) {
+      if (gaps[i].rater_code === raterCode) { gap = gaps[i]; break; }
+    }
+    if (!gap) return JSON.stringify({ ok: true, sent_to: null, message: 'No pending ratees for ' + raterCode });
+
+    var portalBaseUrl = PropertiesService.getScriptProperties().getProperty('PORTAL_BASE_URL') || '';
+    var raterUrl = portalBaseUrl + '?page=rate-staff&period=' + encodeURIComponent(quarterPeriodId)
+                 + '&rater=' + encodeURIComponent(raterCode);
+    var pendingNames = gap.pending.map(function(r) { return r.name; }).join(', ');
+    var recipient    = testEmail || gap.rater_email;
+
+    MailApp.sendEmail({
+      to:       recipient,
+      subject:  'Reminder: Please submit ' + quarterPeriodId + ' performance ratings — BLC Nexus',
+      htmlBody: [
+        '<p>Hi ' + gap.rater_name + ',</p>',
+        '<p>This is a reminder to submit your quarterly performance ratings for <strong>' + quarterPeriodId + '</strong>.</p>',
+        '<p>Still pending: <strong>' + pendingNames + '</strong></p>',
+        '<p><a href="' + raterUrl + '" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:4px;">Submit Ratings Now</a></p>',
+        '<p>If the button doesn\'t work: ' + raterUrl + '</p>',
+        '<p>Thanks,<br>BLC Nexus</p>'
+      ].join('\n')
+    });
+
+    Logger.info('RATING_REMINDER_SENT', { module: 'PortalData',
+      rater: raterCode, period: quarterPeriodId, sent_to: recipient });
+    return JSON.stringify({ ok: true, sent_to: recipient });
+  }
+
+  // ============================================================
   // PUBLIC API
   // ============================================================
   return {
@@ -819,7 +973,9 @@ var PortalData = (function () {
     getActiveDesigners:       getActiveDesigners,
     getClientList:            getClientList,
     getDesignersForClient:    getDesignersForClient,
-    editJob:                  editJob
+    editJob:                  editJob,
+    getRatingsGaps:           getRatingsGaps,
+    sendRatingReminder:       sendRatingReminder
   };
 
   // ============================================================

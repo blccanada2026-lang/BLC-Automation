@@ -273,7 +273,7 @@ var QuarterlyBonusEngine = (function () {
       var staff  = staffCache[code];
       var role   = staff ? staff.role : '';
 
-      if (role === 'DESIGNER') {
+      if (role === 'DESIGNER' || role === 'QC') {
         var tlScore = scores['TEAM_LEAD'];
         var pmScore = scores['PM'];
         if (tlScore === undefined || pmScore === undefined) {
@@ -671,6 +671,74 @@ function runCommitQ1Bonus() {
 }
 
 /** Diagnostic — checks FACT_WORK_LOGS partitions for Q1 2026 and reports row counts. */
+function runDiagnoseAllRatings() {
+  try {
+    var rows = DAL.readAll(Config.TABLES.FACT_PERFORMANCE_RATINGS, { callerModule: 'QuarterlyBonusEngine' });
+    console.log('FACT_PERFORMANCE_RATINGS — ALL rows: ' + rows.length);
+    var byPeriod = {};
+    rows.forEach(function(r) {
+      var pid = String(r.period_id || '(blank)').trim();
+      if (!byPeriod[pid]) byPeriod[pid] = 0;
+      byPeriod[pid]++;
+    });
+    Object.keys(byPeriod).sort().forEach(function(pid) {
+      console.log('  period_id="' + pid + '": ' + byPeriod[pid] + ' rows');
+    });
+    if (rows.length > 0) {
+      console.log('  Sample row: rater_code=' + rows[rows.length-1].rater_code +
+                  ' rater_role=' + rows[rows.length-1].rater_role +
+                  ' ratee_code=' + rows[rows.length-1].ratee_code +
+                  ' period_id=' + rows[rows.length-1].period_id +
+                  ' submitted_at=' + rows[rows.length-1].submitted_at);
+    }
+  } catch(e) { console.log('❌ ' + e.message); }
+}
+
+function runDiagnoseQ1Ratings() {
+  var qPid = '2026-Q1';
+  try {
+    var rows = DAL.readAll(Config.TABLES.FACT_PERFORMANCE_RATINGS, { callerModule: 'QuarterlyBonusEngine' });
+    var q1   = rows.filter(function(r) { return String(r.period_id || '').trim() === qPid; });
+    console.log('FACT_PERFORMANCE_RATINGS — ' + qPid + ': ' + q1.length + ' rows total');
+    if (q1.length === 0) { console.log('  ⚠️  No ratings found for ' + qPid); return; }
+    // Group by ratee
+    var byRatee = {};
+    q1.forEach(function(r) {
+      var ratee = String(r.ratee_code || '').trim();
+      var role  = String(r.rater_role || '').trim().toUpperCase();
+      var score = r.avg_score_normalized;
+      if (!ratee) return;
+      if (!byRatee[ratee]) byRatee[ratee] = {};
+      byRatee[ratee][role] = score;
+    });
+    console.log('  Ratings by ratee:');
+    Object.keys(byRatee).sort().forEach(function(code) {
+      var scores = byRatee[code];
+      var parts  = Object.keys(scores).map(function(role) { return role + '=' + scores[role]; });
+      console.log('    ' + code + ': ' + parts.join(', '));
+    });
+    // Show who is missing what
+    var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'QuarterlyBonusEngine' });
+    console.log('  Missing ratings:');
+    staffRows.forEach(function(s) {
+      var code = String(s.person_code || '').trim();
+      var role = String(s.role || '').toUpperCase().trim();
+      if (!code || String(s.active || '').toUpperCase() !== 'TRUE') return;
+      var scores = byRatee[code] || {};
+      if (role === 'DESIGNER') {
+        var missing = [];
+        if (scores['TEAM_LEAD'] === undefined) missing.push('TEAM_LEAD');
+        if (scores['PM']        === undefined) missing.push('PM');
+        if (missing.length) console.log('    ' + code + ' (' + role + '): missing ' + missing.join(', '));
+      } else if (role === 'TEAM_LEAD' || role === 'PM') {
+        if (scores['CEO'] === undefined) console.log('    ' + code + ' (' + role + '): missing CEO');
+      }
+    });
+  } catch(e) {
+    console.log('❌ ' + e.message);
+  }
+}
+
 function runDiagnoseQ1Hours() {
   var periods = ['2026-01', '2026-02', '2026-03'];
   periods.forEach(function(pid) {
