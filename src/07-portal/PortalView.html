@@ -390,6 +390,17 @@
         </div>
       </div>
 
+      <!-- Ratings Status panel (CEO only) -->
+      <div class="dash-panel" id="dash-ratings-status-panel" style="display:none">
+        <div class="dash-panel-hdr">
+          <span>Ratings Status</span>
+          <span id="dash-ratings-status-meta" style="font-size:12px;font-weight:400;color:var(--c-muted)"></span>
+        </div>
+        <div class="dash-panel-body" id="dash-ratings-status-body">
+          <div class="dash-empty">Loading…</div>
+        </div>
+      </div>
+
       <!-- Client Feedback panel -->
       <div class="dash-panel" id="dash-feedback-panel" style="display:none">
         <div class="dash-panel-hdr">
@@ -1054,6 +1065,7 @@ function onDataLoaded(jsonStr) {
   if (_data.perms.canRunPayroll)     document.getElementById('lbl-test-mode').style.display       = 'flex';
   if (_data.perms.canApprovePayroll) document.getElementById('btn-approve-payroll').style.display = 'inline-block';
   if (_data.perms.isLeader)          document.getElementById('dash-feedback-panel').style.display = 'block';
+  if (_data.perms.canRunPayroll)     { document.getElementById('dash-ratings-status-panel').style.display = 'block'; loadRatingsStatus(); }
 
   renderStats(_data.stats);
   renderJobs(_data.jobs, actor, _data.perms);
@@ -2974,6 +2986,96 @@ function sendFeedbackRequests() {
       showToast('Error: ' + (err.message || String(err)), 'error');
     })
     .portal_sendFeedbackRequests('', testEmail);
+}
+
+function loadRatingsStatus() {
+  var now     = new Date();
+  var month   = now.getMonth() + 1;
+  var quarter = month <= 3 ? 'Q1' : month <= 6 ? 'Q2' : month <= 9 ? 'Q3' : 'Q4';
+  var qPid    = now.getFullYear() + '-' + quarter;
+  var body    = document.getElementById('dash-ratings-status-body');
+  var meta    = document.getElementById('dash-ratings-status-meta');
+  while (body.firstChild) body.removeChild(body.firstChild);
+  var loading = document.createElement('div');
+  loading.className = 'dash-empty';
+  loading.textContent = 'Loading…';
+  body.appendChild(loading);
+  google.script.run
+    .withSuccessHandler(function(json) {
+      var gaps = JSON.parse(json);
+      meta.textContent = qPid;
+      while (body.firstChild) body.removeChild(body.firstChild);
+      if (!gaps.length) {
+        var ok = document.createElement('div');
+        ok.className = 'dash-empty';
+        ok.style.color = '#2e7d32';
+        ok.textContent = 'All ratings submitted.';
+        body.appendChild(ok);
+        return;
+      }
+      var table = document.createElement('table');
+      table.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px;';
+      var thead = table.createTHead();
+      var hRow  = thead.insertRow();
+      ['Rater','Pending for',''].forEach(function(h) {
+        var th = document.createElement('th');
+        th.style.cssText = 'text-align:left;padding:6px 4px;';
+        th.textContent = h;
+        hRow.appendChild(th);
+      });
+      var tbody = table.createTBody();
+      gaps.forEach(function(g) {
+        var tr = tbody.insertRow();
+        tr.style.borderBottom = '1px solid var(--c-border)';
+        var td1 = tr.insertCell();
+        td1.style.cssText = 'padding:6px 4px;white-space:nowrap;';
+        td1.textContent = g.rater_name;
+        var roleSpan = document.createElement('span');
+        roleSpan.style.cssText = 'font-size:11px;color:var(--c-muted);';
+        roleSpan.textContent = ' (' + g.rater_role + ')';
+        td1.appendChild(roleSpan);
+        var td2 = tr.insertCell();
+        td2.style.cssText = 'padding:6px 4px;color:var(--c-muted);font-size:12px;';
+        td2.textContent = g.pending.map(function(r) { return r.name; }).join(', ');
+        var td3 = tr.insertCell();
+        td3.style.cssText = 'padding:6px 4px;text-align:right;';
+        var btn = document.createElement('button');
+        btn.className = 'btn-muted btn-sm';
+        btn.style.cssText = 'font-size:11px;padding:3px 10px;';
+        btn.textContent = 'Send Reminder';
+        (function(rc, pid, b) {
+          b.addEventListener('click', function() { sendReminderTo(rc, pid, b); });
+        }(g.rater_code, qPid, btn));
+        td3.appendChild(btn);
+      });
+      body.appendChild(table);
+    })
+    .withFailureHandler(function(err) {
+      while (body.firstChild) body.removeChild(body.firstChild);
+      var errEl = document.createElement('div');
+      errEl.className = 'dash-empty';
+      errEl.style.color = '#c62828';
+      errEl.textContent = 'Error: ' + err.message;
+      body.appendChild(errEl);
+    })
+    .portal_getRatingsGaps(qPid);
+}
+
+function sendReminderTo(raterCode, qPid, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  google.script.run
+    .withSuccessHandler(function(json) {
+      var r = JSON.parse(json);
+      btn.textContent = r.sent_to ? 'Sent' : 'No pending';
+      btn.style.color = '#2e7d32';
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.textContent = 'Send Reminder';
+      showToast('Error: ' + err.message, 'error');
+    })
+    .portal_sendRatingReminder(qPid, raterCode);
 }
 
 function sendRatingRequests() {
