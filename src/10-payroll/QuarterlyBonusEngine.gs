@@ -273,13 +273,23 @@ var QuarterlyBonusEngine = (function () {
       var staff  = staffCache[code];
       var role   = staff ? staff.role : '';
 
-      if (role === 'DESIGNER' || role === 'QC') {
+      if (role === 'DESIGNER' || role === 'QC' || role === 'QC_REVIEWER') {
         var tlScore = scores['TEAM_LEAD'];
         var pmScore = scores['PM'];
-        if (tlScore === undefined || pmScore === undefined) {
+        var managerScore;
+        if (tlScore !== undefined && pmScore !== undefined) {
+          managerScore = (tlScore + pmScore) / 2;  // both present — average
+        } else if (pmScore !== undefined) {
+          managerScore = pmScore;                   // no TL → PM rates alone
+        } else if (tlScore !== undefined) {
+          managerScore = tlScore;                   // no PM → TL rates alone
+        } else {
+          managerScore = undefined;
+        }
+        if (managerScore === undefined) {
           result[code] = null;
         } else {
-          result[code] = Math.round(((tlScore + pmScore) / 2) * 10000) / 10000;
+          result[code] = Math.round(managerScore * 10000) / 10000;
         }
       } else if (role === 'TEAM_LEAD' || role === 'PM') {
         var ceoScore = scores['CEO'];
@@ -725,11 +735,17 @@ function runDiagnoseQ1Ratings() {
       var role = String(s.role || '').toUpperCase().trim();
       if (!code || String(s.active || '').toUpperCase() !== 'TRUE') return;
       var scores = byRatee[code] || {};
-      if (role === 'DESIGNER') {
-        var missing = [];
-        if (scores['TEAM_LEAD'] === undefined) missing.push('TEAM_LEAD');
-        if (scores['PM']        === undefined) missing.push('PM');
-        if (missing.length) console.log('    ' + code + ' (' + role + '): missing ' + missing.join(', '));
+      if (role === 'DESIGNER' || role === 'QC_REVIEWER') {
+        // RULE: if no TL rating, PM rating alone suffices. Flag only if BOTH are missing.
+        var hasTL = scores['TEAM_LEAD'] !== undefined;
+        var hasPM = scores['PM']        !== undefined;
+        if (!hasTL && !hasPM) {
+          console.log('    ' + code + ' (' + role + '): missing both TEAM_LEAD and PM — no rating score');
+        } else if (!hasPM) {
+          console.log('    ' + code + ' (' + role + '): missing PM (TL-only score will be used)');
+        } else if (!hasTL) {
+          console.log('    ' + code + ' (' + role + '): no TL — PM score used as fallback');
+        }
       } else if (role === 'TEAM_LEAD' || role === 'PM') {
         if (scores['CEO'] === undefined) console.log('    ' + code + ' (' + role + '): missing CEO');
       }
@@ -763,5 +779,60 @@ function runDiagnoseQ1Hours() {
     } catch(e) {
       console.log(pid + ': ❌ ' + e.message);
     }
+  });
+}
+
+/** Diagnoses supervisor_code and pm_code for designers who are still missing ratings. */
+function runDiagnoseRatingAssignments() {
+  var missing = ['DBG','DBS','PRS','NMM','AR001','BSG','RKU'];
+  var rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'QuarterlyBonusEngine' });
+  var seen = {};
+  console.log('supervisor_code and pm_code for missing-rating staff:');
+  rows.forEach(function(r) {
+    var code = String(r.person_code || '').trim();
+    if (!code || seen[code]) return;
+    if (missing.indexOf(code) === -1) return;
+    seen[code] = true;
+    console.log('  ' + code + ' | active=' + r.active + ' | role=' + r.role +
+                ' | supervisor_code="' + (r.supervisor_code||'') + '"' +
+                ' | pm_code="' + (r.pm_code||'') + '"' +
+                ' | email="' + (r.email||'') + '"');
+  });
+}
+
+/**
+ * Dumps all Q1 2026 rows from FACT_PERFORMANCE_RATINGS — rater_code, rater_role, ratee_code, score.
+ * Also prints the role of each rater from DIM_STAFF_ROSTER.
+ * Run this to diagnose why TL/PM submissions aren't counting.
+ */
+function runDiagnoseQ1RatingRows() {
+  var qPid = '2026-Q1';
+  var ratings = DAL.readAll(Config.TABLES.FACT_PERFORMANCE_RATINGS, { callerModule: 'QuarterlyBonusEngine' });
+  var q1 = ratings.filter(function(r) { return String(r.period_id || '').trim() === qPid; });
+  console.log('FACT_PERFORMANCE_RATINGS rows for ' + qPid + ': ' + q1.length);
+
+  // Build role lookup from DIM_STAFF_ROSTER
+  var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'QuarterlyBonusEngine' });
+  var roleMap = {};
+  staffRows.forEach(function(s) {
+    var code = String(s.person_code || '').trim();
+    if (code && !roleMap[code]) roleMap[code] = String(s.role || '').trim();
+  });
+
+  q1.forEach(function(r) {
+    var raterCode = String(r.rater_code || '').trim();
+    var rosterRole = roleMap[raterCode] || '(not in roster)';
+    console.log('  rater=' + raterCode + ' (roster_role=' + rosterRole + ')' +
+                ' | rater_role_recorded=' + (r.rater_role||'') +
+                ' | ratee=' + (r.ratee_code||'') +
+                ' | score=' + (r.avg_score_normalized||'') +
+                ' | submitted_at=' + (r.submitted_at||''));
+  });
+
+  // Also show role lookup for key raters
+  var keyRaters = ['SGO','PBG','SDA','BCH'];
+  console.log('Roster roles for key raters:');
+  keyRaters.forEach(function(code) {
+    console.log('  ' + code + ' -> ' + (roleMap[code] || '(not found)'));
   });
 }

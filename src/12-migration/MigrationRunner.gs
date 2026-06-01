@@ -553,3 +553,103 @@ function runClearBatch001WorkLogKeys() {
   });
   console.log('Cleared ' + cleared + ' BATCH-001 work log keys. Enable overrides then run runMigrationReplayAll().');
 }
+
+/**
+ * Cleans DIM_STAFF_ROSTER in a single pass:
+ *   1. Deduplicates rows by person_code — keeps the most-complete row per code.
+ *   2. Sets active=FALSE for staff whose effective_to is in the past.
+ *   3. Sets active=TRUE for staff with blank or future effective_to.
+ *
+ * Rewrites the sheet via clearSheet + appendRows through the DAL.
+ * Safe to re-run — idempotent.
+ */
+function runCleanStaffRoster() {
+  console.log('═══════════════════════════════════════════');
+  console.log('[MigrationRunner] runCleanStaffRoster');
+  console.log('═══════════════════════════════════════════');
+
+  var CALLER = 'MigrationReplayEngine';
+  var today  = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  function parseDate_(val) {
+    if (!val) return null;
+    if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+    var d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function countFilled_(obj) {
+    return Object.keys(obj).filter(function(k) {
+      var v = obj[k];
+      return v !== null && v !== undefined && String(v).trim() !== '';
+    }).length;
+  }
+
+  var rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: CALLER });
+  console.log('  Rows read: ' + rows.length);
+
+  // ── Step 1: Deduplicate ─────────────────────────────────────
+  // Keep the most-complete row per person_code. Blank person_code rows dropped.
+  var bestByCode   = {};
+  var bestCount    = {};
+  var codeOrder    = [];  // stable insertion order
+
+  rows.forEach(function(r) {
+    var code = String(r.person_code || '').trim();
+    if (!code) return;
+    var filled = countFilled_(r);
+    if (!bestByCode[code]) {
+      bestByCode[code] = r;
+      bestCount[code]  = filled;
+      codeOrder.push(code);
+    } else if (filled > bestCount[code]) {
+      bestByCode[code] = r;
+      bestCount[code]  = filled;
+    }
+  });
+
+  var dupesRemoved = rows.length - codeOrder.length;
+  console.log('  Unique staff: ' + codeOrder.length + ' | Duplicates removed: ' + dupesRemoved);
+
+  // ── Step 2: Fix active status ───────────────────────────────
+  var madeActive = 0, madeInactive = 0;
+  var cleaned = codeOrder.map(function(code) {
+    var r      = bestByCode[code];
+    var effTo  = parseDate_(r.effective_to);
+    var isActive;
+    if (!effTo) {
+      isActive = true;   // no leave date → still employed
+    } else {
+      isActive = effTo >= today;   // future leave date → still active
+    }
+    var wasActive = String(r.active || '').toUpperCase() === 'TRUE';
+    if (isActive && !wasActive) {
+      madeActive++;
+      return Object.assign({}, r, { active: 'TRUE' });
+    }
+    if (!isActive && wasActive) {
+      madeInactive++;
+      console.log('  Deactivating ' + code + ' (effective_to=' + r.effective_to + ')');
+      return Object.assign({}, r, { active: 'FALSE' });
+    }
+    return r;
+  });
+
+  console.log('  Active fixes: ' + madeActive + ' activated, ' + madeInactive + ' deactivated');
+
+  // ── Step 3: Rewrite sheet ───────────────────────────────────
+  console.log('  Clearing DIM_STAFF_ROSTER...');
+  DAL.clearSheet(Config.TABLES.DIM_STAFF_ROSTER);
+
+  console.log('  Writing ' + cleaned.length + ' rows...');
+  DAL.appendRows(Config.TABLES.DIM_STAFF_ROSTER, cleaned, { callerModule: CALLER });
+
+  console.log('─────────────────────────────────────────');
+  console.log('  ✅ Done.');
+  console.log('     Before: ' + rows.length + ' rows  →  After: ' + cleaned.length + ' rows');
+  console.log('     Dupes removed: ' + dupesRemoved);
+  console.log('     Deactivated:   ' + madeInactive);
+  console.log('     Activated:     ' + madeActive);
+  console.log('═══════════════════════════════════════════');
+}
