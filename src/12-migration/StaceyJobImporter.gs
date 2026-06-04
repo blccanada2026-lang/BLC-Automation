@@ -364,6 +364,62 @@ function runRebuildViewsAfterImport() {
 }
 
 /**
+ * Diagnostic — run this FIRST if runImportStaceyJobs() shows no output.
+ * Returns a short status string visible in the Apps Script editor return value area.
+ */
+function runTestStaceyAccess() {
+  var lines = [];
+  lines.push('=== StaceyJobImporter diagnostic ===');
+
+  // 1. Can we open the Stacey sheet?
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(STACEY_SHEET_ID_);
+    lines.push('✅ Opened sheet: ' + ss.getName());
+  } catch(e) {
+    lines.push('❌ Cannot open Stacey sheet: ' + e.message);
+    lines.push('   Fix: share the Stacey sheet with the account running this script,');
+    lines.push('   or run this from the same Google account that owns both sheets.');
+    var msg = lines.join('\n');
+    console.log(msg);
+    return msg;
+  }
+
+  // 2. List tabs
+  var tabs = ss.getSheets().map(function(s) { return s.getName(); });
+  lines.push('Tabs found: ' + tabs.join(', '));
+
+  // 3. Find job master tab
+  var sheet = findJobMasterSheet_(ss);
+  if (!sheet) {
+    lines.push('❌ No tab with Job_Number header found.');
+  } else {
+    lines.push('✅ Job master tab: "' + sheet.getName() + '"');
+    var lastRow = sheet.getLastRow();
+    lines.push('   Rows (inc. header): ' + lastRow);
+    if (lastRow > 1) {
+      var sample = sheet.getRange(2, 1, Math.min(3, lastRow - 1), sheet.getLastColumn()).getValues();
+      var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      var statusCol = headers.indexOf('Status');
+      lines.push('   Sample statuses (first 3 rows): ' +
+        sample.map(function(r){ return r[statusCol]; }).join(', '));
+    }
+  }
+
+  // 4. Can we read DIM_STAFF_ROSTER?
+  try {
+    var roster = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'StaceyJobImporter' });
+    lines.push('✅ DIM_STAFF_ROSTER: ' + (roster || []).length + ' staff rows');
+  } catch(e) {
+    lines.push('❌ DIM_STAFF_ROSTER read failed: ' + e.message);
+  }
+
+  var msg = lines.join('\n');
+  console.log(msg);
+  return msg;
+}
+
+/**
  * Step C — verifies the import result.
  * Reports: events written per period, unresolved names, VW row count.
  */
