@@ -836,3 +836,299 @@ function runDiagnoseQ1RatingRows() {
     console.log('  ' + code + ' -> ' + (roleMap[code] || '(not found)'));
   });
 }
+
+/**
+ * Diagnoses FACT_CLIENT_FEEDBACK — shows row count, period breakdown,
+ * and sample rows. Run this to check whether client feedback data exists
+ * and whether designer_code / period_id fields are populated correctly.
+ */
+function runDiagnoseClientFeedback() {
+  var rows;
+  try {
+    rows = DAL.readAll(Config.TABLES.FACT_CLIENT_FEEDBACK, { callerModule: 'QuarterlyBonusEngine' });
+  } catch (e) {
+    console.log('❌ Could not read FACT_CLIENT_FEEDBACK: ' + e.message);
+    return;
+  }
+
+  console.log('FACT_CLIENT_FEEDBACK — total rows: ' + rows.length);
+  if (rows.length === 0) {
+    console.log('  ⚠️  Table is empty — no client feedback has been recorded.');
+    return;
+  }
+
+  // Period breakdown
+  var byPeriod = {};
+  rows.forEach(function(r) {
+    var pid = String(r.period_id || '(blank)').trim();
+    if (!byPeriod[pid]) byPeriod[pid] = 0;
+    byPeriod[pid]++;
+  });
+  console.log('  Rows by period_id:');
+  Object.keys(byPeriod).sort().forEach(function(pid) {
+    console.log('    "' + pid + '": ' + byPeriod[pid] + ' rows');
+  });
+
+  // Field population check on last 3 rows
+  console.log('  Last 3 rows (field check):');
+  var sample = rows.slice(-3);
+  sample.forEach(function(r) {
+    console.log('    period_id="' + (r.period_id||'') + '"' +
+                ' | designer_code="' + (r.designer_code||'') + '"' +
+                ' | client_code="' + (r.client_code||'') + '"' +
+                ' | normalized_score="' + (r.normalized_score||'') + '"' +
+                ' | raw_score="' + (r.raw_score||'') + '"');
+  });
+
+  // Q1 2026 specific summary
+  var q1Months = ['2026-01','2026-02','2026-03'];
+  var q1Rows = rows.filter(function(r) {
+    return q1Months.indexOf(String(r.period_id || '').trim()) !== -1;
+  });
+  console.log('  Q1 2026 rows (period_id in 2026-01/02/03): ' + q1Rows.length);
+  if (q1Rows.length > 0) {
+    var blankDesigner = q1Rows.filter(function(r) { return !String(r.designer_code||'').trim(); }).length;
+    console.log('    Rows with blank designer_code: ' + blankDesigner);
+  }
+}
+
+/**
+ * Sends one HTML bonus letter per staff member to the CEO's inbox for review.
+ * Reads committed rows from FACT_QUARTERLY_BONUS for the given quarter.
+ * Only sends for CALCULATED rows with bonus_inr > 0.
+ *
+ * Run from the Apps Script editor. Emails land in the running account's inbox.
+ * The CEO can then forward each to HR for disbursement.
+ *
+ * @param {string} quarterPeriodId  e.g. '2026-Q1'
+ */
+function runSendBonusLetters(quarterPeriodId) {
+  quarterPeriodId = quarterPeriodId || '2026-Q1';
+  var recipientEmail = Session.getActiveUser().getEmail();
+
+  console.log('Sending bonus letters for ' + quarterPeriodId + ' to ' + recipientEmail);
+
+  // ── Build name + role lookup from roster ─────────────────────
+  var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'QuarterlyBonusEngine' });
+  var staffMap  = {};
+  staffRows.forEach(function(s) {
+    var code = String(s.person_code || '').trim();
+    if (code && !staffMap[code]) {
+      staffMap[code] = {
+        name:  String(s.display_name || s.name || code).trim(),
+        role:  String(s.role || '').trim(),
+        email: String(s.email || '').trim()
+      };
+    }
+  });
+
+  // ── Read committed bonus rows ─────────────────────────────────
+  var allRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: 'QuarterlyBonusEngine' });
+  var bonusRows = allRows.filter(function(r) {
+    var evType = String(r.event_type || '').trim();
+    return String(r.quarter_period_id || '').trim() === quarterPeriodId &&
+           (evType === 'QUARTERLY_BONUS' || evType === 'QUARTERLY_BONUS_AMENDMENT') &&
+           String(r.status || '').trim() === 'CALCULATED' &&
+           (parseFloat(r.bonus_inr) || 0) > 0;
+  });
+
+  // Deduplicate — keep latest row per person if multiple exist
+  var latestByCode = {};
+  bonusRows.forEach(function(r) {
+    var code = String(r.person_code || '').trim();
+    if (!code) return;
+    if (!latestByCode[code] ||
+        String(r.timestamp) > String(latestByCode[code].timestamp)) {
+      latestByCode[code] = r;
+    }
+  });
+
+  var codes = Object.keys(latestByCode);
+  console.log('Eligible staff to send: ' + codes.length);
+
+  if (codes.length === 0) {
+    console.log('⚠️  No CALCULATED rows found for ' + quarterPeriodId + '. Run runCommitQ1Bonus first.');
+    return;
+  }
+
+  var sent = 0;
+  codes.forEach(function(code) {
+    var row   = latestByCode[code];
+    var staff = staffMap[code] || { name: code, role: '', email: '' };
+
+    var bonusInr      = parseFloat(row.bonus_inr)      || 0;
+    var designHours   = parseFloat(row.design_hours)   || 0;
+    var clientScore   = parseFloat(row.client_score)   || 0;
+    var errorScore    = parseFloat(row.error_score)    || 0;
+    var ratingScore   = parseFloat(row.rating_score)   || 0;
+    var compositeScore= parseFloat(row.composite_score)|| 0;
+
+    var roleLabel = staff.role
+      .replace('_', ' ')
+      .replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+
+    var quarter = quarterPeriodId.split('-')[1] || quarterPeriodId;
+    var year    = quarterPeriodId.split('-')[0] || '';
+
+    var html = [
+      '<div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;color:#222;">',
+
+      // Header
+      '<div style="background:#1a3c6e;padding:24px 28px;border-radius:6px 6px 0 0;">',
+      '  <h2 style="margin:0;color:#fff;font-size:20px;letter-spacing:0.5px;">Blue Lotus Consulting Corporation</h2>',
+      '  <p style="margin:6px 0 0;color:#a8c4e8;font-size:13px;">Performance Bonus Statement</p>',
+      '</div>',
+
+      // Body
+      '<div style="border:1px solid #ddd;border-top:none;padding:28px;border-radius:0 0 6px 6px;">',
+      '  <p style="font-size:13px;color:#666;margin:0 0 18px;">',
+      '    ' + quarter + ' ' + year + ' &nbsp;|&nbsp; Issued ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd MMM yyyy'),
+      '  </p>',
+      '  <p style="font-size:15px;margin:0 0 6px;">Dear <strong>' + staff.name + '</strong>,</p>',
+      '  <p style="font-size:14px;line-height:1.6;margin:0 0 22px;">',
+      '    We are pleased to confirm your performance bonus for ' + quarter + ' ' + year + ',',
+      '    based on your hours worked and performance scores during this period.',
+      '  </p>',
+
+      // Score table
+      '  <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px;">',
+      '    <thead>',
+      '      <tr style="background:#f4f7fb;">',
+      '        <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #dde3ee;color:#1a3c6e;">Component</th>',
+      '        <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #dde3ee;color:#1a3c6e;">Score</th>',
+      '        <th style="text-align:right;padding:10px 12px;border-bottom:2px solid #dde3ee;color:#1a3c6e;">Weight</th>',
+      '      </tr>',
+      '    </thead>',
+      '    <tbody>',
+      '      <tr style="border-bottom:1px solid #eee;"><td style="padding:9px 12px;">Design Hours</td><td style="text-align:right;padding:9px 12px;">' + designHours.toFixed(2) + ' hrs</td><td style="text-align:right;padding:9px 12px;color:#888;">—</td></tr>',
+      '      <tr style="border-bottom:1px solid #eee;"><td style="padding:9px 12px;">Error Rate Score</td><td style="text-align:right;padding:9px 12px;">' + (errorScore * 100).toFixed(1) + '%</td><td style="text-align:right;padding:9px 12px;color:#555;">40%</td></tr>',
+      '      <tr style="border-bottom:1px solid #eee;"><td style="padding:9px 12px;">Performance Rating</td><td style="text-align:right;padding:9px 12px;">' + (ratingScore * 100).toFixed(1) + '%</td><td style="text-align:right;padding:9px 12px;color:#555;">30%</td></tr>',
+      '      <tr style="border-bottom:1px solid #eee;"><td style="padding:9px 12px;">Client Feedback</td><td style="text-align:right;padding:9px 12px;">' + (clientScore * 100).toFixed(1) + '%</td><td style="text-align:right;padding:9px 12px;color:#555;">30%</td></tr>',
+      '      <tr style="background:#f9f9f9;font-weight:bold;"><td style="padding:9px 12px;">Composite Score</td><td style="text-align:right;padding:9px 12px;">' + (compositeScore * 100).toFixed(2) + '%</td><td style="text-align:right;padding:9px 12px;color:#888;">—</td></tr>',
+      '    </tbody>',
+      '  </table>',
+
+      // Bonus callout
+      '  <div style="background:#eaf4ea;border-left:4px solid #2e7d32;padding:16px 20px;border-radius:4px;margin-bottom:24px;">',
+      '    <p style="margin:0;font-size:13px;color:#555;">Q' + quarter.replace('Q','') + ' ' + year + ' Performance Bonus</p>',
+      '    <p style="margin:6px 0 0;font-size:24px;font-weight:bold;color:#2e7d32;">₹' + bonusInr.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' INR</p>',
+      '  </div>',
+
+      // Staff info
+      '  <table style="font-size:13px;color:#555;margin-bottom:20px;">',
+      '    <tr><td style="padding:3px 16px 3px 0;font-weight:bold;">Name</td><td>' + staff.name + '</td></tr>',
+      '    <tr><td style="padding:3px 16px 3px 0;font-weight:bold;">Role</td><td>' + roleLabel + '</td></tr>',
+      '    <tr><td style="padding:3px 16px 3px 0;font-weight:bold;">Period</td><td>' + quarter + ' ' + year + ' (Jan – Mar)</td></tr>',
+      '  </table>',
+
+      '  <p style="font-size:13px;color:#888;border-top:1px solid #eee;padding-top:14px;margin-bottom:0;">',
+      '    This bonus will be processed with the next payroll cycle.',
+      '    Please contact HR if you have any questions.',
+      '  </p>',
+      '  <p style="font-size:11px;color:#bbb;margin:8px 0 0;">FOR HR USE ONLY — Please do not forward until verified.</p>',
+      '</div>',
+      '</div>'
+    ].join('\n');
+
+    var subject = '[BLC] Q' + quarter.replace('Q','') + ' ' + year +
+                  ' Bonus Letter — ' + staff.name + ' (' + code + ')';
+
+    GmailApp.sendEmail(recipientEmail, subject, '', { htmlBody: html });
+    sent++;
+    console.log('  ✓ Sent: ' + staff.name + ' (' + code + ') — ₹' + bonusInr.toFixed(2));
+  });
+
+  console.log('─────────────────────────────────────────');
+  console.log('✅ Done. ' + sent + ' bonus letters sent to ' + recipientEmail);
+}
+
+/** Shortcut runner — sends Q1 2026 bonus letters. */
+function runSendQ1BonusLetters() {
+  runSendBonusLetters('2026-Q1');
+}
+
+/**
+ * Writes QUARTERLY_BONUS_AMENDMENT rows for staff whose Q1 ledger entry is
+ * still PENDING (from an earlier partial run before ratings were complete).
+ * Idempotent — uses QB_AMEND|{code}|{period} idempotency key.
+ * Run once, then re-run runSendQ1BonusLetters to pick up all 16 staff.
+ */
+function runAmendQ1BonusLedger() {
+  var actorEmail = Session.getActiveUser().getEmail();
+  var qPid       = '2026-Q1';
+  var CALLER     = 'QuarterlyBonusEngine';
+
+  // Fresh calculation
+  var preview = QuarterlyBonusEngine.previewQuarterlyBonus(actorEmail, 'Q1', 2026);
+
+  // Read current ledger state
+  var existing = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: CALLER });
+
+  // Which person_codes already have a CALCULATED row?
+  var hasCalculated = {};
+  existing.forEach(function(r) {
+    if (String(r.status || '').trim() === 'CALCULATED') {
+      hasCalculated[String(r.person_code || '').trim()] = true;
+    }
+  });
+
+  // Which amendment keys already exist?
+  var existingAmendKeys = {};
+  existing.forEach(function(r) {
+    var k = String(r.idempotency_key || '').trim();
+    if (k.indexOf('QB_AMEND|') === 0) existingAmendKeys[k] = true;
+  });
+
+  var amended = 0, alreadyDone = 0;
+  preview.forEach(function(row) {
+    if (row.status !== 'CALCULATED') return;
+    if ((parseFloat(row.bonus_inr) || 0) === 0) return;   // skip ₹0 rows
+    if (hasCalculated[row.person_code]) return;            // already has CALCULATED
+
+    var amendKey = 'QB_AMEND|' + row.person_code + '|' + qPid;
+    if (existingAmendKeys[amendKey]) { alreadyDone++; return; }
+
+    DAL.appendRow(Config.TABLES.FACT_QUARTERLY_BONUS, {
+      bonus_id:          Identifiers.generateId(),
+      event_type:        'QUARTERLY_BONUS_AMENDMENT',
+      person_code:       row.person_code,
+      quarter_period_id: qPid,
+      design_hours:      row.design_hours,
+      client_score:      row.client_score   || 0,
+      error_score:       row.error_score    || 0,
+      rating_score:      row.rating_score   || 0,
+      composite_score:   row.composite_score|| 0,
+      bonus_inr:         row.bonus_inr      || 0,
+      status:            'CALCULATED',
+      pending_reason:    '',
+      actor_email:       actorEmail,
+      timestamp:         new Date().toISOString(),
+      idempotency_key:   amendKey
+    }, { callerModule: CALLER });
+
+    amended++;
+    console.log('  Amended: ' + row.person_code + ' — ₹' + row.bonus_inr);
+  });
+
+  console.log('Done. ' + amended + ' amendment rows written, ' + alreadyDone + ' already amended.');
+}
+
+/** Dumps all rows from FACT_QUARTERLY_BONUS to diagnose field names and filter mismatches. */
+function runDiagnoseQ1BonusLedger() {
+  var rows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: 'QuarterlyBonusEngine' });
+  console.log('FACT_QUARTERLY_BONUS — total rows: ' + rows.length);
+  if (rows.length === 0) { console.log('  ⚠️  Empty.'); return; }
+  console.log('  Sample row (field names + values):');
+  var sample = rows[0];
+  Object.keys(sample).forEach(function(k) {
+    console.log('    ' + k + ' = "' + sample[k] + '"');
+  });
+  console.log('  All rows (person_code | quarter_period_id | event_type | status | bonus_inr):');
+  rows.forEach(function(r) {
+    console.log('    ' + (r.person_code||'?') +
+                ' | qpid="' + (r.quarter_period_id||'') + '"' +
+                ' | type="' + (r.event_type||'') + '"' +
+                ' | status="' + (r.status||'') + '"' +
+                ' | bonus=' + (r.bonus_inr||''));
+  });
+}
