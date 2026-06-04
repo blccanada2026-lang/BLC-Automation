@@ -348,3 +348,50 @@ function runDisableOverridesJune() {
   MigrationConfig.disableOverrides();
   console.log('  ✅ Overrides DISABLED. System back in production mode.');
 }
+
+/**
+ * Status check — run this to see if June hours are already imported.
+ * Shows MIGRATION_RAW_IMPORT batch counts and FACT_WORK_LOGS|2026-06 row count.
+ */
+function runCheckJuneStatus() {
+  console.log('=== June Work Log Status ===');
+
+  // Check MIGRATION_RAW_IMPORT for all batches
+  try {
+    var raw = DAL.readAll(MigrationConfig.TABLES.RAW_IMPORT, { callerModule: 'JuneWorkLogImporter' });
+    var byBatch = {};
+    (raw || []).forEach(function(r) {
+      var b = String(r.migration_batch || 'UNKNOWN');
+      byBatch[b] = (byBatch[b] || 0) + 1;
+    });
+    console.log('MIGRATION_RAW_IMPORT by batch:');
+    Object.keys(byBatch).sort().forEach(function(b) {
+      console.log('  ' + b + ': ' + byBatch[b] + ' rows');
+    });
+    console.log('  (Total: ' + (raw || []).length + ' rows)');
+  } catch(e) {
+    console.log('  Could not read MIGRATION_RAW_IMPORT: ' + e.message);
+  }
+
+  // Check FACT_WORK_LOGS|2026-06
+  try {
+    var logs = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+      callerModule: 'JuneWorkLogImporter',
+      periodId:     '2026-06'
+    });
+    console.log('FACT_WORK_LOGS|2026-06: ' + (logs || []).length + ' rows');
+  } catch(e) {
+    console.log('FACT_WORK_LOGS|2026-06: ' + (e.code === 'SHEET_NOT_FOUND' ? '0 rows (tab not created yet)' : e.message));
+  }
+
+  // Check FACT_WORK_LOGS|2026-05 for reference
+  try {
+    var may = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+      callerModule: 'JuneWorkLogImporter',
+      periodId:     '2026-05'
+    });
+    console.log('FACT_WORK_LOGS|2026-05: ' + (may || []).length + ' rows (reference)');
+  } catch(e) { /* skip */ }
+
+  console.log('===========================');
+}
