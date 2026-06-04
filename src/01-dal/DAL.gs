@@ -114,7 +114,7 @@ var DAL = (function () {
     // ── View tables (rebuilt projections) ───────────────────
     'VW_JOB_CURRENT_STATE':  ['EventReplayEngine', 'JobCreateHandler', 'JobAssignHandler', 'JobStartHandler',
                               'JobHoldHandler', 'JobResumeHandler', 'ClientReturnHandler', 'QCHandler',
-                              'BillingEngine', 'JobUpdateHandler'],
+                              'BillingEngine', 'JobUpdateHandler', 'StaceyJobImporter'],
     'VW_DESIGNER_WORKLOAD':  ['EventReplayEngine', 'ReportingEngine'],
 
     // ── Mart tables (reporting aggregates) ──────────────────
