@@ -17,6 +17,7 @@
 | Matix SK Jan–Apr 2026 recon | ✅ Complete | 554 entries, 1205.25 hrs — MatixReconFiller_2026.gs |
 | Alberta Truss Mar–Apr 2026 recon | ✅ Complete | 33 entries, 98 hrs — AlbertaTrussReconFiller_2026.gs |
 | May 2026 timesheets (all clients) | ✅ Complete | 1997 FACT rows: 1081 (May 1–15) + 560 (May 16–31) + 356 no-date events — BATCH-002 (427 raw rows) confirmed in MIGRATION_RAW_IMPORT |
+| Active job import (StaceyJobImporter) | ✅ Complete | 168 active jobs → 443 FACT_JOB_EVENTS (24 Mar + 82 Apr + 200 May + 137 Jun). VW_JOB_CURRENT_STATE: 51 IN_PROGRESS + 117 QC_REVIEW. 1 test job row still in VW — delete manually. |
 
 ---
 
@@ -24,3 +25,4 @@
 <!-- Append a line here at the end of each migration session -->
 <!-- Format: YYYY-MM-DD | What was done | What's next | Dirty files? -->
 2026-06-04 | Verified May 2026 already complete (1997 FACT rows, BATCH-002 done). Installed runMartRefresh trigger (4/4 triggers now live). Committed QuarterlyBonusEngine bonus letter/amendment runners. Pushed to PROD via clasp. | Next: CEO portal verification + send Q1 bonus letters (runSendQ1BonusLetters) | Clean
+2026-06-04 | Built and ran StaceyJobImporter.gs. 168 active jobs imported → 443 FACT_JOB_EVENTS. VW_JOB_CURRENT_STATE written directly (EventReplayEngine bypass due to 6min timeout). Fixes: DAL write permissions, partition creation, designer alias (Bittuu), rebuildJobViewOnly. | Next: delete test job row from VW manually, verify portal, build JuneWorkLogImporter (BATCH-004) | Clean
