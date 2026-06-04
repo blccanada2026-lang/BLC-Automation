@@ -48,6 +48,7 @@ var INTAKE_FORM_ID = '11MmM7Cux1hBaBB14X9-HcG-8roPgPDK8s0qOJrisuEA';
 var TRIGGER_FN_QUEUE    = 'runQueueProcessor';
 var TRIGGER_FN_INTAKE   = 'onIntakeFormSubmit';
 var TRIGGER_FN_HEALTH   = 'runDailyHealthCheck';
+var TRIGGER_FN_MART     = 'runMartRefresh';
 
 // ============================================================
 // INTERNAL HELPERS
@@ -175,6 +176,28 @@ function installHealthCheckTrigger() {
 }
 
 // ============================================================
+// INSTALL: MART REFRESH TRIGGER
+// ============================================================
+
+/**
+ * Installs the nightly MART refresh trigger (2am, every day).
+ * Idempotent — skips if trigger already exists.
+ */
+function installMartRefreshTrigger() {
+  console.log('[Triggers] Installing nightly MART refresh trigger…');
+  if (triggerExists_(TRIGGER_FN_MART)) {
+    console.log('  ✅ Already installed — skipping.');
+    return;
+  }
+  ScriptApp.newTrigger(TRIGGER_FN_MART)
+    .timeBased()
+    .atHour(2)
+    .everyDays(1)
+    .create();
+  console.log('  ➕ Installed: ' + TRIGGER_FN_MART + ' nightly at 2am');
+}
+
+// ============================================================
 // LIST TRIGGERS
 // ============================================================
 
@@ -226,6 +249,14 @@ function runQueueProcessor() {
   QueueProcessor.processQueue();
 }
 
+/**
+ * MART refresh nightly trigger entry point.
+ * DO NOT RENAME — this exact name is registered as the trigger handler.
+ */
+function runMartRefresh() {
+  ReportingEngine.refreshDashboardSystem();
+}
+
 // ============================================================
 // PUBLIC ENTRY POINTS (visible in Apps Script editor)
 // ============================================================
@@ -265,6 +296,17 @@ function runInstallHealthCheckTrigger() {
   console.log('BLC Nexus — Install Health Check Trigger');
   console.log('═══════════════════════════════════════════');
   installHealthCheckTrigger();
+  console.log('═══════════════════════════════════════════');
+}
+
+/**
+ * Public entry point — run once to install the nightly MART refresh.
+ */
+function runInstallMartRefreshTrigger() {
+  console.log('═══════════════════════════════════════════');
+  console.log('BLC Nexus — Install MART Refresh Trigger');
+  console.log('═══════════════════════════════════════════');
+  installMartRefreshTrigger();
   console.log('═══════════════════════════════════════════');
 }
 
