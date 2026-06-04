@@ -360,21 +360,79 @@ function runImportStaceyJobs() {
   console.log('═══════════════════════════════════════════');
 }
 
+// Stacey status → VW_JOB_CURRENT_STATE current_state value
+var VW_STATE_MAP_ = {
+  'Picked Up':        'IN_PROGRESS',
+  'In Design':        'IN_PROGRESS',
+  'Submitted For QC': 'QC_REVIEW',
+  'In QC':            'QC_REVIEW',
+  'On Hold':          'ON_HOLD'
+};
+
 /**
- * Step B — rebuilds VW_JOB_CURRENT_STATE from FACT_JOB_EVENTS.
- * Run after runImportStaceyJobs() completes.
+ * Step B — writes VW_JOB_CURRENT_STATE rows directly from Stacey job data.
+ * Faster than EventReplayEngine.rebuildAllViews() which times out on this
+ * spreadsheet due to the large FACT_WORK_LOGS dataset.
+ * Appends to the VW (does not clear) — delete test job row manually afterward.
  */
 function runRebuildViewsAfterImport() {
   console.log('═══════════════════════════════════════════');
-  console.log('[StaceyJobImporter] STEP B: rebuild VW_JOB_CURRENT_STATE');
+  console.log('[StaceyJobImporter] STEP B: write VW_JOB_CURRENT_STATE');
   console.log('═══════════════════════════════════════════');
+
+  var ss;
   try {
-    var result = EventReplayEngine.rebuildJobViewOnly(STACEY_RUNNER_EMAIL_);
-    console.log('  ✅ VW_JOB_CURRENT_STATE rebuilt: ' + result.written + ' rows in ' + result.elapsed_ms + 'ms');
-    console.log('  Open the portal to verify job list.');
+    ss = SpreadsheetApp.openById(STACEY_SHEET_ID_);
   } catch(e) {
-    console.log('  ❌ Rebuild failed: ' + e.message);
-    console.log('  Run portal_rebuildViews() from the portal (CEO dashboard) instead.');
+    console.log('  ❌ Cannot open Stacey sheet: ' + e.message);
+    return;
+  }
+
+  var sheet = findJobMasterSheet_(ss);
+  if (!sheet) {
+    console.log('  ❌ Job master tab not found.');
+    return;
+  }
+
+  var jobs   = readActiveStaceyJobs_(sheet);
+  var lookup = buildJobStaffLookup_();
+  var now    = new Date().toISOString();
+  var vwRows = [];
+
+  jobs.forEach(function(job) {
+    var personCode   = resolveJobDesigner_(job.designer_name, lookup);
+    var currentState = VW_STATE_MAP_[job.status] || 'IN_PROGRESS';
+    var prevState    = currentState === 'ON_HOLD' ? 'IN_PROGRESS' : '';
+    var periodId     = toPeriodId_(job.allocated_date || job.start_date || '');
+    var createdAt    = job.allocated_date ? job.allocated_date + 'T00:00:00.000Z' : now;
+    var updatedAt    = job.start_date     ? job.start_date     + 'T00:00:00.000Z' : now;
+
+    vwRows.push({
+      job_number:          job.job_number,
+      client_code:         job.client_code,
+      job_type:            job.product_type,
+      product_code:        '',
+      quantity:            1,
+      current_state:       currentState,
+      prev_state:          prevState,
+      allocated_to:        personCode || '',
+      period_id:           periodId,
+      created_at:          createdAt,
+      updated_at:          updatedAt,
+      rework_cycle:        0,
+      client_return_count: 0
+    });
+  });
+
+  try {
+    DAL.appendRows(Config.TABLES.VW_JOB_CURRENT_STATE, vwRows, {
+      callerModule: 'StaceyJobImporter'
+    });
+    console.log('  ✅ Written ' + vwRows.length + ' rows to VW_JOB_CURRENT_STATE');
+    console.log('  ⚠️  Test job row (COMPLETED_BILLABLE) still present — delete manually from sheet tab.');
+    console.log('  Next: run runVerifyStaceyImport()');
+  } catch(e) {
+    console.log('  ❌ VW write failed: ' + e.message);
   }
   console.log('═══════════════════════════════════════════');
 }
