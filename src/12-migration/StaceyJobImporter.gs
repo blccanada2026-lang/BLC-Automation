@@ -540,3 +540,151 @@ function runVerifyStaceyImport() {
 
   console.log('═══════════════════════════════════════════');
 }
+
+// ── Auto-sync (parallel running: June 4 → June 16) ────────
+//
+// Reads Stacey MASTER_JOB_DATABASE every 30 minutes and:
+//   1. Writes FACT_JOB_EVENTS for any new or status-progressed jobs
+//   2. Clears and rewrites VW_JOB_CURRENT_STATE from live Stacey data
+//
+// Install:  runInstallStaceySyncTrigger()
+// Stop:     runRemoveStaceySyncTrigger()   ← run BEFORE June 16 cutover
+
+/**
+ * Core sync logic. Called by the clock trigger and runStaceySyncManual().
+ */
+function syncJobsFromStacey_() {
+  var startMs = Date.now();
+
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(STACEY_SHEET_ID_);
+  } catch(e) {
+    console.log('[StaceySync] ❌ Cannot open Stacey sheet: ' + e.message);
+    return;
+  }
+
+  var sheet = findJobMasterSheet_(ss);
+  if (!sheet) {
+    console.log('[StaceySync] ❌ Job master tab not found.');
+    return;
+  }
+
+  var jobs = readActiveStaceyJobs_(sheet);
+  if (jobs.length === 0) {
+    console.log('[StaceySync] No active jobs found.');
+    return;
+  }
+
+  // Ensure FACT_JOB_EVENTS partitions for all referenced periods
+  var periodsNeeded = {};
+  jobs.forEach(function(job) {
+    periodsNeeded[toPeriodId_(job.allocated_date || job.start_date || '')] = true;
+  });
+  Object.keys(periodsNeeded).sort().forEach(function(pid) {
+    try {
+      DAL.ensurePartition(Config.TABLES.FACT_JOB_EVENTS, pid, 'StaceyJobImporter');
+    } catch(e) {
+      console.log('[StaceySync] ⚠️ Partition ' + pid + ': ' + e.message);
+    }
+  });
+
+  // Write FACT_JOB_EVENTS for new/progressed jobs (idempotent)
+  var existingKeys = loadExistingJobKeys_();
+  var lookup       = buildJobStaffLookup_();
+  var totalWritten = 0, totalSkipped = 0, unresolved = [];
+
+  jobs.forEach(function(job) {
+    var personCode = resolveJobDesigner_(job.designer_name, lookup);
+    if (!personCode) unresolved.push(job.job_number + ': "' + job.designer_name + '"');
+    var r = writeJobEvents_(job, personCode, existingKeys);
+    totalWritten += r.written;
+    totalSkipped += r.skipped;
+  });
+
+  // Clear VW and rewrite from current Stacey state
+  var now    = new Date().toISOString();
+  var vwRows = jobs.map(function(job) {
+    var personCode   = resolveJobDesigner_(job.designer_name, lookup);
+    var currentState = VW_STATE_MAP_[job.status] || 'IN_PROGRESS';
+    var periodId     = toPeriodId_(job.allocated_date || job.start_date || '');
+    return {
+      job_number:          job.job_number,
+      client_code:         job.client_code,
+      job_type:            job.product_type,
+      product_code:        '',
+      quantity:            1,
+      current_state:       currentState,
+      prev_state:          currentState === 'ON_HOLD' ? 'IN_PROGRESS' : '',
+      allocated_to:        personCode || '',
+      period_id:           periodId,
+      created_at:          job.allocated_date ? job.allocated_date + 'T00:00:00.000Z' : now,
+      updated_at:          job.start_date     ? job.start_date     + 'T00:00:00.000Z' : now,
+      rework_cycle:        0,
+      client_return_count: 0
+    };
+  });
+
+  DAL.clearSheet(Config.TABLES.VW_JOB_CURRENT_STATE);
+  DAL.appendRows(Config.TABLES.VW_JOB_CURRENT_STATE, vwRows, { callerModule: 'StaceyJobImporter' });
+
+  var elapsed = Math.round((Date.now() - startMs) / 1000);
+  console.log('[StaceySync] ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'HH:mm') +
+              ' | jobs=' + jobs.length +
+              ' | events +' + totalWritten + ' (' + totalSkipped + ' skipped)' +
+              ' | VW=' + vwRows.length + ' rows' +
+              ' | ' + elapsed + 's' +
+              (unresolved.length ? ' | ⚠️ unresolved=' + unresolved.join(', ') : ''));
+}
+
+/**
+ * Clock trigger entry point — called every 30 minutes.
+ * Do not rename: trigger is keyed to this exact function name.
+ */
+function runStaceySyncJob() {
+  try {
+    syncJobsFromStacey_();
+  } catch(e) {
+    console.log('[StaceySync] ❌ ' + e.message);
+  }
+}
+
+/**
+ * Manual test run — verify sync works before installing the trigger.
+ */
+function runStaceySyncManual() {
+  console.log('═══════════════════════════════════════════');
+  console.log('[StaceySync] Manual sync');
+  console.log('═══════════════════════════════════════════');
+  syncJobsFromStacey_();
+  console.log('═══════════════════════════════════════════');
+}
+
+/**
+ * Installs a 30-minute clock trigger for runStaceySyncJob.
+ * Idempotent — removes any existing trigger first.
+ */
+function runInstallStaceySyncTrigger() {
+  var FN = 'runStaceySyncJob';
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === FN) ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger(FN).timeBased().everyMinutes(30).create();
+  console.log('✅ Installed: ' + FN + ' every 30 minutes.');
+  console.log('   Run runRemoveStaceySyncTrigger() on June 16 before portal cutover.');
+}
+
+/**
+ * Removes the Stacey sync trigger.
+ * Run this on June 16 BEFORE telling designers to use the portal.
+ */
+function runRemoveStaceySyncTrigger() {
+  var FN = 'runStaceySyncJob';
+  var removed = 0;
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === FN) { ScriptApp.deleteTrigger(t); removed++; }
+  });
+  console.log(removed > 0
+    ? '✅ Removed ' + removed + ' trigger(s). Stacey sync stopped.'
+    : '⚠️  No ' + FN + ' trigger found — already removed.');
+}
