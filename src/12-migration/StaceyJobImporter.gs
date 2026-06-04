@@ -48,7 +48,8 @@ var JOB_NAME_ALIASES_ = {
   'pabitra gosh': 'PBG',
   'vani kv':      'VKV',
   'savvy nath':   'SNA',
-  'bittu dalui':  'BTD'
+  'bittu dalui':  'BTD',
+  'bittuu dalui': 'BTD'
 };
 
 // ── Private helpers ────────────────────────────────────────
@@ -312,6 +313,21 @@ function runImportStaceyJobs() {
     console.log('  ⚠️  No active jobs found. Check status values in Stacey sheet.');
     return;
   }
+
+  // Ensure FACT_JOB_EVENTS partitions exist for every period referenced by active jobs
+  var periodsNeeded = {};
+  jobs.forEach(function(job) {
+    var pid = toPeriodId_(job.allocated_date || job.start_date || '');
+    periodsNeeded[pid] = true;
+  });
+  Object.keys(periodsNeeded).sort().forEach(function(pid) {
+    try {
+      var r = DAL.ensurePartition(Config.TABLES.FACT_JOB_EVENTS, pid, 'StaceyJobImporter');
+      console.log('  Partition FACT_JOB_EVENTS|' + pid + (r.created ? ' → created' : ' → already exists'));
+    } catch(e) {
+      console.log('  ⚠️  Could not ensure partition ' + pid + ': ' + e.message);
+    }
+  });
 
   // Build staff lookup
   var lookup       = buildJobStaffLookup_();
