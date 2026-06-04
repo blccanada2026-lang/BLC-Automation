@@ -129,7 +129,7 @@ var DAL = (function () {
     // Written exclusively during the Stacey V2 → Nexus V3 migration.
     // Raw import layer (Layer 1), normalised staging (Layer 2),
     // and migration audit trail.
-    'MIGRATION_RAW_IMPORT':  ['MigrationRawImporter', 'MayTimesheetImporter', 'Q1TimesheetImporter'],
+    'MIGRATION_RAW_IMPORT':  ['MigrationRawImporter', 'MayTimesheetImporter', 'Q1TimesheetImporter', 'JuneWorkLogImporter'],
     'MIGRATION_NORMALIZED':  ['MigrationNormalizer', 'MigrationReplayEngine', 'MigrationJobCorrections', 'MigrationReconciler'],
     'MIGRATION_AUDIT_LOG':   ['MigrationRawImporter', 'MigrationNormalizer',
                               'MigrationReplayEngine', 'MigrationReconciler'],
