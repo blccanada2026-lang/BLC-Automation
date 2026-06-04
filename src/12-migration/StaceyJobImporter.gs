@@ -369,8 +369,8 @@ function runRebuildViewsAfterImport() {
   console.log('[StaceyJobImporter] STEP B: rebuild VW_JOB_CURRENT_STATE');
   console.log('═══════════════════════════════════════════');
   try {
-    var result = EventReplayEngine.rebuildAllViews(STACEY_RUNNER_EMAIL_);
-    console.log('  ✅ Views rebuilt: ' + JSON.stringify(result));
+    var result = EventReplayEngine.rebuildJobViewOnly(STACEY_RUNNER_EMAIL_);
+    console.log('  ✅ VW_JOB_CURRENT_STATE rebuilt: ' + result.written + ' rows in ' + result.elapsed_ms + 'ms');
     console.log('  Open the portal to verify job list.');
   } catch(e) {
     console.log('  ❌ Rebuild failed: ' + e.message);

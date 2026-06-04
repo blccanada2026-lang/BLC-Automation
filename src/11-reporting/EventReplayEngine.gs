@@ -370,8 +370,29 @@ var EventReplayEngine = (function () {
     return rebuildAllViews_(actorEmail);
   }
 
+  /**
+   * Rebuilds only VW_JOB_CURRENT_STATE — skips VW_DESIGNER_WORKLOAD.
+   * Use after migration imports where the workload view rebuild would
+   * time out due to the large FACT_WORK_LOGS dataset.
+   * CEO only.
+   *
+   * @param {string} actorEmail
+   * @returns {{ written: number, cleared: number, partial: boolean, elapsed_ms: number }}
+   */
+  function rebuildJobViewOnly(actorEmail) {
+    var actor = RBAC.resolveActor(actorEmail);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_RUN);
+    RBAC.enforceFinancialAccess(actor);
+    var startMs = Date.now();
+    var result  = rebuildJobView_();
+    result.elapsed_ms = Date.now() - startMs;
+    Logger.info('REPLAY_JOB_VIEW_ONLY', { module: MODULE, elapsed_ms: result.elapsed_ms });
+    return result;
+  }
+
   return {
-    rebuildAllViews: rebuildAllViews
+    rebuildAllViews:   rebuildAllViews,
+    rebuildJobViewOnly: rebuildJobViewOnly
   };
 
 })();
