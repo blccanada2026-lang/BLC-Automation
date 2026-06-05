@@ -196,6 +196,24 @@
     #denied-view h2 { font-size: 20px; margin-bottom: 8px; }
     #denied-view p  { color: var(--c-muted); font-size: 13px; margin-top: 8px; }
 
+    /* ── Login ──────────────────────────────────────────── */
+    #login-view {
+      display: none; max-width: 400px; margin: 80px auto; text-align: center;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: var(--radius); padding: 40px; box-shadow: var(--shadow);
+    }
+    #login-view .icon { font-size: 48px; display: block; margin-bottom: 16px; }
+    #login-view h2 { font-size: 20px; margin-bottom: 8px; }
+    #login-view p  { color: var(--c-muted); font-size: 13px; margin: 8px 0 20px; }
+    #login-view input[type=email] {
+      width: 100%; padding: 10px 12px; border: 1px solid var(--c-border);
+      border-radius: 6px; font-size: 14px; box-sizing: border-box; margin-bottom: 12px;
+      outline: none;
+    }
+    #login-view input[type=email]:focus { border-color: var(--c-secondary); }
+    #login-view button { width: 100%; }
+    #login-error { color: #ef4444; font-size: 13px; margin-top: 10px; display: none; }
+
     /* ── Loading overlay ───────────────────────────────── */
     #loading { position: fixed; inset: 0; background: rgba(255,255,255,.85);
                display: flex; align-items: center; justify-content: center;
@@ -258,6 +276,16 @@
   <p>Your account is not registered in the BLC staff roster.</p>
   <p>Contact your system administrator to request access.</p>
   <p id="denied-email" style="font-size:12px; color:#94a3b8; margin-top:12px;"></p>
+</div>
+
+<!-- ── Login ─────────────────────────────────────────────── -->
+<div id="login-view">
+  <span class="icon">👤</span>
+  <h2>BLC Portal</h2>
+  <p>Enter your registered email address to sign in.</p>
+  <input type="email" id="login-email" placeholder="you@gmail.com" onkeydown="if(event.key==='Enter')submitLogin()">
+  <button class="btn-primary" onclick="submitLogin()">Sign In</button>
+  <p id="login-error"></p>
 </div>
 
 <!-- ── Main Content ──────────────────────────────────────── -->
@@ -1027,6 +1055,30 @@ function loadData() {
     .portal_getViewData();
 }
 
+function submitLogin() {
+  var email = (document.getElementById('login-email').value || '').trim().toLowerCase();
+  var errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  if (!email) { errEl.textContent = 'Please enter your email.'; errEl.style.display = 'block'; return; }
+  document.getElementById('login-view').style.display = 'none';
+  showLoading(true);
+  google.script.run
+    .withSuccessHandler(function(jsonStr) {
+      var data;
+      try { data = JSON.parse(jsonStr); } catch(e) { onDataError(e); return; }
+      if (data.actor && data.actor.role === 'UNKNOWN') {
+        showLoading(false);
+        document.getElementById('login-view').style.display = 'block';
+        errEl.textContent = 'Email not found in staff roster. Check spelling or contact admin.';
+        errEl.style.display = 'block';
+        return;
+      }
+      onDataLoaded(jsonStr);
+    })
+    .withFailureHandler(onDataError)
+    .portal_getViewDataWithEmail(email);
+}
+
 function onDataLoaded(jsonStr) {
   try { _data = JSON.parse(jsonStr); }
   catch (e) { onDataError(e); return; }
@@ -1035,8 +1087,14 @@ function onDataLoaded(jsonStr) {
 
   if (actor.role === 'UNKNOWN') {
     showLoading(false);
-    document.getElementById('denied-view').style.display = 'block';
-    document.getElementById('denied-email').textContent = actor.email;
+    if (!actor.email) {
+      // Session.getActiveUser() returned '' — prompt for email manually
+      document.getElementById('login-view').style.display = 'block';
+      document.getElementById('login-email').focus();
+    } else {
+      document.getElementById('denied-view').style.display = 'block';
+      document.getElementById('denied-email').textContent = actor.email;
+    }
     return;
   }
 

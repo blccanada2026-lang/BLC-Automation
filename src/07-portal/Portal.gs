@@ -85,6 +85,18 @@ function portal_getViewData() {
   return PortalData.getViewData(email);
 }
 
+/**
+ * Called when Session.getActiveUser().getEmail() returns '' (external Gmail users
+ * in 'Execute as: Me' deployments). The login form in PortalView.html collects
+ * the email manually and calls this function instead.
+ *
+ * @param {string} email  Email entered by the user in the login form
+ * @returns {string}  JSON-encoded view data (same shape as portal_getViewData)
+ */
+function portal_getViewDataWithEmail(email) {
+  return PortalData.getViewData(email || '');
+}
+
 // ============================================================
 // portal_submitAction — submits a job action to the queue
 // ============================================================
