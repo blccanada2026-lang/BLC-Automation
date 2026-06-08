@@ -14,7 +14,7 @@
 //            seedTestStaff()
 //
 // HOW TO RUN:
-//   runV3HandlerTests()  — all 7 handler suites, aggregate summary
+//   runV3HandlerTests()  — all 10 handler suites, aggregate summary
 // ============================================================
 
 // ── Suite-wide constants ──────────────────────────────────────
@@ -206,10 +206,73 @@ function thSetupOnHoldJob_(tag) {
   return jn;
 }
 
+/**
+ * Creates, allocates, starts, and submits a job for QC review → QC_REVIEW.
+ * Chains on thSetupInProgressJob_() then drives Flow A.
+ * Starting state for QCHandler Flow B tests and QCReassignHandler tests.
+ *
+ * @param {string=} tag
+ * @returns {string|null}
+ */
+function thSetupQCReviewJob_(tag) {
+  var jn = thSetupInProgressJob_(tag);
+  if (!jn) return null;
+
+  var r = IntakeService.processSubmission({
+    formType:       Config.FORM_TYPES.QC_SUBMIT,
+    submitterEmail: TH_DESIGNER_EMAIL,
+    payload:        { job_number: jn, notes: 'th-setup qc-review' + (tag ? ':' + tag : '') },
+    source:         'TEST'
+  });
+  if (!r.ok) { console.log('  [th] QC_SUBMIT (Flow A) failed'); return null; }
+  processQueueFresh_();
+
+  var vw = StateMachine.getJobView(jn);
+  if (!vw || vw.current_state !== Config.STATES.QC_REVIEW) {
+    console.log('  [th] Expected QC_REVIEW, got: ' + (vw ? vw.current_state : 'null'));
+    return null;
+  }
+  return jn;
+}
+
+/**
+ * Creates a job and drives it to MINOR_FIX state.
+ * Chains on thSetupQCReviewJob_() then submits MINOR_REWORK from the QC actor.
+ * Starting state for QCHandler Flow C (CLIENT_SENT) tests.
+ *
+ * @param {string=} tag
+ * @returns {string|null}
+ */
+function thSetupMinorFixJob_(tag) {
+  var jn = thSetupQCReviewJob_(tag);
+  if (!jn) return null;
+
+  var r = IntakeService.processSubmission({
+    formType:       Config.FORM_TYPES.QC_SUBMIT,
+    submitterEmail: TH_QC_EMAIL,
+    payload: {
+      job_number:   jn,
+      qc_result:    'MINOR_REWORK',
+      rework_notes: 'th-setup minor-fix' + (tag ? ':' + tag : ''),
+      notes:        'setup helper — drive to MINOR_FIX'
+    },
+    source: 'TEST'
+  });
+  if (!r.ok) { console.log('  [th] QC_SUBMIT (MINOR_REWORK) failed'); return null; }
+  processQueueFresh_();
+
+  var vw = StateMachine.getJobView(jn);
+  if (!vw || vw.current_state !== Config.STATES.MINOR_FIX) {
+    console.log('  [th] Expected MINOR_FIX, got: ' + (vw ? vw.current_state : 'null'));
+    return null;
+  }
+  return jn;
+}
+
 // ── Aggregate V3 runner ───────────────────────────────────────
 
 /**
- * Runs all 7 V3 handler test suites and prints a combined summary.
+ * Runs all 10 V3 handler test suites and prints a combined summary.
  * Each suite runner (runJobCreateTests, runJobStartTests, etc.) is
  * defined in its own *HandlerTest.gs file and returns {passed, failed}.
  */
@@ -223,14 +286,16 @@ function runV3HandlerTests() {
   seedTestStaff();  // ensures DS1 / QC1 exist before any test runs
 
   var suites = [
-    { name: '1 — JobCreateHandler',  fn: runJobCreateTests  },
-    { name: '2 — JobAssignHandler',  fn: runJobAssignTests  },
-    { name: '3 — JobStartHandler',   fn: runJobStartTests   },
-    { name: '4 — JobHoldHandler',    fn: runJobHoldTests    },
-    { name: '5 — JobResumeHandler',  fn: runJobResumeTests  },
-    { name: '6 — WorkLogHandler',    fn: runWorkLogTests    },
-    { name: '7 — QCHandler',         fn: runQCHandlerTests  },
-    { name: '8 — JobUpdateHandler',  fn: runJobUpdateTests  }
+    { name: '1 — JobCreateHandler',      fn: runJobCreateTests       },
+    { name: '2 — JobAssignHandler',      fn: runJobAssignTests       },
+    { name: '3 — JobStartHandler',       fn: runJobStartTests        },
+    { name: '4 — JobHoldHandler',        fn: runJobHoldTests         },
+    { name: '5 — JobResumeHandler',      fn: runJobResumeTests       },
+    { name: '6 — WorkLogHandler',        fn: runWorkLogTests         },
+    { name: '7 — QCHandler',             fn: runQCHandlerTests       },
+    { name: '8 — JobUpdateHandler',      fn: runJobUpdateTests       },
+    { name: '9 — QCHandler Flow B/C',    fn: runQCHandlerFlowTests   },
+    { name: '10 — QCReassignHandler',    fn: runQCReassignTests      }
   ];
 
   var totalPassed = 0;
