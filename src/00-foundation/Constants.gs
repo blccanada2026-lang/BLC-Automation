@@ -46,6 +46,7 @@ var Constants = (function () {
     QC_REWORK_REQUESTED:     'QC_REWORK_REQUESTED',   // legacy — kept for replay compat
     QC_MINOR_REWORK:         'QC_MINOR_REWORK',        // minor error → MINOR_FIX state
     QC_MAJOR_REWORK:         'QC_MAJOR_REWORK',        // major error → IN_PROGRESS, re-QC required
+    QC_REASSIGNED:           'QC_REASSIGNED',           // TL/PM reassigns QC reviewer to another person
     CLIENT_SENT:             'CLIENT_SENT',             // designer marks minor fix sent to client
     // ── Client return ───────────────────────────────────────
     CLIENT_RETURN_RECEIVED:  'CLIENT_RETURN_RECEIVED',

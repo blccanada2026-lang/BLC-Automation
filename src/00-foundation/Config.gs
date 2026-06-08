@@ -291,6 +291,7 @@ var Config = (function () {
     JOB_START:     'JOB_START',
     WORK_LOG:      'WORK_LOG',
     QC_SUBMIT:     'QC_SUBMIT',
+    QC_REASSIGN:   'QC_REASSIGN',
     JOB_HOLD:      'JOB_HOLD',
     JOB_RESUME:    'JOB_RESUME',
     CLIENT_RETURN:    'CLIENT_RETURN',
