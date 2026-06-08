@@ -473,6 +473,22 @@ function portal_getLeaderDashboard() {
 }
 
 // ============================================================
+// portal_getCEODashboard — CEO operational summary
+// ============================================================
+
+/**
+ * Returns CEO-only operational dashboard data: job summary,
+ * load balance, quality/error rates, QC backlog.
+ * CEO only (PAYROLL_RUN + enforceFinancialAccess).
+ *
+ * @returns {string}  JSON: { period_id, job_summary, load_balance, quality_rates, qc_backlog }
+ */
+function portal_getCEODashboard() {
+  var email = Session.getActiveUser().getEmail();
+  return PortalData.getCEODashboard(email);
+}
+
+// ============================================================
 // portal_confirmPaystub — staff confirms their own paystub
 // ============================================================
 

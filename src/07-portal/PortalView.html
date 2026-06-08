@@ -385,6 +385,48 @@
       </div>
     </div>
 
+    <!-- ── CEO Operational Panels (CEO only) ──────────────────── -->
+    <div id="dash-ceo-section" style="display:none">
+
+      <!-- Job Summary cards -->
+      <div id="dash-ceo-summary" style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px"></div>
+
+      <div class="dash-grid">
+        <!-- Load Balance panel -->
+        <div class="dash-panel">
+          <div class="dash-panel-hdr">
+            <span>Load Balance</span>
+            <span id="dash-ceo-load-meta" style="font-size:12px;font-weight:400;color:var(--c-muted)"></span>
+          </div>
+          <div class="dash-panel-body" id="dash-ceo-load-body">
+            <div class="dash-empty">Loading…</div>
+          </div>
+        </div>
+
+        <!-- Quality / Error Rates panel -->
+        <div class="dash-panel">
+          <div class="dash-panel-hdr">
+            <span>Quality Rates</span>
+            <span id="dash-ceo-quality-meta" style="font-size:12px;font-weight:400;color:var(--c-muted)"></span>
+          </div>
+          <div class="dash-panel-body" id="dash-ceo-quality-body">
+            <div class="dash-empty">Loading…</div>
+          </div>
+        </div>
+
+        <!-- QC Backlog panel -->
+        <div class="dash-panel">
+          <div class="dash-panel-hdr">
+            <span>QC Backlog</span>
+            <span id="dash-ceo-qc-meta" style="font-size:12px;font-weight:400;color:var(--c-muted)"></span>
+          </div>
+          <div class="dash-panel-body" id="dash-ceo-qc-body">
+            <div class="dash-empty">Loading…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="dash-grid">
       <!-- Designer Workload panel -->
       <div class="dash-panel">
@@ -1022,7 +1064,10 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-add-client').addEventListener('click',       openOnboardClient);
   document.getElementById('btn-submit-onboard').addEventListener('click',   submitOnboardClient);
   document.getElementById('btn-leader-dash').addEventListener('click',       toggleLeaderDash);
-  document.getElementById('btn-refresh-dash').addEventListener('click',      loadLeaderDashboard);
+  document.getElementById('btn-refresh-dash').addEventListener('click', function() {
+    loadLeaderDashboard();
+    if (_data && _data.perms && _data.perms.canRunPayroll) loadCEODashboard();
+  });
   document.getElementById('btn-confirm-paystub').addEventListener('click',   confirmPaystub);
   document.getElementById('btn-send-feedback').addEventListener('click',     sendFeedbackRequests);
   document.getElementById('btn-send-ratings').addEventListener('click',      sendRatingRequests);
@@ -1169,6 +1214,10 @@ function onDataLoaded(jsonStr) {
     document.getElementById('leader-dashboard').style.display = 'block';
     renderWorkloadPanel(_data.jobs, _data.staffNameMap || {});
     loadLeaderDashboard();
+    if (_data.perms.canRunPayroll) {
+      document.getElementById('dash-ceo-section').style.display = 'block';
+      loadCEODashboard();
+    }
   }
 
   // Paystub confirmation banner
@@ -1433,8 +1482,15 @@ function renderPortal_(data) {
     document.getElementById('leader-dashboard').style.display = 'block';
     renderWorkloadPanel(data.jobs, data.staffNameMap || {});
     loadLeaderDashboard();
+    if (perms.canRunPayroll) {
+      document.getElementById('dash-ceo-section').style.display = 'block';
+      loadCEODashboard();
+    } else {
+      document.getElementById('dash-ceo-section').style.display = 'none';
+    }
   } else {
     document.getElementById('leader-dashboard').style.display = 'none';
+    document.getElementById('dash-ceo-section').style.display = 'none';
   }
 }
 
@@ -1445,7 +1501,7 @@ function exitPreview() {
 
 // ── Designer Workload Panel ────────────────────────────────────
 var ACTIVE_STATES = { IN_PROGRESS: true, QC_REVIEW: true, ALLOCATED: true,
-                      ON_HOLD: true, CLIENT_RETURN: true };
+                      ON_HOLD: true, CLIENT_RETURN: true, MINOR_FIX: true };
 
 function renderWorkloadPanel(jobs, nameMap) {
   nameMap = nameMap || {};
@@ -2868,6 +2924,204 @@ function renderLeaderDashboard(data) {
 
 function fmtInr(v) {
   return '₹' + (v || 0).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+// ── CEO Operational Dashboard ──────────────────────────────────
+
+function loadCEODashboard() {
+  ['dash-ceo-load-body','dash-ceo-quality-body','dash-ceo-qc-body'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    while (el.firstChild) el.removeChild(el.firstChild);
+    var d = document.createElement('div');
+    d.className   = 'dash-empty';
+    d.textContent = 'Loading…';
+    el.appendChild(d);
+  });
+  google.script.run
+    .withSuccessHandler(function(json) {
+      try { renderCEODashboard(JSON.parse(json)); }
+      catch(e) { showToast('CEO dashboard parse error: ' + e.message, 'error'); }
+    })
+    .withFailureHandler(function(err) {
+      showToast('CEO dashboard load failed: ' + (err.message || String(err)), 'error');
+    })
+    .portal_getCEODashboard();
+}
+
+function renderCEODashboard(data) {
+  var STATE_LABELS = {
+    INTAKE_RECEIVED: 'Intake',       ALLOCATED:     'Allocated',
+    IN_PROGRESS:     'In Progress',  QC_REVIEW:     'QC Review',
+    MINOR_FIX:       'Minor Fix',    ON_HOLD:       'On Hold',
+    CLIENT_RETURN:   'Client Return'
+  };
+  var STATE_COLORS = {
+    IN_PROGRESS:     '#2563eb', QC_REVIEW:      '#7c3aed',
+    MINOR_FIX:       '#c2410c', ON_HOLD:        '#6b7280',
+    ALLOCATED:       '#0891b2', INTAKE_RECEIVED:'#64748b',
+    CLIENT_RETURN:   '#dc2626'
+  };
+
+  // ── Job Summary cards ──────────────────────────────────────
+  var summaryEl = document.getElementById('dash-ceo-summary');
+  while (summaryEl.firstChild) summaryEl.removeChild(summaryEl.firstChild);
+  var summary = data.job_summary || {};
+  var byState = summary.by_state || {};
+
+  var totalCard = document.createElement('div');
+  totalCard.style.cssText = 'background:#1e293b;color:#fff;border-radius:8px;padding:12px 20px;min-width:100px;text-align:center;';
+  var totalNum = document.createElement('div');
+  totalNum.style.cssText = 'font-size:28px;font-weight:700;';
+  totalNum.textContent   = String(summary.total_active || 0);
+  var totalLbl = document.createElement('div');
+  totalLbl.style.cssText = 'font-size:11px;opacity:.7;margin-top:2px;';
+  totalLbl.textContent   = 'Total Active';
+  totalCard.appendChild(totalNum);
+  totalCard.appendChild(totalLbl);
+  summaryEl.appendChild(totalCard);
+
+  ['IN_PROGRESS','QC_REVIEW','MINOR_FIX','ON_HOLD','ALLOCATED'].forEach(function(st) {
+    var count = byState[st] || 0;
+    var color = STATE_COLORS[st] || '#475569';
+    var card  = document.createElement('div');
+    card.style.borderRadius = '8px';
+    card.style.padding      = '12px 20px';
+    card.style.minWidth     = '100px';
+    card.style.textAlign    = 'center';
+    card.style.background   = color + '18';
+    card.style.border       = '1px solid ' + color + '40';
+    var num = document.createElement('div');
+    num.style.cssText = 'font-size:28px;font-weight:700;';
+    num.style.color   = color;
+    num.textContent   = String(count);
+    var lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:11px;opacity:.8;margin-top:2px;';
+    lbl.style.color   = color;
+    lbl.textContent   = STATE_LABELS[st] || st;
+    card.appendChild(num);
+    card.appendChild(lbl);
+    summaryEl.appendChild(card);
+  });
+
+  // ── Load Balance ────────────────────────────────────────────
+  var loadBody = document.getElementById('dash-ceo-load-body');
+  while (loadBody.firstChild) loadBody.removeChild(loadBody.firstChild);
+  var loadData = data.load_balance || [];
+  if (loadData.length === 0) {
+    var emptyLoad = document.createElement('div');
+    emptyLoad.className   = 'dash-empty';
+    emptyLoad.textContent = 'No active designers found.';
+    loadBody.appendChild(emptyLoad);
+  } else {
+    var ltbl = makeDashTable(['Designer','Active Jobs','Hours This Period','Status']);
+    var ltbody = ltbl.querySelector('tbody');
+    loadData.forEach(function(row) {
+      var tr = document.createElement('tr');
+      appendTd(tr, row.name || row.person_code, '600');
+      appendTd(tr, row.active_jobs);
+      appendTd(tr, (row.hours_period || 0).toFixed(1));
+      var statusTd = document.createElement('td');
+      var badge    = document.createElement('span');
+      var st       = row.status || 'ok';
+      badge.textContent        = st.toUpperCase();
+      badge.style.padding      = '2px 8px';
+      badge.style.borderRadius = '4px';
+      badge.style.fontSize     = '11px';
+      badge.style.fontWeight   = '600';
+      if      (st === 'idle') { badge.style.background = '#f1f5f9'; badge.style.color = '#64748b'; }
+      else if (st === 'busy') { badge.style.background = '#fef2f2'; badge.style.color = '#dc2626'; }
+      else                    { badge.style.background = '#dcfce7'; badge.style.color = '#166534'; }
+      statusTd.appendChild(badge);
+      tr.appendChild(statusTd);
+      ltbody.appendChild(tr);
+    });
+    loadBody.appendChild(ltbl);
+    document.getElementById('dash-ceo-load-meta').textContent = loadData.length + ' staff';
+  }
+
+  // ── Quality Rates ───────────────────────────────────────────
+  var qualityBody = document.getElementById('dash-ceo-quality-body');
+  while (qualityBody.firstChild) qualityBody.removeChild(qualityBody.firstChild);
+  var qualityData = data.quality_rates || [];
+  if (qualityData.length === 0) {
+    var emptyQ = document.createElement('div');
+    emptyQ.className   = 'dash-empty';
+    emptyQ.textContent = 'No job data yet.';
+    qualityBody.appendChild(emptyQ);
+  } else {
+    var qtbl = makeDashTable(['Designer','Total Jobs','Minor Reworks','Major Reworks','Pass Rate']);
+    var qtbody = qtbl.querySelector('tbody');
+    qualityData.forEach(function(row) {
+      var tr  = document.createElement('tr');
+      appendTd(tr, row.name || row.person_code, '600');
+      appendTd(tr, row.total_jobs);
+      appendTd(tr, row.minor_reworks || 0);
+      appendTd(tr, row.major_reworks || 0);
+      var rateTd = document.createElement('td');
+      var rate   = row.pass_rate || 0;
+      rateTd.textContent      = rate + '%';
+      rateTd.style.color      = rate >= 90 ? '#166534' : rate >= 75 ? '#92400e' : '#dc2626';
+      rateTd.style.fontWeight = '700';
+      tr.appendChild(rateTd);
+      qtbody.appendChild(tr);
+    });
+    qualityBody.appendChild(qtbl);
+    document.getElementById('dash-ceo-quality-meta').textContent = qualityData.length + ' designers';
+  }
+
+  // ── QC Backlog ──────────────────────────────────────────────
+  var qcBody = document.getElementById('dash-ceo-qc-body');
+  while (qcBody.firstChild) qcBody.removeChild(qcBody.firstChild);
+  var qcData = data.qc_backlog || [];
+  if (qcData.length === 0) {
+    var emptyQC = document.createElement('div');
+    emptyQC.className   = 'dash-empty';
+    emptyQC.textContent = 'No jobs in QC review.';
+    qcBody.appendChild(emptyQC);
+  } else {
+    var bktbl   = makeDashTable(['Job','Client','Designer','Reviewer','Days Waiting']);
+    var bktbody = bktbl.querySelector('tbody');
+    qcData.forEach(function(row) {
+      var tr = document.createElement('tr');
+      appendTd(tr, row.job_number, '600');
+      appendTd(tr, row.client_code);
+      appendTd(tr, row.designer_name);
+      appendTd(tr, row.reviewer_name);
+      var daysTd = document.createElement('td');
+      daysTd.textContent  = row.days_waiting + 'd';
+      daysTd.style.color  = row.days_waiting >= 3 ? '#dc2626' : row.days_waiting >= 1 ? '#92400e' : '';
+      if (row.days_waiting >= 3) daysTd.style.fontWeight = '700';
+      tr.appendChild(daysTd);
+      bktbody.appendChild(tr);
+    });
+    qcBody.appendChild(bktbl);
+    document.getElementById('dash-ceo-qc-meta').textContent =
+      qcData.length + ' job' + (qcData.length !== 1 ? 's' : '');
+  }
+}
+
+function makeDashTable(headers) {
+  var tbl = document.createElement('table');
+  tbl.className = 'dash-tbl';
+  var thead = document.createElement('thead');
+  var htr   = document.createElement('tr');
+  headers.forEach(function(h) {
+    var th = document.createElement('th');
+    th.textContent = h;
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  tbl.appendChild(thead);
+  tbl.appendChild(document.createElement('tbody'));
+  return tbl;
+}
+
+function appendTd(tr, text, fontWeight) {
+  var td = document.createElement('td');
+  td.textContent = text != null ? String(text) : '';
+  if (fontWeight) td.style.fontWeight = fontWeight;
+  tr.appendChild(td);
 }
 
 // ── Paystub Confirmation ───────────────────────────────────────
