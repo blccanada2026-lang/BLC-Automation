@@ -811,6 +811,35 @@
   </div>
 </div>
 
+<!-- ══ QC REASSIGN MODAL ══════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-qc-reassign">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Reassign QC Reviewer</h3>
+      <button class="modal-close" data-close="modal-qc-reassign">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-job-info" id="qc-reassign-job-info"></div>
+      <div class="field" style="margin-top:14px">
+        <label>Current Reviewer</label>
+        <p id="qc-reassign-current" style="font-size:13px;color:var(--c-muted);margin:4px 0 0"></p>
+      </div>
+      <div class="field">
+        <label>Reassign To <span style="color:var(--c-danger)">*</span></label>
+        <select id="qc-reassign-reviewer"></select>
+      </div>
+      <div class="field">
+        <label>Notes (optional)</label>
+        <textarea id="qc-reassign-notes" rows="2" maxlength="200" placeholder="Reason for reassignment…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-qc-reassign">Cancel</button>
+      <button class="btn-primary" id="btn-submit-qc-reassign">Reassign</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ EDIT JOB MODAL ════════════════════════════════════════ -->
 <div class="modal-backdrop" id="modal-edit-job">
   <div class="modal">
@@ -987,7 +1016,8 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-submit-qc').addEventListener('click',        submitForQC);
   document.getElementById('btn-submit-hold').addEventListener('click',      submitHold);
   document.getElementById('btn-submit-resume').addEventListener('click',    submitResume);
-  document.getElementById('btn-submit-qc-review').addEventListener('click', submitQCReview);
+  document.getElementById('btn-submit-qc-review').addEventListener('click',   submitQCReview);
+  document.getElementById('btn-submit-qc-reassign').addEventListener('click', submitQCReassign);
   document.getElementById('btn-clients').addEventListener('click',          openClients);
   document.getElementById('btn-add-client').addEventListener('click',       openOnboardClient);
   document.getElementById('btn-submit-onboard').addEventListener('click',   submitOnboardClient);
@@ -1039,8 +1069,9 @@ document.addEventListener('DOMContentLoaded', function () {
       case 'start':       openStart(jobNum);     break;
       case 'work-log':    openWorkLog(jobNum);   break;
       case 'submit-qc':   openSubmitQC(jobNum);       break;
-      case 'qc-review':   openQCReview(jobNum);       break;
-      case 'client-sent': confirmClientSent(jobNum);  break;
+      case 'qc-review':    openQCReview(jobNum);       break;
+      case 'qc-reassign':  openQCReassign(jobNum);    break;
+      case 'client-sent':  confirmClientSent(jobNum); break;
       case 'hold':        openHold(jobNum);      break;
       case 'resume':      openResume(jobNum);    break;
     }
@@ -1643,6 +1674,9 @@ function buildActionButtons(job, perms) {
   if (perms.isQcReviewer && state === 'QC_REVIEW') {
     buttons.push(makeActionBtn('Review',           'btn-success',  'qc-review',    job.job_number));
   }
+  if (perms.canAssign && state === 'QC_REVIEW') {
+    buttons.push(makeActionBtn('Reassign QC',      'btn-muted',    'qc-reassign',  job.job_number));
+  }
   if (state !== 'ON_HOLD') {
     buttons.push(makeActionBtn('Hold',       'btn-warning',  'hold',      job.job_number));
   }
@@ -1996,6 +2030,63 @@ function confirmClientSent(jobNum) {
   if (!confirm('Mark job ' + jobNum + ' as sent to client?\n\nThis will close the job as Completed Billable.')) return;
   submitAction('QC_SUBMIT', { job_number: jobNum, qc_result: 'CLIENT_SENT' },
                jobNum + ' marked as sent to client — completed.');
+}
+
+function openQCReassign(jobNumber) {
+  _activeJob = findJob(jobNumber);
+  if (!_activeJob) return;
+  setModalJobInfo('qc-reassign-job-info', _activeJob);
+  document.getElementById('qc-reassign-notes').value = '';
+
+  var currentCode = _activeJob.qc_reviewer_code || '';
+  document.getElementById('qc-reassign-current').textContent = currentCode
+    ? 'Currently assigned to: ' + currentCode
+    : 'No reviewer currently assigned';
+
+  var sel = document.getElementById('qc-reassign-reviewer');
+  while (sel.firstChild) sel.removeChild(sel.firstChild);
+  var loadingOpt = document.createElement('option');
+  loadingOpt.textContent = 'Loading…';
+  loadingOpt.disabled = true;
+  sel.appendChild(loadingOpt);
+
+  openModal('modal-qc-reassign');
+
+  google.script.run
+    .withSuccessHandler(function(json) {
+      var reviewers = JSON.parse(json);
+      while (sel.firstChild) sel.removeChild(sel.firstChild);
+      if (reviewers.length === 0) {
+        var empty = document.createElement('option');
+        empty.textContent = 'No reviewers found';
+        empty.disabled = true;
+        sel.appendChild(empty);
+        return;
+      }
+      reviewers.forEach(function(r) {
+        var opt = document.createElement('option');
+        opt.value = r.personCode;
+        opt.textContent = r.name + ' (' + r.role + ')';
+        if (r.personCode === currentCode) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    })
+    .withFailureHandler(function() {
+      showToast('Failed to load reviewers.', 'error');
+      closeModal('modal-qc-reassign');
+    })
+    .portal_getQCReviewers();
+}
+
+function submitQCReassign() {
+  if (!_activeJob) return;
+  var newCode = document.getElementById('qc-reassign-reviewer').value;
+  var notes   = (document.getElementById('qc-reassign-notes').value || '').trim();
+  if (!newCode) return showToast('Please select a reviewer.', 'error');
+  closeModal('modal-qc-reassign');
+  submitAction('QC_REASSIGN',
+    { job_number: _activeJob.job_number, new_reviewer_code: newCode, notes: notes },
+    _activeJob.job_number + ' QC reassigned to ' + newCode + '.');
 }
 
 function submitAssign() {

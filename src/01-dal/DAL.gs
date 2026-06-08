@@ -106,7 +106,7 @@ var DAL = (function () {
                               'SbsReconFiller_Jan2026', 'SbsReconFiller_Feb2026', 'SbsReconFiller_Mar2026',
                               'SbsReconFiller_Apr2026', 'NorspanReconFiller', 'MatixReconFiller',
                               'TitanReconFiller', 'NelsonReconFiller', 'AlbertaReconFiller'],
-    'FACT_QC_EVENTS':        ['QCHandler', 'MigrationEngine'],
+    'FACT_QC_EVENTS':        ['QCHandler', 'QCReassignHandler', 'MigrationEngine'],
     'FACT_BILLING_LEDGER':   ['BillingEngine', 'MigrationEngine', 'MigrationReplayEngine'],
     'FACT_PAYROLL_LEDGER':   ['PayrollEngine', 'MigrationEngine', 'MigrationReplayEngine'],
     'FACT_SOP_SUBMISSIONS':  ['SOPHandler', 'MigrationEngine'],
@@ -114,7 +114,7 @@ var DAL = (function () {
     // ── View tables (rebuilt projections) ───────────────────
     'VW_JOB_CURRENT_STATE':  ['EventReplayEngine', 'JobCreateHandler', 'JobAssignHandler', 'JobStartHandler',
                               'JobHoldHandler', 'JobResumeHandler', 'ClientReturnHandler', 'QCHandler',
-                              'BillingEngine', 'JobUpdateHandler', 'StaceyJobImporter'],
+                              'QCReassignHandler', 'BillingEngine', 'JobUpdateHandler', 'StaceyJobImporter'],
     'VW_DESIGNER_WORKLOAD':  ['EventReplayEngine', 'ReportingEngine'],
 
     // ── Mart tables (reporting aggregates) ──────────────────

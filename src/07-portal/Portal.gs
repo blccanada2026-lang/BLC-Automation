@@ -288,6 +288,31 @@ function portal_getActiveDesigners() {
 }
 
 // ============================================================
+// portal_getQCReviewers — returns staff eligible to review QC
+// (QC_REVIEWER, TEAM_LEAD, PM, CEO) for the reassign modal
+// ============================================================
+
+/**
+ * @returns {string}  JSON array of { personCode, name, role }
+ */
+function portal_getQCReviewers() {
+  var QC_ROLES = { QC_REVIEWER: true, TEAM_LEAD: true, PM: true, CEO: true };
+  try {
+    var rows = DAL.readAll('DIM_STAFF_ROSTER', { callerModule: 'Portal' });
+    var result = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (r.active !== false && r.active !== 'false' && QC_ROLES[r.role]) {
+        result.push({ personCode: r.person_code, name: r.name || r.person_code, role: r.role });
+      }
+    }
+    return JSON.stringify(result);
+  } catch (e) {
+    return JSON.stringify([]);
+  }
+}
+
+// ============================================================
 // portal_getClientList — returns active clients for job creation
 // ============================================================
 

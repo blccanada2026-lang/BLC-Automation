@@ -149,7 +149,8 @@ var EventReplayEngine = (function () {
           rework_cycle:        0,
           minor_rework_count:  0,
           major_rework_count:  0,
-          client_return_count: 0
+          client_return_count: 0,
+          qc_reviewer_code:    ''
         };
         break;
 
@@ -221,6 +222,13 @@ var EventReplayEngine = (function () {
         if (!jobMap[jobNumber]) break;
         jobMap[jobNumber].current_state = Config.STATES.COMPLETED_BILLABLE;
         jobMap[jobNumber].updated_at    = updatedAt;
+        break;
+
+      case 'QC_REASSIGNED':
+        if (!jobMap[jobNumber]) break;
+        // notes field carries the new reviewer code (see QCReassignHandler)
+        jobMap[jobNumber].qc_reviewer_code = String(row.notes || '').trim();
+        jobMap[jobNumber].updated_at       = updatedAt;
         break;
 
       case 'CLIENT_RETURN_RECEIVED':
