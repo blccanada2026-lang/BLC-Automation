@@ -143,14 +143,15 @@ var ClientOnboarding = (function () {
       DAL.appendRow(
         Config.TABLES.DIM_CLIENT_MASTER,
         {
-          client_code:   clean.client_code,
-          client_name:   clean.client_name,
-          contact_email: clean.contact_email,
-          currency:      clean.currency,
-          active:        'TRUE',
-          effective_from: today,
-          effective_to:  '',
-          notes:         clean.notes
+          client_code:             clean.client_code,
+          client_name:             clean.client_name,
+          contact_email:           clean.contact_email,
+          currency:                clean.currency,
+          active:                  'TRUE',
+          effective_from:          today,
+          effective_to:            '',
+          notes:                   clean.notes,
+          notify_on_completion:    'FALSE'
         },
         { callerModule: MODULE }
       );
@@ -251,11 +252,50 @@ var ClientOnboarding = (function () {
   }
 
   // ============================================================
+  // SECTION: NOTIFY ON COMPLETION TOGGLE
+  // ============================================================
+
+  /**
+   * Sets the notify_on_completion flag for a client in DIM_CLIENT_MASTER.
+   * Run from Apps Script editor: runSetClientCompletionNotify('SBS', true)
+   *
+   * @param {string}  clientCode
+   * @param {boolean} enabled
+   */
+  function setCompletionNotify(clientCode, enabled) {
+    var code = String(clientCode || '').toUpperCase().trim();
+    if (!code) throw new Error('ClientOnboarding.setCompletionNotify: clientCode is required.');
+    DAL.updateWhere(
+      Config.TABLES.DIM_CLIENT_MASTER,
+      { client_code: code },
+      { notify_on_completion: enabled ? 'TRUE' : 'FALSE' },
+      { callerModule: 'ClientOnboarding' }
+    );
+    Logger.info('CLIENT_NOTIFY_TOGGLE_SET', {
+      module:      'ClientOnboarding',
+      client_code: code,
+      enabled:     enabled
+    });
+  }
+
+  // ============================================================
   // PUBLIC API
   // ============================================================
   return {
-    onboardClient: onboardClient,
-    getClients:    getClients
+    onboardClient:      onboardClient,
+    getClients:         getClients,
+    setCompletionNotify: setCompletionNotify
   };
 
 }());
+
+// ── Top-level runner — call from Apps Script editor ──────────
+/**
+ * Usage: change clientCode and enabled below, then run this function.
+ * runSetClientCompletionNotify('SBS', true)   → turns ON  for SBS
+ * runSetClientCompletionNotify('SBS', false)  → turns OFF for SBS
+ */
+function runSetClientCompletionNotify(clientCode, enabled) {
+  ClientOnboarding.setCompletionNotify(clientCode, enabled);
+  console.log('Done — ' + clientCode + ' notify_on_completion = ' + (enabled ? 'TRUE' : 'FALSE'));
+}

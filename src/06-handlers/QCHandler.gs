@@ -245,9 +245,11 @@ var QCHandler = (function () {
       { callerModule: 'QCHandler' }
     );
 
-    // Notify designer + supervisor + PM on any rework
     if (qcResult === 'MINOR_REWORK' || qcResult === 'MAJOR_REWORK') {
       sendReworkNotification_(view, qcResult, cleanPayload.rework_notes || '', actor);
+    }
+    if (qcResult === 'APPROVED') {
+      sendClientCompletionEmail_(view);
     }
 
     Logger.info(eventType, {
@@ -347,6 +349,53 @@ var QCHandler = (function () {
       MailApp.sendEmail({ to: designer.email, cc: ccEmails.join(','), subject: subject, body: body, name: 'BLC Nexus' });
     } catch (e) {
       Logger.warn('QC_REWORK_NOTIFY_FAIL', { module: 'QCHandler', error: e.message });
+    }
+  }
+
+  function sendClientCompletionEmail_(view) {
+    try {
+      var clientCode = String(view.client_code || '').trim();
+      if (!clientCode) return;
+
+      var clients = DAL.readWhere(
+        Config.TABLES.DIM_CLIENT_MASTER,
+        { client_code: clientCode },
+        { callerModule: 'QCHandler' }
+      );
+      if (clients.length === 0) return;
+
+      var client = clients[0];
+
+      // Respect the per-client toggle — default OFF if missing
+      var notify = String(client.notify_on_completion || '').trim().toLowerCase();
+      if (notify !== 'true' && notify !== 'yes' && notify !== '1') return;
+
+      var contactEmail = String(client.contact_email || '').trim();
+      if (!contactEmail) return;
+
+      var clientName  = String(client.client_name || clientCode);
+      var jobNumber   = String(view.job_number   || '');
+      var productCode = String(view.product_code || '');
+      var quantity    = view.quantity || '';
+
+      var subject = 'Job Completed: ' + jobNumber + ' — ' + clientName;
+      var body    = 'Dear ' + clientName + ',\n\n'
+        + 'We are pleased to inform you that job ' + jobNumber
+        + (productCode ? ' (' + productCode + (quantity ? ', Qty: ' + quantity : '') + ')' : '')
+        + ' has been completed and submitted as per your delivery arrangement.\n\n'
+        + 'Please do not hesitate to contact us if you have any questions.\n\n'
+        + 'Warm regards,\nBlue Lotus Consulting';
+
+      MailApp.sendEmail({ to: contactEmail, subject: subject, body: body, name: 'Blue Lotus Consulting' });
+
+      Logger.info('CLIENT_COMPLETION_EMAIL_SENT', {
+        module:      'QCHandler',
+        job_number:  jobNumber,
+        client_code: clientCode,
+        to:          contactEmail
+      });
+    } catch (e) {
+      Logger.warn('CLIENT_COMPLETION_EMAIL_FAIL', { module: 'QCHandler', error: e.message });
     }
   }
 
