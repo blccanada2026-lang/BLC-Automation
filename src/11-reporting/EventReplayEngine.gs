@@ -147,6 +147,8 @@ var EventReplayEngine = (function () {
           created_at:          updatedAt,
           updated_at:          updatedAt,
           rework_cycle:        0,
+          minor_rework_count:  0,
+          major_rework_count:  0,
           client_return_count: 0
         };
         break;
@@ -192,10 +194,32 @@ var EventReplayEngine = (function () {
         jobMap[jobNumber].updated_at    = updatedAt;
         break;
 
-      case 'QC_REWORK_REQUESTED':
+      case 'QC_REWORK_REQUESTED':  // legacy event — treat as major rework
         if (!jobMap[jobNumber]) break;
-        jobMap[jobNumber].current_state = Config.STATES.IN_PROGRESS;
-        jobMap[jobNumber].rework_cycle  = (jobMap[jobNumber].rework_cycle || 0) + 1;
+        jobMap[jobNumber].current_state      = Config.STATES.IN_PROGRESS;
+        jobMap[jobNumber].rework_cycle       = (jobMap[jobNumber].rework_cycle       || 0) + 1;
+        jobMap[jobNumber].major_rework_count = (jobMap[jobNumber].major_rework_count || 0) + 1;
+        jobMap[jobNumber].updated_at         = updatedAt;
+        break;
+
+      case 'QC_MINOR_REWORK':
+        if (!jobMap[jobNumber]) break;
+        jobMap[jobNumber].current_state     = Config.STATES.MINOR_FIX;
+        jobMap[jobNumber].minor_rework_count = (jobMap[jobNumber].minor_rework_count || 0) + 1;
+        jobMap[jobNumber].updated_at        = updatedAt;
+        break;
+
+      case 'QC_MAJOR_REWORK':
+        if (!jobMap[jobNumber]) break;
+        jobMap[jobNumber].current_state      = Config.STATES.IN_PROGRESS;
+        jobMap[jobNumber].rework_cycle       = (jobMap[jobNumber].rework_cycle       || 0) + 1;
+        jobMap[jobNumber].major_rework_count = (jobMap[jobNumber].major_rework_count || 0) + 1;
+        jobMap[jobNumber].updated_at         = updatedAt;
+        break;
+
+      case 'CLIENT_SENT':
+        if (!jobMap[jobNumber]) break;
+        jobMap[jobNumber].current_state = Config.STATES.COMPLETED_BILLABLE;
         jobMap[jobNumber].updated_at    = updatedAt;
         break;
 
