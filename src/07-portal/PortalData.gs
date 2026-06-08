@@ -959,12 +959,173 @@ var PortalData = (function () {
   }
 
   // ============================================================
+  // SECTION 8: getCEODashboard
+  //
+  // CEO-only operational dashboard: job summary, load balance,
+  // quality/error rates per designer, QC backlog.
+  // ============================================================
+
+  /**
+   * @param {string} email
+   * @returns {string}  JSON: { period_id, job_summary, load_balance, quality_rates, qc_backlog }
+   */
+  function getCEODashboard(email) {
+    var actor = RBAC.resolveActor(email);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_RUN);
+    RBAC.enforceFinancialAccess(actor);
+
+    var periodId = Identifiers.generateCurrentPeriodId();
+    var today    = new Date();
+
+    // ── 1. Staff name map ─────────────────────────────────────
+    var staffNameMap = {};
+    try {
+      var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
+      for (var s = 0; s < staffRows.length; s++) {
+        var scode = String(staffRows[s].person_code || '').trim();
+        if (scode) staffNameMap[scode] = String(staffRows[s].name || scode);
+      }
+    } catch (e) { /* table may not exist yet */ }
+
+    // ── 2. All active jobs ─────────────────────────────────────
+    var allJobs = [];
+    try {
+      allJobs = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: 'PortalData' });
+    } catch (e) { /* empty view */ }
+
+    var ACTIVE_ST = {
+      INTAKE_RECEIVED: true, ALLOCATED: true, IN_PROGRESS: true,
+      QC_REVIEW: true, MINOR_FIX: true, ON_HOLD: true, CLIENT_RETURN: true
+    };
+
+    // ── 3. Job Summary ────────────────────────────────────────
+    var byState    = {};
+    var totalActive = 0;
+    for (var i = 0; i < allJobs.length; i++) {
+      var st = String(allJobs[i].current_state || '').trim();
+      if (!ACTIVE_ST[st]) continue;
+      byState[st] = (byState[st] || 0) + 1;
+      totalActive++;
+    }
+
+    // ── 4. Active jobs per designer ────────────────────────────
+    var activeJobsMap = {};
+    for (var j = 0; j < allJobs.length; j++) {
+      var jrow  = allJobs[j];
+      var jst   = String(jrow.current_state || '').trim();
+      if (!ACTIVE_ST[jst]) continue;
+      var jcode = String(jrow.allocated_to || '').trim();
+      if (!jcode) continue;
+      activeJobsMap[jcode] = (activeJobsMap[jcode] || 0) + 1;
+    }
+
+    // ── 5. Hours this period ───────────────────────────────────
+    var hoursMap = {};
+    try {
+      var workLogs = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+        callerModule: 'PortalData',
+        periodId:     periodId
+      });
+      for (var w = 0; w < workLogs.length; w++) {
+        var wrow  = workLogs[w];
+        var wcode = String(wrow.actor_code || '').trim();
+        var whrs  = parseFloat(wrow.hours) || 0;
+        if (!wcode || whrs <= 0) continue;
+        hoursMap[wcode] = (hoursMap[wcode] || 0) + whrs;
+      }
+    } catch (e) { /* no work logs yet */ }
+
+    // ── 6. Load balance ───────────────────────────────────────
+    var designerCodes = {};
+    Object.keys(activeJobsMap).forEach(function(c) { designerCodes[c] = true; });
+    Object.keys(hoursMap).forEach(function(c) { designerCodes[c] = true; });
+
+    var loadBalance = [];
+    Object.keys(designerCodes).forEach(function(code) {
+      var jobs   = activeJobsMap[code] || 0;
+      var hrs    = Math.round((hoursMap[code] || 0) * 10) / 10;
+      var status = jobs === 0 ? 'idle' : jobs >= 9 ? 'busy' : 'ok';
+      loadBalance.push({
+        person_code:  code,
+        name:         staffNameMap[code] || code,
+        active_jobs:  jobs,
+        hours_period: hrs,
+        status:       status
+      });
+    });
+    loadBalance.sort(function(a, b) { return b.active_jobs - a.active_jobs; });
+
+    // ── 7. Quality rates ──────────────────────────────────────
+    var qMap = {};
+    for (var q = 0; q < allJobs.length; q++) {
+      var qrow  = allJobs[q];
+      var qcode = String(qrow.allocated_to || '').trim();
+      if (!qcode) continue;
+      if (!qMap[qcode]) qMap[qcode] = { total_jobs: 0, minor_reworks: 0, major_reworks: 0 };
+      qMap[qcode].total_jobs++;
+      qMap[qcode].minor_reworks += parseInt(qrow.minor_rework_count, 10) || 0;
+      qMap[qcode].major_reworks += parseInt(qrow.major_rework_count, 10) || 0;
+    }
+
+    var qualityRates = [];
+    Object.keys(qMap).forEach(function(code) {
+      var entry      = qMap[code];
+      var totalErrors = entry.minor_reworks + entry.major_reworks;
+      var passRate   = entry.total_jobs > 0
+                       ? Math.round((1 - totalErrors / entry.total_jobs) * 100)
+                       : 100;
+      qualityRates.push({
+        person_code:   code,
+        name:          staffNameMap[code] || code,
+        total_jobs:    entry.total_jobs,
+        minor_reworks: entry.minor_reworks,
+        major_reworks: entry.major_reworks,
+        pass_rate:     passRate
+      });
+    });
+    qualityRates.sort(function(a, b) { return a.pass_rate - b.pass_rate; });
+
+    // ── 8. QC Backlog ─────────────────────────────────────────
+    var qcBacklog = [];
+    for (var k = 0; k < allJobs.length; k++) {
+      var krow = allJobs[k];
+      if (String(krow.current_state || '').trim() !== Config.STATES.QC_REVIEW) continue;
+      var updatedAt   = String(krow.updated_at || '').trim();
+      var daysWaiting = 0;
+      if (updatedAt) {
+        var reviewDate = new Date(updatedAt);
+        if (!isNaN(reviewDate.getTime())) {
+          daysWaiting = Math.floor((today - reviewDate) / (1000 * 60 * 60 * 24));
+        }
+      }
+      var reviewerCode = String(krow.qc_reviewer_code || '').trim();
+      qcBacklog.push({
+        job_number:    String(krow.job_number   || ''),
+        client_code:   String(krow.client_code  || ''),
+        designer_name: staffNameMap[String(krow.allocated_to   || '').trim()] || String(krow.allocated_to || '—'),
+        reviewer_name: reviewerCode ? (staffNameMap[reviewerCode] || reviewerCode) : '—',
+        days_waiting:  daysWaiting
+      });
+    }
+    qcBacklog.sort(function(a, b) { return b.days_waiting - a.days_waiting; });
+
+    return JSON.stringify({
+      period_id:     periodId,
+      job_summary:   { total_active: totalActive, by_state: byState },
+      load_balance:  loadBalance,
+      quality_rates: qualityRates,
+      qc_backlog:    qcBacklog
+    });
+  }
+
+  // ============================================================
   // PUBLIC API
   // ============================================================
   return {
     getViewData:              getViewData,
     writeQueueItem:           writeQueueItem,
     getLeaderDashboard:       getLeaderDashboard,
+    getCEODashboard:          getCEODashboard,
     getMyRatees:              getMyRatees,
     submitRating:             submitRating,
     sendRatingRequests:       sendRatingRequests,
