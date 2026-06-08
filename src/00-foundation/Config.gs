@@ -238,6 +238,7 @@ var Config = (function () {
     ON_HOLD:            'ON_HOLD',
     CLIENT_RETURN:      'CLIENT_RETURN',
     QC_REVIEW:          'QC_REVIEW',
+    MINOR_FIX:          'MINOR_FIX',     // minor QC error — designer fixes and sends directly to client
     COMPLETED_BILLABLE: 'COMPLETED_BILLABLE',
     INVOICED:           'INVOICED'       // TERMINAL — no transitions out
   };
@@ -250,7 +251,8 @@ var Config = (function () {
     IN_PROGRESS:        ['ON_HOLD', 'QC_REVIEW', 'CLIENT_RETURN'],
     ON_HOLD:            ['IN_PROGRESS', 'ALLOCATED'],
     CLIENT_RETURN:      ['IN_PROGRESS', 'ALLOCATED'],
-    QC_REVIEW:          ['IN_PROGRESS', 'COMPLETED_BILLABLE'],
+    QC_REVIEW:          ['IN_PROGRESS', 'COMPLETED_BILLABLE', 'MINOR_FIX'],
+    MINOR_FIX:          ['COMPLETED_BILLABLE'],
     COMPLETED_BILLABLE: ['INVOICED'],
     INVOICED:           []              // terminal — StateMachine rejects all transitions
   };

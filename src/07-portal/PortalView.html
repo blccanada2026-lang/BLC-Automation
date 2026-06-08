@@ -95,6 +95,7 @@
     .badge-ON_HOLD            { background: #fef3c7; color: #b45309; }
     .badge-CLIENT_RETURN      { background: #ffedd5; color: #c2410c; }
     .badge-QC_REVIEW          { background: #fce7f3; color: #9d174d; }
+    .badge-MINOR_FIX          { background: #fff7ed; color: #c2410c; }
     .badge-COMPLETED_BILLABLE { background: #d1fae5; color: #065f46; }
     .badge-INVOICED           { background: #e2e8f0; color: #475569; }
     .badge-rework             { background: #fee2e2; color: #991b1b; }
@@ -864,8 +865,9 @@
       <div class="modal-job-info" id="qc-review-job-info"></div>
       <div class="field"><label>Decision</label>
         <select id="qc-result">
-          <option value="APPROVED">APPROVED — mark as completed</option>
-          <option value="REWORK">REWORK — return to designer</option>
+          <option value="APPROVED">✅ APPROVED — mark as completed</option>
+          <option value="MINOR_REWORK">⚠ MINOR ERROR — designer fixes and sends direct to client</option>
+          <option value="MAJOR_REWORK">❌ MAJOR ERROR — designer revises and re-submits to QC</option>
         </select></div>
       <div class="field" id="rework-notes-field" style="display:none">
         <label>Rework Notes <span style="color:var(--c-danger)">*</span></label>
@@ -953,7 +955,7 @@
 // ── Whitelist: valid state strings from Config.STATES ──────────
 var VALID_STATES = {
   INTAKE_RECEIVED: true, ALLOCATED: true, IN_PROGRESS: true,
-  ON_HOLD: true, CLIENT_RETURN: true, QC_REVIEW: true,
+  ON_HOLD: true, CLIENT_RETURN: true, QC_REVIEW: true, MINOR_FIX: true,
   COMPLETED_BILLABLE: true, INVOICED: true
 };
 
@@ -1009,7 +1011,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-run-bulk-import').addEventListener('click',    runBulkImport);
 
   document.getElementById('qc-result').addEventListener('change', function() {
-    var isRework = this.value === 'REWORK';
+    var isRework = (this.value === 'MINOR_REWORK' || this.value === 'MAJOR_REWORK');
     document.getElementById('rework-notes-field').style.display = isRework ? 'block' : 'none';
   });
 
@@ -1036,8 +1038,9 @@ document.addEventListener('DOMContentLoaded', function () {
       case 'assign':      openAssign(jobNum);    break;
       case 'start':       openStart(jobNum);     break;
       case 'work-log':    openWorkLog(jobNum);   break;
-      case 'submit-qc':   openSubmitQC(jobNum);  break;
-      case 'qc-review':   openQCReview(jobNum);  break;
+      case 'submit-qc':   openSubmitQC(jobNum);       break;
+      case 'qc-review':   openQCReview(jobNum);       break;
+      case 'client-sent': confirmClientSent(jobNum);  break;
       case 'hold':        openHold(jobNum);      break;
       case 'resume':      openResume(jobNum);    break;
     }
@@ -1490,6 +1493,7 @@ function renderStats(stats) {
     { label: 'Total Jobs',   value: stats.total },
     { label: 'In Progress',  value: stats.byState['IN_PROGRESS']        || 0 },
     { label: 'QC Review',    value: stats.byState['QC_REVIEW']          || 0 },
+    { label: 'Minor Fix',    value: stats.byState['MINOR_FIX']          || 0 },
     { label: 'On Hold',      value: stats.byState['ON_HOLD']            || 0 },
     { label: 'Completed',    value: stats.byState['COMPLETED_BILLABLE'] || 0 }
   ];
@@ -1630,10 +1634,14 @@ function buildActionButtons(job, perms) {
     buttons.push(makeActionBtn('Log Work',   'btn-muted',    'work-log',  job.job_number));
   }
   if (perms.isDesigner && state === 'IN_PROGRESS') {
-    buttons.push(makeActionBtn('Submit QC',  'btn-primary',  'submit-qc', job.job_number));
+    buttons.push(makeActionBtn('Submit QC',        'btn-primary',  'submit-qc',    job.job_number));
+  }
+  if (perms.isDesigner && state === 'MINOR_FIX') {
+    buttons.push(makeActionBtn('Log Work',         'btn-muted',    'work-log',     job.job_number));
+    buttons.push(makeActionBtn('Mark Sent to Client', 'btn-success', 'client-sent', job.job_number));
   }
   if (perms.isQcReviewer && state === 'QC_REVIEW') {
-    buttons.push(makeActionBtn('Review',     'btn-success',  'qc-review', job.job_number));
+    buttons.push(makeActionBtn('Review',           'btn-success',  'qc-review',    job.job_number));
   }
   if (state !== 'ON_HOLD') {
     buttons.push(makeActionBtn('Hold',       'btn-warning',  'hold',      job.job_number));
@@ -1964,8 +1972,8 @@ function submitQCReview() {
   var reworkNotes = val('qc-rework-notes');
   var notes       = val('qc-notes');
 
-  if (qcResult === 'REWORK' && !reworkNotes) {
-    return showToast('Rework notes are required when requesting rework.', 'error');
+  if ((qcResult === 'MINOR_REWORK' || qcResult === 'MAJOR_REWORK') && !reworkNotes) {
+    return showToast('Rework notes are required when returning a job.', 'error');
   }
 
   var payload = { job_number: _activeJob.job_number, qc_result: qcResult };
@@ -1975,8 +1983,19 @@ function submitQCReview() {
   closeModal('modal-qc-review');
   var msg = qcResult === 'APPROVED'
     ? _activeJob.job_number + ' approved — marked as completed.'
-    : _activeJob.job_number + ' returned for rework.';
+    : qcResult === 'MINOR_REWORK'
+      ? _activeJob.job_number + ' returned — minor fix required.'
+      : _activeJob.job_number + ' returned — major rework required, re-QC needed.';
   submitAction('QC_SUBMIT', payload, msg);
+}
+
+function confirmClientSent(jobNum) {
+  var job = (_data.jobs || []).filter(function(j) { return j.job_number === jobNum; })[0];
+  if (!job) return;
+  _activeJob = job;
+  if (!confirm('Mark job ' + jobNum + ' as sent to client?\n\nThis will close the job as Completed Billable.')) return;
+  submitAction('QC_SUBMIT', { job_number: jobNum, qc_result: 'CLIENT_SENT' },
+               jobNum + ' marked as sent to client — completed.');
 }
 
 function submitAssign() {
