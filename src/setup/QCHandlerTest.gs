@@ -114,8 +114,11 @@ function testQCHandler_happyPath() {
 
 // ============================================================
 // TEST 2 — RBAC Denial
-// Unknown actor has no RBAC entry — Flow A RBAC guard throws
-// Queue item stays non-COMPLETED, no FACT_QC_EVENTS row written
+// All staff roles (DESIGNER through CEO) have QC_SUBMIT=true, so
+// RBAC denial cannot be triggered via the queue flow (unknown emails
+// resolve to DESIGNER which is allowed). Instead, directly call handle()
+// with a mock CLIENT actor (QC_SUBMIT=false) to verify the guard fires.
+// VW state must remain IN_PROGRESS, no FACT_QC_EVENTS row written.
 // ============================================================
 
 /**
@@ -136,32 +139,53 @@ function testQCHandler_rbacDenial() {
 
     DAL._resetApiCallCount();
 
+    // Submit via IntakeService to get a real queue item (DESIGNER as submitter so
+    // IntakeService accepts it — we replace the actor before calling handle()).
     var submitResult = IntakeService.processSubmission({
       formType:       Config.FORM_TYPES.QC_SUBMIT,
-      submitterEmail: TH_UNKNOWN_EMAIL,
+      submitterEmail: TH_DESIGNER_EMAIL,
       payload: {
         job_number: jobNumber,
         notes:      'rbac denial test'
       },
       source: 'TEST'
     });
-    processQueueFresh_();
 
     var queueItems = DAL.readWhere(
       Config.TABLES.STG_PROCESSING_QUEUE,
       { queue_id: submitResult.queueId },
       { callerModule: 'QCHandlerTest' }
     );
-    var queueItem = queueItems.length > 0 ? queueItems[0] : null;
-    assertH_(results, counters, 'Queue item exists', !!queueItem,
+    assertH_(results, counters, 'Queue item exists', queueItems.length > 0,
       'queueId=' + submitResult.queueId);
-    assertH_(results, counters, 'Queue item not completed (RBAC denial)',
-      queueItem && queueItem.status !== 'COMPLETED',
-      queueItem ? queueItem.status : 'null');
-    assertH_(results, counters, 'Queue item error_message has retry metadata',
-      queueItem && (String(queueItem.error_message || '').indexOf('attempt') !== -1 ||
-                    String(queueItem.error_message || '').indexOf('exception') !== -1),
-      queueItem ? String(queueItem.error_message) : 'no error_message');
+    if (queueItems.length === 0) {
+      results.push('  SKIP: cannot find queue item');
+      counters.failed++;
+      printResultsH_('testQCHandler_rbacDenial', results, counters);
+      return counters;
+    }
+
+    // CLIENT role has QC_SUBMIT=false — use it to test the RBAC guard.
+    // _rbacResolved:true is required by assertActorExists_() inside enforcePermission.
+    var clientActor = {
+      email:            'testclient@example.com',
+      personCode:       'EXT',
+      role:             'CLIENT',
+      displayName:      'External Client',
+      isActive:         true,
+      canAccessBilling: false,
+      _rbacResolved:    true
+    };
+
+    var rbacThrew = false;
+    try {
+      QCHandler.handle(queueItems[0], clientActor);
+    } catch (rbacErr) {
+      rbacThrew = String(rbacErr.message || '').indexOf('PERMISSION_DENIED') !== -1;
+    }
+
+    assertH_(results, counters, 'RBAC denial: CLIENT actor rejected for QC_SUBMIT',
+      rbacThrew);
 
     // VW must still be IN_PROGRESS
     var vw = StateMachine.getJobView(jobNumber);

@@ -132,13 +132,9 @@ var JobHoldHandler = (function () {
       throw new Error('JobHoldHandler: job "' + jobNumber + '" not found in VW_JOB_CURRENT_STATE.');
     }
 
-    // ── Step 5: Assert transition → ON_HOLD ─────────────────
-    // Valid from ALLOCATED or IN_PROGRESS
-    StateMachine.assertTransition(view.current_state, Config.STATES.ON_HOLD, { jobNumber: jobNumber });
-
-    var previousState = view.current_state;
-
-    // ── Step 6: Idempotency ─────────────────────────────────
+    // ── Step 5: Idempotency ─────────────────────────────────
+    // Must precede state assertion so replayed queue items return DUPLICATE
+    // instead of throwing an INVALID_TRANSITION error on an already-held job.
     var idempotencyKey = buildIdempotencyKey_(queueId);
     if (isDuplicate_(idempotencyKey)) {
       Logger.warn('JOB_HOLD_DUPLICATE', {
@@ -149,6 +145,12 @@ var JobHoldHandler = (function () {
       });
       return 'DUPLICATE';
     }
+
+    // ── Step 6: Assert transition → ON_HOLD ─────────────────
+    // Valid from ALLOCATED or IN_PROGRESS
+    StateMachine.assertTransition(view.current_state, Config.STATES.ON_HOLD, { jobNumber: jobNumber });
+
+    var previousState = view.current_state;
 
     // ── Step 7: Ensure FACT_JOB_EVENTS partition ───────────
     var periodId = Identifiers.generateCurrentPeriodId();

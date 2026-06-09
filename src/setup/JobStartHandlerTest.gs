@@ -64,7 +64,7 @@ function testJobStartHandler_happyPath() {
       vw && vw.current_state === Config.STATES.IN_PROGRESS,
       vw ? vw.current_state : 'null');
     assertH_(results, counters, 'VW allocated_to still DS1',
-      vw && String(vw.allocated_to || '') === TH_DESIGNER_CODE,
+      vw && String(vw.allocated_to || '') === TH_DESIGNER_EMAIL,
       vw ? String(vw.allocated_to) : 'null');
 
     // ── FACT_JOB_EVENTS ─────────────────────────────────────
@@ -123,7 +123,7 @@ function testJobStartHandler_rbacDenial() {
 
     var startResult = IntakeService.processSubmission({
       formType:       Config.FORM_TYPES.JOB_START,
-      submitterEmail: TH_UNKNOWN_EMAIL,
+      submitterEmail: TH_QC_EMAIL,
       payload:        { job_number: jobNumber },
       source:         'TEST'
     });

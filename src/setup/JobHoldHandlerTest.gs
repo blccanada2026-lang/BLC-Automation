@@ -15,8 +15,8 @@
 //   testJobHoldHandler_duplicate()
 //
 // Test actors:
-//   DESIGNER (JOB_HOLD allowed) : designer@blclotus.com  (TH_DESIGNER_EMAIL)
-//   Unknown  (no RBAC entry)    : nobody@notinrbac.com   (TH_UNKNOWN_EMAIL)
+//   PM (JOB_HOLD allowed)    : sarthakaespl@gmail.com  (TH_PM_EMAIL)
+//   Unknown (no RBAC entry)  : nobody@notinrbac.com   (TH_UNKNOWN_EMAIL — resolves to DESIGNER, denied)
 //
 // Starting state for all tests: IN_PROGRESS (via thSetupInProgressJob_())
 //   wrongState uses thSetupIntakeReceivedJob_() — INTAKE_RECEIVED→ON_HOLD invalid
@@ -47,7 +47,7 @@ function testJobHoldHandler_happyPath() {
 
     var holdResult = IntakeService.processSubmission({
       formType:       Config.FORM_TYPES.JOB_HOLD,
-      submitterEmail: TH_DESIGNER_EMAIL,
+      submitterEmail: TH_PM_EMAIL,
       payload:        { job_number: jobNumber, notes: 'JobHoldHandlerTest happyPath' },
       source:         'TEST'
     });
@@ -315,7 +315,7 @@ function testJobHoldHandler_duplicate() {
     // ── Step 1: Successful first hold ───────────────────────
     var firstResult = IntakeService.processSubmission({
       formType:       Config.FORM_TYPES.JOB_HOLD,
-      submitterEmail: TH_DESIGNER_EMAIL,
+      submitterEmail: TH_PM_EMAIL,
       payload:        { job_number: jobNumber, notes: 'JobHoldHandlerTest duplicate' },
       source:         'TEST'
     });
@@ -352,7 +352,7 @@ function testJobHoldHandler_duplicate() {
       return counters;
     }
 
-    var fakeActor  = RBAC.resolveActor(TH_DESIGNER_EMAIL);
+    var fakeActor  = RBAC.resolveActor(TH_PM_EMAIL);
     var dupeReturn = JobHoldHandler.handle(firstQueueItems[0], fakeActor);
 
     assertH_(results, counters, 'Direct re-handle() returns DUPLICATE',

@@ -148,7 +148,21 @@ var JobResumeHandler = (function () {
       throw new Error('JobResumeHandler: job "' + jobNumber + '" not found in VW_JOB_CURRENT_STATE.');
     }
 
-    // ── Step 5: Resolve target state + assert transition ────
+    // ── Step 5: Idempotency ─────────────────────────────────
+    // Must precede state assertion so replayed queue items return DUPLICATE
+    // instead of throwing INVALID_TRANSITION on an already-resumed job.
+    var idempotencyKey = buildIdempotencyKey_(queueId);
+    if (isDuplicate_(idempotencyKey)) {
+      Logger.warn('JOB_RESUME_DUPLICATE', {
+        module:     'JobResumeHandler',
+        message:    'Duplicate JOB_RESUME — skipping',
+        queue_id:   queueId,
+        job_number: jobNumber
+      });
+      return 'DUPLICATE';
+    }
+
+    // ── Step 6: Resolve target state + assert transition ────
     var targetState = resolveResumeState_(view.prev_state || '');
     StateMachine.assertTransition(view.current_state, targetState, { jobNumber: jobNumber });
 
@@ -160,18 +174,6 @@ var JobResumeHandler = (function () {
       to_state:     targetState,
       prev_state:   view.prev_state || '(none)'
     });
-
-    // ── Step 6: Idempotency ─────────────────────────────────
-    var idempotencyKey = buildIdempotencyKey_(queueId);
-    if (isDuplicate_(idempotencyKey)) {
-      Logger.warn('JOB_RESUME_DUPLICATE', {
-        module:     'JobResumeHandler',
-        message:    'Duplicate JOB_RESUME — skipping',
-        queue_id:   queueId,
-        job_number: jobNumber
-      });
-      return 'DUPLICATE';
-    }
 
     // ── Step 7: Ensure partition ────────────────────────────
     var periodId = Identifiers.generateCurrentPeriodId();

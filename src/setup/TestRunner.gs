@@ -225,9 +225,9 @@ function runDiagnostic() {
   line_();
 }
 
-// ── Test actor — must exist in RBAC.MOCK_ACTOR_MAP ────────────
-// sarty@blclotus.com = PM role — has JOB_CREATE permission
-var TEST_ACTOR_EMAIL = 'sarty@blclotus.com';
+// ── Test actor — must exist in DIM_STAFF_ROSTER ───────────────
+// sarthakaespl@gmail.com = SGO (PM) — has JOB_CREATE + ADMIN_CONFIG
+var TEST_ACTOR_EMAIL = 'sarthakaespl@gmail.com';
 
 // ── Test payloads ─────────────────────────────────────────────
 // JOB_CREATE — includes allocated_to so VW initial state = ALLOCATED
@@ -358,10 +358,11 @@ function seedTestStaff() {
     }
   ];
 
+  var SEED_CEO_EMAIL = 'raj@bluelotuscanada.ca'; // privileged CEO — ADMIN_CONFIG required
   for (var i = 0; i < testStaff.length; i++) {
     var pc = testStaff[i].person_code;
     try {
-      var result = StaffOnboarding.onboardStaff(SUITE_CEO_EMAIL, testStaff[i]);
+      var result = StaffOnboarding.onboardStaff(SEED_CEO_EMAIL, testStaff[i]);
       if (result.isNew) {
         info_('seedTestStaff: created ' + pc + ' (active=TRUE)');
       } else {
@@ -1302,8 +1303,8 @@ function setupPortalUrl() {
 
 // ── Shared test constants ───────────────────────────────────
 var SUITE_PERIOD_ID  = '2026-04';
-var SUITE_CEO_EMAIL  = 'ceo@blclotus.com';
-var SUITE_PM_EMAIL   = 'sarty@blclotus.com';
+var SUITE_CEO_EMAIL  = 'sarthakaespl@gmail.com';  // SGO (PM) — highest PROD role available
+var SUITE_PM_EMAIL   = 'sarthakaespl@gmail.com';
 var SUITE_DESIGNER   = 'designer@blclotus.com';
 var SUITE_QC_EMAIL   = 'qc@blclotus.com';
 var SUITE_UNKNOWN    = 'unknown@notinrbac.com';
