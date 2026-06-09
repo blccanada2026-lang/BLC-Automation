@@ -369,6 +369,7 @@
     <div class="dash-header">
       <h2>Team Dashboard — <span id="dash-period">—</span></h2>
       <div class="dash-actions">
+        <button class="btn-muted btn-sm" id="btn-send-briefing" style="display:none">📧 Send Daily Briefing</button>
         <button class="btn-muted btn-sm" id="btn-send-feedback" style="display:none">✉ Send Feedback Requests</button>
         <button class="btn-muted btn-sm" id="btn-send-ratings" style="display:none">📋 Send Rating Requests</button>
         <button class="btn-warning btn-sm" id="btn-run-billing" style="display:none">🧾 Run Billing</button>
@@ -1069,6 +1070,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (_data && _data.perms && _data.perms.canRunPayroll) loadCEODashboard();
   });
   document.getElementById('btn-confirm-paystub').addEventListener('click',   confirmPaystub);
+  document.getElementById('btn-send-briefing').addEventListener('click',     sendDailyBriefing);
   document.getElementById('btn-send-feedback').addEventListener('click',     sendFeedbackRequests);
   document.getElementById('btn-send-ratings').addEventListener('click',      sendRatingRequests);
   document.getElementById('btn-sbs-intake').addEventListener('click',        processSbsIntake);
@@ -1191,6 +1193,7 @@ function onDataLoaded(jsonStr) {
   if (_data.perms.canRunPayroll) document.getElementById('btn-preview-as').style.display      = 'inline-block';
 
   // Leader dashboard payroll action buttons
+  if (_data.perms.canRunPayroll)     document.getElementById('btn-send-briefing').style.display  = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-feedback').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-ratings').style.display    = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-billing').style.display            = 'inline-block';
@@ -1450,7 +1453,7 @@ function renderPortal_(data) {
   // Hide ALL toolbar + dashboard action buttons before re-showing what this role gets
   var allBtns = ['btn-create-job','btn-sbs-intake','btn-process-queue','btn-clients',
                  'btn-leader-dash','btn-staff-panel',
-                 'btn-send-feedback','btn-send-ratings','btn-run-billing','btn-run-bonus',
+                 'btn-send-briefing','btn-send-feedback','btn-send-ratings','btn-run-billing','btn-run-bonus',
                  'btn-run-quarterly-bonus','btn-run-annual-bonus','btn-rebuild-views',
                  'btn-refresh-dashboard',
                  'btn-approve-payroll','lbl-test-mode'];
@@ -3380,6 +3383,34 @@ function processSbsIntake() {
 function getTestEmail_() {
   var chk = document.getElementById('chk-test-mode');
   return (chk && chk.checked) ? 'blccanada2026@gmail.com' : '';
+}
+
+function sendDailyBriefing() {
+  if (!confirm('Send the CEO daily briefing email now?\n\nThis will email a full operations summary to the configured briefing recipient.')) return;
+  var btn = document.getElementById('btn-send-briefing');
+  btn.textContent = 'Sending…';
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function(json) {
+      btn.textContent = '📧 Send Daily Briefing';
+      btn.disabled = false;
+      try {
+        var r = JSON.parse(json);
+        if (r.ok) {
+          showToast('Daily briefing sent to ' + r.sent_to + ' (' + r.date + ').', 'success');
+        } else {
+          showToast('Briefing send failed: ' + (r.error || 'unknown error'), 'error');
+        }
+      } catch (e) {
+        showToast('Briefing response parse error: ' + e.message, 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      btn.textContent = '📧 Send Daily Briefing';
+      btn.disabled = false;
+      showToast('Send failed: ' + (err.message || String(err)), 'error');
+    })
+    .portal_sendCEOBriefing();
 }
 
 function sendFeedbackRequests() {
