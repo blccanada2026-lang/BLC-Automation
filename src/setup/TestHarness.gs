@@ -269,34 +269,58 @@ function thSetupMinorFixJob_(tag) {
   return jn;
 }
 
-// ── Aggregate V3 runner ───────────────────────────────────────
+// ── Aggregate V3 runners ──────────────────────────────────────
+//
+// runV3HandlerTests()   — full 10-suite run (likely times out on 6-min accounts)
+// runV3Tests_1to5()     — suites 1–5  (JobCreate → JobResume)
+// runV3Tests_6to10()    — suites 6–10 (WorkLog → QCReassign)
+//
+// Run both halves back-to-back for a complete result on any account type.
 
 /**
- * Runs all 10 V3 handler test suites and prints a combined summary.
- * Each suite runner (runJobCreateTests, runJobStartTests, etc.) is
- * defined in its own *HandlerTest.gs file and returns {passed, failed}.
+ * Suites 1–5: JobCreate, JobAssign, JobStart, JobHold, JobResume.
+ * Designed to complete within the Apps Script 6-minute execution limit.
  */
-function runV3HandlerTests() {
+function runV3Tests_1to5() {
+  runSuiteGroup_('1–5', [
+    { name: '1 — JobCreateHandler',  fn: runJobCreateTests  },
+    { name: '2 — JobAssignHandler',  fn: runJobAssignTests  },
+    { name: '3 — JobStartHandler',   fn: runJobStartTests   },
+    { name: '4 — JobHoldHandler',    fn: runJobHoldTests    },
+    { name: '5 — JobResumeHandler',  fn: runJobResumeTests  }
+  ]);
+}
+
+/**
+ * Suites 6–10: WorkLog, QCHandler, JobUpdate, QCHandler Flow B/C, QCReassign.
+ * Designed to complete within the Apps Script 6-minute execution limit.
+ */
+function runV3Tests_6to10() {
+  runSuiteGroup_('6–10', [
+    { name: '6 — WorkLogHandler',       fn: runWorkLogTests         },
+    { name: '7 — QCHandler',            fn: runQCHandlerTests       },
+    { name: '8 — JobUpdateHandler',     fn: runJobUpdateTests       },
+    { name: '9 — QCHandler Flow B/C',   fn: runQCHandlerFlowTests   },
+    { name: '10 — QCReassignHandler',   fn: runQCReassignTests      }
+  ]);
+}
+
+/**
+ * Shared runner used by both half-suite functions and runV3HandlerTests.
+ * Seeds staff once, runs all suites in the list, prints a summary table.
+ *
+ * @param {string}  label   e.g. '1–5' or '6–10' — shown in the header
+ * @param {Array}   suites  Array of { name, fn }
+ */
+function runSuiteGroup_(label, suites) {
   console.log('');
   console.log('╔══════════════════════════════════════════════════════╗');
-  console.log('║  BLC NEXUS — V3 HANDLER TEST SUITE                  ║');
+  console.log('║  BLC NEXUS — V3 HANDLER TESTS (suites ' + label + ')' +
+              Array(Math.max(0, 14 - label.length) + 1).join(' ') + '║');
   console.log('║  Period: ' + TH_PERIOD_ID + '                                       ║');
   console.log('╚══════════════════════════════════════════════════════╝');
 
-  seedTestStaff();  // ensures DS1 / QC1 exist before any test runs
-
-  var suites = [
-    { name: '1 — JobCreateHandler',      fn: runJobCreateTests       },
-    { name: '2 — JobAssignHandler',      fn: runJobAssignTests       },
-    { name: '3 — JobStartHandler',       fn: runJobStartTests        },
-    { name: '4 — JobHoldHandler',        fn: runJobHoldTests         },
-    { name: '5 — JobResumeHandler',      fn: runJobResumeTests       },
-    { name: '6 — WorkLogHandler',        fn: runWorkLogTests         },
-    { name: '7 — QCHandler',             fn: runQCHandlerTests       },
-    { name: '8 — JobUpdateHandler',      fn: runJobUpdateTests       },
-    { name: '9 — QCHandler Flow B/C',    fn: runQCHandlerFlowTests   },
-    { name: '10 — QCReassignHandler',    fn: runQCReassignTests      }
-  ];
+  seedTestStaff();
 
   var totalPassed = 0;
   var totalFailed = 0;
@@ -325,7 +349,8 @@ function runV3HandlerTests() {
 
   console.log('');
   console.log('╔══════════════════════════════════════════════════════╗');
-  console.log('║  SUMMARY                                             ║');
+  console.log('║  SUMMARY (suites ' + label + ')' +
+              Array(Math.max(0, 34 - label.length) + 1).join(' ') + '║');
   console.log('╠══════════════════════════════════════════════════════╣');
   for (var j = 0; j < rows.length; j++) {
     var row = rows[j];
@@ -336,9 +361,31 @@ function runV3HandlerTests() {
   console.log('  ────────────────────────────────────────────────────');
   console.log('  TOTAL  ' + totalPassed + ' passed, ' + totalFailed + ' failed');
   if (totalFailed === 0) {
-    console.log('  ✅  ALL V3 HANDLER TESTS PASSED — ready to commit');
+    console.log('  ✅  ALL TESTS PASSED');
   } else {
     console.log('  ❌  ' + totalFailed + ' failure(s) — fix before commit');
   }
   console.log('╚══════════════════════════════════════════════════════╝');
+}
+
+/**
+ * Runs all 10 V3 handler test suites and prints a combined summary.
+ * Each suite runner (runJobCreateTests, runJobStartTests, etc.) is
+ * defined in its own *HandlerTest.gs file and returns {passed, failed}.
+ * NOTE: likely times out on 6-minute accounts — use runV3Tests_1to5()
+ * and runV3Tests_6to10() instead.
+ */
+function runV3HandlerTests() {
+  runSuiteGroup_('1–10', [
+    { name: '1 — JobCreateHandler',      fn: runJobCreateTests       },
+    { name: '2 — JobAssignHandler',      fn: runJobAssignTests       },
+    { name: '3 — JobStartHandler',       fn: runJobStartTests        },
+    { name: '4 — JobHoldHandler',        fn: runJobHoldTests         },
+    { name: '5 — JobResumeHandler',      fn: runJobResumeTests       },
+    { name: '6 — WorkLogHandler',        fn: runWorkLogTests         },
+    { name: '7 — QCHandler',             fn: runQCHandlerTests       },
+    { name: '8 — JobUpdateHandler',      fn: runJobUpdateTests       },
+    { name: '9 — QCHandler Flow B/C',    fn: runQCHandlerFlowTests   },
+    { name: '10 — QCReassignHandler',    fn: runQCReassignTests      }
+  ]);
 }
