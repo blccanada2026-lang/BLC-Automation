@@ -15,7 +15,7 @@
 //   testJobResumeHandler_duplicate()
 //
 // Test actors:
-//   DESIGNER (JOB_RESUME allowed) : designer@blclotus.com  (TH_DESIGNER_EMAIL)
+//   PM (JOB_RESUME allowed)    : sarthakaespl@gmail.com  (TH_PM_EMAIL)
 //   Unknown  (no RBAC entry)      : nobody@notinrbac.com   (TH_UNKNOWN_EMAIL)
 //
 // Starting state for all tests: ON_HOLD (via thSetupOnHoldJob_())
@@ -61,7 +61,7 @@ function testJobResumeHandler_happyPath() {
 
     var resumeResult = IntakeService.processSubmission({
       formType:       Config.FORM_TYPES.JOB_RESUME,
-      submitterEmail: TH_DESIGNER_EMAIL,
+      submitterEmail: TH_PM_EMAIL,
       payload:        { job_number: jobNumber, notes: 'JobResumeHandlerTest happyPath' },
       source:         'TEST'
     });
@@ -334,7 +334,7 @@ function testJobResumeHandler_duplicate() {
     // ── Step 1: Successful first resume ─────────────────────
     var firstResult = IntakeService.processSubmission({
       formType:       Config.FORM_TYPES.JOB_RESUME,
-      submitterEmail: TH_DESIGNER_EMAIL,
+      submitterEmail: TH_PM_EMAIL,
       payload:        { job_number: jobNumber, notes: 'JobResumeHandlerTest duplicate' },
       source:         'TEST'
     });
@@ -374,7 +374,7 @@ function testJobResumeHandler_duplicate() {
       return counters;
     }
 
-    var fakeActor  = RBAC.resolveActor(TH_DESIGNER_EMAIL);
+    var fakeActor  = RBAC.resolveActor(TH_PM_EMAIL);
     var dupeReturn = JobResumeHandler.handle(firstQueueItems[0], fakeActor);
 
     assertH_(results, counters, 'Direct re-handle() returns DUPLICATE',

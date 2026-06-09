@@ -244,15 +244,9 @@ var JobStartHandler = (function () {
       current_state: view.current_state
     });
 
-    // ── Step 5: Assert ALLOCATED → IN_PROGRESS ──────────────
-    // Throws INVALID_TRANSITION if the job is not in ALLOCATED state.
-    StateMachine.assertTransition(
-      view.current_state,
-      Config.STATES.IN_PROGRESS,
-      { jobNumber: jobNumber }
-    );
-
-    // ── Step 6: Idempotency check ───────────────────────────
+    // ── Step 5: Idempotency check ───────────────────────────
+    // Must precede state assertion so replayed queue items return DUPLICATE
+    // instead of throwing an INVALID_TRANSITION error on an already-started job.
     var idempotencyKey = buildIdempotencyKey_(queueId);
 
     if (isDuplicate_(idempotencyKey)) {
@@ -265,6 +259,14 @@ var JobStartHandler = (function () {
       });
       return 'DUPLICATE';
     }
+
+    // ── Step 6: Assert ALLOCATED → IN_PROGRESS ──────────────
+    // Throws INVALID_TRANSITION if the job is not in ALLOCATED state.
+    StateMachine.assertTransition(
+      view.current_state,
+      Config.STATES.IN_PROGRESS,
+      { jobNumber: jobNumber }
+    );
 
     // ── Step 7: Ensure FACT_JOB_EVENTS partition ───────────
     var periodId = Identifiers.generateCurrentPeriodId();

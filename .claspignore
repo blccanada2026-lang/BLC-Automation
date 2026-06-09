@@ -1,16 +1,5 @@
 node_modules/**
 tests/**
-setup/JobAssignHandlerTest.gs
-setup/JobCreateHandlerTest.gs
-setup/JobHoldHandlerTest.gs
-setup/JobResumeHandlerTest.gs
-setup/JobStartHandlerTest.gs
-setup/QCHandlerTest.gs
-setup/WorkLogHandlerTest.gs
-setup/TestHarness.gs
-setup/TestRunner.gs
-setup/SeedStaffImport.gs
-setup/SetupScript.gs
 package.json
 package-lock.json
 .gitignore

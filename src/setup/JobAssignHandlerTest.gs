@@ -29,10 +29,10 @@
 // assertH_() and printResultsH_() are defined in TestHarness.gs (shared harness).
 
 // ── Constants ─────────────────────────────────────────────
-var T_PERIOD_ID     = '2026-04';
-var T_PM_EMAIL      = 'sarty@blclotus.com';      // PM — JOB_ALLOCATE allowed
+var T_PERIOD_ID     = '2026-06';
+var T_PM_EMAIL      = 'sarthakaespl@gmail.com';  // SGO (PM) — JOB_ALLOCATE allowed
 var T_DESIGNER_EMAIL = 'designer@blclotus.com';  // DS1 — no JOB_ALLOCATE
-var T_CEO_EMAIL      = 'ceo@blclotus.com';
+var T_CEO_EMAIL      = 'sarthakaespl@gmail.com'; // SGO — highest PROD role available
 var T_DESIGNER_CODE  = 'DS1';                    // valid active designer
 var T_BAD_DESIGNER   = 'TEST-GHOST-99';          // does not exist in DIM_STAFF_ROSTER
 
@@ -671,6 +671,7 @@ function runJobAssignTests() {
     console.log('  ❌  ' + suiteCounters.failed + ' test(s) failed — fix before commit');
   }
   console.log('═══════════════════════════════════════════════════════');
+  return suiteCounters;
 }
 
 // printResultsH_() is defined in TestHarness.gs (shared harness).

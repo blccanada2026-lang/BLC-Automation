@@ -1257,7 +1257,7 @@ var PortalData = (function () {
       var row  = rows[i];
       var role = String(row.role || '').trim().toUpperCase();
       if (String(row.active || '').toUpperCase() !== 'TRUE') continue;
-      if (role !== 'DESIGNER' && role !== 'TEAM_LEAD' && role !== 'PM') continue;
+      if (role !== 'DESIGNER' && role !== 'TEAM_LEAD') continue;
       result.push({
         personCode: String(row.person_code || '').trim(),
         name:       String(row.name || '').trim(),

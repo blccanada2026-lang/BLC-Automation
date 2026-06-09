@@ -100,9 +100,12 @@ function testWorkLogHandler_happyPath() {
     assertH_(results, counters, 'WORK_LOG_SUBMITTED hours = 3.5',
       logEvent && Number(logEvent.hours) === 3.5,
       logEvent ? String(logEvent.hours) : 'null');
+    var storedDate = logEvent ? logEvent.work_date : null;
+    var storedDateStr = storedDate instanceof Date
+      ? Utilities.formatDate(storedDate, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+      : String(storedDate || '');
     assertH_(results, counters, 'WORK_LOG_SUBMITTED work_date correct',
-      logEvent && logEvent.work_date === TW_WORK_DATE,
-      logEvent ? logEvent.work_date : 'null');
+      storedDateStr === TW_WORK_DATE, storedDateStr);
     assertH_(results, counters, 'WORK_LOG_SUBMITTED actor_code = DS1',
       logEvent && logEvent.actor_code === TH_DESIGNER_CODE,
       logEvent ? logEvent.actor_code : 'null');
@@ -121,8 +124,11 @@ function testWorkLogHandler_happyPath() {
 
 // ============================================================
 // TEST 2 — RBAC Denial
-// Unknown actor (TH_UNKNOWN_EMAIL) has no RBAC entry — handler rejects
-// VW state must remain IN_PROGRESS, no FACT_WORK_LOGS row written
+// All staff roles (DESIGNER through CEO) have WORK_LOG_SUBMIT=true, so
+// RBAC denial cannot be triggered via the queue flow (unknown emails
+// resolve to DESIGNER which is allowed). Instead, directly call handle()
+// with a mock CLIENT actor (WORK_LOG_SUBMIT=false) to verify the guard fires.
+// VW state must remain IN_PROGRESS, no FACT_WORK_LOGS row written.
 // ============================================================
 
 /**
@@ -143,9 +149,11 @@ function testWorkLogHandler_rbacDenial() {
 
     DAL._resetApiCallCount();
 
+    // Submit via IntakeService to get a real queue item (use DESIGNER as submitter
+    // so IntakeService accepts it — we replace the actor before calling handle()).
     var logResult = IntakeService.processSubmission({
       formType:       Config.FORM_TYPES.WORK_LOG,
-      submitterEmail: TH_UNKNOWN_EMAIL,
+      submitterEmail: TH_DESIGNER_EMAIL,
       payload: {
         job_number: jobNumber,
         hours:      2.0,
@@ -153,23 +161,43 @@ function testWorkLogHandler_rbacDenial() {
       },
       source: 'TEST'
     });
-    processQueueFresh_();
 
     var queueItems = DAL.readWhere(
       Config.TABLES.STG_PROCESSING_QUEUE,
       { queue_id: logResult.queueId },
       { callerModule: 'WorkLogHandlerTest' }
     );
-    var queueItem = queueItems.length > 0 ? queueItems[0] : null;
-    assertH_(results, counters, 'Queue item exists', !!queueItem,
+    assertH_(results, counters, 'Queue item exists', queueItems.length > 0,
       'queueId=' + logResult.queueId);
-    assertH_(results, counters, 'Queue item not completed (RBAC denial)',
-      queueItem && queueItem.status !== 'COMPLETED',
-      queueItem ? queueItem.status : 'null');
-    assertH_(results, counters, 'Queue item error_message has retry metadata',
-      queueItem && (String(queueItem.error_message || '').indexOf('attempt') !== -1 ||
-                    String(queueItem.error_message || '').indexOf('exception') !== -1),
-      queueItem ? String(queueItem.error_message) : 'no error_message');
+    if (queueItems.length === 0) {
+      results.push('  SKIP: cannot find queue item');
+      counters.failed++;
+      printResultsH_('testWorkLogHandler_rbacDenial', results, counters);
+      return counters;
+    }
+
+    // CLIENT role has WORK_LOG_SUBMIT=false — use it to test the RBAC guard.
+    // _rbacResolved:true is required by assertActorExists_() inside enforcePermission;
+    // without it the error is ACTOR_NOT_RESOLVED, not PERMISSION_DENIED.
+    var clientActor = {
+      email:            'testclient@example.com',
+      personCode:       'EXT',
+      role:             'CLIENT',
+      displayName:      'External Client',
+      isActive:         true,
+      canAccessBilling: false,
+      _rbacResolved:    true
+    };
+
+    var rbacThrew = false;
+    try {
+      WorkLogHandler.handle(queueItems[0], clientActor);
+    } catch (rbacErr) {
+      rbacThrew = String(rbacErr.message || '').indexOf('PERMISSION_DENIED') !== -1;
+    }
+
+    assertH_(results, counters, 'RBAC denial: CLIENT actor rejected for WORK_LOG_SUBMIT',
+      rbacThrew);
 
     // VW must be unchanged
     var vw = StateMachine.getJobView(jobNumber);
@@ -177,7 +205,7 @@ function testWorkLogHandler_rbacDenial() {
       vw && vw.current_state === Config.STATES.IN_PROGRESS,
       vw ? vw.current_state : 'null');
 
-    // No FACT_WORK_LOGS row must have been written for this job
+    // No FACT_WORK_LOGS row written
     var logs = DAL.readWhere(
       Config.TABLES.FACT_WORK_LOGS,
       { job_number: jobNumber },

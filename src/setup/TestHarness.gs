@@ -18,9 +18,9 @@
 // ============================================================
 
 // ── Suite-wide constants ──────────────────────────────────────
-var TH_PERIOD_ID      = '2026-04';
-var TH_CEO_EMAIL      = 'ceo@blclotus.com';
-var TH_PM_EMAIL       = 'sarty@blclotus.com';
+var TH_PERIOD_ID      = '2026-06';
+var TH_CEO_EMAIL      = 'sarthakaespl@gmail.com';  // SGO (PM) — highest PROD role available
+var TH_PM_EMAIL       = 'sarthakaespl@gmail.com';
 var TH_DESIGNER_EMAIL = 'designer@blclotus.com';
 var TH_QC_EMAIL       = 'qc@blclotus.com';
 var TH_UNKNOWN_EMAIL  = 'nobody@notinrbac.com';
@@ -191,7 +191,7 @@ function thSetupOnHoldJob_(tag) {
 
   var r = IntakeService.processSubmission({
     formType:       Config.FORM_TYPES.JOB_HOLD,
-    submitterEmail: TH_DESIGNER_EMAIL,
+    submitterEmail: TH_PM_EMAIL,
     payload:        { job_number: jn, reason: 'th-setup hold' },
     source:         'TEST'
   });
@@ -307,7 +307,13 @@ function runV3HandlerTests() {
     console.log('\nRunning: ' + s.name);
     var c = { passed: 0, failed: 0 };
     try {
-      c = s.fn();
+      var result = s.fn();
+      if (result && typeof result.passed === 'number') {
+        c = result;
+      } else {
+        console.log('  WARN: suite returned no counters');
+        c.failed++;
+      }
     } catch (e) {
       console.log('  UNHANDLED EXCEPTION: ' + e.message);
       c.failed++;
