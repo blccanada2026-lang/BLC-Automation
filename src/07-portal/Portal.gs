@@ -489,6 +489,24 @@ function portal_getCEODashboard() {
 }
 
 // ============================================================
+// portal_sendCEOBriefing — CEO sends the daily briefing on demand
+// ============================================================
+
+/**
+ * Triggers the CEO daily briefing email immediately.
+ * CEO only (PAYROLL_RUN + enforceFinancialAccess).
+ *
+ * @returns {string}  JSON: { ok, sent_to, date }
+ */
+function portal_sendCEOBriefing() {
+  var email = Session.getActiveUser().getEmail();
+  var actor = RBAC.resolveActor(email);
+  RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_RUN);
+  RBAC.enforceFinancialAccess(actor);
+  return JSON.stringify(CEODailyBriefing.run(false));
+}
+
+// ============================================================
 // portal_confirmPaystub — staff confirms their own paystub
 // ============================================================
 
