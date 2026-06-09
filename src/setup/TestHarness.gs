@@ -271,37 +271,38 @@ function thSetupMinorFixJob_(tag) {
 
 // ── Aggregate V3 runners ──────────────────────────────────────
 //
-// runV3HandlerTests()   — full 10-suite run (likely times out on 6-min accounts)
-// runV3Tests_1to5()     — suites 1–5  (JobCreate → JobResume)
-// runV3Tests_6to10()    — suites 6–10 (WorkLog → QCReassign)
+// Execution plan for 6-minute Apps Script accounts (7 calls total):
 //
-// Run both halves back-to-back for a complete result on any account type.
+//   runV3Tests_1to3()       — suites 1–3  (~4.5 min, confirmed)
+//   runV3Tests_4to5()       — suites 4–5  (~4 min, estimated)
+//   runWorkLogTests()       — suite  6    (~1 min)
+//   runQCHandlerTests()     — suite  7    (~5.5 min, borderline — run solo)
+//   runJobUpdateTests()     — suite  8    (~3 min)
+//   runQCHandlerFlowTests() — suite  9    (~2 min)
+//   runQCReassignTests()    — suite  10   (~5.5 min, borderline — run solo)
+//
+// runV3HandlerTests() runs all 10 — only reliable on 30-min Workspace accounts.
 
 /**
- * Suites 1–5: JobCreate, JobAssign, JobStart, JobHold, JobResume.
- * Designed to complete within the Apps Script 6-minute execution limit.
+ * Suites 1–3: JobCreate, JobAssign, JobStart.
+ * Confirmed ~4.5 min on a 6-minute account.
  */
-function runV3Tests_1to5() {
-  runSuiteGroup_('1–5', [
+function runV3Tests_1to3() {
+  runSuiteGroup_('1–3', [
     { name: '1 — JobCreateHandler',  fn: runJobCreateTests  },
     { name: '2 — JobAssignHandler',  fn: runJobAssignTests  },
-    { name: '3 — JobStartHandler',   fn: runJobStartTests   },
-    { name: '4 — JobHoldHandler',    fn: runJobHoldTests    },
-    { name: '5 — JobResumeHandler',  fn: runJobResumeTests  }
+    { name: '3 — JobStartHandler',   fn: runJobStartTests   }
   ]);
 }
 
 /**
- * Suites 6–10: WorkLog, QCHandler, JobUpdate, QCHandler Flow B/C, QCReassign.
- * Designed to complete within the Apps Script 6-minute execution limit.
+ * Suites 4–5: JobHold, JobResume.
+ * Estimated ~4 min on a 6-minute account.
  */
-function runV3Tests_6to10() {
-  runSuiteGroup_('6–10', [
-    { name: '6 — WorkLogHandler',       fn: runWorkLogTests         },
-    { name: '7 — QCHandler',            fn: runQCHandlerTests       },
-    { name: '8 — JobUpdateHandler',     fn: runJobUpdateTests       },
-    { name: '9 — QCHandler Flow B/C',   fn: runQCHandlerFlowTests   },
-    { name: '10 — QCReassignHandler',   fn: runQCReassignTests      }
+function runV3Tests_4to5() {
+  runSuiteGroup_('4–5', [
+    { name: '4 — JobHoldHandler',    fn: runJobHoldTests    },
+    { name: '5 — JobResumeHandler',  fn: runJobResumeTests  }
   ]);
 }
 
