@@ -466,7 +466,10 @@
       <div class="dash-panel" id="dash-ratings-status-panel" style="display:none">
         <div class="dash-panel-hdr">
           <span>Ratings Status</span>
-          <span id="dash-ratings-status-meta" style="font-size:12px;font-weight:400;color:var(--c-muted)"></span>
+          <span style="display:flex;align-items:center;gap:8px">
+            <span id="dash-ratings-status-meta" style="font-size:12px;font-weight:400;color:var(--c-muted)"></span>
+            <button id="btn-ratings-period-change" class="btn-muted btn-sm" style="font-size:11px;padding:2px 8px">Change</button>
+          </span>
         </div>
         <div class="dash-panel-body" id="dash-ratings-status-body">
           <div class="dash-empty">Loading…</div>
@@ -1071,6 +1074,10 @@ document.addEventListener('DOMContentLoaded', function () {
   });
   document.getElementById('btn-confirm-paystub').addEventListener('click',   confirmPaystub);
   document.getElementById('btn-send-briefing').addEventListener('click',     sendDailyBriefing);
+  document.getElementById('btn-ratings-period-change').addEventListener('click', function() {
+    var pid = window.prompt('Enter the rating period to view (e.g. 2026-Q1, 2026-Q2):', '');
+    if (pid && pid.trim()) loadRatingsStatus(pid.trim());
+  });
   document.getElementById('btn-send-feedback').addEventListener('click',     sendFeedbackRequests);
   document.getElementById('btn-send-ratings').addEventListener('click',      sendRatingRequests);
   document.getElementById('btn-sbs-intake').addEventListener('click',        processSbsIntake);
@@ -3441,11 +3448,11 @@ function sendFeedbackRequests() {
     .portal_sendFeedbackRequests('', testEmail);
 }
 
-function loadRatingsStatus() {
+function loadRatingsStatus(overridePid) {
   var now     = new Date();
   var month   = now.getMonth() + 1;
   var quarter = month <= 3 ? 'Q1' : month <= 6 ? 'Q2' : month <= 9 ? 'Q3' : 'Q4';
-  var qPid    = now.getFullYear() + '-' + quarter;
+  var qPid    = overridePid || (now.getFullYear() + '-' + quarter);
   var body    = document.getElementById('dash-ratings-status-body');
   var meta    = document.getElementById('dash-ratings-status-meta');
   while (body.firstChild) body.removeChild(body.firstChild);

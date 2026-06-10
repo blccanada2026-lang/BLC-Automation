@@ -75,7 +75,7 @@ var CEODailyBriefing = (function () {
   /** CEO email from Script Property, with hardcoded fallback */
   function getCeoEmail_() {
     return PropertiesService.getScriptProperties()
-             .getProperty('CEO_BRIEFING_RECIPIENT') || 'raj@bluelotuscanada.ca';
+             .getProperty('CEO_BRIEFING_RECIPIENT') || 'raj.nair@bluelotuscanada.ca';
   }
 
   /** Normalises a work_date value (Date or string) to YYYY-MM-DD */
@@ -126,19 +126,28 @@ var CEODailyBriefing = (function () {
       if (e.code !== 'SHEET_NOT_FOUND') throw e;
     }
 
-    // 3. Name lookup from roster
-    var nameMap = {};
+    // 3. Name lookup from active roster only
+    // Only person_codes present in DIM_STAFF_ROSTER with active=TRUE are included.
+    // This filters out test actors, deactivated staff, and email-format allocated_to values.
+    var nameMap         = {};
+    var activeRosterSet = {};
     try {
       var roster = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE });
       for (var k = 0; k < roster.length; k++) {
-        var pc = String(roster[k].person_code || '').trim();
-        if (pc) nameMap[pc] = String(roster[k].name || pc);
+        var pc       = String(roster[k].person_code || '').trim();
+        var isActive = roster[k].active !== false
+                    && String(roster[k].active || '').toUpperCase().trim() !== 'FALSE';
+        if (pc && isActive) {
+          nameMap[pc]         = String(roster[k].name || pc);
+          activeRosterSet[pc] = true;
+        }
       }
-    } catch (e) { /* roster unavailable — use person_code as name */ }
+    } catch (e) { /* roster unavailable — skip filtering */ }
 
-    // 4. Build list of designers behind
+    // 4. Build list of designers behind — active roster members only
     var behind = [];
     Object.keys(activeMap).forEach(function (code) {
+      if (Object.keys(activeRosterSet).length > 0 && !activeRosterSet[code]) return;
       if (!loggedToday[code]) {
         behind.push({
           person_code: code,
@@ -196,8 +205,12 @@ var CEODailyBriefing = (function () {
     try {
       var dashJson = PortalData.getCEODashboard(getCeoEmail_());
       var dash     = JSON.parse(dashJson);
-      data.job_pipeline = dash.job_summary  || null;
-      data.qc_backlog   = dash.qc_backlog   || [];
+      data.job_pipeline = dash.job_summary || null;
+      // Filter out QC backlog entries where designer_name is an email address —
+      // these are test jobs or old data with email-format allocated_to values.
+      data.qc_backlog = (dash.qc_backlog || []).filter(function (item) {
+        return item.designer_name && item.designer_name.indexOf('@') === -1;
+      });
     } catch (e) {
       Logger.warn('CEO_BRIEFING_DASHBOARD_FAIL', { module: MODULE, error: e.message });
       data.section_errors.push('job pipeline/QC backlog: ' + e.message);
@@ -485,8 +498,10 @@ var CEODailyBriefing = (function () {
 function runCEODailyBriefing() {
   if (new Date().getDay() === 0) return; // 0 = Sunday
   try {
-    CEODailyBriefing.run(false);
+    var result = CEODailyBriefing.run(false);
+    console.log('[CEOBriefing] ' + JSON.stringify(result));
   } catch (e) {
+    console.log('[CEOBriefing] FATAL: ' + e.message);
     Logger.error('CEO_BRIEFING_FATAL', { module: 'CEODailyBriefing', error: e.message });
   }
 }
@@ -508,6 +523,12 @@ function runRemoveCEOBriefingTrigger() {
  * Run from the Apps Script editor to preview before going live.
  */
 function runTestCEODailyBriefing() {
-  var result = CEODailyBriefing.run(true);
-  console.log('Dry run complete — would send to: ' + result.sent_to + ' for date: ' + result.date);
+  console.log('[CEOBriefing] dry run starting...');
+  try {
+    var result = CEODailyBriefing.run(true);
+    console.log('[CEOBriefing] result: ' + JSON.stringify(result));
+  } catch (e) {
+    console.log('[CEOBriefing] ERROR: ' + e.message);
+    console.log('[CEOBriefing] STACK: ' + e.stack);
+  }
 }
