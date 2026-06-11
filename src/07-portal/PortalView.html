@@ -1632,8 +1632,88 @@ function renderJobs(jobs, actor, perms) {
     return;
   }
 
+  if (perms.canRunPayroll) {
+    renderJobsGrouped_(jobs, actor, perms, tbody);
+  } else {
+    jobs.forEach(function(job) {
+      tbody.appendChild(buildJobRow(job, actor, perms));
+    });
+  }
+}
+
+function renderJobsGrouped_(jobs, actor, perms, tbody) {
+  var groups = {};
+  var groupOrder = [];
   jobs.forEach(function(job) {
-    tbody.appendChild(buildJobRow(job, actor, perms));
+    var client = job.client_code || '—';
+    if (!groups[client]) { groups[client] = []; groupOrder.push(client); }
+    groups[client].push(job);
+  });
+
+  groupOrder.sort(function(a, b) { return groups[b].length - groups[a].length; });
+
+  var STATE_ORDER = ['IN_PROGRESS','QC_REVIEW','CLIENT_RETURN','MINOR_FIX','ON_HOLD','ALLOCATED','INTAKE_RECEIVED','COMPLETED_BILLABLE','INVOICED'];
+
+  groupOrder.forEach(function(client, gIdx) {
+    var clientJobs = groups[client];
+
+    var stateCounts = {};
+    clientJobs.forEach(function(j) {
+      var s = j.current_state || 'UNKNOWN';
+      stateCounts[s] = (stateCounts[s] || 0) + 1;
+    });
+
+    // Header row
+    var headerRow = document.createElement('tr');
+    headerRow.style.cssText = 'cursor:pointer;background:linear-gradient(90deg,#f1f5f9,#e8eef6);border-top:2px solid var(--c-border);';
+
+    var headerTd = document.createElement('td');
+    headerTd.colSpan = 9;
+    headerTd.style.cssText = 'padding:10px 14px;font-weight:600;font-size:13px;';
+
+    var arrow = document.createElement('span');
+    arrow.textContent = '▶';
+    arrow.style.cssText = 'font-size:10px;color:var(--c-muted);display:inline-block;transition:transform 0.15s;margin-right:8px;';
+
+    var clientLabel = document.createElement('span');
+    clientLabel.textContent = client;
+    clientLabel.style.cssText = 'margin-right:8px;color:var(--c-primary);';
+
+    var countBadge = document.createElement('span');
+    countBadge.style.cssText = 'background:#e2e8f0;color:var(--c-text);border-radius:10px;padding:1px 8px;font-size:11px;margin-right:10px;font-weight:500;';
+    countBadge.textContent = clientJobs.length + (clientJobs.length === 1 ? ' job' : ' jobs');
+
+    var chipsDiv = document.createElement('span');
+    chipsDiv.style.cssText = 'display:inline-flex;flex-wrap:wrap;gap:4px;vertical-align:middle;';
+    STATE_ORDER.forEach(function(state) {
+      if (!stateCounts[state]) return;
+      var chip = makeStateBadge(state);
+      chip.style.cssText = 'font-size:10px;padding:2px 6px;';
+      chip.textContent = state.replace(/_/g, ' ') + ' ×' + stateCounts[state];
+      chipsDiv.appendChild(chip);
+    });
+
+    headerTd.appendChild(arrow);
+    headerTd.appendChild(clientLabel);
+    headerTd.appendChild(countBadge);
+    headerTd.appendChild(chipsDiv);
+    headerRow.appendChild(headerTd);
+
+    var detailRows = clientJobs.map(function(job) {
+      var tr = buildJobRow(job, actor, perms);
+      tr.style.display = 'none';
+      return tr;
+    });
+
+    var expanded = false;
+    headerRow.addEventListener('click', function() {
+      expanded = !expanded;
+      arrow.style.transform = expanded ? 'rotate(90deg)' : '';
+      detailRows.forEach(function(tr) { tr.style.display = expanded ? '' : 'none'; });
+    });
+
+    tbody.appendChild(headerRow);
+    detailRows.forEach(function(tr) { tbody.appendChild(tr); });
   });
 }
 
@@ -3090,21 +3170,77 @@ function renderCEODashboard(data) {
     emptyQC.textContent = 'No jobs in QC review.';
     qcBody.appendChild(emptyQC);
   } else {
+    var qcGroups = {};
+    var qcGroupOrder = [];
+    qcData.forEach(function(row) {
+      var client = row.client_code || '—';
+      if (!qcGroups[client]) { qcGroups[client] = []; qcGroupOrder.push(client); }
+      qcGroups[client].push(row);
+    });
+    qcGroupOrder.sort(function(a, b) { return qcGroups[b].length - qcGroups[a].length; });
+
     var bktbl   = makeDashTable(['Job','Client','Designer','Reviewer','Days Waiting']);
     var bktbody = bktbl.querySelector('tbody');
-    qcData.forEach(function(row) {
-      var tr = document.createElement('tr');
-      appendTd(tr, row.job_number, '600');
-      appendTd(tr, row.client_code);
-      appendTd(tr, row.designer_name);
-      appendTd(tr, row.reviewer_name);
-      var daysTd = document.createElement('td');
-      daysTd.textContent  = row.days_waiting + 'd';
-      daysTd.style.color  = row.days_waiting >= 3 ? '#dc2626' : row.days_waiting >= 1 ? '#92400e' : '';
-      if (row.days_waiting >= 3) daysTd.style.fontWeight = '700';
-      tr.appendChild(daysTd);
-      bktbody.appendChild(tr);
+
+    qcGroupOrder.forEach(function(client) {
+      var clientRows = qcGroups[client];
+      var maxWait = Math.max.apply(null, clientRows.map(function(r) { return r.days_waiting || 0; }));
+
+      var groupTr = document.createElement('tr');
+      groupTr.style.cssText = 'cursor:pointer;background:linear-gradient(90deg,#f1f5f9,#e8eef6);border-top:2px solid var(--c-border);';
+      var groupTd = document.createElement('td');
+      groupTd.colSpan = 5;
+      groupTd.style.cssText = 'padding:8px 12px;font-weight:600;font-size:12px;';
+
+      var arrow = document.createElement('span');
+      arrow.textContent = '▶';
+      arrow.style.cssText = 'font-size:9px;color:var(--c-muted);display:inline-block;transition:transform 0.15s;margin-right:7px;';
+
+      var clientLabel = document.createElement('span');
+      clientLabel.textContent = client;
+      clientLabel.style.cssText = 'margin-right:8px;color:var(--c-primary);';
+
+      var countBadge = document.createElement('span');
+      countBadge.style.cssText = 'background:#e2e8f0;color:var(--c-text);border-radius:10px;padding:1px 7px;font-size:11px;margin-right:8px;';
+      countBadge.textContent = clientRows.length + (clientRows.length === 1 ? ' job' : ' jobs');
+
+      groupTd.appendChild(arrow);
+      groupTd.appendChild(clientLabel);
+      groupTd.appendChild(countBadge);
+      if (maxWait >= 3) {
+        var waitWarn = document.createElement('span');
+        waitWarn.style.cssText = 'color:#dc2626;font-weight:700;font-size:11px;';
+        waitWarn.textContent = 'max ' + maxWait + 'd';
+        groupTd.appendChild(waitWarn);
+      }
+      groupTr.appendChild(groupTd);
+
+      var detailRows = clientRows.map(function(row) {
+        var tr = document.createElement('tr');
+        tr.style.display = 'none';
+        appendTd(tr, row.job_number, '600');
+        appendTd(tr, row.client_code);
+        appendTd(tr, row.designer_name);
+        appendTd(tr, row.reviewer_name);
+        var daysTd = document.createElement('td');
+        daysTd.textContent  = row.days_waiting + 'd';
+        daysTd.style.color  = row.days_waiting >= 3 ? '#dc2626' : row.days_waiting >= 1 ? '#92400e' : '';
+        if (row.days_waiting >= 3) daysTd.style.fontWeight = '700';
+        tr.appendChild(daysTd);
+        return tr;
+      });
+
+      var expanded = false;
+      groupTr.addEventListener('click', function() {
+        expanded = !expanded;
+        arrow.style.transform = expanded ? 'rotate(90deg)' : '';
+        detailRows.forEach(function(tr) { tr.style.display = expanded ? '' : 'none'; });
+      });
+
+      bktbody.appendChild(groupTr);
+      detailRows.forEach(function(tr) { bktbody.appendChild(tr); });
     });
+
     qcBody.appendChild(bktbl);
     document.getElementById('dash-ceo-qc-meta').textContent =
       qcData.length + ' job' + (qcData.length !== 1 ? 's' : '');
