@@ -971,6 +971,17 @@ var DAL = (function () {
    * @returns {number}  Rows deleted (0 if sheet empty or not found)
    */
   function clearSheet(sheetName) {
+    // ── Rule A5 hard stop (H3 fix) ──────────────────────────
+    // FACT tables are append-only. clearSheet was the one write
+    // path with no guard. Allowed only in DEV (test resets).
+    if (isFactTable_(sheetName) && !Config.isDev()) {
+      throw new DalError_(
+        'FACT_CLEAR_FORBIDDEN',
+        'clearSheet() is forbidden on FACT table "' + sheetName + '" outside DEV. ' +
+        'FACT tables are append-only (Rule A5). Write amendment events instead.',
+        { tableName: sheetName }
+      );
+    }
     var ss    = getSpreadsheet_();
     var sheet = ss.getSheetByName(sheetName);
     if (!sheet || sheet.getLastRow() <= 1) return 0;

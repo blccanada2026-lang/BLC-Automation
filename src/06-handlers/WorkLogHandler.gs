@@ -216,17 +216,40 @@ var WorkLogHandler = (function () {
       return 'DUPLICATE';
     }
 
+    // ── Step 5b: Cross-period idempotency (Rule A5 support) ──
+    // The FACT scan above only covers the current period partition.
+    // IdempotencyEngine persists keys in ScriptProperties, catching
+    // retries that cross a period boundary or hit a different partition.
+    if (!IdempotencyEngine.checkAndMark(idempotencyKey)) {
+      Logger.warn('WORK_LOG_DUPLICATE_XPERIOD', {
+        module:          'WorkLogHandler',
+        message:         'Duplicate work log (cross-period idempotency) — skipping',
+        queue_id:        queueId,
+        job_number:      jobNumber,
+        idempotency_key: idempotencyKey
+      });
+      return 'DUPLICATE';
+    }
+
     // ── Step 6: Ensure FACT_WORK_LOGS partition ─────────────
     var periodId = Identifiers.generateCurrentPeriodId();
     DAL.ensurePartition(Config.TABLES.FACT_WORK_LOGS, periodId, 'WorkLogHandler');
 
     // ── Step 7: Write WORK_LOG_SUBMITTED ────────────────────
+    // On failure, release the idempotency mark so the queue retry
+    // is NOT skipped (otherwise a transient write failure would
+    // silently drop the work log).
     var eventRow = buildEvent_(cleanPayload, actor, periodId, idempotencyKey, rawPayload);
-    DAL.appendRow(
-      Config.TABLES.FACT_WORK_LOGS,
-      eventRow,
-      { callerModule: 'WorkLogHandler', periodId: periodId }
-    );
+    try {
+      DAL.appendRow(
+        Config.TABLES.FACT_WORK_LOGS,
+        eventRow,
+        { callerModule: 'WorkLogHandler', periodId: periodId }
+      );
+    } catch (e) {
+      IdempotencyEngine.clear(idempotencyKey);
+      throw e;
+    }
 
     // ── Step 8: Log success ─────────────────────────────────
     Logger.info('WORK_LOG_SUBMITTED', {

@@ -467,8 +467,14 @@ var PortalData = (function () {
    * @param {string} quarterPeriodId  e.g. '2026-Q1'
    * @returns {string}  JSON array of { person_code, name, role }
    */
-  function getMyRatees(raterEmail, quarterPeriodId, raterCode) {
-    var actor = raterEmail ? RBAC.resolveActor(raterEmail) : resolveActorByCode_(raterCode);
+  function getMyRatees(raterEmail, quarterPeriodId, raterCode, raterToken) {
+    var actor;
+    if (raterEmail) {
+      actor = RBAC.resolveActor(raterEmail);
+    } else {
+      requireValidRatingToken_(raterCode, quarterPeriodId, raterToken);
+      actor = resolveActorByCode_(raterCode);
+    }
     RBAC.enforcePermission(actor, RBAC.ACTIONS.RATE_STAFF);
 
     var allStaff;
@@ -539,16 +545,25 @@ var PortalData = (function () {
    * @param {string} payloadJson
    * @returns {string}  JSON: { ok: true }
    */
-  function submitRating(raterEmail, payloadJson, raterCode) {
-    var actor = raterEmail ? RBAC.resolveActor(raterEmail) : resolveActorByCode_(raterCode);
-    RBAC.enforcePermission(actor, RBAC.ACTIONS.RATE_STAFF);
-
+  function submitRating(raterEmail, payloadJson, raterCode, raterToken) {
     var payload;
     try {
       payload = JSON.parse(payloadJson);
     } catch (e) {
       throw new Error('PortalData.submitRating: invalid JSON payload.');
     }
+
+    // Identity: session email if present; otherwise the raterCode from
+    // the emailed link, which MUST carry a valid HMAC token. A bare
+    // raterCode is client-supplied and is never trusted on its own.
+    var actor;
+    if (raterEmail) {
+      actor = RBAC.resolveActor(raterEmail);
+    } else {
+      requireValidRatingToken_(raterCode, String(payload.quarter_period_id || '').trim(), raterToken);
+      actor = resolveActorByCode_(raterCode);
+    }
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.RATE_STAFF);
 
     var rateeCode = String(payload.ratee_code          || '').trim();
     var qPid      = String(payload.quarter_period_id   || '').trim();
@@ -602,6 +617,42 @@ var PortalData = (function () {
   // DIM_STAFF_ROSTER row for the person_code, extracts their email, and
   // delegates to RBAC.resolveActor() so all permission checks are normal.
   // ============================================================
+
+  /**
+   * Computes the HMAC-SHA256 rating-link token for a rater + period.
+   * Secret lives in Script Properties (RATING_LINK_SECRET) — generate
+   * once with runGenerateRatingSecret().
+   *
+   * @param {string} raterCode  person_code of the rater
+   * @param {string} periodId   e.g. '2026-Q2'
+   * @returns {string}  web-safe base64 token
+   */
+  function ratingToken_(raterCode, periodId) {
+    var secret = PropertiesService.getScriptProperties().getProperty('RATING_LINK_SECRET');
+    if (!secret) {
+      throw new Error('RATING_LINK_SECRET not set. Run runGenerateRatingSecret() once from the Apps Script editor.');
+    }
+    var msg   = String(raterCode || '') + '|' + String(periodId || '');
+    var bytes = Utilities.computeHmacSha256Signature(msg, secret);
+    return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, '');
+  }
+
+  /**
+   * Verifies a rating-link token. Throws on mismatch — rater identity
+   * via URL code alone is NOT trusted (it is client-supplied).
+   *
+   * @param {string} raterCode
+   * @param {string} periodId
+   * @param {string} token
+   */
+  function requireValidRatingToken_(raterCode, periodId, token) {
+    if (!token) {
+      throw new Error('PortalData: rating link token missing. Use the link from your rating request email.');
+    }
+    if (String(token) !== ratingToken_(raterCode, periodId)) {
+      throw new Error('PortalData: invalid rating link token for rater ' + raterCode + '.');
+    }
+  }
 
   function resolveActorByCode_(personCode) {
     if (!personCode) throw new Error('PortalData: rater identity missing — no session email and no rater code.');
@@ -763,7 +814,8 @@ var PortalData = (function () {
       if (!rater || !rater.email || rateeList.length === 0) continue;
 
       // Embed rater code so the page can identify the user without a GAS OAuth session
-      var raterUrl  = baseRatingUrl + '&rater=' + encodeURIComponent(raterCode);
+      var raterUrl  = baseRatingUrl + '&rater=' + encodeURIComponent(raterCode) +
+                      '&rtoken=' + encodeURIComponent(ratingToken_(raterCode, periodId));
       var recipient = testEmail || rater.email;
       if (!dryRun) MailApp.sendEmail({
         to:      recipient,
