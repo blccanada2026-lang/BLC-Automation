@@ -646,6 +646,21 @@ function runStaceySyncJob() {
     syncJobsFromStacey_();
   } catch(e) {
     console.log('[StaceySync] ❌ ' + e.message);
+    try {
+      var ceoEmail = PropertiesService.getScriptProperties()
+                       .getProperty('CEO_BRIEFING_RECIPIENT') || 'raj.nair@bluelotuscanada.ca';
+      MailApp.sendEmail({
+        to:      ceoEmail,
+        subject: '[BLC Nexus] ⚠️ Stacey Sync Failed — ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm'),
+        body:    'The Stacey auto-sync job failed.\n\n' +
+                 'Time: ' + new Date().toISOString() + '\n' +
+                 'Error: ' + e.message + '\n\n' +
+                 'Portal jobs data may be stale. Check Apps Script executions for details.\n\n' +
+                 '— BLC Nexus'
+      });
+    } catch(mailErr) {
+      console.log('[StaceySync] ❌ Could not send alert email: ' + mailErr.message);
+    }
   }
 }
 

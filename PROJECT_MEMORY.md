@@ -130,7 +130,7 @@ clasp push --force                        # force push all 78 files
 # Then: Apps Script editor → Deploy → Manage → Edit → New version → Deploy
 
 # Portal URL
-https://script.google.com/macros/s/AKfycbyEa0YwstXNwWLBEX97KSSSkZpofVuFF42txDgtQImzUr3A54_SfPx1lTrTvfZkpWjX/exec
+https://script.google.com/macros/s/AKfycbxttvUv9GeeEHnvsXwKbQIa8U4qDwV36qBWXwvLpibCX2VV2aXeyrzSvCU0-rbGuse_/exec
 
 # Script Properties to verify/set in PROD
 CEO_BRIEFING_RECIPIENT = raj.nair@bluelotuscanada.ca
