@@ -1514,6 +1514,7 @@ function runSendBonusLetters(quarterPeriodId) {
   });
 
   // ── Load individual rater scores for per-designer rating breakdown ──
+  // Use role-keyed map (last-write-wins per role) to match getInternalRatings_ dedup logic.
   var rateeRatingsMap = {};
   try {
     var perfRows = DAL.readAll(Config.TABLES.FACT_PERFORMANCE_RATINGS, { callerModule: 'QuarterlyBonusEngine' });
@@ -1524,12 +1525,16 @@ function runSendBonusLetters(quarterPeriodId) {
       var role  = String(r.rater_role || '').trim().toUpperCase();
       var score = parseFloat(r.avg_score_normalized) || 0;
       if (!ratee || score === 0) return;
-      if (!rateeRatingsMap[ratee]) rateeRatingsMap[ratee] = [];
-      rateeRatingsMap[ratee].push({
+      if (!rateeRatingsMap[ratee]) rateeRatingsMap[ratee] = {};
+      rateeRatingsMap[ratee][role] = {
         role:  role,
         name:  (staffMap[rater] && staffMap[rater].name) ? staffMap[rater].name : rater,
         score: score
-      });
+      };
+    });
+    // Flatten role map → array for downstream rendering
+    Object.keys(rateeRatingsMap).forEach(function(ratee) {
+      rateeRatingsMap[ratee] = Object.values(rateeRatingsMap[ratee]);
     });
   } catch(e) {
     console.log('⚠️  Could not load rating details: ' + e.message);
