@@ -1148,10 +1148,10 @@ function runQ1ManualCorrectionReport() {
  */
 function runQ1ApplyManualCorrections() {
   var qPid   = '2026-Q1';
-  var CALLER = 'QuarterlyBonusEngine:Corr';
+  var CALLER = 'QuarterlyBonusEngine';
   var actor  = Session.getActiveUser().getEmail();
 
-  // Read existing ledger — latest entry per person + already-applied amendment keys
+  // ── Read existing ledger ─────────────────────────────────────
   var ledgerRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: CALLER });
   var byPerson = {}, existingAmendKeys = {};
   ledgerRows.forEach(function(r) {
@@ -1162,6 +1162,21 @@ function runQ1ApplyManualCorrections() {
       if (!byPerson[code] || r.event_type === 'QUARTERLY_BONUS_AMENDMENT') byPerson[code] = r;
     }
   });
+
+  // ── Compute average rating score across the 16 manual designers ──
+  // Used as client_score proxy — Q1 client feedback was not collected.
+  // Rationale: team performance rating is the closest proxy for client satisfaction.
+  var ratingSamples = Object.keys(Q1_MANUAL_HRS_).map(function(c) {
+    return byPerson[c] ? (parseFloat(byPerson[c].rating_score) || 0) : 0;
+  }).filter(function(s) { return s > 0; });
+
+  var avgRating = ratingSamples.length
+    ? ratingSamples.reduce(function(a, b) { return a + b; }, 0) / ratingSamples.length
+    : 0;
+  avgRating = Math.round(avgRating * 10000) / 10000;
+
+  console.log('Q1 client score proxy (avg team rating): ' + Math.round(avgRating * 10000) / 100 + '%');
+  console.log('Composite = avg_rating×30% + error×40% + own_rating×30%\n');
 
   var written = 0, skipped = 0;
   Object.keys(Q1_MANUAL_HRS_).sort().forEach(function(code) {
@@ -1174,9 +1189,11 @@ function runQ1ApplyManualCorrections() {
       return;
     }
 
-    var existing  = byPerson[code] || {};
-    var composite = parseFloat(existing.composite_score) || m.comp;
-    var bonusInr  = Math.round(m.hrs * composite * 25 * 100) / 100;
+    var existing    = byPerson[code] || {};
+    var errorScore  = parseFloat(existing.error_score)  || 0;
+    var ownRating   = parseFloat(existing.rating_score) || 0;
+    var composite   = Math.round((avgRating * 0.30 + errorScore * 0.40 + ownRating * 0.30) * 10000) / 10000;
+    var bonusInr    = Math.round(m.hrs * composite * 25 * 100) / 100;
 
     DAL.appendRow(Config.TABLES.FACT_QUARTERLY_BONUS, {
       bonus_id:          Identifiers.generateId(),
@@ -1184,27 +1201,29 @@ function runQ1ApplyManualCorrections() {
       person_code:       code,
       quarter_period_id: qPid,
       design_hours:      m.hrs,
-      client_score:      parseFloat(existing.client_score) || 0,
-      error_score:       parseFloat(existing.error_score)  || 0,
-      rating_score:      parseFloat(existing.rating_score) || 0,
+      client_score:      avgRating,
+      error_score:       errorScore,
+      rating_score:      ownRating,
       composite_score:   composite,
       bonus_inr:         bonusInr,
       status:            'CALCULATED',
-      pending_reason:    'Manual correction 2026-06-11: hours from Stacey V2 source verified by HR',
+      pending_reason:    'Manual correction 2026-06-11: hrs from Stacey V2; client_score = avg team rating (Q1 proxy)',
       actor_email:       actor,
       timestamp:         new Date().toISOString(),
       idempotency_key:   amendKey
     }, { callerModule: CALLER });
 
-    console.log('  AMENDED ' + pad_(code,6) + ' ' + pad_(m.name,20) +
-                ' ' + m.hrs + ' hrs × ' + Math.round(composite * 10000) / 100 + '% × ₹25 = ₹' + bonusInr);
+    console.log('  ' + pad_(code,6) + pad_(m.name,22) +
+                m.hrs + 'h  client=' + Math.round(avgRating*10000)/100 + '%' +
+                '  err=' + Math.round(errorScore*10000)/100 + '%' +
+                '  rating=' + Math.round(ownRating*10000)/100 + '%' +
+                '  → composite=' + Math.round(composite*10000)/100 + '%' +
+                '  → ₹' + bonusInr);
     written++;
   });
 
-  console.log('\nDone. ' + written + ' amendment rows written, ' + skipped + ' already applied.');
-  if (written > 0) {
-    console.log('Next: run runSendQ1BonusLetters() to generate letters with corrected amounts.');
-  }
+  console.log('\nDone. ' + written + ' amendments written, ' + skipped + ' already applied.');
+  if (written > 0) console.log('Next: run runSendQ1BonusLetters()');
 }
 
 /** Diagnoses supervisor_code and pm_code for designers who are still missing ratings. */
@@ -1494,6 +1513,28 @@ function runSendBonusLetters(quarterPeriodId) {
     }
   });
 
+  // ── Load individual rater scores for per-designer rating breakdown ──
+  var rateeRatingsMap = {};
+  try {
+    var perfRows = DAL.readAll(Config.TABLES.FACT_PERFORMANCE_RATINGS, { callerModule: 'QuarterlyBonusEngine' });
+    perfRows.forEach(function(r) {
+      if (String(r.period_id || '').trim() !== quarterPeriodId) return;
+      var ratee = String(r.ratee_code || '').trim();
+      var rater = String(r.rater_code || '').trim();
+      var role  = String(r.rater_role || '').trim().toUpperCase();
+      var score = parseFloat(r.avg_score_normalized) || 0;
+      if (!ratee || score === 0) return;
+      if (!rateeRatingsMap[ratee]) rateeRatingsMap[ratee] = [];
+      rateeRatingsMap[ratee].push({
+        role:  role,
+        name:  (staffMap[rater] && staffMap[rater].name) ? staffMap[rater].name : rater,
+        score: score
+      });
+    });
+  } catch(e) {
+    console.log('⚠️  Could not load rating details: ' + e.message);
+  }
+
   // ── Read committed bonus rows ─────────────────────────────────
   var allRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: 'QuarterlyBonusEngine' });
   var bonusRows = allRows.filter(function(r) {
@@ -1542,6 +1583,25 @@ function runSendBonusLetters(quarterPeriodId) {
     var quarter = quarterPeriodId.split('-')[1] || quarterPeriodId;
     var year    = quarterPeriodId.split('-')[0] || '';
 
+    // Build per-rater sub-rows for this designer
+    var ROLE_ORDER = { 'TEAM_LEAD': 0, 'PM': 1, 'CEO': 2 };
+    var ROLE_LABEL = { 'TEAM_LEAD': 'Team Lead', 'PM': 'Project Manager', 'CEO': 'CEO' };
+    var myRaters = (rateeRatingsMap[code] || []).slice().sort(function(a, b) {
+      return (ROLE_ORDER[a.role] || 9) - (ROLE_ORDER[b.role] || 9);
+    });
+    var raterSubRows = myRaters.map(function(r) {
+      return '      <tr style="background:#f7f9fc;">' +
+             '<td style="padding:4px 12px 4px 28px;color:#7a8a9a;font-size:12px;">' +
+               '&nbsp;&nbsp;→&nbsp;' + (ROLE_LABEL[r.role] || r.role) + ' (' + r.name + ')' +
+             '</td>' +
+             '<td style="text-align:right;padding:4px 12px;color:#7a8a9a;font-size:12px;">' + (r.score * 100).toFixed(1) + '%</td>' +
+             '<td></td></tr>';
+    }).join('\n');
+    var raterBorderStyle = myRaters.length ? 'border-bottom:none' : 'border-bottom:1px solid #eee';
+    var clientLabel = clientScore > 0
+      ? 'Client Score <span style="font-size:11px;color:#aaa;font-weight:normal;">(Q1 proxy: avg team rating)</span>'
+      : 'Client Feedback';
+
     var html = [
       '<div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;color:#222;">',
 
@@ -1574,8 +1634,9 @@ function runSendBonusLetters(quarterPeriodId) {
       '    <tbody>',
       '      <tr style="border-bottom:1px solid #eee;"><td style="padding:9px 12px;">Design Hours</td><td style="text-align:right;padding:9px 12px;">' + designHours.toFixed(2) + ' hrs</td><td style="text-align:right;padding:9px 12px;color:#888;">—</td></tr>',
       '      <tr style="border-bottom:1px solid #eee;"><td style="padding:9px 12px;">Error Rate Score</td><td style="text-align:right;padding:9px 12px;">' + (errorScore * 100).toFixed(1) + '%</td><td style="text-align:right;padding:9px 12px;color:#555;">40%</td></tr>',
-      '      <tr style="border-bottom:1px solid #eee;"><td style="padding:9px 12px;">Performance Rating</td><td style="text-align:right;padding:9px 12px;">' + (ratingScore * 100).toFixed(1) + '%</td><td style="text-align:right;padding:9px 12px;color:#555;">30%</td></tr>',
-      '      <tr style="border-bottom:1px solid #eee;"><td style="padding:9px 12px;">Client Feedback</td><td style="text-align:right;padding:9px 12px;">' + (clientScore * 100).toFixed(1) + '%</td><td style="text-align:right;padding:9px 12px;color:#555;">30%</td></tr>',
+      '      <tr style="' + raterBorderStyle + ';"><td style="padding:9px 12px;">Performance Rating</td><td style="text-align:right;padding:9px 12px;">' + (ratingScore * 100).toFixed(1) + '%</td><td style="text-align:right;padding:9px 12px;color:#555;">30%</td></tr>',
+      raterSubRows,
+      '      <tr style="border-bottom:1px solid #eee;' + (myRaters.length ? 'border-top:1px solid #eee;' : '') + '"><td style="padding:9px 12px;">' + clientLabel + '</td><td style="text-align:right;padding:9px 12px;">' + (clientScore * 100).toFixed(1) + '%</td><td style="text-align:right;padding:9px 12px;color:#555;">30%</td></tr>',
       '      <tr style="background:#f9f9f9;font-weight:bold;"><td style="padding:9px 12px;">Composite Score</td><td style="text-align:right;padding:9px 12px;">' + (compositeScore * 100).toFixed(2) + '%</td><td style="text-align:right;padding:9px 12px;color:#888;">—</td></tr>',
       '    </tbody>',
       '  </table>',
@@ -1683,6 +1744,65 @@ function runAmendQ1BonusLedger() {
   });
 
   console.log('Done. ' + amended + ' amendment rows written, ' + alreadyDone + ' already amended.');
+}
+
+/**
+ * Shows per-designer Q1 component scores from the ledger.
+ * Flags designers where rating_score = 0 (ratings not included in composite).
+ * A rating_score of 0 means the 30% rating weight is missing from their bonus.
+ */
+function runQ1RatingScoreCheck() {
+  var qPid   = '2026-Q1';
+  var CALLER = 'QuarterlyBonusEngine';
+
+  var ledgerRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: CALLER });
+
+  // Latest row per person for Q1
+  var byPerson = {};
+  ledgerRows.forEach(function(r) {
+    if (String(r.quarter_period_id || '').trim() !== qPid) return;
+    var code = String(r.person_code || '').trim();
+    if (!code) return;
+    if (!byPerson[code] ||
+        String(r.event_type) === 'QUARTERLY_BONUS_AMENDMENT' ||
+        String(r.event_type) === 'QB_MANUAL_CORR' ||
+        r.idempotency_key.indexOf('QB_MANUAL_CORR') === 0) {
+      byPerson[code] = r;
+    }
+  });
+
+  console.log('\n══ Q1 2026 Component Score Check ══');
+  console.log('CODE   STATUS     CLIENT  ERROR   RATING  COMPOSITE  RATING INCLUDED?');
+  console.log('────── ─────────  ──────  ──────  ──────  ─────────  ────────────────');
+
+  var missingRatings = [];
+  Object.keys(byPerson).sort().forEach(function(code) {
+    var r         = byPerson[code];
+    var client    = Math.round((parseFloat(r.client_score)    || 0) * 10000) / 100;
+    var error     = Math.round((parseFloat(r.error_score)     || 0) * 10000) / 100;
+    var rating    = Math.round((parseFloat(r.rating_score)    || 0) * 10000) / 100;
+    var composite = Math.round((parseFloat(r.composite_score) || 0) * 10000) / 100;
+    var status    = String(r.status || '').trim();
+    var hasRating = rating > 0;
+
+    if (!hasRating) missingRatings.push(code);
+
+    console.log(
+      pad_(code, 7) + pad_(status, 11) +
+      pad_(client  + '%', 8) + pad_(error   + '%', 8) +
+      pad_(rating  + '%', 8) + pad_(composite + '%', 11) +
+      (hasRating ? '✓ Yes' : '⚠️  MISSING — bonus uses client+error only')
+    );
+  });
+
+  console.log('────── ─────────  ──────  ──────  ──────  ─────────');
+  if (missingRatings.length === 0) {
+    console.log('✅ All designers have ratings included in their composite.');
+  } else {
+    console.log('⚠️  ' + missingRatings.length + ' designer(s) with rating_score = 0: ' + missingRatings.join(', '));
+    console.log('   These designers are missing the 30% rating component.');
+    console.log('   Collect missing ratings via portal → re-run bonus calculation → re-run runQ1ApplyManualCorrections().');
+  }
 }
 
 /** Dumps all rows from FACT_QUARTERLY_BONUS to diagnose field names and filter mismatches. */
