@@ -5,25 +5,56 @@
 
 ---
 
-## 2026-06-11 Session (continued)
+## 2026-06-11 Session (Q1 Bonus Audit — full session)
 
 ### Work Completed
-- Added Stacey sync failure email alert: `runStaceySyncJob()` catches errors and sends MailApp email to CEO_BRIEFING_RECIPIENT. Committed `fc6736c`, pushed, deployed @52 (prior session).
-- Built `runQ1BonusAuditDetailed()` in QuarterlyBonusEngine.gs — per-designer Jan/Feb/Mar/Q1-total hours with flags: MISSING_CODE, DUPE_ROWS, NOT_IN_ROSTER, INACTIVE.
-- Created `AUDIT_PLAN_JUNE16.md` — 5-phase pre-cutover audit: Q1 bonus reconciliation, work log completeness, test data cleanup, system verification, cutover checklist.
+**Stacey sync alert:** `runStaceySyncJob()` now emails CEO on failure via MailApp (commits `fc6736c`).
 
-### Files Changed
-- `src/12-migration/StaceyJobImporter.gs` — sync failure email alert (committed `fc6736c`)
-- `src/10-payroll/QuarterlyBonusEngine.gs` — `runQ1BonusAuditDetailed()` + `pad_()` helper (committed `fa98f2c`)
-- `AUDIT_PLAN_JUNE16.md` — new audit plan document (committed `fa98f2c`)
-- All pushed to GitHub + clasp pushed to Apps Script
+**Q1 bonus audit — root cause found:** FACT_WORK_LOGS has duplicate rows across all 3 months.
+- Jan: 483 rows, 74 excess (15%). Feb: 745 rows, 151 excess (20%). Mar: 3189 rows, 1469 excess (46%).
+- All rows have `work_date` populated → duplicates are real (not a false-positive in dedup logic).
+- Root cause: March CSV imported twice; Jan/Feb have partial over-imports. Plus extra rows with wrong period_id for some designers (cross-period import).
+- Inflated system total: 6,367.6 Q1 design hours → Corrected (deduplicated): 5,717.35 hours.
+
+**Manual cross-check:** HR provided manual Stacey V2 hours for 16 designers (shared 2026-06-11).
+- Hardcoded as `Q1_MANUAL_HRS_` in QuarterlyBonusEngine.gs.
+- System inflated hours × composite = what was in ledger: ₹89,783 total.
+- Correct bonus (manual hrs × composite): ₹72,231. Net correction: -₹17,551.
+- RKU (Raj Kumar) is the one UNDERPAID: +₹3,739 — because his 299 QC hours were filtered by the engine. Manual counts all hours.
+- **Bonus has NOT been paid yet** — correcting ledger before letters go out.
+
+**Rating check:** `runQ1RatingScoreCheck()` — 16 designers CALCULATED with ratings included.
+- 8 designers PENDING (all zeros): AVM, BSG, PRG, RUD, SKR, SMB, SUB, SUB2.
+- BSG is INACTIVE (₹0 in ledger, no action). Other 7: unknown eligibility — user to confirm.
+- BIT appears as CALCULATED (same composite as JYS/Joy Sarkar 52.19%) — possibly Bittuu alias. User to confirm if same person or different.
+- Client score = 0% for all designers — correct, Q1 client feedback not collected.
+
+**Correction functions built and deployed (commit `80202c7`):**
+- `runQ1ManualCorrectionReport()` — full comparison table: hours + bonus + delta per designer.
+- `runQ1ApplyManualCorrections()` — writes `QUARTERLY_BONUS_AMENDMENT` rows. Uses manual hours. Fills in client_score = avg team rating (proxy for missing Q1 client feedback). Full composite = avg_rating×30% + error×40% + own_rating×30%.
+- `runQ1RatingScoreCheck()` — per-designer client/error/rating/composite breakdown.
+- `runSendBonusLetters()` enhanced — letter now shows individual rater breakdown (Team Lead, PM, CEO) per designer, plus client score note "(Q1 proxy: avg team rating)".
+- Multiple diagnostic functions: `runQ1CorrectedHours`, `runQ1BonusOverpaymentReport`, `runQ1DupeSummaryByPartition`, `runQ1DupeInspector`, `runQ1ManualCorrectionReport`.
+
+### Files Changed (all committed and pushed to `80202c7`)
+- `src/10-payroll/QuarterlyBonusEngine.gs` — 444 lines added (diagnostics + correction functions + letter enhancement)
+- `src/12-migration/StaceyJobImporter.gs` — sync failure email alert
+- `AUDIT_PLAN_JUNE16.md` — pre-cutover audit plan (5 phases)
+
+### Tests Run
+- None — all changes are diagnostic/payroll functions, no handler logic changed.
+
+### Unresolved Before Next Session
+1. **BIT designer**: CALCULATED with composite 52.19% (same as JYS). Is BIT = Bittuu alias = JYS? Or separate person? If separate, needs to be in `Q1_MANUAL_HRS_`.
+2. **7 PENDING designers**: AVM, PRG, RUD, SKR, SMB, SUB, SUB2 — are they Q1-eligible? If not, mark SKIPPED. If yes, collect ratings.
+3. **Test data purge**: designer@blc.com (54 jobs), BTD, SNA still in VW_JOB_CURRENT_STATE.
 
 ### Next Recommended Step
-1. **Run `runQ1BonusAuditDetailed()`** in Apps Script editor — copy output
-2. **Share manual calculations file** — compare per-designer Q1 totals against system output
-3. **Resolve discrepancies** — void duplicates or add missing rows per AUDIT_PLAN_JUNE16.md Phase A
-4. **Purge test data** from VW_JOB_CURRENT_STATE (designer@blc.com / BTD / SNA rows)
-5. **June 16**: Run `runRemoveStaceySyncTrigger()` BEFORE cutover email
+1. **Confirm BIT and 7 PENDING designers** eligibility
+2. **Run `runQ1ApplyManualCorrections()`** — writes 16 amendment rows with corrected hours + client proxy
+3. **Run `runSendQ1BonusLetters()`** — 16 letters land in your inbox for review before forwarding
+4. **June 16 (5 days away)**: Run `runRemoveStaceySyncTrigger()` BEFORE sending cutover email to designers
+5. Send Q2 rating requests + Q2 client feedback requests via portal
 
 ---
 

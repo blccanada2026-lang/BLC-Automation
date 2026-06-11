@@ -87,7 +87,7 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
 
 ## 6. Current Active Work
 
-- **Portal deployment** — PortalView.html has uncommitted changes (grouped jobs + QC views). Needs: commit → `clasp push --force` → deploy new version in Apps Script editor.
+- **Q1 bonus corrections** — `runQ1ApplyManualCorrections()` not yet run. Run it, then `runSendQ1BonusLetters()`. Letters land in CEO inbox for review. See SESSION_LOG for full detail.
 - **Stacey auto-sync** — running every 30 min (live since 2026-06-04). Must be removed on June 16.
 - **Parallel running phase** — CEO/TL verify portal data; no portal hour submissions yet.
 
@@ -114,11 +114,14 @@ Priority order:
 | Risk | Severity | Status |
 |---|---|---|
 | Stacey sync not removed before June 16 cutover | **CRITICAL** | Pending — set a reminder |
+| Q1 bonus letters not yet sent | **HIGH** | Run `runQ1ApplyManualCorrections()` then `runSendQ1BonusLetters()`. See SESSION_LOG. |
+| BIT designer in FACT_QUARTERLY_BONUS | Medium | CALCULATED, composite 52.19% = same as JYS. Is BIT = Bittuu alias = JYS, or different person? |
+| 7 PENDING designers (AVM, PRG, RUD, SKR, SMB, SUB, SUB2) | Medium | All zeros — not in manual. Confirm Q1 eligibility. Mark SKIPPED if ineligible. |
+| Q1 FACT_WORK_LOGS has 1,694 duplicate rows | Medium | Real dupes confirmed (all rows have dates). Root cause: CSV re-import. Bonus corrected via amendment. Raw data not cleaned yet. |
 | `designer@blc.com` (54 jobs) + BTD + SNA in VW_JOB_CURRENT_STATE | Medium | Test/legacy data from migration. Filter applied in CEO briefing. Needs purge. |
 | QC backlog inflated by test jobs (~128 items) | Medium | Email-format entries filtered. Jobs with real-looking person_codes still show. |
-| Ratings "Change" button unconfirmed visible in portal | Low | Push done; user needs to deploy new version and confirm. |
 | June payroll run before cutover verified | **HIGH** | Rule: do NOT run June payroll until Phase 3 complete. |
-| CEO email in auto-memory at `~/.claude/projects/.../memory/MEMORY.md` line 9 is stale | Low | Says `raj@bluelotuscanada.ca`; correct is `raj.nair@bluelotuscanada.ca`. Memory file `feedback_ceo_email.md` is correct. |
+| CEO email in auto-memory stale | Low | Auto-memory `feedback_ceo_email.md` correct: `raj.nair@bluelotuscanada.ca`. |
 
 ---
 
