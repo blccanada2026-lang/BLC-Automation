@@ -910,6 +910,303 @@ function pad_(val, width) {
   return s;
 }
 
+/**
+ * Dumps the first 30 raw rows for a specific designer in a given partition.
+ * Use to confirm whether work_date is populated and whether rows are truly duplicated.
+ * Example: runQ1DupeInspector('BCH', '2026-01')
+ */
+function runQ1DupeInspector(code, periodId) {
+  code     = code     || 'BCH';
+  periodId = periodId || '2026-01';
+  var rows;
+  try {
+    rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: 'QuarterlyBonusEngine', periodId: periodId });
+  } catch(e) {
+    console.log('❌ ' + e.message);
+    return;
+  }
+  var myRows = rows.filter(function(r) {
+    var c = String(r.actor_code || r.person_code || '').trim();
+    return c === code;
+  });
+  console.log('=== ' + code + ' in ' + periodId + ' — ' + myRows.length + ' rows ===');
+  console.log('Available columns: ' + (myRows.length ? Object.keys(myRows[0]).join(', ') : '—'));
+  myRows.slice(0, 30).forEach(function(r, i) {
+    console.log(
+      i + ') work_date="' + (r.work_date||r.date||'') + '"' +
+      '  hours=' + r.hours +
+      '  actor_role=' + (r.actor_role||'') +
+      '  source=' + (r.source||r.import_batch||'') +
+      '  event_id=' + (r.event_id||r.row_id||'')
+    );
+  });
+}
+
+/**
+ * For each Q1 partition, counts total rows, unique (actor_code+date+hours) keys, and excess rows.
+ * Prints a per-partition summary to confirm whether double-import occurred at the batch level.
+ */
+function runQ1DupeSummaryByPartition() {
+  var periods = ['2026-01', '2026-02', '2026-03'];
+  periods.forEach(function(pid) {
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: 'QuarterlyBonusEngine', periodId: pid });
+    } catch(e) {
+      console.log(pid + ': ❌ ' + e.message);
+      return;
+    }
+    var keyCount = {};
+    var totalHours = 0;
+    rows.forEach(function(r) {
+      var code  = String(r.actor_code || r.person_code || '').trim();
+      var hrs   = parseFloat(r.hours) || 0;
+      var date  = String(r.work_date || r.date || '').trim();
+      var role  = String(r.actor_role || '').toUpperCase();
+      if (role !== 'QC') totalHours += hrs;
+      var key = code + '|' + date + '|' + hrs;
+      keyCount[key] = (keyCount[key] || 0) + 1;
+    });
+    var uniqueKeys    = Object.keys(keyCount).length;
+    var excessRows    = Object.values(keyCount).reduce(function(s, v) { return s + (v - 1); }, 0);
+    var noDateRows    = rows.filter(function(r) { return !String(r.work_date || r.date || '').trim(); }).length;
+    console.log(pid + ': total=' + rows.length + '  uniqueKeys=' + uniqueKeys + '  excessRows=' + excessRows + '  noDateRows=' + noDateRows + '  designHrs=' + Math.round(totalHours * 100) / 100);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Q1 2026 MANUAL CORRECTION BASELINE
+// Source: HR manual calculations file, verified 2026-06-11.
+// Authoritative hours from Stacey V2 source.  Composite scores from system.
+// Correct bonus per designer = hours × composite × INR 25.
+// ─────────────────────────────────────────────────────────────────────────────
+var Q1_MANUAL_HRS_ = {
+  'AR001': { name: 'Abhisek Rit',      hrs: 64,     comp: 0.4750 },
+  'NMM':   { name: 'Nitesh Mishra',    hrs: 24.75,  comp: 0.5313 },
+  'PRS':   { name: 'Priyanka S',       hrs: 110,    comp: 0.5313 },
+  'RKU':   { name: 'Raj Kumar',        hrs: 361.25, comp: 0.6250 },
+  'DBG':   { name: 'Debby Gosh',       hrs: 450.5,  comp: 0.6063 },
+  'DBS':   { name: 'Deb Sen',          hrs: 346.25, comp: 0.6063 },
+  'PBG':   { name: 'Pabitra Gosh',     hrs: 306.5,  comp: 0.6250 },
+  'SVN':   { name: 'Savvy Nath',       hrs: 442,    comp: 0.6813 },
+  'SDA':   { name: 'Samar Kumar Das',  hrs: 512.5,  comp: 0.6250 },
+  'BCH':   { name: 'Bharath Charles',  hrs: 451,    comp: 0.6250 },
+  'SGO':   { name: 'Sarty Gosh',       hrs: 236.5,  comp: 0.6625 },
+  'RKG':   { name: 'RaviKumar G',      hrs: 297,    comp: 0.6063 },
+  'VKV':   { name: 'Vani KV',          hrs: 92.9,   comp: 0.5500 },
+  'SYR':   { name: 'Sayan Roy',        hrs: 460.25, comp: 0.6063 },
+  'ABB':   { name: 'Abhijit Bera',     hrs: 512.5,  comp: 0.5875 },
+  'JYS':   { name: 'Joy Sarkar',       hrs: 29.75,  comp: 0.5219 }
+};
+
+/**
+ * Full Q1 2026 correction report — two sections:
+ *  Part 1: Hours — manual vs system corrected vs system inflated, with root-cause per designer.
+ *  Part 2: Bonus — correct bonus (manual hrs × composite × 25) vs current ledger, delta per designer.
+ *
+ * Run this first. Review the output. Then run runQ1ApplyManualCorrections() to write amendments.
+ */
+function runQ1ManualCorrectionReport() {
+  var qPid    = '2026-Q1';
+  var periods = ['2026-01', '2026-02', '2026-03'];
+  var CALLER  = 'QuarterlyBonusEngine:Corr';
+
+  // ── Step 1: compute per-designer hours from FACT_WORK_LOGS ──────────────
+  var inflated = {}, corrected = {}, qcHrs = {}, seen = {};
+  var monthly  = {};   // code → { jan, feb, mar }  — corrected design only
+
+  periods.forEach(function(pid, pIdx) {
+    var mKey = ['jan', 'feb', 'mar'][pIdx];
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: CALLER, periodId: pid });
+    } catch(e) {
+      if (e.code === 'SHEET_NOT_FOUND') { console.log('⚠️  ' + pid + ' not found'); return; }
+      throw e;
+    }
+    rows.forEach(function(row) {
+      var code  = String(row.actor_code || row.person_code || '').trim();
+      var role  = String(row.actor_role || '').toUpperCase();
+      var hours = parseFloat(row.hours) || 0;
+      var date  = String(row.work_date || row.date || '').trim();
+      if (!code || hours <= 0) return;
+
+      var key   = pid + '|' + code + '|' + date + '|' + hours;
+      var isNew = !seen[key];
+      seen[key] = true;
+
+      if (role === 'QC') {
+        if (isNew) qcHrs[code] = (qcHrs[code] || 0) + hours;
+      } else {
+        inflated[code] = (inflated[code] || 0) + hours;
+        if (isNew) {
+          corrected[code] = (corrected[code] || 0) + hours;
+          if (!monthly[code]) monthly[code] = { jan: 0, feb: 0, mar: 0 };
+          monthly[code][mKey] += hours;
+        }
+      }
+    });
+  });
+
+  // ── Step 2: read current ledger state ───────────────────────────────────
+  var ledgerRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: CALLER });
+  var ledger = {};
+  ledgerRows.forEach(function(r) {
+    if (String(r.quarter_period_id || '').trim() !== qPid) return;
+    var code = String(r.person_code || '').trim();
+    if (!code) return;
+    if (!ledger[code] || r.event_type === 'QUARTERLY_BONUS_AMENDMENT') ledger[code] = r;
+  });
+
+  // ── Part 1: Hours comparison ─────────────────────────────────────────────
+  console.log('\n══════ PART 1 — Q1 2026 HOURS (Manual vs System) ══════');
+  console.log('CODE   DESIGNER              MAN.HRS  SYS.CORR  SYS.INFL  QC.FILT  J/F/M (corrected)       ROOT CAUSE');
+  console.log('────── ─────────────────── ──────── ─────────  ──────── ──────── ─────────────────────── ─────────────────────────────────────');
+
+  var codes = Object.keys(Q1_MANUAL_HRS_).sort();
+  codes.forEach(function(code) {
+    var m   = Q1_MANUAL_HRS_[code];
+    var inf = Math.round((inflated[code]  || 0) * 100) / 100;
+    var cor = Math.round((corrected[code] || 0) * 100) / 100;
+    var qc  = Math.round((qcHrs[code]    || 0) * 100) / 100;
+    var dupe = Math.round((inf - cor) * 100) / 100;
+    var mc  = monthly[code] || { jan: 0, feb: 0, mar: 0 };
+    var mthStr = 'J:' + mc.jan + ' F:' + mc.feb + ' M:' + Math.round(mc.mar * 100) / 100;
+
+    var reason;
+    var diff = cor - m.hrs;
+    if (code === 'RKU') {
+      reason = 'QC role filter removed ' + qc + ' hrs. Manual counts all hours.';
+    } else if (Math.abs(diff) < 2 && dupe === 0) {
+      reason = 'CLEAN — hours match';
+    } else if (Math.abs(diff) < 2 && dupe > 0) {
+      reason = 'Dup rows (' + dupe + ' hrs) but corrected total matches manual';
+    } else if (cor >= m.hrs * 1.9 && cor <= m.hrs * 2.1 && dupe < 1) {
+      reason = '⚠️  CROSS-PERIOD: ' + (m.hrs) + ' hrs imported under 2 period_ids';
+    } else if (diff > 10) {
+      reason = '⚠️  OVER-IMPORT: +' + Math.round(diff*100)/100 + ' extra hrs vs Stacey V2' + (dupe > 1 ? ' (incl. ' + dupe + ' dup hrs)' : '');
+    } else if (diff < -10) {
+      reason = '⚠️  UNDER-IMPORT: ' + Math.round(-diff*100)/100 + ' hrs missing from Nexus' + (dupe > 1 ? ' (plus ' + dupe + ' dup hrs)' : '');
+    } else {
+      reason = (dupe > 0 ? 'Minor dup rows (' + dupe + ' hrs) ' : '') + 'Small gap (' + Math.round(diff*100)/100 + ' hrs)';
+    }
+
+    console.log(
+      pad_(code,7) + pad_(m.name,19) + '  ' +
+      pad_(m.hrs,8) + ' ' + pad_(cor,9) + '  ' + pad_(inf,8) + ' ' + pad_(qc,8) + ' ' +
+      pad_(mthStr,23) + ' ' + reason
+    );
+  });
+
+  // ── Part 2: Bonus comparison ─────────────────────────────────────────────
+  console.log('\n══════ PART 2 — Q1 2026 BONUS (Correct vs Ledger) ══════');
+  console.log('CODE   DESIGNER              MAN.HRS  COMPOSITE  CORRECT BONUS  LEDGER BONUS   DELTA        LEDGER HRS');
+  console.log('────── ─────────────────── ──────── ─────────  ─────────────  ─────────────  ───────────  ──────────');
+
+  var totalCorrect = 0, totalLedger = 0;
+  codes.forEach(function(code) {
+    var m       = Q1_MANUAL_HRS_[code];
+    var le      = ledger[code];
+    var ledComp = le ? (parseFloat(le.composite_score) || m.comp) : m.comp;
+    var correct = Math.round(m.hrs * ledComp * 25 * 100) / 100;
+    var paid    = le ? (Math.round((parseFloat(le.bonus_inr) || 0) * 100) / 100) : 0;
+    var lHrs    = le ? (parseFloat(le.design_hours) || 0) : 0;
+    var delta   = Math.round((correct - paid) * 100) / 100;
+    totalCorrect += correct;
+    totalLedger  += paid;
+
+    var flag = !le ? '⚠️ NOT IN LEDGER' : (Math.abs(delta) < 1 ? '✓' : (delta > 0 ? '↑ PAY MORE' : '↓ REDUCE'));
+    console.log(
+      pad_(code,7) + pad_(m.name,19) + '  ' +
+      pad_(m.hrs,8) + ' ' + pad_(Math.round(ledComp*10000)/100 + '%', 9) + '  ' +
+      '₹' + pad_(correct,13) + ' ₹' + pad_(paid,13) + ' ₹' + pad_(delta,11) + '  ' + lHrs + '  ' + flag
+    );
+  });
+
+  console.log('────── ─────────────────── ──────── ─────────  ─────────────  ─────────────  ───────────');
+  console.log(pad_('TOTAL',7) + pad_('',19) + '  ' + pad_('',8) + ' ' + pad_('',9) + '  ' +
+    '₹' + pad_(Math.round(totalCorrect),13) + ' ₹' + pad_(Math.round(totalLedger),13) + ' ₹' + Math.round(totalCorrect - totalLedger));
+
+  // ── BSG check ────────────────────────────────────────────────────────────
+  var bsgEntry = ledger['BSG'];
+  if (bsgEntry) {
+    console.log('\n⚠️  BSG (Banik Sagar — INACTIVE, not in manual): ledger shows ₹' + bsgEntry.bonus_inr + '. Verify eligibility before paying.');
+  }
+
+  console.log('\n─── Next step ───────────────────────────────────────────────────');
+  console.log('If Part 2 DELTA column looks correct → run runQ1ApplyManualCorrections().');
+  console.log('That writes QUARTERLY_BONUS_AMENDMENT rows using manual hours. Idempotent — safe to re-run.');
+}
+
+/**
+ * Writes QUARTERLY_BONUS_AMENDMENT rows to FACT_QUARTERLY_BONUS using the manual
+ * correction baseline (Q1_MANUAL_HRS_).  Copies component scores from the existing
+ * ledger entry; overrides design_hours, composite_score, and bonus_inr.
+ * Idempotent: uses QB_MANUAL_CORR|{code}|2026-Q1 key — safe to re-run.
+ *
+ * Run ONLY after reviewing runQ1ManualCorrectionReport() output.
+ */
+function runQ1ApplyManualCorrections() {
+  var qPid   = '2026-Q1';
+  var CALLER = 'QuarterlyBonusEngine:Corr';
+  var actor  = Session.getActiveUser().getEmail();
+
+  // Read existing ledger — latest entry per person + already-applied amendment keys
+  var ledgerRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: CALLER });
+  var byPerson = {}, existingAmendKeys = {};
+  ledgerRows.forEach(function(r) {
+    var code = String(r.person_code || '').trim();
+    var key  = String(r.idempotency_key || '').trim();
+    if (key.indexOf('QB_MANUAL_CORR|') === 0) existingAmendKeys[key] = true;
+    if (code && String(r.quarter_period_id || '').trim() === qPid) {
+      if (!byPerson[code] || r.event_type === 'QUARTERLY_BONUS_AMENDMENT') byPerson[code] = r;
+    }
+  });
+
+  var written = 0, skipped = 0;
+  Object.keys(Q1_MANUAL_HRS_).sort().forEach(function(code) {
+    var m        = Q1_MANUAL_HRS_[code];
+    var amendKey = 'QB_MANUAL_CORR|' + code + '|' + qPid;
+
+    if (existingAmendKeys[amendKey]) {
+      console.log('  SKIP ' + code + ' — already corrected');
+      skipped++;
+      return;
+    }
+
+    var existing  = byPerson[code] || {};
+    var composite = parseFloat(existing.composite_score) || m.comp;
+    var bonusInr  = Math.round(m.hrs * composite * 25 * 100) / 100;
+
+    DAL.appendRow(Config.TABLES.FACT_QUARTERLY_BONUS, {
+      bonus_id:          Identifiers.generateId(),
+      event_type:        'QUARTERLY_BONUS_AMENDMENT',
+      person_code:       code,
+      quarter_period_id: qPid,
+      design_hours:      m.hrs,
+      client_score:      parseFloat(existing.client_score) || 0,
+      error_score:       parseFloat(existing.error_score)  || 0,
+      rating_score:      parseFloat(existing.rating_score) || 0,
+      composite_score:   composite,
+      bonus_inr:         bonusInr,
+      status:            'CALCULATED',
+      pending_reason:    'Manual correction 2026-06-11: hours from Stacey V2 source verified by HR',
+      actor_email:       actor,
+      timestamp:         new Date().toISOString(),
+      idempotency_key:   amendKey
+    }, { callerModule: CALLER });
+
+    console.log('  AMENDED ' + pad_(code,6) + ' ' + pad_(m.name,20) +
+                ' ' + m.hrs + ' hrs × ' + Math.round(composite * 10000) / 100 + '% × ₹25 = ₹' + bonusInr);
+    written++;
+  });
+
+  console.log('\nDone. ' + written + ' amendment rows written, ' + skipped + ' already applied.');
+  if (written > 0) {
+    console.log('Next: run runSendQ1BonusLetters() to generate letters with corrected amounts.');
+  }
+}
+
 /** Diagnoses supervisor_code and pm_code for designers who are still missing ratings. */
 function runDiagnoseRatingAssignments() {
   var missing = ['DBG','DBS','PRS','NMM','AR001','BSG','RKU'];
@@ -926,6 +1223,153 @@ function runDiagnoseRatingAssignments() {
                 ' | pm_code="' + (r.pm_code||'') + '"' +
                 ' | email="' + (r.email||'') + '"');
   });
+}
+
+/**
+ * Recomputes Q1 2026 design hours per designer after deduplicating by (actor_code, work_date, hours).
+ * This is the TRUE baseline the bonus engine should have used.
+ * noDateRows=0 confirmed → duplicates are real double-imports, not false positives.
+ */
+function runQ1CorrectedHours() {
+  var periods      = ['2026-01', '2026-02', '2026-03'];
+  var MODULE_AUDIT = 'QuarterlyBonusEngine:Audit';
+
+  var rosterRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE_AUDIT });
+  var rosterMap  = {};
+  rosterRows.forEach(function(r) {
+    var code = String(r.person_code || '').trim();
+    if (code) rosterMap[code] = String(r.full_name || r.name || code).trim();
+  });
+
+  var perCode  = {};  // code → { jan, feb, mar, qcHrs }
+  var seen     = {};  // global dedup key set
+
+  periods.forEach(function(pid, pIdx) {
+    var monthKey = ['jan', 'feb', 'mar'][pIdx];
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: MODULE_AUDIT, periodId: pid });
+    } catch(e) {
+      if (e.code === 'SHEET_NOT_FOUND') { console.log('⚠️  ' + pid + ' not found'); return; }
+      throw e;
+    }
+    rows.forEach(function(row) {
+      var code  = String(row.actor_code || row.person_code || '').trim();
+      var role  = String(row.actor_role || '').toUpperCase();
+      var hours = parseFloat(row.hours) || 0;
+      var date  = String(row.work_date || row.date || '').trim();
+      if (!code || hours <= 0) return;
+      var key = pid + '|' + code + '|' + date + '|' + hours;
+      if (seen[key]) return;
+      seen[key] = true;
+      if (!perCode[code]) perCode[code] = { jan: 0, feb: 0, mar: 0, qcHrs: 0 };
+      if (role === 'QC') perCode[code].qcHrs += hours;
+      else perCode[code][monthKey] += hours;
+    });
+  });
+
+  console.log('\n====== Q1 2026 CORRECTED Hours (Deduplicated) ======');
+  console.log('CODE       | NAME                     | JAN    | FEB    | MAR    | Q1 TRUE');
+  console.log('-----------|--------------------------|--------|--------|--------|--------');
+  var grandTrue = 0;
+  Object.keys(perCode).sort().forEach(function(code) {
+    var d    = perCode[code];
+    var jan  = Math.round(d.jan  * 100) / 100;
+    var feb  = Math.round(d.feb  * 100) / 100;
+    var mar  = Math.round(d.mar  * 100) / 100;
+    var tot  = Math.round((jan + feb + mar) * 100) / 100;
+    grandTrue += tot;
+    console.log(pad_(code,10) + ' | ' + pad_(rosterMap[code]||'???',24) + ' | ' +
+                pad_(jan,6) + ' | ' + pad_(feb,6) + ' | ' + pad_(mar,6) + ' | ' + tot);
+  });
+  console.log('-----------|--------------------------|--------|--------|--------|--------');
+  console.log('           | GRAND TRUE DESIGN TOTAL  |        |        |        | ' + Math.round(grandTrue * 100) / 100);
+  console.log('====== End Corrected Hours ======\n');
+}
+
+/**
+ * Reads FACT_QUARTERLY_BONUS, computes corrected hours via deduplication,
+ * then shows per-designer: hours used, corrected hours, bonus paid, corrected bonus, and delta.
+ * Negative delta = overpayment. Call this BEFORE writing any amendments.
+ */
+function runQ1BonusOverpaymentReport() {
+  var qPid         = '2026-Q1';
+  var MODULE_AUDIT = 'QuarterlyBonusEngine:Audit';
+  var periods      = ['2026-01', '2026-02', '2026-03'];
+
+  // 1. Build corrected (deduped) hours map
+  var correctedHrs = {};
+  var seen = {};
+  periods.forEach(function(pid) {
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: MODULE_AUDIT, periodId: pid });
+    } catch(e) {
+      if (e.code === 'SHEET_NOT_FOUND') return;
+      throw e;
+    }
+    rows.forEach(function(row) {
+      var code  = String(row.actor_code || row.person_code || '').trim();
+      var role  = String(row.actor_role || '').toUpperCase();
+      var hours = parseFloat(row.hours) || 0;
+      var date  = String(row.work_date || row.date || '').trim();
+      if (!code || hours <= 0 || role === 'QC') return;
+      var key = pid + '|' + code + '|' + date + '|' + hours;
+      if (seen[key]) return;
+      seen[key] = true;
+      correctedHrs[code] = (correctedHrs[code] || 0) + hours;
+    });
+  });
+
+  // 2. Read committed ledger rows for 2026-Q1
+  var ledgerRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: MODULE_AUDIT });
+  var q1rows = ledgerRows.filter(function(r) {
+    return String(r.quarter_period_id || '').trim() === qPid &&
+           (String(r.event_type || '').trim() === 'QUARTERLY_BONUS' ||
+            String(r.event_type || '').trim() === 'QUARTERLY_BONUS_AMENDMENT');
+  });
+
+  // Keep latest entry per person (AMENDMENT overrides QUARTERLY_BONUS)
+  var byPerson = {};
+  q1rows.forEach(function(r) {
+    var code = String(r.person_code || '').trim();
+    if (!code) return;
+    if (!byPerson[code] || r.event_type === 'QUARTERLY_BONUS_AMENDMENT') byPerson[code] = r;
+  });
+
+  // 3. Print report
+  console.log('\n====== Q1 2026 Bonus Overpayment Report ======');
+  console.log('CODE  | HRS USED | HRS TRUE | BONUS PAID | TRUE BONUS | DELTA INR | COMP SCORE');
+  console.log('------|----------|----------|------------|------------|-----------|----------');
+
+  var totalPaid = 0, totalTrue = 0, totalDelta = 0;
+
+  Object.keys(byPerson).sort().forEach(function(code) {
+    var row           = byPerson[code];
+    var hrsUsed       = parseFloat(row.design_hours)   || 0;
+    var bonusPaid     = parseFloat(row.bonus_inr)       || 0;
+    var composite     = parseFloat(row.composite_score) || 0;
+    var hrsTrue       = Math.round((correctedHrs[code] || 0) * 100) / 100;
+    var trueBonus     = Math.round(hrsTrue * composite * BONUS_INR_PER_HOUR * 100) / 100;
+    var delta         = Math.round((trueBonus - bonusPaid) * 100) / 100;
+
+    totalPaid  += bonusPaid;
+    totalTrue  += trueBonus;
+    totalDelta += delta;
+
+    var flag = delta < -100 ? ' ⚠️' : delta > 50 ? ' ↑' : '';
+    console.log(
+      pad_(code,6) + '| ' + pad_(hrsUsed,9) + '| ' + pad_(hrsTrue,9) + '| ' +
+      pad_(bonusPaid,11) + '| ' + pad_(trueBonus,11) + '| ' + pad_(delta,10) + '| ' +
+      composite + flag
+    );
+  });
+
+  console.log('------|----------|----------|------------|------------|-----------|----------');
+  console.log('TOTAL |          |          | ' + pad_(Math.round(totalPaid),11) + '| ' + pad_(Math.round(totalTrue),11) + '| ' + Math.round(totalDelta));
+  console.log('\n⚠️  Negative DELTA = overpayment (system paid more than correct amount)');
+  console.log('Next step: run runQ1WriteHoursCorrections() to write QUARTERLY_BONUS_AMENDMENT rows.');
+  console.log('====== End Report ======\n');
 }
 
 /**
