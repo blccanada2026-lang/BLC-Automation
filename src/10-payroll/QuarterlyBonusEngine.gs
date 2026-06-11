@@ -782,6 +782,134 @@ function runDiagnoseQ1Hours() {
   });
 }
 
+/**
+ * Per-designer Q1 2026 hours audit.
+ * Logs one row per designer: code | name | Jan hrs | Feb hrs | Mar hrs | Q1 total | QC hrs | flags
+ * Flags: MISSING_CODE (actor_code blank, person_code used), INACTIVE (not active in roster),
+ *        NOT_IN_ROSTER (code not found in DIM_STAFF_ROSTER).
+ * Run in Apps Script editor — output goes to Execution Log.
+ */
+function runQ1BonusAuditDetailed() {
+  var periods      = ['2026-01', '2026-02', '2026-03'];
+  var MODULE_AUDIT = 'QuarterlyBonusEngine:Audit';
+
+  // 1. Build roster lookup: person_code → { name, role, active }
+  var rosterRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE_AUDIT });
+  var rosterMap  = {};
+  rosterRows.forEach(function(r) {
+    var code = String(r.person_code || '').trim();
+    if (!code) return;
+    rosterMap[code] = {
+      name:   String(r.full_name || r.name || '').trim(),
+      role:   String(r.role || '').trim().toUpperCase(),
+      active: String(r.active || '').toLowerCase() === 'true'
+    };
+  });
+
+  // 2. Accumulate hours per code, per month
+  //    perCode[code] = { jan: 0, feb: 0, mar: 0, qcHrs: 0, missingCodeRows: 0, dupeKeys: {} }
+  var perCode    = {};
+  var dupeCheck  = {};   // key → count (for duplicate row detection)
+
+  periods.forEach(function(pid, pIdx) {
+    var monthKey = ['jan', 'feb', 'mar'][pIdx];
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: MODULE_AUDIT, periodId: pid });
+    } catch(e) {
+      if (e.code === 'SHEET_NOT_FOUND') {
+        console.log('⚠️  ' + pid + ': partition not found — skipped');
+        return;
+      }
+      throw e;
+    }
+
+    rows.forEach(function(row) {
+      var rawCode   = String(row.actor_code  || '').trim();
+      var fallback  = String(row.person_code || '').trim();
+      var code      = rawCode || fallback;
+      var role      = String(row.actor_role  || '').toUpperCase();
+      var hours     = parseFloat(row.hours)  || 0;
+      var isMissing = !rawCode && !!fallback;
+
+      if (!code || hours <= 0) return;
+
+      // Duplicate detection: same code + date + hours in same partition
+      var dupeKey = pid + '|' + code + '|' + (row.work_date || row.date || '') + '|' + hours;
+      dupeCheck[dupeKey] = (dupeCheck[dupeKey] || 0) + 1;
+
+      if (!perCode[code]) {
+        perCode[code] = { jan: 0, feb: 0, mar: 0, qcHrs: 0, missingCodeRows: 0 };
+      }
+
+      if (role === 'QC') {
+        perCode[code].qcHrs += hours;
+      } else {
+        perCode[code][monthKey] += hours;
+      }
+
+      if (isMissing) perCode[code].missingCodeRows++;
+    });
+  });
+
+  // 3. Detect duplicate rows
+  var dupeCodes = {};
+  Object.keys(dupeCheck).forEach(function(k) {
+    if (dupeCheck[k] > 1) {
+      var code = k.split('|')[1];
+      dupeCodes[code] = (dupeCodes[code] || 0) + (dupeCheck[k] - 1);
+    }
+  });
+
+  // 4. Print header
+  console.log('\n====== Q1 2026 Per-Designer Hours Audit ======');
+  console.log('CODE       | NAME                     | JAN    | FEB    | MAR    | Q1 TOT | QC HRS | FLAGS');
+  console.log('-----------|--------------------------|--------|--------|--------|--------|--------|-------------------------');
+
+  var codes = Object.keys(perCode).sort();
+  var grandTotal = 0;
+
+  codes.forEach(function(code) {
+    var d       = perCode[code];
+    var roster  = rosterMap[code];
+    var jan     = Math.round(d.jan  * 100) / 100;
+    var feb     = Math.round(d.feb  * 100) / 100;
+    var mar     = Math.round(d.mar  * 100) / 100;
+    var q1tot   = Math.round((jan + feb + mar) * 100) / 100;
+    var qcHrs   = Math.round(d.qcHrs * 100) / 100;
+    grandTotal += q1tot;
+
+    var flags = [];
+    if (d.missingCodeRows > 0) flags.push('MISSING_CODE(' + d.missingCodeRows + ')');
+    if (dupeCodes[code])       flags.push('DUPE_ROWS(' + dupeCodes[code] + ')');
+    if (!roster)               flags.push('NOT_IN_ROSTER');
+    else if (!roster.active)   flags.push('INACTIVE');
+
+    var name = roster ? roster.name : '???';
+    console.log(
+      pad_(code, 10) + ' | ' + pad_(name, 24) + ' | ' +
+      pad_(jan,  6)  + ' | ' + pad_(feb, 6) + ' | ' + pad_(mar, 6) + ' | ' +
+      pad_(q1tot, 6) + ' | ' + pad_(qcHrs, 6) + ' | ' +
+      (flags.length ? flags.join(', ') : 'OK')
+    );
+  });
+
+  console.log('-----------|--------------------------|--------|--------|--------|--------|--------|');
+  console.log('           | GRAND TOTAL DESIGN HRS   |        |        |        | ' + Math.round(grandTotal * 100) / 100);
+  console.log('\nDuplicate row count (extra occurrences): ' + Object.keys(dupeCodes).length + ' designers affected');
+  console.log('Designers not in roster: ' + codes.filter(function(c) { return !rosterMap[c]; }).length);
+  console.log('Inactive designers with hours: ' + codes.filter(function(c) { return rosterMap[c] && !rosterMap[c].active; }).length);
+  console.log('====== End Audit ======\n');
+}
+
+/** Left-pads or truncates a value to a fixed width for console alignment. */
+function pad_(val, width) {
+  var s = String(val);
+  if (s.length > width) return s.slice(0, width);
+  while (s.length < width) s = s + ' ';
+  return s;
+}
+
 /** Diagnoses supervisor_code and pm_code for designers who are still missing ratings. */
 function runDiagnoseRatingAssignments() {
   var missing = ['DBG','DBS','PRS','NMM','AR001','BSG','RKU'];
