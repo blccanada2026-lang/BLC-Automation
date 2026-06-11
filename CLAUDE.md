@@ -112,3 +112,10 @@ All job state is derived from events. VW_JOB_CURRENT_STATE is a projection, not 
 | `.claude/context/migration-status.md` | V2→V3 migration state, replayed events |
 
 → Context management rules: `.claude/rules/context-management.md`
+
+---
+
+## Session Memory
+
+- **Session start**: Read `CLAUDE_START_HERE.md` → `PROJECT_MEMORY.md` → `SESSION_LOG.md` → `CLAUDE.md`. Confirm current priority and time-critical items before coding.
+- **Session end**: Update `SESSION_LOG.md` (always) and `PROJECT_MEMORY.md` (only for durable changes — architecture, completed modules, new risks, migration advances). Keep both files concise.
