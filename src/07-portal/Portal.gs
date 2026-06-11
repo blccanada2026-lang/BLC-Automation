@@ -45,11 +45,13 @@ function doGet(e) {
 
   if (page === 'rate-staff') {
     var preview   = e && e.parameter && e.parameter.preview ? e.parameter.preview : '';
-    var raterCode = e && e.parameter && e.parameter.rater   ? e.parameter.rater   : '';
+    var raterCode  = e && e.parameter && e.parameter.rater  ? e.parameter.rater  : '';
+    var raterToken = e && e.parameter && e.parameter.rtoken ? e.parameter.rtoken : '';
     var html      = HtmlService.createHtmlOutputFromFile('07-portal/QuarterlyRating');
-    var content   = '<script>var INJECTED_PERIOD = '       + JSON.stringify(period)    + ';<\/script>\n'
-                  + '<script>var INJECTED_PREVIEW_CODE = ' + JSON.stringify(preview)   + ';<\/script>\n'
-                  + '<script>var INJECTED_RATER_CODE = '   + JSON.stringify(raterCode) + ';<\/script>\n'
+    var content   = '<script>var INJECTED_PERIOD = '       + JSON.stringify(period)     + ';<\/script>\n'
+                  + '<script>var INJECTED_PREVIEW_CODE = ' + JSON.stringify(preview)    + ';<\/script>\n'
+                  + '<script>var INJECTED_RATER_CODE = '   + JSON.stringify(raterCode)  + ';<\/script>\n'
+                  + '<script>var INJECTED_RATER_TOKEN = '  + JSON.stringify(raterToken) + ';<\/script>\n'
                   + html.getContent();
     return HtmlService.createHtmlOutput(content)
       .setTitle('BLC Quarterly Ratings')
@@ -680,9 +682,9 @@ function portal_approveAllPayroll(periodId) {
  * @param {string} quarterPeriodId  e.g. '2026-Q1'
  * @returns {string}  JSON array of { person_code, name, role }
  */
-function portal_getMyRatees(quarterPeriodId, raterCode) {
+function portal_getMyRatees(quarterPeriodId, raterCode, raterToken) {
   var email = Session.getActiveUser().getEmail();
-  return PortalData.getMyRatees(email, quarterPeriodId, raterCode || null);
+  return PortalData.getMyRatees(email, quarterPeriodId, raterCode || null, raterToken || null);
 }
 
 // ============================================================
@@ -730,9 +732,9 @@ function portal_getViewDataAs(targetPersonCode) {
  * @param {string} payloadJson  JSON-encoded payload
  * @returns {string}  JSON: { ok: true }
  */
-function portal_submitRating(payloadJson, raterCode) {
+function portal_submitRating(payloadJson, raterCode, raterToken) {
   var email = Session.getActiveUser().getEmail();
-  return PortalData.submitRating(email, payloadJson, raterCode || null);
+  return PortalData.submitRating(email, payloadJson, raterCode || null, raterToken || null);
 }
 
 // ============================================================
@@ -828,3 +830,16 @@ function portal_processSbsIntake() {
   return JSON.stringify(result);
 }
 
+// ============================================================
+// ONE-TIME SETUP: rating-link secret (B2 fix)
+// Run once per script project, BEFORE the next sendRatingRequests.
+// Rotating the secret invalidates all previously emailed links.
+// ============================================================
+function runGenerateRatingSecret() {
+  var secret = Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,
+      Utilities.getUuid() + Date.now() + Math.random())
+  );
+  PropertiesService.getScriptProperties().setProperty('RATING_LINK_SECRET', secret);
+  console.log('RATING_LINK_SECRET generated. Re-send rating links to take effect.');
+}
