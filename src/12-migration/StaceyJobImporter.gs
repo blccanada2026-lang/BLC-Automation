@@ -646,18 +646,28 @@ function runStaceySyncJob() {
     syncJobsFromStacey_();
   } catch(e) {
     console.log('[StaceySync] ❌ ' + e.message);
+    // Rate-limit failure alerts: max 1 email per 6 hours to avoid flooding quota
     try {
-      var ceoEmail = PropertiesService.getScriptProperties()
-                       .getProperty('CEO_BRIEFING_RECIPIENT') || 'raj.nair@bluelotuscanada.ca';
-      MailApp.sendEmail({
-        to:      ceoEmail,
-        subject: '[BLC Nexus] ⚠️ Stacey Sync Failed — ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm'),
-        body:    'The Stacey auto-sync job failed.\n\n' +
-                 'Time: ' + new Date().toISOString() + '\n' +
-                 'Error: ' + e.message + '\n\n' +
-                 'Portal jobs data may be stale. Check Apps Script executions for details.\n\n' +
-                 '— BLC Nexus'
-      });
+      var props     = PropertiesService.getScriptProperties();
+      var lastAlert = parseInt(props.getProperty('STACEY_SYNC_LAST_ALERT_MS') || '0', 10);
+      var SIX_HOURS = 6 * 60 * 60 * 1000;
+      var isQuotaErr = e.message && (e.message.indexOf('too many times') !== -1 ||
+                                     e.message.indexOf('quota') !== -1);
+      if (!isQuotaErr && (Date.now() - lastAlert) > SIX_HOURS) {
+        var ceoEmail = props.getProperty('CEO_BRIEFING_RECIPIENT') || 'raj.nair@bluelotuscanada.ca';
+        MailApp.sendEmail({
+          to:      ceoEmail,
+          subject: '[BLC Nexus] ⚠️ Stacey Sync Failed — ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm'),
+          body:    'The Stacey auto-sync job failed.\n\n' +
+                   'Time: ' + new Date().toISOString() + '\n' +
+                   'Error: ' + e.message + '\n\n' +
+                   'Portal jobs data may be stale. Check Apps Script executions for details.\n\n' +
+                   '— BLC Nexus'
+        });
+        props.setProperty('STACEY_SYNC_LAST_ALERT_MS', String(Date.now()));
+      } else {
+        console.log('[StaceySync] Alert suppressed (quota error or within 6h window).');
+      }
     } catch(mailErr) {
       console.log('[StaceySync] ❌ Could not send alert email: ' + mailErr.message);
     }

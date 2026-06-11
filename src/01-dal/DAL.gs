@@ -976,7 +976,9 @@ var DAL = (function () {
     if (!sheet || sheet.getLastRow() <= 1) return 0;
     trackApiCall_();
     var rowCount = sheet.getLastRow() - 1;
-    sheet.deleteRows(2, rowCount);
+    var numCols  = Math.max(sheet.getLastColumn(), 1);
+    // clearContent avoids "cannot delete all non-frozen rows" when row 1 is frozen
+    sheet.getRange(2, 1, rowCount, numCols).clearContent();
     emit_('INFO', 'CLEAR_SHEET', { tableName: sheetName, rowsCleared: rowCount });
     return rowCount;
   }
