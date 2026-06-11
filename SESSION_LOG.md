@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-06-11 Session (continued)
+
+### Work Completed
+- Added Stacey sync failure email alert: `runStaceySyncJob()` catches errors and sends MailApp email to CEO_BRIEFING_RECIPIENT. Committed `fc6736c`, pushed, deployed @52 (prior session).
+- Built `runQ1BonusAuditDetailed()` in QuarterlyBonusEngine.gs — per-designer Jan/Feb/Mar/Q1-total hours with flags: MISSING_CODE, DUPE_ROWS, NOT_IN_ROSTER, INACTIVE.
+- Created `AUDIT_PLAN_JUNE16.md` — 5-phase pre-cutover audit: Q1 bonus reconciliation, work log completeness, test data cleanup, system verification, cutover checklist.
+
+### Files Changed
+- `src/12-migration/StaceyJobImporter.gs` — sync failure email alert (committed `fc6736c`)
+- `src/10-payroll/QuarterlyBonusEngine.gs` — `runQ1BonusAuditDetailed()` + `pad_()` helper (committed `fa98f2c`)
+- `AUDIT_PLAN_JUNE16.md` — new audit plan document (committed `fa98f2c`)
+- All pushed to GitHub + clasp pushed to Apps Script
+
+### Next Recommended Step
+1. **Run `runQ1BonusAuditDetailed()`** in Apps Script editor — copy output
+2. **Share manual calculations file** — compare per-designer Q1 totals against system output
+3. **Resolve discrepancies** — void duplicates or add missing rows per AUDIT_PLAN_JUNE16.md Phase A
+4. **Purge test data** from VW_JOB_CURRENT_STATE (designer@blc.com / BTD / SNA rows)
+5. **June 16**: Run `runRemoveStaceySyncTrigger()` BEFORE cutover email
+
+---
+
 ## 2026-06-11 Session
 
 ### Work Completed
