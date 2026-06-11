@@ -2,15 +2,49 @@
 // OnboardingMailer.gs — BLC Nexus T12 Migration
 // src/12-migration/OnboardingMailer.gs
 //
-// Sends role-specific portal onboarding letters to all active
-// staff before the June 16 launch. Run once per role group.
+// Sends role-specific portal onboarding letters + cutoff
+// announcement to all active staff before the June 16 launch.
 //
 // USAGE (run from Apps Script editor):
-//   runSendAllOnboarding()              — all roles
+//   runSendCutoffAnnouncement()         — cutoff email to ALL staff
+//   runSendAllOnboarding()              — role guides to all staff
 //   runSendOnboardingForRole('DESIGNER')
 //   runSendOnboardingForRole('TEAM_LEAD')
 //   runSendOnboardingForRole('PM')
 // ============================================================
+
+/**
+ * Sends the go-live cutoff announcement to every active staff member.
+ * Send this Thursday June 12 or Friday June 13 morning.
+ */
+function runSendCutoffAnnouncement() {
+  var props     = PropertiesService.getScriptProperties();
+  var portalUrl = props.getProperty('PORTAL_BASE_URL') || '[PORTAL URL — SET PORTAL_BASE_URL PROPERTY]';
+  var all       = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'OnboardingMailer' });
+  var active    = all.filter(function(s) {
+    var active = s.active !== false && s.active !== 'false' && s.active !== 'FALSE';
+    return active && String(s.email || '').trim();
+  });
+
+  console.log('[OnboardingMailer] Cutoff announcement: ' + active.length + ' recipients.');
+  var sent = 0;
+  active.forEach(function(s) {
+    var name  = String(s.name || s.person_code || '').trim();
+    var email = String(s.email || '').trim();
+    var html  = buildCutoffHtml_(name, portalUrl);
+    try {
+      GmailApp.sendEmail(email, 'BLC Nexus Goes Live Monday June 16 — Please Read', '', {
+        htmlBody: html,
+        name:     'Blue Lotus Consulting Corporation'
+      });
+      console.log('[OnboardingMailer] ✓ Cutoff → ' + name + ' <' + email + '>');
+      sent++;
+    } catch(e) {
+      console.log('[OnboardingMailer] ❌ ' + name + ': ' + e.message);
+    }
+  });
+  console.log('[OnboardingMailer] Cutoff done. ' + sent + '/' + active.length + ' sent.');
+}
 
 /**
  * Sends onboarding letters to all active staff (DESIGNER + TEAM_LEAD + PM).
@@ -97,6 +131,70 @@ function buildEmailFooter_() {
          '  <p style="font-size:12px;color:#888;margin:0;">Questions? Contact your Team Lead or reply to this email.</p>' +
          '  <p style="font-size:12px;color:#888;margin:4px 0 0;">— Blue Lotus Consulting Corporation</p>' +
          '</div>';
+}
+
+// ── CUTOFF ANNOUNCEMENT ───────────────────────────────────────
+
+function buildCutoffHtml_(name, portalUrl) {
+  var firstName = name.split(' ')[0] || name;
+  return '<div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;color:#222;">' +
+    buildEmailHeader_() +
+    '<div style="border:1px solid #ddd;border-top:none;border-bottom:none;padding:28px;">' +
+    '<p style="font-size:15px;margin:0 0 6px;">Hi <strong>' + firstName + '</strong>,</p>' +
+    '<p style="font-size:14px;line-height:1.7;margin:0 0 20px;">' +
+      'We are launching <strong>BLC Nexus</strong> — our new operations portal — on ' +
+      '<strong>Monday, June 16</strong>. This replaces Stacey for all job tracking and ' +
+      'time logging. Please read the dates below carefully.' +
+    '</p>' +
+
+    '<table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px;">' +
+      '<thead><tr style="background:#f4f7fb;">' +
+        '<th style="text-align:left;padding:10px 12px;border-bottom:2px solid #dde3ee;color:#1a3c6e;">Date</th>' +
+        '<th style="text-align:left;padding:10px 12px;border-bottom:2px solid #dde3ee;color:#1a3c6e;">What to do</th>' +
+      '</tr></thead>' +
+      '<tbody>' +
+        '<tr style="border-bottom:1px solid #eee;">' +
+          '<td style="padding:10px 12px;white-space:nowrap;"><strong>Now → Fri June 13</strong></td>' +
+          '<td style="padding:10px 12px;">Continue using Stacey as normal. Log all hours daily.</td>' +
+        '</tr>' +
+        '<tr style="background:#fdf0ef;border-bottom:1px solid #eee;">' +
+          '<td style="padding:10px 12px;white-space:nowrap;"><strong>Fri June 13 (EOD)</strong></td>' +
+          '<td style="padding:10px 12px;color:#c0392b;">' +
+            '<strong>Last day in Stacey.</strong> Log all remaining hours and submit any pending QC before end of day. ' +
+            'After Friday, Stacey is locked.' +
+          '</td>' +
+        '</tr>' +
+        '<tr style="border-bottom:1px solid #eee;">' +
+          '<td style="padding:10px 12px;white-space:nowrap;"><strong>Sat–Sun June 14–15</strong></td>' +
+          '<td style="padding:10px 12px;">Rest days — please do not log work in either system. Your PM will collect your June timesheet on Saturday.</td>' +
+        '</tr>' +
+        '<tr style="background:#f0fdf4;border-bottom:1px solid #eee;">' +
+          '<td style="padding:10px 12px;white-space:nowrap;"><strong>Mon June 16 onwards</strong></td>' +
+          '<td style="padding:10px 12px;color:#1a7a3c;">' +
+            '<strong>BLC Nexus is live.</strong> Log all hours, submit QC, and track jobs in the new portal only. ' +
+            'Do not use Stacey.' +
+          '</td>' +
+        '</tr>' +
+      '</tbody>' +
+    '</table>' +
+
+    '<p style="font-size:14px;line-height:1.7;margin:0 0 12px;">' +
+      'You will receive a separate email on Monday with step-by-step instructions for your role. ' +
+      'Your jobs are already loaded into the system — you don\'t need to set anything up.' +
+    '</p>' +
+    '<p style="font-size:14px;line-height:1.7;margin:0 0 20px;">' +
+      'The portal link is below. You can bookmark it now — login opens on June 16.' +
+    '</p>' +
+
+    btn_(portalUrl, 'BLC Nexus Portal') +
+
+    '<p style="font-size:13px;color:#666;border-top:1px solid #eee;padding-top:16px;margin:0;">' +
+      'If you have any questions before launch, speak to your Team Lead or PM. ' +
+      'Thank you for your patience as we move to a better system.' +
+    '</p>' +
+    '</div>' +
+    buildEmailFooter_() +
+    '</div>';
 }
 
 // ── DESIGNER ─────────────────────────────────────────────────
@@ -189,12 +287,23 @@ function buildTLBody_(firstName, portalUrl) {
       'If you also do design work, log your hours the same way as designers: ' +
       '<strong>Log Hours</strong> button → date + hours + note → Submit.') +
 
-    step_(5, 'Rating Your Team (Quarterly)',
+    step_(5, 'Creating New Jobs',
+      '<strong>Only Team Leads and PMs can create jobs.</strong> Designers cannot start work until a job exists in the system.' +
+      '<ul style="margin:8px 0;padding-left:20px;font-size:13px;line-height:1.8;">' +
+      '<li>Click the <strong>+ New Job</strong> button in the top bar.</li>' +
+      '<li>Fill in: Client, Job Type, Product Code, Quantity, Client Ref (optional), Due Date (optional).</li>' +
+      '<li>Optionally assign a designer immediately — or leave blank and assign later.</li>' +
+      '<li>Click <strong>Create Job</strong>. The job appears instantly for the assigned designer.</li>' +
+      '</ul>' +
+      '<p style="font-size:13px;color:#c0392b;margin:8px 0 0;"><strong>⚠ On June 16, all client briefs must be entered here before designers can begin work.</strong> ' +
+      'Brief your team: they will see jobs appear in their Jobs tab once you create and assign them.</p>') +
+
+    step_(6, 'Rating Your Team (Quarterly)',
       'At the end of each quarter, you\'ll receive an email asking you to rate your direct reports. ' +
       'Log in → <strong>Ratings</strong> tab → score each person on quality and SOP compliance. ' +
       'Scores feed directly into the quarterly bonus calculation.') +
 
-    step_(6, 'View Team Load Balance',
+    step_(7, 'View Team Load Balance',
       'The <strong>Dashboard</strong> tab shows hours per designer, QC pass rates, and workload ' +
       'distribution across your team. Use it to spot overloaded or underutilised designers.') +
 
@@ -229,23 +338,36 @@ function buildPMBody_(firstName, portalUrl) {
       '<li><strong>On Hold</strong> — paused by TL or admin.</li>' +
       '</ul>') +
 
-    step_(3, 'Marking Jobs as Client Sent',
+    step_(3, 'Creating New Jobs',
+      '<strong>Only PMs and Team Leads can create jobs.</strong> Designers pick up jobs once they exist in the system.' +
+      '<ul style="margin:8px 0;padding-left:20px;font-size:13px;line-height:1.8;">' +
+      '<li>Click <strong>+ New Job</strong> in the top bar.</li>' +
+      '<li>Select the client, job type, product code, and quantity.</li>' +
+      '<li>Add the client\'s own reference number if they have one.</li>' +
+      '<li>Assign a designer from the dropdown — only designers mapped to that client appear.</li>' +
+      '<li>Click <strong>Create Job</strong>. It appears in the designer\'s Jobs tab immediately.</li>' +
+      '</ul>' +
+      '<p style="font-size:13px;color:#c0392b;margin:8px 0 0;">' +
+      '<strong>⚠ Starting June 16, every client brief must be entered here before any design work begins.</strong>' +
+      '</p>') +
+
+    step_(4, 'Marking Jobs as Client Sent',
       'Once a job passes QC and you\'ve delivered it to the client, click ' +
       '<strong>Client Sent</strong> on the job card. This locks the job for invoicing. ' +
       'Do not mark jobs as Client Sent until delivery is confirmed.') +
 
-    step_(4, 'Rating Designers (Quarterly)',
+    step_(5, 'Rating Designers (Quarterly)',
       'At the end of each quarter you\'ll receive an email asking you to rate all designers ' +
       'in your accounts. Log in → <strong>Ratings</strong> tab → score each designer on ' +
       'quality and SOP compliance. Scores directly affect the quarterly bonus calculation. ' +
       '<strong>Please complete ratings within 7 days of the request email.</strong>') +
 
-    step_(5, 'Account Dashboard',
+    step_(6, 'Account Dashboard',
       'The <strong>Dashboard</strong> tab shows per-account metrics: jobs in flight, ' +
-      'average hours per job, error rates, and QC pass rates. Use this in client check-ins ' +
+      'average hours per job, error rates, and QC pass rates. Use this for client check-ins ' +
       'and before invoicing periods close.') +
 
-    step_(6, 'Logging Your Own Hours',
+    step_(7, 'Logging Your Own Hours',
       'If you do design work, log hours the same way as designers: ' +
       '<strong>Log Hours</strong> button → date + hours + note → Submit.') +
 
