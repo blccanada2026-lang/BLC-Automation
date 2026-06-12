@@ -210,6 +210,7 @@ var PortalAuth = (function () {
   function sendAllLinks(testEmail, dryRun) {
     var allStaff = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalAuth' });
     var sent = 0, recipients = [], skipped = [];
+    var seen = {};
 
     for (var i = 0; i < allStaff.length; i++) {
       var s      = allStaff[i];
@@ -220,6 +221,11 @@ var PortalAuth = (function () {
         skipped.push(code || email || ('row ' + i));
         continue;
       }
+      if (seen[code]) {
+        skipped.push(code + ' (duplicate row)');
+        continue;
+      }
+      seen[code] = true;
       if (!dryRun) {
         sendLinkEmail_(code, String(s.name || ''), testEmail || email, !!testEmail);
       }
@@ -272,4 +278,80 @@ function runSendPortalLinksTest() {
   var TEST_INBOX = 'blccanada2026@gmail.com'; // change if needed
   var r = PortalAuth.sendAllLinks(TEST_INBOX, false);
   console.log('Sent ' + r.sent + ' test emails to ' + TEST_INBOX);
+}
+
+/**
+ * Audits DIM_STAFF_ROSTER for portal-link readiness.
+ * Prints environment, then groups by person_code and reports:
+ *   WILL RECEIVE LINK — one usable active row
+ *   DUPLICATE ACTIVE ROWS — multiple active rows (needs manual cleanup)
+ *   LOCKED OUT — rows exist but no active row with email (critical)
+ *   TEST ACTORS — known dev-only codes that must not exist in PROD
+ * Ends with SAFE TO SEND or FIX ROSTER BEFORE SENDING.
+ */
+function runAuditPortalLinkRoster() {
+  var ss  = SpreadsheetApp.openById(Config.getSpreadsheetId());
+  console.log('Spreadsheet: ' + ss.getName() + ' | ENV: ' + Config.getEnvironment());
+  console.log('══════════════════════════════════════════');
+
+  var TEST_ACTOR_CODES = { DS1: true, QC1: true, RND: true, NTL: true };
+  var allStaff = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalAuth' });
+
+  // Group all rows by person_code
+  var byCode = {};
+  for (var i = 0; i < allStaff.length; i++) {
+    var s    = allStaff[i];
+    var code = String(s.person_code || '').trim();
+    if (!code) continue;
+    if (!byCode[code]) byCode[code] = [];
+    byCode[code].push(s);
+  }
+
+  var willReceive = [], duplicateActive = [], lockedOut = [], testActors = [];
+
+  for (var code in byCode) {
+    if (!byCode.hasOwnProperty(code)) continue;
+    var rows = byCode[code];
+
+    var activeRows = rows.filter(function(r) {
+      var active = r.active === true || String(r.active).toUpperCase() === 'TRUE';
+      return active && String(r.email || '').trim();
+    });
+
+    if (TEST_ACTOR_CODES[code]) {
+      testActors.push(code + ' → ' + (activeRows.length ? activeRows[0].email : '(inactive)'));
+      continue;
+    }
+
+    if (activeRows.length === 0) {
+      lockedOut.push(code);
+    } else if (activeRows.length === 1) {
+      willReceive.push(code + ' → ' + activeRows[0].email);
+    } else {
+      duplicateActive.push(code + ' (' + activeRows.length + ' active rows: ' +
+        activeRows.map(function(r) { return r.email; }).join(', ') + ')');
+    }
+  }
+
+  console.log('WILL RECEIVE LINK (' + willReceive.length + '):');
+  willReceive.forEach(function(l) { console.log('  ' + l); });
+
+  if (duplicateActive.length) {
+    console.log('\nDUPLICATE ACTIVE ROWS (' + duplicateActive.length + ') — needs manual cleanup:');
+    duplicateActive.forEach(function(l) { console.log('  ' + l); });
+  }
+
+  if (lockedOut.length) {
+    console.log('\nLOCKED OUT (' + lockedOut.length + ') — no active row with email:');
+    lockedOut.forEach(function(l) { console.log('  ' + l); });
+  }
+
+  if (testActors.length) {
+    console.log('\nTEST ACTORS (' + testActors.length + ') — must not exist in PROD roster:');
+    testActors.forEach(function(l) { console.log('  ' + l); });
+  }
+
+  console.log('══════════════════════════════════════════');
+  var safe = duplicateActive.length === 0 && lockedOut.length === 0;
+  console.log(safe ? 'SAFE TO SEND' : 'FIX ROSTER BEFORE SENDING');
 }
