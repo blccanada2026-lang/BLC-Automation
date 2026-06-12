@@ -58,8 +58,14 @@ function doGet(e) {
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
-  return HtmlService
-    .createHtmlOutputFromFile('07-portal/PortalView')
+  // B1: pass the capability token (if present) into the page so the
+  // client can attach it to every server call.
+  var portalToken = e && e.parameter && e.parameter.pt ? e.parameter.pt : '';
+  var portalHtml  = HtmlService.createHtmlOutputFromFile('07-portal/PortalView');
+  var portalContent =
+      '<script>var INJECTED_PORTAL_TOKEN = ' + JSON.stringify(portalToken) + ';<\/script>\n'
+    + portalHtml.getContent();
+  return HtmlService.createHtmlOutput(portalContent)
     .setTitle('BLC Job Portal')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -82,22 +88,14 @@ function doGet(e) {
  *     perms:  { canCreateJob, canViewAll, isQcReviewer, isDesigner }
  *   }
  */
-function portal_getViewData() {
-  var email = Session.getActiveUser().getEmail();
+function portal_getViewData(ptoken) {
+  var email = PortalAuth.resolveEmail(ptoken);
   return PortalData.getViewData(email);
 }
 
-/**
- * Called when Session.getActiveUser().getEmail() returns '' (external Gmail users
- * in 'Execute as: Me' deployments). The login form in PortalView.html collects
- * the email manually and calls this function instead.
- *
- * @param {string} email  Email entered by the user in the login form
- * @returns {string}  JSON-encoded view data (same shape as portal_getViewData)
- */
-function portal_getViewDataWithEmail(email) {
-  return PortalData.getViewData(email || '');
-}
+// portal_getViewDataWithEmail REMOVED (B1 fix).
+// It trusted a client-typed email with no verification. Identity now
+// comes from PortalAuth.resolveEmail(ptoken) — see PortalAuth.gs.
 
 // ============================================================
 // portal_submitAction — submits a job action to the queue
@@ -114,8 +112,8 @@ function portal_getViewDataWithEmail(email) {
  * @returns {string}  JSON: { ok: true, queueId } on success
  * @throws {Error}  on validation failure or permission error
  */
-function portal_submitAction(formType, payloadJson) {
-  var email = Session.getActiveUser().getEmail();
+function portal_submitAction(ptoken, formType, payloadJson) {
+  var email = PortalAuth.resolveEmail(ptoken);
 
   Logger.info('PORTAL_ACTION_SUBMIT', {
     module:    'Portal',
@@ -157,8 +155,8 @@ function portal_submitAction(formType, payloadJson) {
  * @param {string} designerCode  person_code to assign (empty = skip assign)
  * @returns {string}  JSON: { ok: true, job_number }
  */
-function portal_createJob(payloadJson, designerCode) {
-  var email = Session.getActiveUser().getEmail();
+function portal_createJob(ptoken, payloadJson, designerCode) {
+  var email = PortalAuth.resolveEmail(ptoken);
   var actor = RBAC.resolveActor(email);
 
   var payload;
@@ -210,7 +208,8 @@ function portal_createJob(payloadJson, designerCode) {
  *
  * @returns {string}  JSON: { ok: true, message }
  */
-function portal_processQueue() {
+function portal_processQueue(ptoken) {
+  PortalAuth.resolveEmail(ptoken);  // B1: require verified identity
   try {
     QueueProcessor.processQueue();
     return JSON.stringify({ ok: true, message: 'Queue processed.' });
@@ -229,8 +228,8 @@ function portal_processQueue() {
  *
  * @returns {string}  JSON array of client objects
  */
-function portal_getClients() {
-  var email   = Session.getActiveUser().getEmail();
+function portal_getClients(ptoken) {
+  var email   = PortalAuth.resolveEmail(ptoken);
   var clients = ClientOnboarding.getClients(email);
   return JSON.stringify(clients);
 }
@@ -246,8 +245,8 @@ function portal_getClients() {
  * @param {string} payloadJson  JSON-encoded onboarding payload
  * @returns {string}  JSON: { ok: true, clientCode, isNew }
  */
-function portal_onboardClient(payloadJson) {
-  var email   = Session.getActiveUser().getEmail();
+function portal_onboardClient(ptoken, payloadJson) {
+  var email   = PortalAuth.resolveEmail(ptoken);
   var payload;
   try {
     payload = JSON.parse(payloadJson);
@@ -269,8 +268,8 @@ function portal_onboardClient(payloadJson) {
  *
  * @returns {string}  JSON: { total, created, skipped, errors, results[] }
  */
-function portal_bulkOnboardStaff() {
-  var email  = Session.getActiveUser().getEmail();
+function portal_bulkOnboardStaff(ptoken) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = StaffOnboarding.bulkOnboardStaff(email);
   return JSON.stringify(result);
 }
@@ -284,8 +283,8 @@ function portal_bulkOnboardStaff() {
  * Requires JOB_ALLOCATE permission.
  * @returns {string}  JSON array of { personCode, name, role }
  */
-function portal_getActiveDesigners() {
-  var email = Session.getActiveUser().getEmail();
+function portal_getActiveDesigners(ptoken) {
+  var email = PortalAuth.resolveEmail(ptoken);
   return JSON.stringify(PortalData.getActiveDesigners(email));
 }
 
@@ -297,7 +296,8 @@ function portal_getActiveDesigners() {
 /**
  * @returns {string}  JSON array of { personCode, name, role }
  */
-function portal_getQCReviewers() {
+function portal_getQCReviewers(ptoken) {
+  PortalAuth.resolveEmail(ptoken);  // B1: require verified identity
   var QC_ROLES = { QC_REVIEWER: true, TEAM_LEAD: true, PM: true, CEO: true };
   try {
     var rows = DAL.readAll('DIM_STAFF_ROSTER', { callerModule: 'Portal' });
@@ -323,8 +323,8 @@ function portal_getQCReviewers() {
  * Requires JOB_CREATE permission (CEO, PM, TEAM_LEAD).
  * @returns {string}  JSON array of { client_code, client_name }
  */
-function portal_getClientList() {
-  var email = Session.getActiveUser().getEmail();
+function portal_getClientList(ptoken) {
+  var email = PortalAuth.resolveEmail(ptoken);
   return JSON.stringify(PortalData.getClientList(email));
 }
 
@@ -340,8 +340,8 @@ function portal_getClientList() {
  * @param {string} clientCode
  * @returns {string}  JSON array of { personCode, name, role }
  */
-function portal_getDesignersForClient(clientCode) {
-  var email = Session.getActiveUser().getEmail();
+function portal_getDesignersForClient(ptoken, clientCode) {
+  var email = PortalAuth.resolveEmail(ptoken);
   return JSON.stringify(PortalData.getDesignersForClient(email, clientCode));
 }
 
@@ -354,8 +354,8 @@ function portal_getDesignersForClient(clientCode) {
  * Does NOT expose sensitive banking details.
  * @returns {string}  JSON array of staff summary objects
  */
-function portal_getStaffList() {
-  var email = Session.getActiveUser().getEmail();
+function portal_getStaffList(ptoken) {
+  var email = PortalAuth.resolveEmail(ptoken);
   return JSON.stringify(StaffOnboarding.getStaffList(email));
 }
 
@@ -368,8 +368,8 @@ function portal_getStaffList() {
  * @param {string} payloadJson  JSON-encoded onboarding payload
  * @returns {string}  JSON: { ok, personCode, isNew }
  */
-function portal_onboardStaff(payloadJson) {
-  var email = Session.getActiveUser().getEmail();
+function portal_onboardStaff(ptoken, payloadJson) {
+  var email = PortalAuth.resolveEmail(ptoken);
   var payload;
   try {
     payload = JSON.parse(payloadJson);
@@ -390,8 +390,8 @@ function portal_onboardStaff(payloadJson) {
  * @param {string} optionsJson  JSON: { startDate, jurisdiction }
  * @returns {string}  JSON: { ok, contractId, docUrl, docTitle }
  */
-function portal_generateContract(personCode, optionsJson) {
-  var email   = Session.getActiveUser().getEmail();
+function portal_generateContract(ptoken, personCode, optionsJson) {
+  var email   = PortalAuth.resolveEmail(ptoken);
   var options = {};
   try {
     if (optionsJson) options = JSON.parse(optionsJson);
@@ -411,8 +411,8 @@ function portal_generateContract(personCode, optionsJson) {
  * @param {string} personCode
  * @returns {string}  JSON banking record or { ok: false }
  */
-function portal_getBankingDetails(personCode) {
-  var email  = Session.getActiveUser().getEmail();
+function portal_getBankingDetails(ptoken, personCode) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = StaffOnboarding.getBankingDetails(email, personCode);
   if (!result) return JSON.stringify({ ok: false, message: 'No banking details found.' });
   return JSON.stringify({ ok: true, banking: result });
@@ -430,8 +430,8 @@ function portal_getBankingDetails(personCode) {
  * @param {string} periodId  e.g. '2026-06' (pass '' for current period)
  * @returns {string}  JSON: { period_id, quarter, emails_sent, designer_client_pairs }
  */
-function portal_sendFeedbackRequests(periodId, testEmail) {
-  var email  = Session.getActiveUser().getEmail();
+function portal_sendFeedbackRequests(ptoken, periodId, testEmail) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = ClientFeedback.sendFeedbackRequests(email, {
     periodId:  periodId  || '',
     testEmail: testEmail || null
@@ -450,8 +450,8 @@ function portal_sendFeedbackRequests(periodId, testEmail) {
  * @param {string} periodId  e.g. '2026-06' (pass '' for current period)
  * @returns {string}  JSON: { period_id, quarter, responses_received, per_designer[] }
  */
-function portal_getFeedbackStatus(periodId) {
-  var email  = Session.getActiveUser().getEmail();
+function portal_getFeedbackStatus(ptoken, periodId) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = ClientFeedback.getFeedbackStatus(
     email,
     periodId || Identifiers.generateCurrentPeriodId()
@@ -469,8 +469,8 @@ function portal_getFeedbackStatus(periodId) {
  *
  * @returns {string}  JSON: { period_id, team_hours[], payroll_status[] }
  */
-function portal_getLeaderDashboard() {
-  var email = Session.getActiveUser().getEmail();
+function portal_getLeaderDashboard(ptoken) {
+  var email = PortalAuth.resolveEmail(ptoken);
   return PortalData.getLeaderDashboard(email);
 }
 
@@ -485,8 +485,8 @@ function portal_getLeaderDashboard() {
  *
  * @returns {string}  JSON: { period_id, job_summary, load_balance, quality_rates, qc_backlog }
  */
-function portal_getCEODashboard() {
-  var email = Session.getActiveUser().getEmail();
+function portal_getCEODashboard(ptoken) {
+  var email = PortalAuth.resolveEmail(ptoken);
   return PortalData.getCEODashboard(email);
 }
 
@@ -500,8 +500,8 @@ function portal_getCEODashboard() {
  *
  * @returns {string}  JSON: { ok, sent_to, date }
  */
-function portal_sendCEOBriefing() {
-  var email = Session.getActiveUser().getEmail();
+function portal_sendCEOBriefing(ptoken) {
+  var email = PortalAuth.resolveEmail(ptoken);
   var actor = RBAC.resolveActor(email);
   RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_RUN);
   RBAC.enforceFinancialAccess(actor);
@@ -518,8 +518,8 @@ function portal_sendCEOBriefing() {
  * @param {string} periodId  e.g. '2026-04' (pass '' for current period)
  * @returns {string}  JSON: { ok, message }
  */
-function portal_confirmPaystub(periodId) {
-  var email  = Session.getActiveUser().getEmail();
+function portal_confirmPaystub(ptoken, periodId) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = PayrollEngine.confirmPaystub(email, periodId || '');
   return JSON.stringify(result);
 }
@@ -536,8 +536,8 @@ function portal_confirmPaystub(periodId) {
  * @param {number} year     e.g. 2026
  * @returns {string}  JSON array of bonus rows
  */
-function portal_previewQuarterlyBonus(quarter, year) {
-  var email  = Session.getActiveUser().getEmail();
+function portal_previewQuarterlyBonus(ptoken, quarter, year) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var rows   = QuarterlyBonusEngine.previewQuarterlyBonus(email, quarter, parseInt(year, 10));
   return JSON.stringify(rows);
 }
@@ -554,8 +554,8 @@ function portal_previewQuarterlyBonus(quarter, year) {
  * @param {number} year     e.g. 2026
  * @returns {string}  JSON: { written, pending, skipped, quarterPeriodId }
  */
-function portal_runQuarterlyBonus(quarter, year) {
-  var email  = Session.getActiveUser().getEmail();
+function portal_runQuarterlyBonus(ptoken, quarter, year) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = QuarterlyBonusEngine.runQuarterlyBonus(email, quarter, parseInt(year, 10));
   return JSON.stringify(result);
 }
@@ -572,8 +572,8 @@ function portal_runQuarterlyBonus(quarter, year) {
  * @param {number} year  e.g. 2026
  * @returns {string}  JSON: { written, skipped, year }
  */
-function portal_runAnnualBonus(year) {
-  var email  = Session.getActiveUser().getEmail();
+function portal_runAnnualBonus(ptoken, year) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = QuarterlyBonusEngine.runAnnualBonus(email, parseInt(year, 10));
   return JSON.stringify(result);
 }
@@ -592,8 +592,8 @@ function portal_runAnnualBonus(year) {
  *
  * @returns {string}  JSON: { vw_job, vw_workload, partial, elapsed_ms }
  */
-function portal_rebuildViews() {
-  var email  = Session.getActiveUser().getEmail();
+function portal_rebuildViews(ptoken) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = EventReplayEngine.rebuildAllViews(email);
   return JSON.stringify(result);
 }
@@ -611,8 +611,8 @@ function portal_rebuildViews() {
  *
  * @returns {string}  JSON: { periods, mart_dashboard, mart_team, mart_designer, mart_account, partial, elapsed_ms }
  */
-function portal_refreshDashboard() {
-  var email  = Session.getActiveUser().getEmail();
+function portal_refreshDashboard(ptoken) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = ReportingEngine.refreshDashboard(email);
   return JSON.stringify(result);
 }
@@ -630,8 +630,8 @@ function portal_refreshDashboard() {
  * @param {string} periodId  e.g. '2026-04' (pass '' for current period)
  * @returns {string}  JSON: { billed, skipped, errors[], period_id }
  */
-function portal_runBillingRun(periodId) {
-  var email  = Session.getActiveUser().getEmail();
+function portal_runBillingRun(ptoken, periodId) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = BillingEngine.runBillingRun(email, { periodId: periodId || '' });
   return JSON.stringify(result);
 }
@@ -646,8 +646,8 @@ function portal_runBillingRun(periodId) {
  * @param {string} periodId  e.g. '2026-04' (pass '' for current period)
  * @returns {string}  JSON run result
  */
-function portal_runBonusRun(periodId) {
-  var email  = Session.getActiveUser().getEmail();
+function portal_runBonusRun(ptoken, periodId) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = PayrollEngine.runBonusRun(email, { periodId: periodId || '' });
   return JSON.stringify(result);
 }
@@ -663,8 +663,8 @@ function portal_runBonusRun(periodId) {
  * @param {string} periodId  e.g. '2026-04' (pass '' for current period)
  * @returns {string}  JSON: { processed, skipped, period_id }
  */
-function portal_approveAllPayroll(periodId) {
-  var email  = Session.getActiveUser().getEmail();
+function portal_approveAllPayroll(ptoken, periodId) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = PayrollEngine.approveAllPayroll(email, periodId || '');
   return JSON.stringify(result);
 }
@@ -715,8 +715,8 @@ function portal_getMyRateesAs(targetPersonCode, quarterPeriodId) {
  * @param {string} targetPersonCode  person_code of the staff member to preview as
  * @returns {string}  JSON view data with previewMode: true
  */
-function portal_getViewDataAs(targetPersonCode) {
-  var email = Session.getActiveUser().getEmail();
+function portal_getViewDataAs(ptoken, targetPersonCode) {
+  var email = PortalAuth.resolveEmail(ptoken);
   return PortalData.getViewDataAs(email, targetPersonCode);
 }
 
@@ -749,21 +749,21 @@ function portal_submitRating(payloadJson, raterCode, raterToken) {
  * @param {string} periodId  e.g. '2026-Q1' (pass '' for current quarter)
  * @returns {string}  JSON: { period_id, emails_sent, recipients }
  */
-function portal_sendRatingRequests(periodId, testEmail) {
-  var email  = Session.getActiveUser().getEmail();
+function portal_sendRatingRequests(ptoken, periodId, testEmail) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = PortalData.sendRatingRequests(email, periodId || '', testEmail || null);
   return JSON.stringify(result);
 }
 
 // portal_getRatingsGaps — returns raters with incomplete submissions (CEO only)
-function portal_getRatingsGaps(quarterPeriodId) {
-  var email = Session.getActiveUser().getEmail();
+function portal_getRatingsGaps(ptoken, quarterPeriodId) {
+  var email = PortalAuth.resolveEmail(ptoken);
   return PortalData.getRatingsGaps(email, quarterPeriodId);
 }
 
 // portal_sendRatingReminder — sends targeted reminder to one rater (CEO only)
-function portal_sendRatingReminder(quarterPeriodId, raterCode) {
-  var email = Session.getActiveUser().getEmail();
+function portal_sendRatingReminder(ptoken, quarterPeriodId, raterCode) {
+  var email = PortalAuth.resolveEmail(ptoken);
   return PortalData.sendRatingReminder(email, quarterPeriodId, raterCode, null);
 }
 
@@ -791,8 +791,8 @@ function setPortalBaseUrl(url) {
  * @param {string} payloadJson  JSON: { job_number, target_date?, notes?, client_job_ref? }
  * @returns {string}  JSON: { ok: true, job_number }
  */
-function portal_editJob(payloadJson) {
-  var email = Session.getActiveUser().getEmail();
+function portal_editJob(ptoken, payloadJson) {
+  var email = PortalAuth.resolveEmail(ptoken);
   var payload;
   try { payload = JSON.parse(payloadJson); }
   catch (e) { throw new Error('portal_editJob: invalid JSON payload.'); }
@@ -823,8 +823,8 @@ function portal_editJob(payloadJson) {
  *
  * @returns {string}  JSON: { processed, queued, errors[] }
  */
-function portal_processSbsIntake() {
-  var email  = Session.getActiveUser().getEmail();
+function portal_processSbsIntake(ptoken) {
+  var email  = PortalAuth.resolveEmail(ptoken);
   var result = SheetAdapter.processSbsIntake(email);
   try { QueueProcessor.processQueue(); } catch (e) { /* non-fatal */ }
   return JSON.stringify(result);
@@ -842,4 +842,23 @@ function runGenerateRatingSecret() {
   );
   PropertiesService.getScriptProperties().setProperty('RATING_LINK_SECRET', secret);
   console.log('RATING_LINK_SECRET generated. Re-send rating links to take effect.');
+}
+
+// ============================================================
+// portal_requestPortalLink — self-service link recovery (B1)
+// Unauthenticated by design; rate-limited; never discloses
+// whether an email is on the roster.
+// ============================================================
+function portal_requestPortalLink(ptoken, email) {
+  return JSON.stringify(PortalAuth.requestLink(email));
+}
+
+// ============================================================
+// portal_sendPortalLinks — CEO bulk-send of personal links (B1)
+// ============================================================
+function portal_sendPortalLinks(ptoken, testEmail, dryRun) {
+  var email = PortalAuth.resolveEmail(ptoken);
+  var actor = RBAC.resolveActor(email);
+  RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_RUN); // CEO gate
+  return JSON.stringify(PortalAuth.sendAllLinks(testEmail || null, !!dryRun));
 }
