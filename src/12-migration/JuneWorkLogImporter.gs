@@ -769,6 +769,7 @@ function runDrillDownMissingHours() {
   console.log('=== Missing hours drill-down: ' + ACTOR + ' ===');
 
   // Source: sum hours per job+date for this actor
+  // raw_json work_date may be "Mon Jun 01" (pre-fix format) or ISO "2026-06-01" — normalize to ISO
   var srcMap = {};
   try {
     var raw = DAL.readAll(MigrationConfig.TABLES.RAW_IMPORT, { callerModule: 'JuneWorkLogImporter' });
@@ -777,7 +778,18 @@ function runDrillDownMissingHours() {
         var p    = JSON.parse(r.raw_json || '{}');
         var code = CODE_MAP[p.person_code] || p.person_code;
         if (code !== ACTOR) return;
-        var key  = p.job_number + '|' + p.work_date;
+        var rawDate = String(p.work_date || '');
+        var normDate;
+        if (rawDate.match(/^\d{4}-\d{2}-\d{2}/)) {
+          normDate = rawDate.slice(0, 10);
+        } else {
+          // "Mon Jun 01" → "2026-06-01"
+          var d = new Date(rawDate + ' 2026');
+          normDate = !isNaN(d.getTime())
+            ? Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd')
+            : rawDate;
+        }
+        var key  = p.job_number + '|' + normDate;
         srcMap[key] = (srcMap[key] || 0) + (Number(p.hours) || 0);
       } catch(e) {}
     });
@@ -817,6 +829,76 @@ function runDrillDownMissingHours() {
   if (gaps === 0) console.log('  ✅ No gaps found');
   console.log('Total gaps: ' + gaps);
   console.log('=======================================');
+}
+
+/**
+ * Writes WORK_LOG_AMENDED delta events to correct DBG hours lost to idempotency
+ * (multiple source rows per job+date — only first row's hours were captured).
+ * Idempotent: skips if correction already exists for a given job+date.
+ * After running, verify with runJuneReconciliation().
+ */
+function runFixDBGHours() {
+  console.log('=== Fix DBG missing hours (BATCH-004 idempotency gaps) ===');
+
+  // Delta corrections derived from source vs FACT comparison
+  var CORRECTIONS = [
+    { job_number: '160945', work_date: '2026-06-04', hours_delta: 2.25 },
+    { job_number: '160950', work_date: '2026-06-08', hours_delta: 12.5 },
+    { job_number: '160959', work_date: '2026-06-03', hours_delta: 1.5 },
+    { job_number: '160997', work_date: '2026-06-10', hours_delta: 6 },
+    { job_number: '160997', work_date: '2026-06-11', hours_delta: 2 },
+    { job_number: '160999', work_date: '2026-06-12', hours_delta: 5.5 },
+    { job_number: '161000', work_date: '2026-06-15', hours_delta: 1.75 },
+    { job_number: '161001', work_date: '2026-06-15', hours_delta: 1.75 },
+    { job_number: '161005', work_date: '2026-06-11', hours_delta: 1 }
+  ];
+
+  // Idempotency: find existing delta corrections for DBG
+  var existingRows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+    callerModule: 'JuneWorkLogImporter', periodId: '2026-06'
+  });
+  var alreadyFixed = {};
+  (existingRows || []).forEach(function(r) {
+    if (r.event_type === 'WORK_LOG_AMENDED' &&
+        r.actor_code === 'DBG' &&
+        r.migration_batch === 'BATCH-004-HOURS-FIX') {
+      var wd = r.work_date instanceof Date
+        ? Utilities.formatDate(r.work_date, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+        : String(r.work_date || '').slice(0, 10);
+      alreadyFixed[r.job_number + '|' + wd] = true;
+    }
+  });
+
+  var written = 0, skipped = 0;
+  CORRECTIONS.forEach(function(c) {
+    var key = c.job_number + '|' + c.work_date;
+    if (alreadyFixed[key]) {
+      console.log('  SKIP (already fixed): ' + key);
+      skipped++;
+      return;
+    }
+    DAL.appendRow(Config.TABLES.FACT_WORK_LOGS, {
+      event_id:        Identifiers.generateId(),
+      event_type:      'WORK_LOG_AMENDED',
+      job_number:      c.job_number,
+      actor_code:      'DBG',
+      hours:           c.hours_delta,
+      work_date:       c.work_date,
+      actor_role:      'DESIGNER',
+      period_id:       '2026-06',
+      migration_batch: 'BATCH-004-HOURS-FIX',
+      created_by:      JUNE_RUNNER_EMAIL_,
+      created_at:      new Date().toISOString(),
+      notes:           'BATCH-004 idempotency gap: multiple source rows per job+date, delta correction'
+    }, { callerModule: 'JuneWorkLogImporter', periodId: '2026-06' });
+    console.log('  ✅ ' + key + ' +' + c.hours_delta + 'h');
+    written++;
+  });
+
+  console.log('Written: ' + written + ', Skipped: ' + skipped);
+  console.log('Total delta: 34.25h');
+  console.log('Run runJuneReconciliation() to verify DBG is now balanced.');
+  console.log('=================================================');
 }
 
 function runCheckJuneStatus() {
