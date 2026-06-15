@@ -317,6 +317,9 @@ function runAuditPortalLinkRoster() {
       var active = r.active === true || String(r.active).toUpperCase() === 'TRUE';
       return active && String(r.email || '').trim();
     });
+    var hasAnyActiveFlag = rows.some(function(r) {
+      return r.active === true || String(r.active).toUpperCase() === 'TRUE';
+    });
 
     if (TEST_ACTOR_CODES[code]) {
       testActors.push(code + ' → ' + (activeRows.length ? activeRows[0].email : '(inactive)'));
@@ -324,7 +327,11 @@ function runAuditPortalLinkRoster() {
     }
 
     if (activeRows.length === 0) {
-      lockedOut.push(code);
+      if (hasAnyActiveFlag) {
+        // active=TRUE but email missing — genuinely locked out, can't receive link
+        lockedOut.push(code);
+      }
+      // else: all rows inactive (departed) — skip silently
     } else if (activeRows.length === 1) {
       willReceive.push(code + ' → ' + activeRows[0].email);
     } else {
