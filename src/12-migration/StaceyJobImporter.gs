@@ -625,14 +625,41 @@ function syncJobsFromStacey_() {
     };
   });
 
-  DAL.clearSheet(Config.TABLES.VW_JOB_CURRENT_STATE);
-  DAL.appendRows(Config.TABLES.VW_JOB_CURRENT_STATE, vwRows, { callerModule: 'StaceyJobImporter' });
+  // ── B4 fix: MERGE, do not replace ─────────────────────────
+  // Preserve VW rows for jobs that exist only in Nexus (created via
+  // the portal after go-live prep). Blindly clearing the VW wiped
+  // native jobs within 30 minutes of creation.
+  var staceyJobSet = {};
+  for (var sj = 0; sj < jobs.length; sj++) staceyJobSet[jobs[sj].job_number] = true;
+
+  var preservedRows = [];
+  try {
+    var existingVw = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: 'StaceyJobImporter' });
+    for (var ev = 0; ev < existingVw.length; ev++) {
+      var evJob = String(existingVw[ev].job_number || '').trim();
+      if (evJob && !staceyJobSet[evJob]) preservedRows.push(existingVw[ev]);
+    }
+  } catch (e) {
+    console.log('[StaceySync] ⚠️ Could not read existing VW for merge: ' + e.message);
+  }
+
+  // ── B4 fix: serialise against QueueProcessor ──────────────
+  // clear+append is not atomic. QueueProcessor.processQueue() takes the
+  // same script lock, so handlers can never observe a half-written VW.
+  var vwLock = LockService.getScriptLock();
+  vwLock.waitLock(30000);
+  try {
+    DAL.clearSheet(Config.TABLES.VW_JOB_CURRENT_STATE);
+    DAL.appendRows(Config.TABLES.VW_JOB_CURRENT_STATE, vwRows.concat(preservedRows), { callerModule: 'StaceyJobImporter' });
+  } finally {
+    vwLock.releaseLock();
+  }
 
   var elapsed = Math.round((Date.now() - startMs) / 1000);
   console.log('[StaceySync] ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'HH:mm') +
               ' | jobs=' + jobs.length +
               ' | events +' + totalWritten + ' (' + totalSkipped + ' skipped)' +
-              ' | VW=' + vwRows.length + ' rows' +
+              ' | VW=' + vwRows.length + ' stacey + ' + preservedRows.length + ' nexus-native rows' +
               ' | ' + elapsed + 's' +
               (unresolved.length ? ' | ⚠️ unresolved=' + unresolved.join(', ') : ''));
 }

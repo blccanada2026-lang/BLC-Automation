@@ -156,6 +156,13 @@ var QCHandler = (function () {
       return 'DUPLICATE';
     }
 
+    // Cross-period idempotency — the FACT scan above only covers the
+    // current partition; this catches retries across period boundaries.
+    if (!IdempotencyEngine.checkAndMark(idempotencyKey)) {
+      Logger.warn('QC_SUBMIT_DUPLICATE_XPERIOD', { module: 'QCHandler', message: 'Duplicate (cross-period idempotency) — skipping', job_number: jobNumber });
+      return 'DUPLICATE';
+    }
+
     var periodId = Identifiers.generateCurrentPeriodId();
     DAL.ensurePartition(Config.TABLES.FACT_QC_EVENTS, periodId, 'QCHandler');
 
@@ -163,7 +170,13 @@ var QCHandler = (function () {
       Constants.EVENT_TYPES.QC_SUBMITTED,
       cleanPayload, actor, periodId, idempotencyKey, rawPayload
     );
-    DAL.appendRow(Config.TABLES.FACT_QC_EVENTS, eventRow, { callerModule: 'QCHandler', periodId: periodId });
+    try {
+      DAL.appendRow(Config.TABLES.FACT_QC_EVENTS, eventRow, { callerModule: 'QCHandler', periodId: periodId });
+    } catch (e) {
+      // Release the idempotency mark so the queue retry is not skipped.
+      IdempotencyEngine.clear(idempotencyKey);
+      throw e;
+    }
 
     DAL.updateWhere(
       Config.TABLES.VW_JOB_CURRENT_STATE,
@@ -220,11 +233,24 @@ var QCHandler = (function () {
       return 'DUPLICATE';
     }
 
+    // Cross-period idempotency — the FACT scan above only covers the
+    // current partition; this catches retries across period boundaries.
+    if (!IdempotencyEngine.checkAndMark(idempotencyKey)) {
+      Logger.warn('QC_REVIEW_DUPLICATE_XPERIOD', { module: 'QCHandler', message: 'Duplicate (cross-period idempotency) — skipping', job_number: jobNumber });
+      return 'DUPLICATE';
+    }
+
     var periodId = Identifiers.generateCurrentPeriodId();
     DAL.ensurePartition(Config.TABLES.FACT_QC_EVENTS, periodId, 'QCHandler');
 
     var eventRow = buildQCEvent_(eventType, cleanPayload, actor, periodId, idempotencyKey, rawPayload);
-    DAL.appendRow(Config.TABLES.FACT_QC_EVENTS, eventRow, { callerModule: 'QCHandler', periodId: periodId });
+    try {
+      DAL.appendRow(Config.TABLES.FACT_QC_EVENTS, eventRow, { callerModule: 'QCHandler', periodId: periodId });
+    } catch (e) {
+      // Release the idempotency mark so the queue retry is not skipped.
+      IdempotencyEngine.clear(idempotencyKey);
+      throw e;
+    }
 
     var vwUpdates = {
       current_state: targetState,
@@ -282,11 +308,24 @@ var QCHandler = (function () {
       return 'DUPLICATE';
     }
 
+    // Cross-period idempotency — the FACT scan above only covers the
+    // current partition; this catches retries across period boundaries.
+    if (!IdempotencyEngine.checkAndMark(idempotencyKey)) {
+      Logger.warn('CLIENT_SENT_DUPLICATE_XPERIOD', { module: 'QCHandler', message: 'Duplicate (cross-period idempotency) — skipping', job_number: jobNumber });
+      return 'DUPLICATE';
+    }
+
     var periodId = Identifiers.generateCurrentPeriodId();
     DAL.ensurePartition(Config.TABLES.FACT_QC_EVENTS, periodId, 'QCHandler');
 
     var eventRow = buildQCEvent_(Constants.EVENT_TYPES.CLIENT_SENT, cleanPayload, actor, periodId, idempotencyKey, rawPayload);
-    DAL.appendRow(Config.TABLES.FACT_QC_EVENTS, eventRow, { callerModule: 'QCHandler', periodId: periodId });
+    try {
+      DAL.appendRow(Config.TABLES.FACT_QC_EVENTS, eventRow, { callerModule: 'QCHandler', periodId: periodId });
+    } catch (e) {
+      // Release the idempotency mark so the queue retry is not skipped.
+      IdempotencyEngine.clear(idempotencyKey);
+      throw e;
+    }
 
     DAL.updateWhere(
       Config.TABLES.VW_JOB_CURRENT_STATE,

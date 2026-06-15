@@ -387,6 +387,18 @@ var JobCreateHandler = (function () {
       return 'DUPLICATE';
     }
 
+    // Cross-period idempotency — the FACT scan above only covers the
+    // current partition; this catches retries across period boundaries.
+    if (!IdempotencyEngine.checkAndMark(idempotencyKey)) {
+      Logger.warn('JOB_CREATE_DUPLICATE_XPERIOD', {
+        module:          'JobCreateHandler',
+        message:         'Duplicate job create (cross-period idempotency) — skipping',
+        queue_id:        queueId,
+        idempotency_key: idempotencyKey
+      });
+      return 'DUPLICATE';
+    }
+
     // ── Step 4: Allocate next job sequence number ───────────
     var sequence  = getNextJobSequence_();
     var jobNumber = Identifiers.generateJobId(sequence);
@@ -428,14 +440,22 @@ var JobCreateHandler = (function () {
       rawPayload
     );
 
-    DAL.appendRow(
-      Config.TABLES.FACT_JOB_EVENTS,
-      eventRow,
-      {
-        callerModule: 'JobCreateHandler',
-        periodId:     periodId
-      }
-    );
+    // On failure, release the idempotency mark so the queue retry
+    // is NOT skipped (otherwise a transient write failure would
+    // silently drop the job creation).
+    try {
+      DAL.appendRow(
+        Config.TABLES.FACT_JOB_EVENTS,
+        eventRow,
+        {
+          callerModule: 'JobCreateHandler',
+          periodId:     periodId
+        }
+      );
+    } catch (e) {
+      IdempotencyEngine.clear(idempotencyKey);
+      throw e;
+    }
 
     // ── Step 7: Write initial VW_JOB_CURRENT_STATE row ─────
     // State = ALLOCATED if allocated_to was provided, else INTAKE_RECEIVED.

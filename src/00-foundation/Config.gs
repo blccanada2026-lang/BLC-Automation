@@ -412,17 +412,42 @@ var Config = (function () {
   //   handles this gracefully — falls back to DEV.
   // ──────────────────────────────────────────────────────────
   function detectEnvironment_() {
+    // ── 1. Explicit Script Property (authoritative) ──────────
+    // Works in ALL execution contexts, including time-based
+    // triggers and standalone scripts where
+    // getActiveSpreadsheet() returns null.
+    // Set once per deployment: runSetEnvironmentProd() etc.
+    try {
+      var envProp = PropertiesService.getScriptProperties().getProperty('BLC_ENV');
+      if (envProp) {
+        envProp = String(envProp).toUpperCase().trim();
+        if (envProp === 'PROD' || envProp === 'STAGING' || envProp === 'DEV') {
+          return envProp;
+        }
+        console.log('[Config] WARNING: BLC_ENV="' + envProp +
+                    '" is not a valid environment — ignoring.');
+      }
+    } catch (e) {
+      // PropertiesService unavailable — fall through
+    }
+
+    // ── 2. Legacy fallback: active spreadsheet ID match ──────
+    // Only resolves in container-bound / UI contexts.
     try {
       var activeId = SpreadsheetApp.getActiveSpreadsheet().getId();
       if (activeId === SPREADSHEET_IDS.PROD)    return 'PROD';
       if (activeId === SPREADSHEET_IDS.STAGING) return 'STAGING';
       if (activeId === SPREADSHEET_IDS.DEV)     return 'DEV';
     } catch (e) {
-      // No active spreadsheet (time-based trigger context)
-      // Fall through to DEV default below
+      // No active spreadsheet (time-based trigger / standalone)
     }
 
-    // Safe fallback — never accidentally runs as PROD
+    // ── 3. Last resort: DEV, loudly ──────────────────────────
+    // If this line appears in PRODUCTION logs, the deployment is
+    // misconfigured: triggers are reading/writing the DEV sheet.
+    // Fix immediately by running runSetEnvironmentProd() once.
+    console.log('[Config] WARNING: ENVIRONMENT UNRESOLVED — defaulting to DEV. ' +
+                'Set Script Property BLC_ENV (runSetEnvironmentProd / Staging / Dev).');
     return 'DEV';
   }
 
@@ -594,3 +619,28 @@ var Config = (function () {
   };
 
 })();
+
+// ============================================================
+// ONE-TIME ENVIRONMENT SETUP HELPERS
+// Run exactly one of these from the Apps Script editor in each
+// deployed script project, then reload. detectEnvironment_()
+// reads the BLC_ENV Script Property as its authoritative source.
+// ============================================================
+function runSetEnvironmentProd() {
+  PropertiesService.getScriptProperties().setProperty('BLC_ENV', 'PROD');
+  console.log('BLC_ENV set to PROD. New executions will resolve as PROD.');
+}
+function runSetEnvironmentStaging() {
+  PropertiesService.getScriptProperties().setProperty('BLC_ENV', 'STAGING');
+  console.log('BLC_ENV set to STAGING.');
+}
+function runSetEnvironmentDev() {
+  PropertiesService.getScriptProperties().setProperty('BLC_ENV', 'DEV');
+  console.log('BLC_ENV set to DEV.');
+}
+/** Logs how the environment currently resolves — use to verify B3 fix in trigger context. */
+function runVerifyEnvironment() {
+  console.log('Config.getEnvironment() = ' + Config.getEnvironment() +
+              ' | spreadsheetId = ' + Config.getSpreadsheetId() +
+              ' | isDev = ' + Config.isDev());
+}

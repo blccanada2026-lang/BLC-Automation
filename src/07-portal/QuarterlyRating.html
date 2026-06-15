@@ -41,6 +41,7 @@
     var QUARTER_PERIOD_ID  = (typeof INJECTED_PERIOD       !== 'undefined' ? INJECTED_PERIOD       : '') || '';
     var PREVIEW_CODE       = (typeof INJECTED_PREVIEW_CODE !== 'undefined' ? INJECTED_PREVIEW_CODE : '') || '';
     var RATER_CODE         = (typeof INJECTED_RATER_CODE   !== 'undefined' ? INJECTED_RATER_CODE   : '') || '';
+    var RATER_TOKEN        = (typeof INJECTED_RATER_TOKEN  !== 'undefined' ? INJECTED_RATER_TOKEN  : '') || '';
 
     var CATEGORIES = [
       { key: 'quality',       label: 'Quality & Accuracy' },
@@ -88,7 +89,7 @@
       if (PREVIEW_CODE) {
         runner.portal_getMyRateesAs(PREVIEW_CODE, QUARTER_PERIOD_ID);
       } else {
-        runner.portal_getMyRatees(QUARTER_PERIOD_ID, RATER_CODE);
+        runner.portal_getMyRatees(QUARTER_PERIOD_ID, RATER_CODE, RATER_TOKEN);
       }
     }
 
@@ -188,7 +189,7 @@
           btn.disabled    = false;
           btn.textContent = 'Retry';
         })
-        .portal_submitRating(JSON.stringify(payload), RATER_CODE);
+        .portal_submitRating(JSON.stringify(payload), RATER_CODE, RATER_TOKEN);
     }
 
     window.addEventListener('load', loadRatees);
