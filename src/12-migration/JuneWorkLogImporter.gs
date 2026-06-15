@@ -50,9 +50,9 @@ var JUNE_NAME_ALIASES_ = {
   'sarty gosh':     'SGO',
   'pabitra gosh':   'PBG',
   'vani kv':        'VKV',
-  'savvy nath':     'SNA',
-  'bittu dalui':    'BTD',
-  'bittuu dalui':   'BTD'
+  'savvy nath':     'SVN',
+  'bittu dalui':    'BIT',
+  'bittuu dalui':   'BIT'
 };
 
 // ── Private helpers ────────────────────────────────────────
@@ -130,17 +130,37 @@ function juneNormaliseDate_(val) {
  * Rows with work_date < JUNE_DATE_CUTOFF_ are silently skipped.
  * Idempotent by batch + filename + row index.
  */
+function readFileRows_(file) {
+  var mime = file.getMimeType();
+  if (mime === MimeType.CSV) {
+    var content = file.getBlob().getDataAsString('UTF-8');
+    return Utilities.parseCsv(content);
+  }
+  // Google Sheets or Excel — open with SpreadsheetApp.
+  // Cells are returned as their native types (Date, Number, String).
+  // Do NOT call String() on cells here — juneNormaliseDate_() handles
+  // Date objects correctly via Utilities.formatDate(). Converting Date
+  // to String first produces "Mon Jun 01 ..." which loses the year.
+  try {
+    var ss    = SpreadsheetApp.openById(file.getId());
+    var sheet = ss.getSheets()[0];
+    return sheet.getDataRange().getValues().map(function(row) {
+      return row.map(function(cell) { return cell === null || cell === undefined ? '' : cell; });
+    });
+  } catch(e) {
+    throw new Error('Cannot read file as spreadsheet: ' + e.message);
+  }
+}
+
 function importJuneCsvFile_(file, sourceTabKey, staffLookup) {
   var fileName = file.getName();
-  var content;
+  var rows;
   try {
-    content = file.getBlob().getDataAsString('UTF-8');
+    rows = readFileRows_(file);
   } catch(e) {
     console.log('  ERROR reading ' + fileName + ': ' + e.message);
     return { imported: 0, skipped: 0, filtered: 0, unresolved: [] };
   }
-
-  var rows = Utilities.parseCsv(content);
   if (!rows || rows.length < 2) {
     console.log('  SKIP (empty): ' + fileName);
     return { imported: 0, skipped: 0, filtered: 0, unresolved: [] };
@@ -252,9 +272,17 @@ function runImportJuneTimesheets() {
   }
   var folder = folders.next();
 
-  var files    = folder.getFilesByType(MimeType.CSV);
+  var files    = folder.getFiles();
   var fileList = [];
-  while (files.hasNext()) fileList.push(files.next());
+  while (files.hasNext()) {
+    var f = files.next();
+    var mime = f.getMimeType();
+    if (mime === MimeType.CSV ||
+        mime === MimeType.GOOGLE_SHEETS ||
+        mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+      fileList.push(f);
+    }
+  }
 
   if (fileList.length === 0) {
     console.log('  ❌ No CSV files found in "' + JUNE_DRIVE_FOLDER_ + '".');
@@ -353,6 +381,316 @@ function runDisableOverridesJune() {
  * Status check — run this to see if June hours are already imported.
  * Shows MIGRATION_RAW_IMPORT batch counts and FACT_WORK_LOGS|2026-06 row count.
  */
+/**
+ * Diagnostic — finds all FACT_WORK_LOGS partition sheets and counts rows in each.
+ * Also checks MIGRATION_NORMALIZED for BATCH-004 sample period_id values.
+ */
+/** Shows headers and first 3 rows of FACT_WORK_LOGS|2001-06 for cleanup planning. */
+function runInspect2001Sheet() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('FACT_WORK_LOGS|2001-06');
+  if (!sheet) { console.log('Sheet not found'); return; }
+  var data  = sheet.getDataRange().getValues();
+  console.log('Headers: ' + JSON.stringify(data[0]));
+  for (var i = 1; i <= Math.min(3, data.length - 1); i++) {
+    console.log('Row ' + i + ': ' + JSON.stringify(data[i]));
+  }
+  console.log('Total rows (excl header): ' + (data.length - 1));
+}
+
+function runDiagnoseJuneReplay() {
+  console.log('=== June Replay Diagnostic ===');
+
+  // 1. List all FACT_WORK_LOGS sheets in the spreadsheet
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var allSheets = ss.getSheets();
+  console.log('FACT_WORK_LOGS sheets found:');
+  allSheets.forEach(function(s) {
+    var name = s.getName();
+    if (name.indexOf('FACT_WORK_LOG') === 0) {
+      var rows = Math.max(0, s.getLastRow() - 1); // subtract header
+      console.log('  ' + name + ': ' + rows + ' data rows');
+    }
+  });
+
+  // 2. Sample 5 BATCH-004 rows from MIGRATION_NORMALIZED to check period_id
+  console.log('MIGRATION_NORMALIZED BATCH-004 sample:');
+  try {
+    var norm = DAL.readAll(MigrationConfig.TABLES.NORMALIZED, { callerModule: 'JuneWorkLogImporter' });
+    var batch4 = (norm || []).filter(function(r) { return r.migration_batch === 'BATCH-004'; });
+    console.log('  Total BATCH-004 rows: ' + batch4.length);
+    batch4.slice(0, 5).forEach(function(r) {
+      try {
+        var p = JSON.parse(r.normalized_json || '{}');
+        console.log('  norm_id=' + r.norm_id + ' status=' + r.replay_status +
+                    ' period_id=' + p.period_id + ' job=' + p.job_number +
+                    ' person=' + p.person_code + ' date=' + p.work_date);
+      } catch(e) { console.log('  parse error: ' + e.message); }
+    });
+  } catch(e) {
+    console.log('  Could not read MIGRATION_NORMALIZED: ' + e.message);
+  }
+  console.log('==============================');
+}
+
+/**
+ * ONE-TIME patch for the "Mon Jun 01" date bug.
+ * Fixes work_date and period_id in MIGRATION_NORMALIZED for all BATCH-004 rows,
+ * resets their replay_status to VALID, and removes the wrongly-placed
+ * BATCH-004 rows from FACT_WORK_LOGS|2001-06.
+ * Safe to re-run — idempotent.
+ */
+function runPatchBatch004Dates() {
+  console.log('=== Patching BATCH-004 date bug ===');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1. Fix MIGRATION_NORMALIZED
+  var normSheet = ss.getSheetByName(MigrationConfig.TABLES.NORMALIZED);
+  if (!normSheet) { console.log('ERROR: MIGRATION_NORMALIZED not found'); return; }
+
+  var data     = normSheet.getDataRange().getValues();
+  var headers  = data[0];
+  var batchCol = headers.indexOf('migration_batch');
+  var jsonCol  = headers.indexOf('normalized_json');
+  var statCol  = headers.indexOf('replay_status');
+  if (batchCol < 0 || jsonCol < 0 || statCol < 0) {
+    console.log('ERROR: required columns not found in MIGRATION_NORMALIZED');
+    return;
+  }
+
+  var fixed = 0, alreadyOk = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][batchCol]) !== 'BATCH-004') continue;
+    try {
+      var p  = JSON.parse(data[i][jsonCol] || '{}');
+      var wd = String(p.work_date || '');
+      // Already fixed if it looks like YYYY-MM-DD
+      if (/^\d{4}-\d{2}-\d{2}$/.test(wd)) { alreadyOk++; continue; }
+      // Parse "Mon Jun 01", "Tue Jun 02", ... → "2026-06-01", "2026-06-02", ...
+      var m = wd.match(/Jun\s+(\d{1,2})/i);
+      if (!m) { console.log('  WARN: cannot parse work_date "' + wd + '" on row ' + (i+1)); continue; }
+      var day = ('0' + parseInt(m[1])).slice(-2);
+      p.work_date  = '2026-06-' + day;
+      p.period_id  = '2026-06';
+      data[i][jsonCol] = JSON.stringify(p);
+      data[i][statCol] = 'VALID';
+      fixed++;
+    } catch(e) {
+      console.log('  WARN row ' + (i+1) + ': ' + e.message);
+    }
+  }
+  normSheet.getRange(1, 1, data.length, headers.length).setValues(data);
+  console.log('MIGRATION_NORMALIZED: fixed=' + fixed + ' alreadyOk=' + alreadyOk);
+
+  // 2. Remove BATCH-004 rows from FACT_WORK_LOGS|2001-06
+  var wlSheet = ss.getSheetByName('FACT_WORK_LOGS|2001-06');
+  if (!wlSheet) {
+    console.log('FACT_WORK_LOGS|2001-06: not found — skipping cleanup');
+  } else {
+    var wlData    = wlSheet.getDataRange().getValues();
+    var wlHeaders = wlData[0];
+    var mbCol     = wlHeaders.indexOf('migration_batch');
+    if (mbCol < 0) {
+      console.log('FACT_WORK_LOGS|2001-06: migration_batch column not found — skipping cleanup');
+    } else {
+      var toDelete = [];
+      for (var j = wlData.length - 1; j >= 1; j--) {
+        if (String(wlData[j][mbCol]) === 'BATCH-004') toDelete.push(j + 1);
+      }
+      toDelete.forEach(function(r) { wlSheet.deleteRow(r); });
+      console.log('FACT_WORK_LOGS|2001-06: removed ' + toDelete.length + ' BATCH-004 rows');
+    }
+  }
+
+  console.log('Patch complete. Run runEnableOverridesJune() then runReplayJuneTimesheets().');
+  console.log('===================================');
+}
+
+/**
+ * Removes rows from FACT_WORK_LOGS|2001-06 where work_date is in June 2026.
+ * These are the wrongly-placed BATCH-004 rows. Rows with other work_dates are untouched.
+ */
+function runCleanup2001Sheet() {
+  console.log('=== Cleaning FACT_WORK_LOGS|2001-06 ===');
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('FACT_WORK_LOGS|2001-06');
+  if (!sheet) { console.log('Sheet not found — nothing to clean'); return; }
+
+  var data     = sheet.getDataRange().getValues();
+  var headers  = data[0];
+  var wdCol    = headers.indexOf('work_date');
+  if (wdCol < 0) { console.log('ERROR: work_date column not found'); return; }
+
+  var toDelete = [];
+  for (var i = data.length - 1; i >= 1; i--) {
+    var wd = data[i][wdCol];
+    // work_date may be a Date object or an ISO string — check for year=2026, month=June
+    var d = (wd instanceof Date) ? wd : new Date(String(wd));
+    if (!isNaN(d.getTime()) && d.getFullYear() === 2026 && d.getMonth() === 5) {
+      toDelete.push(i + 1); // 1-indexed sheet row
+    }
+  }
+  toDelete.forEach(function(r) { sheet.deleteRow(r); });
+  console.log('Deleted ' + toDelete.length + ' BATCH-004 rows (work_date in June 2026)');
+  console.log('Remaining rows: ' + (sheet.getLastRow() - 1));
+  console.log('======================================');
+}
+
+/**
+ * Verifies FACT_WORK_LOGS|2026-06 content — counts by event_type, actor, and date range.
+ * Also checks for any rows with bad period_id or mangled work_date.
+ */
+function runVerifyJuneWorkLogs() {
+  console.log('=== Verifying FACT_WORK_LOGS|2026-06 ===');
+  try {
+    var rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+      callerModule: 'JuneWorkLogImporter', periodId: '2026-06'
+    });
+    console.log('Total rows: ' + (rows || []).length);
+
+    var byType = {}, byActor = {}, badPeriod = 0, badDate = 0, totalHours = 0;
+    var minDate = '9999', maxDate = '0000';
+
+    (rows || []).forEach(function(r) {
+      byType[r.event_type || 'UNKNOWN'] = (byType[r.event_type || 'UNKNOWN'] || 0) + 1;
+      byActor[r.actor_code || 'UNKNOWN'] = (byActor[r.actor_code || 'UNKNOWN'] || 0) + 1;
+      totalHours += Number(r.hours) || 0;
+
+      var wd = String(r.work_date || '');
+      if (wd && wd.indexOf('2026-06') === -1 && wd.indexOf('Mon') === -1) badDate++;
+      var pid = String(r.period_id || '');
+      if (pid && pid.indexOf('2026-06') === -1) badPeriod++;
+
+      var d = wd.slice(0, 10);
+      if (d > maxDate) maxDate = d;
+      if (d < minDate) minDate = d;
+    });
+
+    console.log('By event_type: ' + JSON.stringify(byType));
+    console.log('By actor_code: ' + JSON.stringify(byActor));
+    console.log('Total hours: ' + totalHours);
+    console.log('Date range: ' + minDate + ' → ' + maxDate);
+    if (badPeriod) console.log('⚠️  Rows with bad period_id: ' + badPeriod);
+    if (badDate)   console.log('⚠️  Rows with unexpected work_date: ' + badDate);
+    if (!badPeriod && !badDate) console.log('✅ All rows look clean');
+  } catch(e) {
+    console.log('ERROR: ' + e.message);
+  }
+  console.log('=========================================');
+}
+
+/** Shows all rows in FACT_WORK_LOGS|2026-06 for a given actor_code. */
+function runInspectActorRows() {
+  var ACTOR = 'DS1'; // change if needed
+  console.log('=== FACT rows for actor: ' + ACTOR + ' ===');
+  try {
+    var rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+      callerModule: 'JuneWorkLogImporter', periodId: '2026-06'
+    });
+    var found = (rows || []).filter(function(r) { return r.actor_code === ACTOR; });
+    found.forEach(function(r) {
+      console.log('  job=' + r.job_number + ' date=' + r.work_date +
+                  ' hours=' + r.hours + ' type=' + r.event_type);
+    });
+    console.log('Total: ' + found.length + ' rows');
+  } catch(e) { console.log('ERROR: ' + e.message); }
+  console.log('==================================');
+}
+
+/**
+ * Appends WORK_LOG_AMENDED events for the 33 BTD rows, correcting actor_code to BIT.
+ * Idempotent — checks for existing amendments before writing.
+ */
+/** Appends WORK_LOG_AMENDED events for the 59 SNA rows, correcting actor_code to SVN. */
+function runFixSNAtoSVN() {
+  console.log('=== Fixing SNA → SVN in FACT_WORK_LOGS|2026-06 ===');
+  try {
+    var rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+      callerModule: 'JuneWorkLogImporter', periodId: '2026-06'
+    });
+    var snaRows = (rows || []).filter(function(r) {
+      return r.actor_code === 'SNA' && r.event_type === 'WORK_LOG_MIGRATED';
+    });
+    console.log('SNA rows found: ' + snaRows.length);
+    if (snaRows.length === 0) { console.log('Nothing to fix.'); return; }
+
+    var alreadyAmended = {};
+    (rows || []).forEach(function(r) {
+      if (r.event_type === 'WORK_LOG_AMENDED' && r.amendment_of) alreadyAmended[r.amendment_of] = true;
+    });
+
+    var fixed = 0;
+    snaRows.forEach(function(r) {
+      if (alreadyAmended[r.event_id]) { console.log('  SKIP (already amended): ' + r.event_id); return; }
+      DAL.appendRow(Config.TABLES.FACT_WORK_LOGS, {
+        event_id:        Identifiers.generateId(),
+        event_type:      'WORK_LOG_AMENDED',
+        amendment_of:    r.event_id,
+        job_number:      r.job_number,
+        actor_code:      'SVN',
+        hours:           r.hours,
+        work_date:       r.work_date,
+        actor_role:      r.actor_role || 'DESIGNER',
+        period_id:       '2026-06',
+        migration_batch: 'BATCH-004-FIX',
+        created_by:      JUNE_RUNNER_EMAIL_,
+        created_at:      new Date().toISOString(),
+        notes:           'SNA corrected to SVN (Savvy Nath code mismatch)'
+      }, { callerModule: 'JuneWorkLogImporter', periodId: '2026-06' });
+      fixed++;
+    });
+    console.log('Amendments written: ' + fixed);
+    console.log('✅ SVN will now receive credit for ' + fixed + ' June work log entries.');
+  } catch(e) { console.log('ERROR: ' + e.message); }
+  console.log('=================================================');
+}
+
+function runFixBTDtoBIT() {
+  console.log('=== Fixing BTD → BIT in FACT_WORK_LOGS|2026-06 ===');
+  try {
+    var rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+      callerModule: 'JuneWorkLogImporter', periodId: '2026-06'
+    });
+    var btdRows = (rows || []).filter(function(r) {
+      return r.actor_code === 'BTD' && r.event_type === 'WORK_LOG_MIGRATED';
+    });
+    console.log('BTD rows found: ' + btdRows.length);
+    if (btdRows.length === 0) { console.log('Nothing to fix.'); return; }
+
+    // Check for existing amendments to avoid duplicates
+    var alreadyAmended = {};
+    (rows || []).forEach(function(r) {
+      if (r.event_type === 'WORK_LOG_AMENDED' && r.amendment_of) {
+        alreadyAmended[r.amendment_of] = true;
+      }
+    });
+
+    var fixed = 0;
+    btdRows.forEach(function(r) {
+      if (alreadyAmended[r.event_id]) { console.log('  SKIP (already amended): ' + r.event_id); return; }
+      DAL.appendRow(Config.TABLES.FACT_WORK_LOGS, {
+        event_id:        Identifiers.generateId(),
+        event_type:      'WORK_LOG_AMENDED',
+        amendment_of:    r.event_id,
+        job_number:      r.job_number,
+        actor_code:      'BIT',
+        hours:           r.hours,
+        work_date:       r.work_date,
+        actor_role:      r.actor_role || 'DESIGNER',
+        period_id:       '2026-06',
+        migration_batch: 'BATCH-004-FIX',
+        created_by:      JUNE_RUNNER_EMAIL_,
+        created_at:      new Date().toISOString(),
+        notes:           'BTD corrected to BIT (Bittu Dalui code mismatch)'
+      }, { callerModule: 'JuneWorkLogImporter', periodId: '2026-06' });
+      fixed++;
+    });
+    console.log('Amendments written: ' + fixed);
+    console.log('✅ BIT will now receive credit for ' + fixed + ' June work log entries.');
+  } catch(e) { console.log('ERROR: ' + e.message); }
+  console.log('=================================================');
+}
+
 function runCheckJuneStatus() {
   console.log('=== June Work Log Status ===');
 
