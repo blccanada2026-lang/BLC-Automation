@@ -58,7 +58,6 @@ var QCHandler = (function () {
     job_number: {
       type:      'string',
       required:  true,
-      minLength: 6,
       maxLength: 30,
       label:     'Job Number'
     },

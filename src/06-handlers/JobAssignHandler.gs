@@ -37,7 +37,6 @@ var JobAssignHandler = (function () {
     job_number: {
       type:      'string',
       required:  true,
-      minLength: 6,
       maxLength: 20,
       label:     'Job Number'
     },

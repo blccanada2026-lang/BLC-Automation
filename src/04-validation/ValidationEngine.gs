@@ -601,7 +601,6 @@ var ValidationEngine = (function () {
     JOB_NUMBER: {
       type:      'string',
       required:  true,
-      minLength: 6,
       maxLength: 30,
       label:     'Job Number'
     },
