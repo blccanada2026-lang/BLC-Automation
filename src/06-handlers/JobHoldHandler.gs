@@ -43,9 +43,8 @@ var JobHoldHandler = (function () {
     job_number: {
       type:      'string',
       required:  true,
-      minLength: 7,
-      maxLength: 20,
-      pattern:   /^BLC-\d{5}$/,
+      minLength: 6,
+      maxLength: 30,
       label:     'Job Number'
     },
     notes: {
