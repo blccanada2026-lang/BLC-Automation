@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-06-16 Session (Live Bug Fixes + Portal Features — Day 2)
+
+### Work Completed
+
+**Portal bugs fixed (all committed + pushed to PROD, 6 deployments):**
+- TL job visibility: replaced supervisor-hierarchy lookup (`buildTeamCodes_`) with account-scoped lookup via `REF_ACCOUNT_DESIGNER_MAP`. TLs now see all jobs across their accounts.
+- QC/QC_REVIEWER added to assign dropdown (`getActiveDesigners` + `getDesignersForClient`). Raj Kumar now appears when assigning jobs.
+- Log Work button: switched from `isDesigner` flag to `canLogWork` permission flag (WORK_LOG_SUBMIT). PM, TL, QC_REVIEWER all see it on every non-terminal state.
+- My Hours panel: new `getMyHours()` / `portal_getMyHours()` endpoint + panel rendered for all roles that can log work. Shows per-job hours this period.
+- Fixed fatal spinner bug: `_ptoken` (undeclared) → `TOKEN_RUN` in `loadMyHours`. Was crashing `onDataLoaded` before `showLoading(false)`, freezing all users on spinner.
+- Fixed `minLength: 6` on job_number in all 7 handlers + ValidationEngine — was rejecting migrated short job numbers (e.g. NL-01, AT-1). Removed entirely; `required: true` handles empty.
+- Fixed DS1/UNKNOWN appearing in CEO Load Balance: `getCEODashboard` hoursMap now filtered by `staffNameMap` (active roster only).
+- Fixed `BillingEngine.gs` BILLING_LEDGER_SCHEMA + INVOICED_EVENT_SCHEMA: removed `pattern: /^BLC-\d{5}$/` from both job_number fields — would have blocked billing run on migrated jobs.
+- Fixed email: Deb Sen (DBS) mixed-case email lookup — case-insensitive fallback in `lookupActor_`.
+- Added `QC_REVIEWER: 'QC'` alias in RBAC.gs ROLES map.
+
+### Files Changed
+- `src/07-portal/PortalData.gs` — buildTeamCodes_, getActiveDesigners, getDesignersForClient, buildPerms_, getMyHours, getCEODashboard hoursMap filter
+- `src/07-portal/PortalView.html` — Log Work buttons (canLogWork), My Hours panel + JS, TOKEN_RUN fix
+- `src/07-portal/Portal.gs` — portal_getMyHours
+- `src/02-security/RBAC.gs` — QC_REVIEWER alias, case-insensitive email lookup
+- `src/06-handlers/` — all 7 handlers: minLength removed from job_number schema
+- `src/04-validation/ValidationEngine.gs` — SCHEMA_FRAGMENTS.JOB_NUMBER minLength removed
+- `src/09-billing/BillingEngine.gs` — pattern removed from both job_number schema fields
+
+### Key Commits
+- `5d0cde5` feat(portal): TL visibility by account membership
+- `b73be54` fix(portal): QC/QC_REVIEWER in assign dropdown
+- `bddec3a` feat(portal): Log Work + My Hours panel for PM/TL/QC
+- `66dd9e9` fix(portal): TOKEN_RUN in loadMyHours (_ptoken crash)
+- `72589ab` fix(validation): drop minLength from job_number in all handlers
+- `15fd4fb` fix(dashboard): filter DS1/UNKNOWN from CEO load balance
+
+### Open Items for Next Session
+1. **Client timesheet generator** — new feature needed: per-job breakdown (who, hours, amount) for client invoices. Data exists in FACT_WORK_LOGS + FACT_BILLING_LEDGER; no generator built yet.
+2. **Full testing plan** — see `.claude/context/test-plan.md` (created this session)
+3. **Billing run** — BillingEngine pattern bug now fixed; safe to do first billing run.
+4. **Q1 bonus** — `runQ1ApplyManualCorrections()` + `runSendQ1BonusLetters()` still pending.
+5. **Stale QC_REVIEW migrated jobs** — bulk-update script needed for jobs Sarty already reviewed offline.
+6. **Designer My Hours view** — functional but no refresh button yet.
+
+---
+
 ## 2026-06-15 Session (PROD Launch + BATCH-004 June Timesheet Migration)
 
 ### Work Completed

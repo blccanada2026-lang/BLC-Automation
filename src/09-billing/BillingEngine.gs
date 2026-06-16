@@ -58,7 +58,7 @@ var BillingEngine = (function () {
 
   var BILLING_LEDGER_SCHEMA = {
     event_id:        { type: 'string', required: true,  label: 'Event ID' },
-    job_number:      { type: 'string', required: true,  pattern: /^BLC-\d{5}$/, label: 'Job Number' },
+    job_number:      { type: 'string', required: true,  label: 'Job Number' },
     period_id:       { type: 'string', required: true,  pattern: /^\d{4}-\d{2}$/, label: 'Period ID' },
     event_type:      { type: 'string', required: true,  label: 'Event Type' },
     timestamp:       { type: 'string', required: true,  label: 'Timestamp' },
@@ -72,7 +72,7 @@ var BillingEngine = (function () {
 
   var INVOICED_EVENT_SCHEMA = {
     event_id:   { type: 'string', required: true, label: 'Event ID' },
-    job_number: { type: 'string', required: true, pattern: /^BLC-\d{5}$/, label: 'Job Number' },
+    job_number: { type: 'string', required: true, label: 'Job Number' },
     event_type: { type: 'string', required: true, label: 'Event Type' },
     from_state: { type: 'string', required: true, label: 'From State' },
     to_state:   { type: 'string', required: true, label: 'To State' },
