@@ -701,14 +701,18 @@ function runJuneReconciliation() {
   console.log('[BATCH-004] June 1-15 Reconciliation Report');
   console.log('═══════════════════════════════════════════');
 
+  // Stacey used BTD/SNA codes; FACT was corrected to BIT/SVN via amendments.
+  // Normalise source codes so comparison is against the canonical codes.
+  var SRC_CODE_MAP = { 'BTD': 'BIT', 'SNA': 'SVN' };
+
   // 1. Source hours from MIGRATION_RAW_IMPORT (BATCH-004 raw_json)
   var srcByActor = {}, srcTotal = 0;
   try {
     var raw = DAL.readAll(MigrationConfig.TABLES.RAW_IMPORT, { callerModule: 'JuneWorkLogImporter' });
     (raw || []).filter(function(r) { return r.migration_batch === 'BATCH-004'; }).forEach(function(r) {
       try {
-        var p = JSON.parse(r.raw_json || '{}');
-        var code = String(p.person_code || 'UNKNOWN');
+        var p    = JSON.parse(r.raw_json || '{}');
+        var code = SRC_CODE_MAP[String(p.person_code || 'UNKNOWN')] || String(p.person_code || 'UNKNOWN');
         var hrs  = Number(p.hours) || 0;
         srcByActor[code] = (srcByActor[code] || 0) + hrs;
         srcTotal += hrs;
@@ -716,20 +720,19 @@ function runJuneReconciliation() {
     });
   } catch(e) { console.log('ERROR reading RAW_IMPORT: ' + e.message); return; }
 
-  // 2. Effective FACT hours: migrated rows + amendment rows (amendments override originals)
+  // 2. Effective FACT hours.
+  //    BTD/SNA MIGRATED rows have been superseded by BIT/SVN AMENDED rows.
+  //    Since amendment_of is not in the FACT header, we exclude BTD/SNA MIGRATED
+  //    rows directly (all were amended) and count AMENDED rows by their actor_code.
+  var SUPERSEDED_MIGRATED = { 'BTD': true, 'SNA': true };
   var factByActor = {}, factTotal = 0;
   try {
     var rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
       callerModule: 'JuneWorkLogImporter', periodId: '2026-06'
     });
-    // Track which event_ids have been amended
-    var amendedIds = {};
     (rows || []).forEach(function(r) {
-      if (r.event_type === 'WORK_LOG_AMENDED' && r.amendment_of) amendedIds[r.amendment_of] = true;
-    });
-    (rows || []).forEach(function(r) {
-      if (r.event_type === 'WORK_LOG_SUBMITTED') return; // exclude portal test entries
-      if (r.event_type === 'WORK_LOG_MIGRATED' && amendedIds[r.event_id]) return; // superseded
+      if (r.event_type === 'WORK_LOG_SUBMITTED') return;
+      if (r.event_type === 'WORK_LOG_MIGRATED' && SUPERSEDED_MIGRATED[r.actor_code]) return;
       var code = String(r.actor_code || 'UNKNOWN');
       var hrs  = Number(r.hours) || 0;
       factByActor[code] = (factByActor[code] || 0) + hrs;
@@ -737,7 +740,7 @@ function runJuneReconciliation() {
     });
   } catch(e) { console.log('ERROR reading FACT: ' + e.message); return; }
 
-  // 3. Print comparison
+  // 3. Print comparison (hide zero-zero rows for cleaner output)
   var allCodes = {};
   Object.keys(srcByActor).forEach(function(c) { allCodes[c] = true; });
   Object.keys(factByActor).forEach(function(c) { allCodes[c] = true; });
@@ -746,6 +749,7 @@ function runJuneReconciliation() {
   Object.keys(allCodes).sort().forEach(function(code) {
     var src  = Math.round((srcByActor[code]  || 0) * 100) / 100;
     var fact = Math.round((factByActor[code] || 0) * 100) / 100;
+    if (src === 0 && fact === 0) return;
     var flag = (src !== fact) ? ' ⚠️  MISMATCH' : ' ✅';
     if (src !== fact) gaps++;
     console.log('  ' + code + ': source=' + src + 'h  fact=' + fact + 'h' + flag);
@@ -899,6 +903,77 @@ function runFixDBGHours() {
   console.log('Total delta: 34.25h');
   console.log('Run runJuneReconciliation() to verify DBG is now balanced.');
   console.log('=================================================');
+}
+
+/**
+ * Drill-down for PBG, RKU, and SGO in one run.
+ * Prints per-job+date gaps so runFixPBGHours/RKU/SGO can be written.
+ */
+function runDrillDownRemainingActors() {
+  var ACTORS = ['PBG', 'RKU', 'SGO'];
+  var CODE_MAP = { 'BTD': 'BIT', 'SNA': 'SVN' };
+
+  // Load source once
+  var rawRows = [];
+  try {
+    var raw = DAL.readAll(MigrationConfig.TABLES.RAW_IMPORT, { callerModule: 'JuneWorkLogImporter' });
+    rawRows = (raw || []).filter(function(r) { return r.migration_batch === 'BATCH-004'; });
+  } catch(e) { console.log('ERROR reading RAW_IMPORT: ' + e.message); return; }
+
+  // Load FACT once
+  var factRows = [];
+  try {
+    factRows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+      callerModule: 'JuneWorkLogImporter', periodId: '2026-06'
+    }) || [];
+  } catch(e) { console.log('ERROR reading FACT: ' + e.message); return; }
+
+  ACTORS.forEach(function(ACTOR) {
+    console.log('=== ' + ACTOR + ' ===');
+
+    var srcMap = {};
+    rawRows.forEach(function(r) {
+      try {
+        var p    = JSON.parse(r.raw_json || '{}');
+        var code = CODE_MAP[p.person_code] || p.person_code;
+        if (code !== ACTOR) return;
+        var rawDate = String(p.work_date || '');
+        var normDate;
+        if (rawDate.match(/^\d{4}-\d{2}-\d{2}/)) {
+          normDate = rawDate.slice(0, 10);
+        } else {
+          var d = new Date(rawDate + ' 2026');
+          normDate = !isNaN(d.getTime()) ? Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd') : rawDate;
+        }
+        var key = p.job_number + '|' + normDate;
+        srcMap[key] = (srcMap[key] || 0) + (Number(p.hours) || 0);
+      } catch(e) {}
+    });
+
+    var factMap = {};
+    factRows.forEach(function(r) {
+      if (r.event_type === 'WORK_LOG_SUBMITTED') return;
+      if (r.actor_code !== ACTOR) return;
+      var wd = r.work_date instanceof Date
+        ? Utilities.formatDate(r.work_date, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+        : String(r.work_date || '').slice(0, 10);
+      factMap[r.job_number + '|' + wd] = (factMap[r.job_number + '|' + wd] || 0) + (Number(r.hours) || 0);
+    });
+
+    var allKeys = {};
+    Object.keys(srcMap).forEach(function(k) { allKeys[k] = true; });
+    Object.keys(factMap).forEach(function(k) { allKeys[k] = true; });
+    var gaps = 0;
+    Object.keys(allKeys).sort().forEach(function(k) {
+      var src  = Math.round((srcMap[k]  || 0) * 100) / 100;
+      var fact = Math.round((factMap[k] || 0) * 100) / 100;
+      if (src !== fact) {
+        console.log('  ⚠️  ' + k + ': src=' + src + 'h  fact=' + fact + 'h  missing=' + Math.round((src-fact)*100)/100 + 'h');
+        gaps++;
+      }
+    });
+    if (gaps === 0) console.log('  ✅ No gaps');
+  });
 }
 
 function runCheckJuneStatus() {
