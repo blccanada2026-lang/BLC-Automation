@@ -763,6 +763,97 @@ function runJuneReconciliation() {
 }
 
 /**
+ * Row-level cross-check: compares Stacey source vs Nexus FACT at the
+ * actor+job+date granularity. Logs mismatches only. Prints Nexus timesheet
+ * summary sorted by date → actor → job at the end.
+ */
+function runJuneTimesheetCrossCheck() {
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('[BATCH-004] June 1-15 Row-Level Cross-Check');
+  console.log('═══════════════════════════════════════════════════════');
+
+  var SRC_CODE_MAP  = { 'BTD': 'BIT', 'SNA': 'SVN' };
+  var SKIP_MIGRATED = { 'BTD': true, 'SNA': true };
+
+  // 1. Build source map: "actor|job|date" → hours
+  var srcMap = {};
+  try {
+    var raw = DAL.readAll(MigrationConfig.TABLES.RAW_IMPORT, { callerModule: 'JuneWorkLogImporter' });
+    (raw || []).filter(function(r) { return r.migration_batch === 'BATCH-004'; }).forEach(function(r) {
+      try {
+        var p    = JSON.parse(r.raw_json || '{}');
+        var code = SRC_CODE_MAP[p.person_code] || p.person_code;
+        var rawDate = String(p.work_date || '');
+        var nd;
+        if (rawDate.match(/^\d{4}-\d{2}-\d{2}/)) {
+          nd = rawDate.slice(0, 10);
+        } else {
+          var d = new Date(rawDate + ' 2026');
+          nd = !isNaN(d.getTime()) ? Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd') : rawDate;
+        }
+        var key = code + '|' + p.job_number + '|' + nd;
+        srcMap[key] = (srcMap[key] || 0) + (Number(p.hours) || 0);
+      } catch(e) {}
+    });
+  } catch(e) { console.log('ERROR reading RAW_IMPORT: ' + e.message); return; }
+
+  // 2. Build FACT effective map: "actor|job|date" → hours
+  var factMap = {};
+  try {
+    var rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+      callerModule: 'JuneWorkLogImporter', periodId: '2026-06'
+    });
+    (rows || []).forEach(function(r) {
+      if (r.event_type === 'WORK_LOG_SUBMITTED') return;
+      if (r.event_type === 'WORK_LOG_MIGRATED' && SKIP_MIGRATED[r.actor_code]) return;
+      var wd = r.work_date instanceof Date
+        ? Utilities.formatDate(r.work_date, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+        : String(r.work_date || '').slice(0, 10);
+      var key = r.actor_code + '|' + r.job_number + '|' + wd;
+      factMap[key] = (factMap[key] || 0) + (Number(r.hours) || 0);
+    });
+  } catch(e) { console.log('ERROR reading FACT: ' + e.message); return; }
+
+  // 3. Compare — report mismatches only
+  var allKeys = {};
+  Object.keys(srcMap).forEach(function(k)  { allKeys[k] = true; });
+  Object.keys(factMap).forEach(function(k) { allKeys[k] = true; });
+
+  var mismatches = 0, matched = 0;
+  Object.keys(allKeys).sort().forEach(function(k) {
+    var src  = Math.round((srcMap[k]  || 0) * 100) / 100;
+    var fact = Math.round((factMap[k] || 0) * 100) / 100;
+    if (src === fact) { matched++; return; }
+    var parts = k.split('|');
+    console.log('  ⚠️  ' + parts[2] + ' | ' + parts[0] + ' | ' + parts[1] +
+                ': src=' + src + 'h  nexus=' + fact + 'h  diff=' + Math.round((fact-src)*100)/100 + 'h');
+    mismatches++;
+  });
+
+  console.log('───────────────────────────────────────────────────────');
+  console.log('  Matched rows: ' + matched);
+  console.log('  Mismatches:   ' + mismatches);
+  console.log(mismatches === 0 ? '  ✅ ALL ROWS MATCH' : '  ⚠️  ' + mismatches + ' row(s) differ');
+
+  // 4. Print Nexus timesheet summary sorted date → actor → job
+  console.log('');
+  console.log('--- Nexus Timesheet (FACT effective hours) ---');
+  console.log('Date        | Actor | Job#                                      | Hours');
+  console.log('────────────|───────|───────────────────────────────────────────|──────');
+  var srcTotal = 0;
+  Object.keys(srcMap).sort().forEach(function(k) {
+    var parts = k.split('|');
+    var date  = parts[2], actor = parts[0], job = parts[1];
+    var fact  = Math.round((factMap[k] || 0) * 100) / 100;
+    console.log(date + ' | ' + actor.padEnd(5) + ' | ' + job.substring(0, 41).padEnd(41) + ' | ' + fact);
+    srcTotal += fact;
+  });
+  console.log('────────────|───────|───────────────────────────────────────────|──────');
+  console.log('TOTAL: ' + Math.round(srcTotal * 100) / 100 + 'h');
+  console.log('═══════════════════════════════════════════════════════');
+}
+
+/**
  * Drills into missing hours for a specific actor by comparing source rows
  * (MIGRATION_RAW_IMPORT BATCH-004) vs FACT rows, grouped by job+date.
  * Change ACTOR below before running.
