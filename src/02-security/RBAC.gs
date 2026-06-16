@@ -485,7 +485,15 @@ var RBAC = (function () {
     if (devActor) return devActor;
 
     try {
+      // Fast path: exact match (works for correctly stored lowercase emails)
       var rows = DAL.readWhere(Config.TABLES.DIM_STAFF_ROSTER, { email: email });
+      // Fallback: case-insensitive scan (handles mixed-case emails in the roster)
+      if (!rows || rows.length === 0) {
+        var allRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'RBAC' });
+        rows = (allRows || []).filter(function(r) {
+          return String(r.email || '').toLowerCase().trim() === email;
+        });
+      }
       if (!rows || rows.length === 0) return null;
       var row = null;
       for (var i = 0; i < rows.length; i++) {
