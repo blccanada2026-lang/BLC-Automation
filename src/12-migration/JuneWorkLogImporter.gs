@@ -905,6 +905,73 @@ function runFixDBGHours() {
   console.log('=================================================');
 }
 
+/**
+ * Self-healing undo for duplicate DBG corrections.
+ * Reads total WORK_LOG_AMENDED hours per job+date for DBG, compares against
+ * the expected single-delta, and writes a negative reversal for any excess.
+ * Idempotent: if excess is already zero, skips that entry.
+ */
+function runUndoDuplicateDBGFix() {
+  console.log('=== Undo duplicate DBG corrections ===');
+  var EXPECTED = {
+    '160945|2026-06-04': 2.25,
+    '160950|2026-06-08': 12.5,
+    '160959|2026-06-03': 1.5,
+    '160997|2026-06-10': 6,
+    '160997|2026-06-11': 2,
+    '160999|2026-06-12': 5.5,
+    '161000|2026-06-15': 1.75,
+    '161001|2026-06-15': 1.75,
+    '161005|2026-06-11': 1
+  };
+
+  var rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+    callerModule: 'JuneWorkLogImporter', periodId: '2026-06'
+  });
+
+  // Sum all AMENDED hours for DBG per job+date (includes both positive and any prior negatives)
+  var amendedByKey = {};
+  (rows || []).forEach(function(r) {
+    if (r.event_type !== 'WORK_LOG_AMENDED' || r.actor_code !== 'DBG') return;
+    var wd = r.work_date instanceof Date
+      ? Utilities.formatDate(r.work_date, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+      : String(r.work_date || '').slice(0, 10);
+    var key = r.job_number + '|' + wd;
+    amendedByKey[key] = (amendedByKey[key] || 0) + (Number(r.hours) || 0);
+  });
+
+  var written = 0;
+  Object.keys(EXPECTED).sort().forEach(function(key) {
+    var expected = EXPECTED[key];
+    var actual   = Math.round((amendedByKey[key] || 0) * 100) / 100;
+    var excess   = Math.round((actual - expected) * 100) / 100;
+    if (excess <= 0) {
+      console.log('  OK ' + key + ': amended=' + actual + 'h expected=' + expected + 'h');
+      return;
+    }
+    var parts = key.split('|');
+    DAL.appendRow(Config.TABLES.FACT_WORK_LOGS, {
+      event_id:    Identifiers.generateId(),
+      event_type:  'WORK_LOG_AMENDED',
+      job_number:  parts[0],
+      actor_code:  'DBG',
+      hours:       -excess,
+      work_date:   parts[1],
+      actor_role:  'DESIGNER',
+      period_id:   '2026-06',
+      created_by:  JUNE_RUNNER_EMAIL_,
+      created_at:  new Date().toISOString(),
+      notes:       'Reversal: duplicate BATCH-004-HOURS-FIX cancelled -' + excess + 'h'
+    }, { callerModule: 'JuneWorkLogImporter', periodId: '2026-06' });
+    console.log('  ✅ Reversed ' + key + ': -' + excess + 'h (was ' + actual + 'h, expected ' + expected + 'h)');
+    written++;
+  });
+
+  console.log('Reversals written: ' + written);
+  console.log('Run runJuneReconciliation() to verify.');
+  console.log('=================================================');
+}
+
 function runFixPBGHours() {
   console.log('=== Fix PBG missing hours (BATCH-004 idempotency gap) ===');
   var CORRECTIONS = [
