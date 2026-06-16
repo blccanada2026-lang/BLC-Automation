@@ -839,7 +839,7 @@
 <div class="modal-backdrop" id="modal-assign">
   <div class="modal">
     <div class="modal-header">
-      <h3>Assign Job</h3>
+      <h3 id="assign-modal-title">Assign Job</h3>
       <button class="modal-close" data-close="modal-assign">✕</button>
     </div>
     <div class="modal-body">
@@ -1827,7 +1827,10 @@ function buildActionButtons(job, perms) {
     buttons.push(makeActionBtn('Edit', 'btn-muted', 'edit', job.job_number));
   }
   if (perms.canAssign && state === 'INTAKE_RECEIVED') {
-    buttons.push(makeActionBtn('Assign',  'btn-primary', 'assign', job.job_number));
+    buttons.push(makeActionBtn('Assign',    'btn-primary', 'assign', job.job_number));
+  }
+  if (perms.canAssign && (state === 'ALLOCATED' || state === 'IN_PROGRESS')) {
+    buttons.push(makeActionBtn('Reassign', 'btn-muted',   'assign', job.job_number));
   }
   if (perms.canStart && state === 'ALLOCATED') {
     buttons.push(makeActionBtn('Start',   'btn-success', 'start',  job.job_number));
@@ -1951,6 +1954,9 @@ function openAssign(jobNumber) {
   if (!_activeJob) return;
   setModalJobInfo('assign-job-info', _activeJob);
   document.getElementById('assign-notes').value = '';
+  var isReassign = _activeJob.current_state === 'ALLOCATED' || _activeJob.current_state === 'IN_PROGRESS';
+  document.getElementById('assign-modal-title').textContent = isReassign ? 'Reassign Job' : 'Assign Job';
+  document.getElementById('btn-submit-assign').textContent  = isReassign ? 'Reassign' : 'Assign Job';
 
   var sel = document.getElementById('assign-designer');
   while (sel.firstChild) sel.removeChild(sel.firstChild);
@@ -2270,8 +2276,9 @@ function submitAssign() {
   var notes   = val('assign-notes');
   var payload = { job_number: _activeJob.job_number, designer_code: designerCode };
   if (notes) payload.notes = notes;
+  var isReassign = _activeJob.current_state === 'ALLOCATED' || _activeJob.current_state === 'IN_PROGRESS';
   closeModal('modal-assign');
-  submitAction('JOB_ALLOCATE', payload, _activeJob.job_number + ' assigned.');
+  submitAction('JOB_ALLOCATE', payload, _activeJob.job_number + (isReassign ? ' reassigned.' : ' assigned.'));
 }
 
 function submitStart() {

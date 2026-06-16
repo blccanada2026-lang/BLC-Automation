@@ -247,8 +247,8 @@ var Config = (function () {
   // Empty array = terminal state (INVOICED).
   var TRANSITIONS = {
     INTAKE_RECEIVED:    ['ALLOCATED'],
-    ALLOCATED:          ['IN_PROGRESS', 'ON_HOLD'],
-    IN_PROGRESS:        ['ON_HOLD', 'QC_REVIEW', 'CLIENT_RETURN'],
+    ALLOCATED:          ['IN_PROGRESS', 'ON_HOLD', 'ALLOCATED'],
+    IN_PROGRESS:        ['ON_HOLD', 'QC_REVIEW', 'CLIENT_RETURN', 'ALLOCATED'],
     ON_HOLD:            ['IN_PROGRESS', 'ALLOCATED'],
     CLIENT_RETURN:      ['IN_PROGRESS', 'ALLOCATED'],
     QC_REVIEW:          ['IN_PROGRESS', 'COMPLETED_BILLABLE', 'MINOR_FIX'],
