@@ -355,20 +355,24 @@ var PortalData = (function () {
 
     var periodId = Identifiers.generateCurrentPeriodId();
 
-    // ── 1. Load staff name map ────────────────────────────────
+    // ── 1. Load staff name map — ACTIVE staff only ───────────
     var staffNameMap = {};
     try {
       var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
       for (var s = 0; s < staffRows.length; s++) {
-        var code = String(staffRows[s].person_code || '').trim();
-        if (code) staffNameMap[code] = String(staffRows[s].name || code);
+        var sr       = staffRows[s];
+        var isActive = sr.active === true || String(sr.active || '').toUpperCase() === 'TRUE';
+        if (!isActive) continue; // exclude inactive, departed, and test actors
+        var code = String(sr.person_code || '').trim();
+        if (code) staffNameMap[code] = String(sr.name || code);
       }
     } catch (e) { /* table may not exist yet */ }
 
     // ── 2. Aggregate hours from FACT_WORK_LOGS ────────────────
-    // Only track codes present in DIM_STAFF_ROSTER — this naturally excludes
-    // legacy/superseded codes (BTD, SNA) and any test actors not on the roster.
-    // Negative amendment hours are intentional reversals and must reduce totals.
+    // Only track ACTIVE roster codes — filters out DS1, UNKNOWN, and stray codes.
+    // BTD/SNA MIGRATED rows are explicitly skipped (superseded by BIT/SVN amendments).
+    // Negative amendment hours (reversals) are intentional and must reduce totals.
+    var SUPERSEDED_CODES = { 'BTD': true, 'SNA': true };
     var hoursMap = {};
     try {
       var workLogs = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
@@ -378,7 +382,8 @@ var PortalData = (function () {
       for (var w = 0; w < workLogs.length; w++) {
         var wrow  = workLogs[w];
         var wcode = String(wrow.actor_code || '').trim();
-        if (!wcode || !staffNameMap[wcode]) continue; // unknown / legacy codes
+        if (!wcode || !staffNameMap[wcode]) continue; // not on active roster
+        if (SUPERSEDED_CODES[wcode] && wrow.event_type === 'WORK_LOG_MIGRATED') continue;
         var wrole = String(wrow.actor_role || '').toUpperCase();
         var whrs  = parseFloat(wrow.hours) || 0;
         if (!hoursMap[wcode]) hoursMap[wcode] = { design: 0, qc: 0 };
