@@ -94,25 +94,34 @@ var PortalData = (function () {
    * @returns {Object[]}  Array of job view rows (plain objects)
    */
   /**
-   * Returns a set of person_codes who are direct reports of the given TL.
-   * Reads DIM_STAFF_ROSTER and filters by supervisor_code = tlPersonCode.
+   * Returns a set of person_codes who share any account with the given TL
+   * via REF_ACCOUNT_DESIGNER_MAP (Option B — account-scoped visibility).
    * Returns: { personCode: true, ... }
    */
   function buildTeamCodes_(tlPersonCode) {
     var set = {};
-    var rows;
+    var mapRows;
     try {
-      rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
+      mapRows = DAL.readAll(Config.TABLES.REF_ACCOUNT_DESIGNER_MAP, { callerModule: 'PortalData' });
     } catch (e) {
-      return set; // fail open — return empty set, jobs table will be empty
+      return set;
     }
-    for (var i = 0; i < rows.length; i++) {
-      var supCode = String(rows[i].supervisor_code || '').trim();
-      var pCode   = String(rows[i].person_code     || '').trim();
-      if (supCode === tlPersonCode && pCode) {
-        set[pCode] = true;
+    if (!mapRows || mapRows.length === 0) return set;
+
+    var tlAccounts = {};
+    for (var i = 0; i < mapRows.length; i++) {
+      var dc = String(mapRows[i].designer_code || '').trim();
+      if (dc === tlPersonCode) {
+        tlAccounts[String(mapRows[i].client_code || '').trim()] = true;
       }
     }
+
+    for (var j = 0; j < mapRows.length; j++) {
+      var cc   = String(mapRows[j].client_code   || '').trim();
+      var code = String(mapRows[j].designer_code || '').trim();
+      if (tlAccounts[cc] && code) set[code] = true;
+    }
+
     return set;
   }
 
