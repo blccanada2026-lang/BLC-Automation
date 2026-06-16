@@ -1338,7 +1338,7 @@ var PortalData = (function () {
       var row  = rows[i];
       var role = String(row.role || '').trim().toUpperCase();
       if (String(row.active || '').toUpperCase() !== 'TRUE') continue;
-      if (role !== 'DESIGNER' && role !== 'TEAM_LEAD') continue;
+      if (role !== 'DESIGNER' && role !== 'TEAM_LEAD' && role !== 'QC' && role !== 'QC_REVIEWER') continue;
       result.push({
         personCode: String(row.person_code || '').trim(),
         name:       String(row.name || '').trim(),
@@ -1445,9 +1445,9 @@ var PortalData = (function () {
       var row  = rosterRows[i];
       var role = String(row.role || '').trim().toUpperCase();
       if (String(row.active || '').toUpperCase() !== 'TRUE') continue;
-      if (role !== 'DESIGNER' && role !== 'TEAM_LEAD' && role !== 'PM') continue;
+      if (role !== 'DESIGNER' && role !== 'TEAM_LEAD' && role !== 'QC' && role !== 'QC_REVIEWER' && role !== 'PM') continue;
       var code = String(row.person_code || '').trim().toUpperCase();
-      // PMs always appear for every account (overflow coverage) — mapping filter only applies to DESIGNER/TL
+      // PMs always appear for every account (overflow coverage) — mapping filter only applies to DESIGNER/TL/QC
       if (role !== 'PM' && hasMappings && !assignedCodes[code]) continue;
       result.push({
         personCode: String(row.person_code || '').trim(),
