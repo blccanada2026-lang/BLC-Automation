@@ -366,6 +366,9 @@ var PortalData = (function () {
     } catch (e) { /* table may not exist yet */ }
 
     // ── 2. Aggregate hours from FACT_WORK_LOGS ────────────────
+    // Only track codes present in DIM_STAFF_ROSTER — this naturally excludes
+    // legacy/superseded codes (BTD, SNA) and any test actors not on the roster.
+    // Negative amendment hours are intentional reversals and must reduce totals.
     var hoursMap = {};
     try {
       var workLogs = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
@@ -375,9 +378,9 @@ var PortalData = (function () {
       for (var w = 0; w < workLogs.length; w++) {
         var wrow  = workLogs[w];
         var wcode = String(wrow.actor_code || '').trim();
+        if (!wcode || !staffNameMap[wcode]) continue; // unknown / legacy codes
         var wrole = String(wrow.actor_role || '').toUpperCase();
         var whrs  = parseFloat(wrow.hours) || 0;
-        if (!wcode || whrs <= 0) continue;
         if (!hoursMap[wcode]) hoursMap[wcode] = { design: 0, qc: 0 };
         if (wrole === 'QC') hoursMap[wcode].qc += whrs;
         else                hoursMap[wcode].design += whrs;
@@ -387,16 +390,18 @@ var PortalData = (function () {
     var teamHours = [];
     var hoursCodes = Object.keys(hoursMap);
     for (var h = 0; h < hoursCodes.length; h++) {
-      var hcode   = hoursCodes[h];
-      var hentry  = hoursMap[hcode];
-      var design  = Math.round(hentry.design * 100) / 100;
-      var qc      = Math.round(hentry.qc     * 100) / 100;
+      var hcode  = hoursCodes[h];
+      var hentry = hoursMap[hcode];
+      var design = Math.round(hentry.design * 100) / 100;
+      var qc     = Math.round(hentry.qc     * 100) / 100;
+      var total  = Math.round((design + qc) * 100) / 100;
+      if (total <= 0) continue; // net-zero or reversed entries — hide from display
       teamHours.push({
         person_code:  hcode,
-        name:         staffNameMap[hcode] || hcode,
+        name:         staffNameMap[hcode],
         design_hours: design,
         qc_hours:     qc,
-        total_hours:  Math.round((design + qc) * 100) / 100
+        total_hours:  total
       });
     }
     teamHours.sort(function(a, b) { return b.total_hours - a.total_hours; });
