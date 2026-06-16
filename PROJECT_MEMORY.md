@@ -87,10 +87,12 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
 
 ## 6. Current Active Work
 
-- **PROD portal live** ✅ — 17 staff received portal links (June 15). Designers logging hours live.
+- **PROD portal live** ✅ — 17 staff active. June 16: 6 production bugs fixed and deployed (see SESSION_LOG 2026-06-16).
 - **BATCH-004 migration complete** ✅ — June 1–15 timesheets fully reconciled: 1278.25h, all 16 actors balanced.
 - **Q1 bonus corrections** — `runQ1ApplyManualCorrections()` not yet run. Run it, then `runSendQ1BonusLetters()`. Letters land in CEO inbox for review. See SESSION_LOG for full detail.
-- **Stacey auto-sync** — running every 30 min (live since 2026-06-04). **Must be removed June 16.**
+- **Stacey auto-sync** — `runRemoveStaceySyncTrigger()` must be run today (June 16) before cutover.
+- **System testing** — CTO-level testing plan built: `.claude/context/test-plan.md`. Execute with real jobs across all accounts.
+- **Client timesheet generator** — NOT YET BUILT. Data exists (FACT_WORK_LOGS + FACT_BILLING_LEDGER + VW_JOB_CURRENT_STATE). See §7.
 
 ---
 
@@ -98,10 +100,12 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
 
 Priority order:
 1. **June 16 FIRST THING**: `runRemoveStaceySyncTrigger()` in Apps Script editor → send cutover email to all designers
-2. Run `runQ1ApplyManualCorrections()` then `runSendQ1BonusLetters()` (Q1 bonus still outstanding)
-3. Send Q2 rating requests + Q2 feedback requests to clients (via portal)
-4. First June payroll run from V3 (after Phase 3 cutover verified — not before)
-5. Leader Dashboard: TL-grouped team hours (backlog item)
+2. **Execute test plan** — `.claude/context/test-plan.md` — systematic real-job testing across all 6 accounts by all 5 roles
+3. Run `runQ1ApplyManualCorrections()` then `runSendQ1BonusLetters()` (Q1 bonus still outstanding)
+4. **Build client timesheet generator** — `generateClientTimesheet(clientCode, periodId)` in a new `src/11-reporting/ClientTimesheetEngine.gs`; joins FACT_WORK_LOGS + VW_JOB_CURRENT_STATE + DIM_STAFF_ROSTER + FACT_BILLING_LEDGER
+5. Send Q2 rating requests + Q2 feedback requests to clients (via portal)
+6. First June payroll run from V3 (after Phase 3 cutover verified — not before)
+7. Stale QC_REVIEW migrated jobs — bulk state update script for jobs Sarty reviewed offline
 
 → Full backlog: `.claude/context/backlog.md`
 → Cutover sequence: `.claude/context/cutover-plan.md`
@@ -112,15 +116,17 @@ Priority order:
 
 | Risk | Severity | Status |
 |---|---|---|
-| Stacey sync not removed before June 16 cutover | **CRITICAL** | Pending — set a reminder |
+| Stacey sync not removed before June 16 cutover | **CRITICAL** | Run `runRemoveStaceySyncTrigger()` TODAY before cutover email |
 | Q1 bonus letters not yet sent | **HIGH** | Run `runQ1ApplyManualCorrections()` then `runSendQ1BonusLetters()`. See SESSION_LOG. |
+| Dead-lettered queue items (overnight) | **HIGH** | Staff must resubmit submissions that errored while minLength bug was active |
+| Client timesheet generator not built | **HIGH** | Sarty needs per-job breakdown with designer hours for client invoices — no function exists yet |
+| Stale QC_REVIEW migrated jobs | Medium | Bulk state update script needed for jobs Sarty reviewed offline before cutover |
 | BIT designer in FACT_QUARTERLY_BONUS | Medium | CALCULATED, composite 52.19% = same as JYS. Is BIT = Bittuu alias = JYS, or different person? |
 | 7 PENDING designers (AVM, PRG, RUD, SKR, SMB, SUB, SUB2) | Medium | All zeros — not in manual. Confirm Q1 eligibility. Mark SKIPPED if ineligible. |
 | Q1 FACT_WORK_LOGS has 1,694 duplicate rows | Medium | Real dupes confirmed (all rows have dates). Root cause: CSV re-import. Bonus corrected via amendment. Raw data not cleaned yet. |
-| `designer@blc.com` (54 jobs) + BTD + SNA in VW_JOB_CURRENT_STATE | Medium | Test/legacy data from migration. Filter applied in CEO briefing. Needs purge. |
+| `designer@blc.com` (54 jobs) + BTD + SNA in VW_JOB_CURRENT_STATE | Medium | Test/legacy data from migration. Filter applied in CEO briefing + CEO dashboard. Needs purge. |
 | QC backlog inflated by test jobs (~128 items) | Medium | Email-format entries filtered. Jobs with real-looking person_codes still show. |
 | June payroll run before cutover verified | **HIGH** | Rule: do NOT run June payroll until Phase 3 complete. |
-| CEO email in auto-memory stale | Low | Auto-memory `feedback_ceo_email.md` correct: `raj.nair@bluelotuscanada.ca`. |
 
 ---
 
@@ -131,8 +137,8 @@ Priority order:
 clasp push --force                        # force push all 78 files
 # Then: Apps Script editor → Deploy → Manage → Edit → New version → Deploy
 
-# Portal URL
-https://script.google.com/macros/s/AKfycbxttvUv9GeeEHnvsXwKbQIa8U4qDwV36qBWXwvLpibCX2VV2aXeyrzSvCU0-rbGuse_/exec
+# Portal URL (updated 2026-06-16)
+https://script.google.com/macros/s/AKfycbxAlO81jXcpRnuIuiSoEH6thjh1Ta_9wnrnhgJBT35w7fZrS7XDhT4_CKDDtZ2dohjW/exec
 
 # Script Properties to verify/set in PROD
 CEO_BRIEFING_RECIPIENT = raj.nair@bluelotuscanada.ca
