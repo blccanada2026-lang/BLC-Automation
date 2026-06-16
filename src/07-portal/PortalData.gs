@@ -1113,6 +1113,7 @@ var PortalData = (function () {
         var wcode = String(wrow.actor_code || '').trim();
         var whrs  = parseFloat(wrow.hours) || 0;
         if (!wcode || whrs <= 0) continue;
+        if (!staffNameMap[wcode]) continue; // skip legacy/test/unknown codes
         hoursMap[wcode] = (hoursMap[wcode] || 0) + whrs;
       }
     } catch (e) { /* no work logs yet */ }
