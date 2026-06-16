@@ -2927,7 +2927,7 @@ function loadMyHours() {
   clearEl_(body);
   body.appendChild(makeEmptyDiv_('Loading…'));
 
-  google.script.run
+  TOKEN_RUN
     .withSuccessHandler(function(json) {
       var data;
       try { data = JSON.parse(json); } catch(e) {
@@ -2962,7 +2962,7 @@ function loadMyHours() {
     .withFailureHandler(function() {
       clearEl_(body); body.appendChild(makeEmptyDiv_('Failed to load hours.'));
     })
-    .portal_getMyHours(_ptoken);
+    .portal_getMyHours();
 }
 
 function loadLeaderDashboard() {
