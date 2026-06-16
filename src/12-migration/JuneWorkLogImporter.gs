@@ -905,6 +905,133 @@ function runFixDBGHours() {
   console.log('=================================================');
 }
 
+function runFixPBGHours() {
+  console.log('=== Fix PBG missing hours (BATCH-004 idempotency gap) ===');
+  var CORRECTIONS = [
+    { job_number: '2505-7978', work_date: '2026-06-05', hours_delta: 5 }
+  ];
+  var existingRows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+    callerModule: 'JuneWorkLogImporter', periodId: '2026-06'
+  });
+  var alreadyFixed = {};
+  (existingRows || []).forEach(function(r) {
+    if (r.event_type === 'WORK_LOG_AMENDED' && r.actor_code === 'PBG' && r.migration_batch === 'BATCH-004-HOURS-FIX') {
+      var wd = r.work_date instanceof Date
+        ? Utilities.formatDate(r.work_date, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+        : String(r.work_date || '').slice(0, 10);
+      alreadyFixed[r.job_number + '|' + wd] = true;
+    }
+  });
+  var written = 0, skipped = 0;
+  CORRECTIONS.forEach(function(c) {
+    var key = c.job_number + '|' + c.work_date;
+    if (alreadyFixed[key]) { console.log('  SKIP: ' + key); skipped++; return; }
+    DAL.appendRow(Config.TABLES.FACT_WORK_LOGS, {
+      event_id:        Identifiers.generateId(),
+      event_type:      'WORK_LOG_AMENDED',
+      job_number:      c.job_number,
+      actor_code:      'PBG',
+      hours:           c.hours_delta,
+      work_date:       c.work_date,
+      actor_role:      'DESIGNER',
+      period_id:       '2026-06',
+      migration_batch: 'BATCH-004-HOURS-FIX',
+      created_by:      JUNE_RUNNER_EMAIL_,
+      created_at:      new Date().toISOString(),
+      notes:           'BATCH-004 idempotency gap: multiple source rows per job+date, delta correction'
+    }, { callerModule: 'JuneWorkLogImporter', periodId: '2026-06' });
+    console.log('  ✅ ' + key + ' +' + c.hours_delta + 'h');
+    written++;
+  });
+  console.log('Written: ' + written + ', Skipped: ' + skipped);
+  console.log('=================================================');
+}
+
+function runFixRKUHours() {
+  console.log('=== Fix RKU missing hours (BATCH-004 idempotency gap) ===');
+  var CORRECTIONS = [
+    { job_number: '2605-6941-D', work_date: '2026-06-12', hours_delta: 0.75 }
+  ];
+  var existingRows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+    callerModule: 'JuneWorkLogImporter', periodId: '2026-06'
+  });
+  var alreadyFixed = {};
+  (existingRows || []).forEach(function(r) {
+    if (r.event_type === 'WORK_LOG_AMENDED' && r.actor_code === 'RKU' && r.migration_batch === 'BATCH-004-HOURS-FIX') {
+      var wd = r.work_date instanceof Date
+        ? Utilities.formatDate(r.work_date, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+        : String(r.work_date || '').slice(0, 10);
+      alreadyFixed[r.job_number + '|' + wd] = true;
+    }
+  });
+  var written = 0, skipped = 0;
+  CORRECTIONS.forEach(function(c) {
+    var key = c.job_number + '|' + c.work_date;
+    if (alreadyFixed[key]) { console.log('  SKIP: ' + key); skipped++; return; }
+    DAL.appendRow(Config.TABLES.FACT_WORK_LOGS, {
+      event_id:        Identifiers.generateId(),
+      event_type:      'WORK_LOG_AMENDED',
+      job_number:      c.job_number,
+      actor_code:      'RKU',
+      hours:           c.hours_delta,
+      work_date:       c.work_date,
+      actor_role:      'DESIGNER',
+      period_id:       '2026-06',
+      migration_batch: 'BATCH-004-HOURS-FIX',
+      created_by:      JUNE_RUNNER_EMAIL_,
+      created_at:      new Date().toISOString(),
+      notes:           'BATCH-004 idempotency gap: multiple source rows per job+date, delta correction'
+    }, { callerModule: 'JuneWorkLogImporter', periodId: '2026-06' });
+    console.log('  ✅ ' + key + ' +' + c.hours_delta + 'h');
+    written++;
+  });
+  console.log('Written: ' + written + ', Skipped: ' + skipped);
+  console.log('=================================================');
+}
+
+function runFixSGOHours() {
+  console.log('=== Fix SGO missing hours (BATCH-004 idempotency gap) ===');
+  var CORRECTIONS = [
+    { job_number: '160997', work_date: '2026-06-11', hours_delta: 0.5 },
+    { job_number: '161005', work_date: '2026-06-11', hours_delta: 0.5 }
+  ];
+  var existingRows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+    callerModule: 'JuneWorkLogImporter', periodId: '2026-06'
+  });
+  var alreadyFixed = {};
+  (existingRows || []).forEach(function(r) {
+    if (r.event_type === 'WORK_LOG_AMENDED' && r.actor_code === 'SGO' && r.migration_batch === 'BATCH-004-HOURS-FIX') {
+      var wd = r.work_date instanceof Date
+        ? Utilities.formatDate(r.work_date, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+        : String(r.work_date || '').slice(0, 10);
+      alreadyFixed[r.job_number + '|' + wd] = true;
+    }
+  });
+  var written = 0, skipped = 0;
+  CORRECTIONS.forEach(function(c) {
+    var key = c.job_number + '|' + c.work_date;
+    if (alreadyFixed[key]) { console.log('  SKIP: ' + key); skipped++; return; }
+    DAL.appendRow(Config.TABLES.FACT_WORK_LOGS, {
+      event_id:        Identifiers.generateId(),
+      event_type:      'WORK_LOG_AMENDED',
+      job_number:      c.job_number,
+      actor_code:      'SGO',
+      hours:           c.hours_delta,
+      work_date:       c.work_date,
+      actor_role:      'DESIGNER',
+      period_id:       '2026-06',
+      migration_batch: 'BATCH-004-HOURS-FIX',
+      created_by:      JUNE_RUNNER_EMAIL_,
+      created_at:      new Date().toISOString(),
+      notes:           'BATCH-004 idempotency gap: multiple source rows per job+date, delta correction'
+    }, { callerModule: 'JuneWorkLogImporter', periodId: '2026-06' });
+    console.log('  ✅ ' + key + ' +' + c.hours_delta + 'h');
+    written++;
+  });
+  console.log('Written: ' + written + ', Skipped: ' + skipped);
+  console.log('=================================================');
+}
+
 /**
  * Drill-down for PBG, RKU, and SGO in one run.
  * Prints per-job+date gaps so runFixPBGHours/RKU/SGO can be written.
