@@ -5,6 +5,54 @@
 
 ---
 
+## 2026-06-15 Session (PROD Launch + BATCH-004 June Timesheet Migration)
+
+### Work Completed
+
+**PROD Portal Launch — complete ✅**
+- Fixed `runAuditPortalLinkRoster()` to silently skip departed staff (BSG/SKR/SMB/SUB/SUB2/RUD/PRG/AVM) — was incorrectly blocking SAFE TO SEND.
+- Redeployed web app with "Anyone" access (prior deploy was "Anyone with Google account" — blocked Sarthak).
+- Ran `runSetPortalBaseUrlProd()` with new `/exec` URL, `runSendAllPortalLinks()` — 17/17 staff confirmed delivered.
+- Health monitor trigger installed. go-live-fixes branch merged + pushed to main.
+
+**BATCH-004 June 1–15 Timesheet Migration — fully reconciled ✅**
+- Imported Stacey's June timesheets (619 raw rows → 595 WORK_LOG_MIGRATED events in FACT_WORK_LOGS|2026-06).
+- Fixed date parsing bug: raw_json stored "Mon Jun 01" (mangled Date.toString()) → replayed to wrong partition (2001-06). Patched normalized table, cleaned wrong-partition rows, re-replayed.
+- Applied actor code corrections: BTD→BIT (33 amendments), SNA→SVN (59 amendments).
+- Identified and corrected idempotency gaps (multiple source rows per job+date, only first captured):
+  - DBG: +34.25h across 9 job+date entries
+  - PBG: +5h (job 2505-7978, Jun 5)
+  - RKU: +0.75h (job 2605-6941-D, Jun 12)
+  - SGO: +1h (jobs 160997 + 161005, Jun 11)
+- Final reconciliation: **1278.25h source = 1278.25h FACT. ✅ FULLY RECONCILED. All 16 actors balanced.**
+
+### Files Changed (all committed and pushed)
+- `src/12-migration/JuneWorkLogImporter.gs` — date fix, BTD/BIT + SNA/SVN corrections, full reconciliation + drill-down suite, DBG/PBG/RKU/SGO hour correction functions, duplicate-DBG undo.
+- `src/01-dal/DAL.gs` — added JuneWorkLogImporter to FACT_WORK_LOGS WRITE_PERMISSIONS.
+- `src/02-security/PortalAuth.gs` — departed-staff fix for roster audit.
+- `src/07-portal/Portal.gs` — `runSetPortalBaseUrlProd()` helper.
+
+### Key Commits
+- `ee4400c` feat(migration): BATCH-004 June 1-15 timesheet import + corrections
+- `9ceb954` feat(migration): reconciliation + per-actor drill-down
+- `ad5410d` fix: drill-down date mismatch + runFixDBGHours
+- `ad0e37a` fix: reconciliation BTD/SNA mapping + remaining-actor drill-down
+- `2dd022d` feat: runFixPBGHours/RKUHours/SGOHours
+- `250e3b6` fix: runUndoDuplicateDBGFix (idempotency failure recovery)
+
+### Tests Run
+- `runJuneReconciliation()`: ✅ FULLY RECONCILED (1278.25h both sides, 16/16 actors)
+
+### Unresolved Before Next Session
+1. **Stacey sync trigger** — run `runRemoveStaceySyncTrigger()` in `src/12-migration/StaceyJobImporter.gs` BEFORE June 16 cutover
+2. **Q1 bonus** — `runQ1ApplyManualCorrections()` and `runSendQ1BonusLetters()` still pending
+
+### Next Recommended Step
+1. June 16 morning: `runRemoveStaceySyncTrigger()` → send cutover email to all designers
+2. Complete Q1 bonus: run corrections + send letters
+
+---
+
 ## 2026-06-11 Session (Q1 Bonus Audit — full session)
 
 ### Work Completed

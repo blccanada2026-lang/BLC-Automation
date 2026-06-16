@@ -87,22 +87,21 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
 
 ## 6. Current Active Work
 
+- **PROD portal live** ✅ — 17 staff received portal links (June 15). Designers logging hours live.
+- **BATCH-004 migration complete** ✅ — June 1–15 timesheets fully reconciled: 1278.25h, all 16 actors balanced.
 - **Q1 bonus corrections** — `runQ1ApplyManualCorrections()` not yet run. Run it, then `runSendQ1BonusLetters()`. Letters land in CEO inbox for review. See SESSION_LOG for full detail.
-- **Stacey auto-sync** — running every 30 min (live since 2026-06-04). Must be removed on June 16.
-- **Parallel running phase** — CEO/TL verify portal data; no portal hour submissions yet.
+- **Stacey auto-sync** — running every 30 min (live since 2026-06-04). **Must be removed June 16.**
 
 ---
 
 ## 7. Pending Work / Next Steps
 
 Priority order:
-1. Commit + deploy current PortalView.html changes
-2. Run `runRemoveStaceySyncTrigger()` on June 16 BEFORE designer cutover
-3. Send cutover email to all staff on June 16
-4. Send Q2 rating requests + Q2 feedback requests to clients (via portal, do now)
-5. Verify ratings "Change" button visible after latest deployment
-6. Leader Dashboard: TL-grouped team hours (backlog item, requested 2026-05-07)
-7. First June payroll run from V3 (after Phase 3 cutover verified — not before)
+1. **June 16 FIRST THING**: `runRemoveStaceySyncTrigger()` in Apps Script editor → send cutover email to all designers
+2. Run `runQ1ApplyManualCorrections()` then `runSendQ1BonusLetters()` (Q1 bonus still outstanding)
+3. Send Q2 rating requests + Q2 feedback requests to clients (via portal)
+4. First June payroll run from V3 (after Phase 3 cutover verified — not before)
+5. Leader Dashboard: TL-grouped team hours (backlog item)
 
 → Full backlog: `.claude/context/backlog.md`
 → Cutover sequence: `.claude/context/cutover-plan.md`
@@ -171,12 +170,16 @@ runCEODailyBriefing()             # live run — sends email
 
 → Full detail: `.claude/context/migration-status.md`
 
-**Current phase: Phase 2 (parallel running, ~June 4–16)**
+**Current phase: Phase 3 (cutover — June 16)**
 - Jan–May 2026 work logs: ✅ complete (2000+ rows)
+- June 1–15 work logs: ✅ BATCH-004 complete — 1278.25h, 16 actors fully reconciled (2026-06-15)
 - Active jobs: ✅ 168 jobs imported → FACT_JOB_EVENTS
-- Stacey auto-sync: ✅ running every 30 min
-- Phase 3 (cutover): target June 16 — send cutover email, remove sync trigger
+- Stacey auto-sync: running — **remove trigger June 16 before cutover**
+- PROD portal: ✅ live since June 15, 17 staff active
+- Phase 3 action: June 16 — `runRemoveStaceySyncTrigger()` → cutover email
 - Phase 4: first live June payroll from V3 (after Phase 3 verified)
+
+**BATCH-004 idempotency note:** Multiple source rows per job+date deduplicated by idempotency engine. Corrected via WORK_LOG_AMENDED delta events (migration_batch='BATCH-004-HOURS-FIX'). amendment_of and migration_batch columns NOT in FACT_WORK_LOGS|2026-06 header — DAL silently drops them.
 
 **Hard migration rule:** Stop CSV imports the moment any team goes portal-live. No exceptions.
 
