@@ -781,7 +781,7 @@ function setPortalBaseUrl(url) {
 
 /** One-time: update PORTAL_BASE_URL to the current PROD deployment. */
 function runSetPortalBaseUrlProd() {
-  var url = 'https://script.google.com/macros/s/AKfycbyis8IFp2gst0N4SagAsBCEImmM5HcdZhKBqjfpUc9b_MxhC_-5MF3uk-mhWZq5VVar/exec';
+  var url = 'https://script.google.com/macros/s/AKfycbxAlO81jXcpRnuIuiSoEH6thjh1Ta_9wnrnhgJBT35w7fZrS7XDhT4_CKDDtZ2dohjW/exec';
   console.log(setPortalBaseUrl(url));
 }
 
