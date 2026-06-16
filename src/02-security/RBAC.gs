@@ -84,7 +84,8 @@ var RBAC = (function () {
     CLIENT:           'CLIENT',      // External client portal — read-only, scoped
     // ── Aliases (user-facing display names → canonical values) ──
     PROJECT_MANAGER:  'PM',          // Alias: same permission set as PM
-    SUPER_ADMIN:      'CEO'          // Alias: same permission set as CEO
+    SUPER_ADMIN:      'CEO',         // Alias: same permission set as CEO
+    QC_REVIEWER:      'QC'           // Alias: stored in DIM_STAFF_ROSTER — same permission set as QC
   };
 
   // Canonical role set (aliases excluded) — used for validation

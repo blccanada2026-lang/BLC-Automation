@@ -1842,6 +1842,9 @@ function buildActionButtons(job, perms) {
     buttons.push(makeActionBtn('Log Work',         'btn-muted',    'work-log',     job.job_number));
     buttons.push(makeActionBtn('Mark Sent to Client', 'btn-success', 'client-sent', job.job_number));
   }
+  if (state === 'QC_REVIEW' && (perms.isQcReviewer || perms.isLeader)) {
+    buttons.push(makeActionBtn('Log Work',         'btn-muted',    'work-log',     job.job_number));
+  }
   if (perms.isQcReviewer && state === 'QC_REVIEW') {
     buttons.push(makeActionBtn('Review',           'btn-success',  'qc-review',    job.job_number));
   }

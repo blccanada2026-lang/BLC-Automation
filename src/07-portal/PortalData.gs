@@ -147,15 +147,23 @@ var PortalData = (function () {
 
     // Scope filter
     var role = actor.role;
-    if (role === 'DESIGNER' || role === 'QC') {
-      // SELF scope — only jobs assigned to this person
-      // allocated_to stores person_code (e.g. 'PRS') — match against personCode first,
-      // fall back to email for legacy rows that stored email instead
+    if (role === 'DESIGNER') {
+      // SELF scope — only jobs allocated to this designer
       var selfCode  = (actor.personCode || '').toLowerCase();
       var selfEmail = (actor.email      || '').toLowerCase();
       allRows = allRows.filter(function (row) {
         var at = String(row.allocated_to || '').toLowerCase();
         return at === selfCode || at === selfEmail;
+      });
+    } else if (role === 'QC' || role === 'QC_REVIEWER') {
+      // QC scope — own design jobs (allocated_to) OR jobs assigned to them as QC reviewer
+      // QC_REVIEW jobs have allocated_to = designer; qc_reviewer_code = this actor
+      var qcCode  = (actor.personCode || '').trim();
+      var qcEmail = (actor.email      || '').toLowerCase();
+      allRows = allRows.filter(function (row) {
+        var at       = String(row.allocated_to    || '').toLowerCase();
+        var reviewer = String(row.qc_reviewer_code || '').trim();
+        return at === qcCode.toLowerCase() || at === qcEmail || reviewer === qcCode;
       });
     } else if (role === 'TEAM_LEAD') {
       // TEAM scope — jobs allocated to this TL themselves OR their direct reports.
@@ -253,7 +261,7 @@ var PortalData = (function () {
       canStart:          RBAC.hasPermission(actor, RBAC.ACTIONS.JOB_START),
       canViewAll:        actor.scope === RBAC.SCOPES.ALL || actor.scope === RBAC.SCOPES.TEAM,
       isQcReviewer:      RBAC.hasPermission(actor, RBAC.ACTIONS.QC_APPROVE),
-      isDesigner:        role === 'DESIGNER' || role === 'TEAM_LEAD' || role === 'QC',
+      isDesigner:        role === 'DESIGNER' || role === 'TEAM_LEAD' || role === 'QC' || role === 'QC_REVIEWER',
       isLeader:          role === 'CEO' || role === 'PM' || role === 'TEAM_LEAD',
       canRunPayroll:     role === 'CEO',
       canApprovePayroll: role === 'CEO',
