@@ -366,6 +366,19 @@
     </div>
   </div>
 
+  <!-- ══ MY HOURS ═════════════════════════════════════════════ -->
+  <div id="my-hours-section" style="display:none; margin-top:24px">
+    <div class="dash-panel">
+      <div class="dash-panel-hdr">
+        <span>My Hours — <span id="my-hours-period">—</span></span>
+        <span id="my-hours-total" style="font-size:12px;font-weight:400;color:var(--c-muted)"></span>
+      </div>
+      <div class="dash-panel-body" id="my-hours-body">
+        <div class="dash-empty">Loading…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- ══ LEADER DASHBOARD ═════════════════════════════════════ -->
   <div id="leader-dashboard">
 
@@ -1255,6 +1268,12 @@ function onDataLoaded(jsonStr) {
     }
   }
 
+  // Show My Hours panel for anyone who can log work
+  if (_data.perms.canLogWork) {
+    document.getElementById('my-hours-section').style.display = 'block';
+    loadMyHours();
+  }
+
   // Paystub confirmation banner
   if (_data.paystub_pending) {
     var now = new Date();
@@ -1835,17 +1854,17 @@ function buildActionButtons(job, perms) {
   if (perms.canStart && state === 'ALLOCATED') {
     buttons.push(makeActionBtn('Start',   'btn-success', 'start',  job.job_number));
   }
-  if (perms.isDesigner && (state === 'IN_PROGRESS' || state === 'ALLOCATED')) {
+  if (perms.canLogWork && (state === 'IN_PROGRESS' || state === 'ALLOCATED')) {
     buttons.push(makeActionBtn('Log Work',   'btn-muted',    'work-log',  job.job_number));
   }
   if (perms.isDesigner && state === 'IN_PROGRESS') {
     buttons.push(makeActionBtn('Submit QC',        'btn-primary',  'submit-qc',    job.job_number));
   }
-  if (perms.isDesigner && state === 'MINOR_FIX') {
+  if (perms.canLogWork && state === 'MINOR_FIX') {
     buttons.push(makeActionBtn('Log Work',         'btn-muted',    'work-log',     job.job_number));
     buttons.push(makeActionBtn('Mark Sent to Client', 'btn-success', 'client-sent', job.job_number));
   }
-  if (state === 'QC_REVIEW' && (perms.isQcReviewer || perms.isLeader)) {
+  if (perms.canLogWork && state === 'QC_REVIEW') {
     buttons.push(makeActionBtn('Log Work',         'btn-muted',    'work-log',     job.job_number));
   }
   if (perms.isQcReviewer && state === 'QC_REVIEW') {
@@ -2892,6 +2911,59 @@ function toggleLeaderDash() {
 }
 
 var _dashData = null;
+
+// ── My Hours ───────────────────────────────────────────────────
+function makeEmptyDiv_(msg) {
+  var d = document.createElement('div');
+  d.className = 'dash-empty';
+  d.textContent = msg;
+  return d;
+}
+
+function clearEl_(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+function loadMyHours() {
+  var body = document.getElementById('my-hours-body');
+  clearEl_(body);
+  body.appendChild(makeEmptyDiv_('Loading…'));
+
+  google.script.run
+    .withSuccessHandler(function(json) {
+      var data;
+      try { data = JSON.parse(json); } catch(e) {
+        clearEl_(body); body.appendChild(makeEmptyDiv_('Error loading hours.')); return;
+      }
+      document.getElementById('my-hours-period').textContent = data.period_id || '—';
+      document.getElementById('my-hours-total').textContent  = 'Total: ' + (data.total_hours || 0) + ' hrs';
+      clearEl_(body);
+      if (!data.entries || data.entries.length === 0) {
+        body.appendChild(makeEmptyDiv_('No hours logged this period.')); return;
+      }
+      var tbl = document.createElement('table');
+      tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px';
+      var hrow = tbl.createTHead().insertRow();
+      ['Job', 'Date', 'Hours', 'Notes'].forEach(function(h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        th.style.cssText = 'text-align:left;padding:4px 8px;border-bottom:1px solid var(--c-border);color:var(--c-muted);font-weight:500';
+        hrow.appendChild(th);
+      });
+      var tbody = tbl.createTBody();
+      data.entries.forEach(function(e) {
+        var tr = tbody.insertRow();
+        [e.job_number, e.work_date, String(e.hours), e.notes || '—'].forEach(function(val, i) {
+          var td = tr.insertCell();
+          td.textContent = val;
+          td.style.cssText = 'padding:5px 8px;border-bottom:1px solid var(--c-border)' + (i === 2 ? ';font-weight:600' : '');
+        });
+      });
+      body.appendChild(tbl);
+    })
+    .withFailureHandler(function() {
+      clearEl_(body); body.appendChild(makeEmptyDiv_('Failed to load hours.'));
+    })
+    .portal_getMyHours(_ptoken);
+}
 
 function loadLeaderDashboard() {
   var hoursBody   = document.getElementById('dash-hours-body');

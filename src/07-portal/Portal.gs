@@ -475,6 +475,21 @@ function portal_getLeaderDashboard(ptoken) {
 }
 
 // ============================================================
+// portal_getMyHours — personal work log summary for current period
+// ============================================================
+
+/**
+ * Returns the caller's own work log entries for the current period.
+ * Available to any role with WORK_LOG_SUBMIT permission.
+ *
+ * @returns {string}  JSON: { period_id, total_hours, entries[] }
+ */
+function portal_getMyHours(ptoken) {
+  var email = PortalAuth.resolveEmail(ptoken);
+  return PortalData.getMyHours(email);
+}
+
+// ============================================================
 // portal_getCEODashboard — CEO operational summary
 // ============================================================
 

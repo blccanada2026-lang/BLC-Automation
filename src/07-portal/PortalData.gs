@@ -268,6 +268,7 @@ var PortalData = (function () {
       canCreateJob:      RBAC.hasPermission(actor, RBAC.ACTIONS.JOB_CREATE),
       canAssign:         RBAC.hasPermission(actor, RBAC.ACTIONS.JOB_ALLOCATE),
       canStart:          RBAC.hasPermission(actor, RBAC.ACTIONS.JOB_START),
+      canLogWork:        RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_SUBMIT),
       canViewAll:        actor.scope === RBAC.SCOPES.ALL || actor.scope === RBAC.SCOPES.TEAM,
       isQcReviewer:      RBAC.hasPermission(actor, RBAC.ACTIONS.QC_APPROVE),
       isDesigner:        role === 'DESIGNER' || role === 'TEAM_LEAD' || role === 'QC' || role === 'QC_REVIEWER',
@@ -1217,7 +1218,8 @@ var PortalData = (function () {
     getDesignersForClient:    getDesignersForClient,
     editJob:                  editJob,
     getRatingsGaps:           getRatingsGaps,
-    sendRatingReminder:       sendRatingReminder
+    sendRatingReminder:       sendRatingReminder,
+    getMyHours:               getMyHours
   };
 
   // ============================================================
@@ -1456,6 +1458,63 @@ var PortalData = (function () {
       });
     }
     return result;
+  }
+
+  // ============================================================
+  // SECTION 13: getMyHours
+  // ============================================================
+
+  /**
+   * Returns the logged-in user's own work log entries for the current
+   * period, grouped by job_number. Available to any role that has
+   * WORK_LOG_SUBMIT permission (DESIGNER, TL, QC, QC_REVIEWER, PM, CEO).
+   *
+   * @param {string} email
+   * @returns {string}  JSON: { period_id, total_hours, entries[] }
+   *   entry: { job_number, hours, work_date, notes, event_type }
+   */
+  function getMyHours(email) {
+    var actor = RBAC.resolveActor(email);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_SUBMIT);
+
+    var periodId   = Identifiers.generateCurrentPeriodId();
+    var personCode = String(actor.personCode || '').trim();
+
+    var entries    = [];
+    var totalHours = 0;
+
+    try {
+      var rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+        callerModule: 'PortalData',
+        periodId:     periodId
+      });
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        if (String(row.actor_code || '').trim() !== personCode) continue;
+        var hrs = parseFloat(row.hours) || 0;
+        entries.push({
+          job_number: String(row.job_number  || ''),
+          hours:      hrs,
+          work_date:  String(row.work_date   || ''),
+          notes:      String(row.notes       || ''),
+          event_type: String(row.event_type  || '')
+        });
+        totalHours += hrs;
+      }
+    } catch (e) {
+      if (e.code !== 'SHEET_NOT_FOUND') throw e;
+    }
+
+    // Sort by work_date descending — most recent first
+    entries.sort(function(a, b) {
+      return a.work_date < b.work_date ? 1 : -1;
+    });
+
+    return JSON.stringify({
+      period_id:   periodId,
+      total_hours: Math.round(totalHours * 100) / 100,
+      entries:     entries
+    });
   }
 
 }());
