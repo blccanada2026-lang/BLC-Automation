@@ -597,11 +597,12 @@ var ValidationEngine = (function () {
       label:    'Period ID'
     },
 
-    /** BLC-NNNNN job number */
+    /** Job number — any format (6-30 chars); migrated jobs use client-native formats */
     JOB_NUMBER: {
       type:      'string',
       required:  true,
-      pattern:   /^BLC-\d{5}$/,
+      minLength: 6,
+      maxLength: 30,
       label:     'Job Number'
     },
 
