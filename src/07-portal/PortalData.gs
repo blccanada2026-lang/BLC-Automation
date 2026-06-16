@@ -158,12 +158,14 @@ var PortalData = (function () {
         return at === selfCode || at === selfEmail;
       });
     } else if (role === 'TEAM_LEAD') {
-      // TEAM scope — only jobs allocated to this TL's direct reports
-      // (staff where supervisor_code = TL's person_code)
+      // TEAM scope — jobs allocated to this TL themselves OR their direct reports.
+      // TL's own person_code must be included — they also design.
       var teamCodes = buildTeamCodes_(actor.personCode);
+      if (actor.personCode) teamCodes[actor.personCode.trim()] = true;
+      if (actor.email)      teamCodes[actor.email.toLowerCase().trim()] = true;
       allRows = allRows.filter(function (row) {
         var at = String(row.allocated_to || '').trim();
-        return teamCodes[at] === true;
+        return teamCodes[at] === true || teamCodes[at.toLowerCase()] === true;
       });
     }
     // PM, CEO, ADMIN, SYSTEM → ALL scope, no filter
