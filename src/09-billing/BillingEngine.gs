@@ -661,10 +661,16 @@ var BillingEngine = (function () {
       var byCurrency = {};
       var wasPartial = false;
 
+      // Use a local 4-minute budget for manually-triggered billing runs.
+      // HealthMonitor's 20s EXEC_WARN_MS is calibrated for time-triggered
+      // processors that must be conservative — billing runs are manually triggered,
+      // idempotent, and safe to run up to Apps Script's 6-minute hard limit.
+      var BILLING_LOOP_BUDGET_MS = 240000; // 4 minutes
+      var loopStart = new Date();
+
       for (var i = 0; i < jobsToProcess.length; i++) {
 
-        if (HealthMonitor.isApproachingLimit()) {
-          HealthMonitor.checkLimits();
+        if ((new Date() - loopStart) > BILLING_LOOP_BUDGET_MS) {
           wasPartial = true;
           Logger.warn('BILLING_RUN_TRUNCATED', {
             module:    MODULE,
