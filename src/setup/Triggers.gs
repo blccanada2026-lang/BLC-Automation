@@ -49,6 +49,7 @@ var TRIGGER_FN_QUEUE    = 'runQueueProcessor';
 var TRIGGER_FN_INTAKE   = 'onIntakeFormSubmit';
 var TRIGGER_FN_HEALTH   = 'runDailyHealthCheck';
 var TRIGGER_FN_MART     = 'runMartRefresh';
+var TRIGGER_FN_TIMESHEET = 'runCheckTimesheetNotifications';
 
 // ============================================================
 // INTERNAL HELPERS
