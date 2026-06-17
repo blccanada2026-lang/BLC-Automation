@@ -1261,6 +1261,263 @@ function runDrillDownRemainingActors() {
   });
 }
 
+/**
+ * Reads Sarty's 5 June 1–15 invoice Google Sheets from Drive and creates
+ * FACT_JOB_EVENTS + VW_JOB_CURRENT_STATE entries for any job number that
+ * exists in FACT_WORK_LOGS but is missing from VW_JOB_CURRENT_STATE.
+ *
+ * This fixes the "UNKNOWN client — 1007.5h dropped" problem identified by
+ * runWorkLogDiagnostic(). Run once, idempotent.
+ *
+ * After this, run runGenerateClientTimesheets('2026-06A') to verify totals.
+ */
+function runImportSartyJuneJobs() {
+  var MODULE = 'JuneWorkLogImporter';
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('[JuneWorkLogImporter] Import Sarty June 1-15 jobs into VW');
+  console.log('═══════════════════════════════════════════════════════');
+
+  // Sarty's 5 invoice sheets — Drive IDs confirmed 2026-06-17
+  // client_code must match exactly what is in DIM_CLIENT_MASTER / DIM_CLIENT_RATES
+  var SARTY_SHEETS = [
+    { id: '1zpCyO68PQkqfFmasQKF-uiObZbQ9CiRYQS0-Deh81Rk', client_code: 'SBS' },
+    { id: '1xJ8AbtrtEmh2-kVIJIqLAqMI3RyROWtV07MCDFCMECw', client_code: 'MATIX-SK' },
+    { id: '1tB0bSAdx_CorT14AFtRZ1pjy8OkKxDs0cf0zS1OtESA', client_code: 'NELSON' },
+    { id: '1nklnCZoSyUgtI2WncMoLrOzhe2Eup0bbaeb1VXA35ys', client_code: 'ALBERTA TRUSS' },
+    { id: '1TouEYyfOcL14nab59tJBInY8crFiGxtHOEdBSfmUScA', client_code: 'NORSPAN-MB' }
+  ];
+
+  // Map Sarty's "Job Type" column to product_code
+  function toProductCode(jobType) {
+    var t = String(jobType || '').toLowerCase().trim();
+    if (t.indexOf('roof') !== -1)   return 'ROOF';
+    if (t.indexOf('oww') !== -1)    return 'OWW';
+    if (t.indexOf('joist') !== -1)  return 'IJOIST';
+    return '';
+  }
+
+  // Clean job number: strip description suffix ("2605-6039-A Mary's Landing..." → "2605-6039-A")
+  function cleanJobNum(raw) {
+    return String(raw || '').trim().split(/\s+/)[0];
+  }
+
+  // Admin/non-job entries to skip
+  var SKIP_ENTRIES = { 'job assign & help': true, 'oxford homes': true };
+
+  // Load existing VW job numbers
+  var existingJobs = {};
+  try {
+    var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+    (vwRows || []).forEach(function(r) {
+      var jn = String(r.job_number || '').trim();
+      if (jn) existingJobs[jn] = true;
+    });
+  } catch(e) {
+    console.log('ERROR loading VW: ' + e.message); return;
+  }
+  console.log('VW entries before import: ' + Object.keys(existingJobs).length);
+
+  // Collect jobs from all 5 Sarty sheets
+  var toCreate = {};  // job_number → { client_code, product_code }
+
+  SARTY_SHEETS.forEach(function(sheet) {
+    console.log('Reading: ' + sheet.client_code + ' (' + sheet.id + ')');
+    try {
+      var ss      = SpreadsheetApp.openById(sheet.id);
+      var data    = ss.getSheets()[0].getDataRange().getValues();
+      if (data.length < 2) { console.log('  SKIP: empty sheet'); return; }
+
+      var headers = data[0].map(function(h) { return String(h).trim().toLowerCase(); });
+      var jobCol  = headers.indexOf('job#');
+      var typeCol = headers.indexOf('job type');
+      if (jobCol < 0) { console.log('  SKIP: no Job# column'); return; }
+
+      var added = 0;
+      for (var i = 1; i < data.length; i++) {
+        var raw     = String(data[i][jobCol] || '').trim();
+        if (!raw) continue;
+        var jn      = cleanJobNum(raw);
+        if (!jn) continue;
+        if (SKIP_ENTRIES[jn.toLowerCase()]) continue;
+        if (existingJobs[jn]) continue;  // already in VW
+        if (!toCreate[jn]) {
+          var pc = typeCol >= 0 ? toProductCode(data[i][typeCol]) : '';
+          toCreate[jn] = { client_code: sheet.client_code, product_code: pc };
+          added++;
+        }
+      }
+      console.log('  New jobs found: ' + added);
+    } catch(e) {
+      console.log('  ERROR: ' + e.message);
+    }
+  });
+
+  var jobNums = Object.keys(toCreate);
+  console.log('Total new jobs to create: ' + jobNums.length);
+  if (jobNums.length === 0) {
+    console.log('✅ Nothing to import — VW already has all jobs.');
+    return;
+  }
+
+  var now        = new Date().toISOString();
+  var periodId   = '2026-06';
+  var createdFact = 0, createdVw = 0, errors = 0;
+
+  jobNums.forEach(function(jn) {
+    var info = toCreate[jn];
+    try {
+      // Write FACT_JOB_EVENTS
+      DAL.appendRow(Config.TABLES.FACT_JOB_EVENTS, {
+        event_id:       Identifiers.generateId(),
+        job_number:     jn,
+        period_id:      periodId,
+        event_type:     'JOB_IMPORTED_HISTORICAL',
+        timestamp:      now,
+        actor_code:     'SGO',
+        actor_role:     'PM',
+        client_code:    info.client_code,
+        product_code:   info.product_code,
+        notes:          'Sarty June 1-15 invoice — historical completed job missing from V3 import'
+      }, { callerModule: MODULE, periodId: periodId });
+      createdFact++;
+
+      // Write VW_JOB_CURRENT_STATE directly (same pattern as StaceyJobImporter)
+      DAL.appendRow(Config.TABLES.VW_JOB_CURRENT_STATE, {
+        job_number:    jn,
+        client_code:   info.client_code,
+        product_code:  info.product_code,
+        current_state: 'COMPLETED',
+        period_id:     periodId,
+        created_at:    now,
+        updated_at:    now
+      }, { callerModule: MODULE });
+      createdVw++;
+
+      existingJobs[jn] = true;  // prevent duplicates within this run
+    } catch(e) {
+      console.log('  ERROR ' + jn + ': ' + e.message);
+      errors++;
+    }
+  });
+
+  console.log('───────────────────────────────────────────────────────');
+  console.log('FACT_JOB_EVENTS written: ' + createdFact);
+  console.log('VW_JOB_CURRENT_STATE written: ' + createdVw);
+  console.log('Errors: ' + errors);
+  console.log('VW entries after import: ' + Object.keys(existingJobs).length);
+  if (errors === 0) {
+    console.log('✅ Done. Now run runGenerateClientTimesheets(\'2026-06A\') to verify totals.');
+  } else {
+    console.log('⚠️  ' + errors + ' jobs failed. Check errors above.');
+  }
+  console.log('═══════════════════════════════════════════════════════');
+}
+
+/**
+ * One-time fix: corrects 'ALBERTA-TRUSS' (hyphen) to 'ALBERTA TRUSS' (space)
+ * in VW_JOB_CURRENT_STATE rows that were imported by runImportSartyJuneJobs().
+ */
+function runFixAlbertaTrussClientCode() {
+  var MODULE = 'JuneWorkLogImporter';
+  console.log('=== Fix ALBERTA-TRUSS → ALBERTA TRUSS in VW ===');
+  try {
+    var rows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+    var toFix = (rows || []).filter(function(r) { return r.client_code === 'ALBERTA-TRUSS'; });
+    console.log('Rows with ALBERTA-TRUSS: ' + toFix.length);
+    toFix.forEach(function(r) {
+      DAL.updateWhere(
+        Config.TABLES.VW_JOB_CURRENT_STATE,
+        { job_number: r.job_number },
+        { client_code: 'ALBERTA TRUSS' },
+        { callerModule: MODULE }
+      );
+      console.log('  Fixed: ' + r.job_number);
+    });
+    console.log('✅ Done. Re-run runGenerateClientTimesheets(\'2026-06A\') to verify.');
+  } catch(e) { console.log('ERROR: ' + e.message); }
+  console.log('===============================================');
+}
+
+/**
+ * Diagnostic: shows SBS hours per designer in FACT_WORK_LOGS for June 1-15.
+ * Use to identify which designers have hours beyond Sarty's 926.75h invoice.
+ */
+function runSBSDesignerBreakdown() {
+  var MODULE = 'JuneWorkLogImporter';
+  console.log('=== SBS June 1-15 Hours per Designer (FACT_WORK_LOGS) ===');
+
+  // Load VW to identify SBS jobs
+  var sbsJobs = {};
+  try {
+    var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+    (vwRows || []).forEach(function(r) {
+      if (String(r.client_code || '').toUpperCase() === 'SBS') {
+        sbsJobs[String(r.job_number || '').trim()] = true;
+      }
+    });
+  } catch(e) { console.log('ERROR loading VW: ' + e.message); return; }
+  console.log('SBS jobs in VW: ' + Object.keys(sbsJobs).length);
+
+  // Load staff names
+  var staffNames = {};
+  try {
+    var staff = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE });
+    (staff || []).forEach(function(r) {
+      staffNames[String(r.person_code || '').trim().toUpperCase()] = String(r.name || r.person_code || '');
+    });
+  } catch(e) {}
+
+  // Load June 1-15 work logs
+  var rows = [];
+  try {
+    rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: MODULE, periodId: '2026-06' });
+  } catch(e) { console.log('ERROR: ' + e.message); return; }
+
+  var MONTH_MAP = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
+  function ymd(d) { return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); }
+  function parseDate(raw) {
+    if (!raw) return null;
+    if (raw instanceof Date) return isNaN(raw.getTime()) ? null : raw;
+    var s = String(raw).trim();
+    var iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return new Date(parseInt(iso[1]),parseInt(iso[2])-1,parseInt(iso[3]));
+    var mg = s.match(/[A-Za-z]{3}\s+([A-Za-z]{3})\s+(\d{1,2})/);
+    if (mg) { var mi=MONTH_MAP[mg[1].toLowerCase()]; if(mi!==undefined) return new Date(2026,mi,parseInt(mg[2])); }
+    var d=new Date(s); return isNaN(d.getTime())?null:d;
+  }
+  var from = 20260601, to = 20260615;
+
+  var byDesigner = {};
+  rows.forEach(function(r) {
+    if (r.migration_batch) return;
+    var d = parseDate(r.work_date);
+    if (!d) return;
+    var wd = ymd(d);
+    if (wd < from || wd > to) return;
+    var jn = String(r.job_number || '').trim().split(/\s+/)[0];
+    if (!sbsJobs[jn]) return;
+    var ac = String(r.actor_code || '').trim().toUpperCase();
+    var hrs = parseFloat(r.hours) || 0;
+    if (hrs <= 0) return;
+    byDesigner[ac] = (byDesigner[ac] || 0) + hrs;
+  });
+
+  var total = 0;
+  var codes = Object.keys(byDesigner).sort();
+  console.log('\nDesigner       | Code  | Hours | Name');
+  console.log('───────────────────────────────────────────────');
+  codes.forEach(function(ac) {
+    var hrs = Math.round(byDesigner[ac] * 100) / 100;
+    total += hrs;
+    console.log((staffNames[ac] || '?').padEnd(15) + ' | ' + ac.padEnd(5) + ' | ' + hrs);
+  });
+  console.log('───────────────────────────────────────────────');
+  console.log('TOTAL: ' + Math.round(total * 100) / 100 + 'h');
+  console.log('\nSarty\'s invoice total: 926.75h');
+  console.log('Difference: ' + Math.round((total - 926.75) * 100) / 100 + 'h');
+  console.log('=======================================================');
+}
+
 function runCheckJuneStatus() {
   console.log('=== June Work Log Status ===');
 

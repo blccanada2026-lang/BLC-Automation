@@ -1240,17 +1240,21 @@ function runTabCleanupAudit() {
     var name  = sheets[i].getName();
     var nRows = Math.max(0, sheets[i].getLastRow() - 1); // exclude header
 
-    // Form Responses tabs
+    // Form Responses tabs — linked to Google Forms, cannot delete programmatically.
+    // Manual step: open each Form → Responses tab → unlink spreadsheet, then re-run.
     if (/^Form Responses/.test(name)) {
-      ss.deleteSheet(sheets[i]);
-      deleted.push(name + ' (Form Responses legacy)');
+      checked.push(name + ' ← MANUAL: unlink form in Google Forms UI first, then re-run');
       continue;
     }
 
     // Confirmed junk tabs
     if (JUNK_TABS.indexOf(name) >= 0) {
-      ss.deleteSheet(sheets[i]);
-      deleted.push(name + ' (' + nRows + ' rows)');
+      try {
+        ss.deleteSheet(sheets[i]);
+        deleted.push(name + ' (' + nRows + ' rows)');
+      } catch (e) {
+        checked.push(name + ' ← DELETE FAILED: ' + e.message);
+      }
       continue;
     }
 

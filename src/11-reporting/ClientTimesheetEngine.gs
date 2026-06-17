@@ -130,15 +130,23 @@ var ClientTimesheetEngine = (function () {
       });
     } catch (e) { return byJobDesigner; }
 
+    // Actor codes whose WORK_LOG_MIGRATED rows were corrected by WORK_LOG_AMENDED rows
+    // (runFixBTDtoBIT and runFixSNAtoSVN in JuneWorkLogImporter). The amendment_of
+    // field is not in the FACT_WORK_LOGS schema so we use the same pattern as
+    // runJuneReconciliation(): skip MIGRATED rows for these known-superseded codes.
+    var SUPERSEDED_MIGRATED = { 'BTD': true, 'SNA': true };
+
     var fromYMD = ymd_(fromDate), toYMD = ymd_(toDate);
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
       if (row.migration_batch) continue;
+      if (row.event_type === 'WORK_LOG_MIGRATED' && SUPERSEDED_MIGRATED[String(row.actor_code || '').trim().toUpperCase()]) continue;
       var d   = parseWorkDate_(row.work_date, year);
       if (!d) continue;
       var wd  = ymd_(d);
       if (wd < fromYMD || wd > toYMD) continue;
-      var jn  = String(row.job_number  || '').trim();
+      // Strip description suffixes like "2605-6039-A Mary's Landing Lot 9-16 OWF"
+      var jn  = String(row.job_number  || '').trim().split(/\s+/)[0];
       var ac  = String(row.actor_code  || '').trim().toUpperCase();
       var hrs = parseFloat(row.hours)  || 0;
       if (!jn || hrs <= 0) continue;
@@ -332,4 +340,155 @@ function runGenerateClientTimesheets(periodId) {
                 ' (' + cdata.rows.length + ' jobs)');
   }
   console.log('Sheet written: TIMESHEET|' + pid);
+}
+
+/**
+ * Diagnostic: shows raw FACT_WORK_LOGS totals for June 1–15 broken down by:
+ * - rows with migration_batch (excluded by generate())
+ * - rows without migration_batch but job not in VW (excluded by generate())
+ * - rows that would be counted by generate()
+ *
+ * Run in PROD editor to find the root cause of timesheet discrepancies.
+ */
+function runWorkLogDiagnostic() {
+  var MODULE         = 'ClientTimesheetEngine';
+  var periodId       = '2026-06A';
+  var monthPartition = '2026-06';
+
+  var m = periodId.match(/^(\d{4})-(\d{2})([AB])$/);
+  var year     = parseInt(m[1], 10);
+  var monthIdx = parseInt(m[2], 10) - 1;
+  var fromDate = new Date(year, monthIdx, 1);
+  var toDate   = new Date(year, monthIdx, 15);
+
+  function ymd(d) { return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); }
+  var fromYMD = ymd(fromDate), toYMD = ymd(toDate);
+
+  function parseDate(raw) {
+    if (!raw) return null;
+    if (raw instanceof Date) return isNaN(raw.getTime()) ? null : raw;
+    var s   = String(raw).trim();
+    var iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return new Date(parseInt(iso[1],10), parseInt(iso[2],10)-1, parseInt(iso[3],10));
+    var MONTH_MAP = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
+    var mg = s.match(/[A-Za-z]{3}\s+([A-Za-z]{3})\s+(\d{1,2})/);
+    if (mg) { var mi = MONTH_MAP[mg[1].toLowerCase()]; if (mi !== undefined) return new Date(year, mi, parseInt(mg[2],10)); }
+    var d = new Date(s); return isNaN(d.getTime()) ? null : d;
+  }
+
+  // Load job map
+  var jobMap = {};
+  try {
+    var jrows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+    for (var j = 0; j < jrows.length; j++) {
+      var jn = String(jrows[j].job_number || '').trim();
+      if (jn) jobMap[jn] = jrows[j];
+    }
+  } catch (e) { console.log('VW load error: ' + e.message); }
+  console.log('VW_JOB_CURRENT_STATE entries: ' + Object.keys(jobMap).length);
+
+  // Load work logs
+  var rows = [];
+  try {
+    rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: MODULE, periodId: monthPartition });
+  } catch (e) { console.log('FACT_WORK_LOGS load error: ' + e.message); return; }
+  console.log('FACT_WORK_LOGS total rows (partition 2026-06): ' + rows.length);
+
+  var countTotal     = 0, hrsTotal     = 0;
+  var countMigrated  = 0, hrsMigrated  = 0;
+  var countInPeriod  = 0, hrsInPeriod  = 0;
+  var countNoJob     = 0, hrsNoJob     = 0;
+  var countCounted   = 0, hrsCounted   = 0;
+
+  // Batch values
+  var batchTotals = {};
+  var clientTotals = {};  // client_code → { counted, excluded_mig, excluded_novw }
+  var missingJobNums = {};
+
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var d   = parseDate(row.work_date);
+    if (!d) continue;
+    var wd  = ymd(d);
+    if (wd < fromYMD || wd > toYMD) continue;
+
+    var hrs = parseFloat(row.hours) || 0;
+    if (hrs <= 0) continue;
+    countTotal++; hrsTotal += hrs;
+
+    var batch = String(row.migration_batch || '').trim();
+    if (batch) {
+      batchTotals[batch] = (batchTotals[batch] || 0) + hrs;
+      countMigrated++; hrsMigrated += hrs;
+      continue;
+    }
+    countInPeriod++; hrsInPeriod += hrs;
+
+    var jn  = String(row.job_number || '').trim();
+    var job = jobMap[jn];
+    if (!job) {
+      countNoJob++; hrsNoJob += hrs;
+      missingJobNums[jn] = (missingJobNums[jn] || 0) + hrs;
+      continue;
+    }
+
+    var cc = String(job.client_code || 'UNKNOWN').toUpperCase().trim();
+    if (!clientTotals[cc]) clientTotals[cc] = { counted: 0, excluded_mig: 0, excluded_novw: 0 };
+    clientTotals[cc].counted += hrs;
+    countCounted++; hrsCounted += hrs;
+  }
+
+  // Re-pass for excluded_mig and excluded_novw per client
+  // (need to redo with job lookup for migrated rows too)
+  for (var i2 = 0; i2 < rows.length; i2++) {
+    var r2 = rows[i2];
+    var d2 = parseDate(r2.work_date);
+    if (!d2) continue;
+    var wd2 = ymd(d2);
+    if (wd2 < fromYMD || wd2 > toYMD) continue;
+    var hrs2 = parseFloat(r2.hours) || 0;
+    if (hrs2 <= 0) continue;
+    var jn2  = String(r2.job_number || '').trim();
+    var job2 = jobMap[jn2];
+    var cc2  = job2 ? String(job2.client_code || 'UNKNOWN').toUpperCase().trim() : 'UNKNOWN';
+    if (!clientTotals[cc2]) clientTotals[cc2] = { counted: 0, excluded_mig: 0, excluded_novw: 0 };
+    var batch2 = String(r2.migration_batch || '').trim();
+    if (batch2) { clientTotals[cc2].excluded_mig += hrs2; }
+    else if (!job2) { clientTotals[cc2].excluded_novw += hrs2; }
+  }
+
+  console.log('\n=== SUMMARY ===');
+  console.log('In-period rows (June 1-15): ' + countTotal + ' rows, ' + Math.round(hrsTotal * 100)/100 + 'h total');
+  console.log('  Excluded (migration_batch): ' + countMigrated + ' rows, ' + Math.round(hrsMigrated * 100)/100 + 'h');
+  console.log('  No-VW-match (job not in VW): ' + countNoJob + ' rows, ' + Math.round(hrsNoJob * 100)/100 + 'h');
+  console.log('  COUNTED by generate(): ' + countCounted + ' rows, ' + Math.round(hrsCounted * 100)/100 + 'h');
+
+  console.log('\n=== MIGRATION BATCH BREAKDOWN ===');
+  var batches = Object.keys(batchTotals).sort();
+  for (var b = 0; b < batches.length; b++) {
+    console.log('  ' + batches[b] + ': ' + Math.round(batchTotals[batches[b]] * 100)/100 + 'h');
+  }
+
+  console.log('\n=== PER CLIENT (all non-migrated hours) ===');
+  var clients = Object.keys(clientTotals).sort();
+  for (var ci = 0; ci < clients.length; ci++) {
+    var cc3 = clients[ci];
+    var ct  = clientTotals[cc3];
+    var net = ct.counted + ct.excluded_novw;
+    console.log(cc3 + ': ' + Math.round(net*100)/100 + 'h counted+no-vw | counted=' +
+                Math.round(ct.counted*100)/100 + 'h | excluded_mig=' +
+                Math.round(ct.excluded_mig*100)/100 + 'h | no_vw=' +
+                Math.round(ct.excluded_novw*100)/100 + 'h');
+  }
+
+  console.log('\n=== TOP MISSING JOB NUMBERS (no VW match, > 0.5h) ===');
+  var missingJobs = Object.keys(missingJobNums);
+  missingJobs.sort(function(a, b) { return missingJobNums[b] - missingJobNums[a]; });
+  var shown = 0;
+  for (var mj = 0; mj < missingJobs.length && shown < 20; mj++) {
+    if (missingJobNums[missingJobs[mj]] >= 0.5) {
+      console.log('  ' + missingJobs[mj] + ': ' + missingJobNums[missingJobs[mj]] + 'h');
+      shown++;
+    }
+  }
 }
