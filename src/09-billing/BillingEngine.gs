@@ -415,7 +415,7 @@ var BillingEngine = (function () {
 
     return {
       event_id:        Identifiers.generateId(),
-      job_number:      job.job_number,
+      job_number:      String(job.job_number),
       period_id:       periodId,
       event_type:      'INVOICE_CREATED',
       timestamp:       new Date().toISOString(),
@@ -633,6 +633,27 @@ var BillingEngine = (function () {
         DAL.ensurePartition(Config.TABLES.FACT_BILLING_LEDGER, monthPartition, MODULE);
       }
 
+      // ── 5b. Pre-load billed idempotency keys into memory ─
+      // Replaces per-job isBilled_() sheet reads (628 reads → 1 read for 314 jobs).
+      var billedKeyCache = {};
+      if (!dryRun) {
+        try {
+          var existingBilledRows = DAL.readAll(Config.TABLES.FACT_BILLING_LEDGER, {
+            callerModule: MODULE,
+            periodId:     monthPartition
+          });
+          for (var b = 0; b < existingBilledRows.length; b++) {
+            var ik = existingBilledRows[b].idempotency_key;
+            if (ik) billedKeyCache[ik] = true;
+          }
+        } catch (e) {
+          if (e.code !== 'SHEET_NOT_FOUND') throw e;
+        }
+        Logger.info('BILLING_BILLED_CACHE', {
+          module: MODULE, already_billed: Object.keys(billedKeyCache).length
+        });
+      }
+
       // ── 6. Process each job ──────────────────────────────
       var processed  = 0;
       var skipped    = 0;
@@ -679,7 +700,8 @@ var BillingEngine = (function () {
         var idempotencyKey = buildIdempotencyKey_(jobNumber, periodId);
 
         try {
-          if (!dryRun && isBilled_(idempotencyKey, monthPartition)) {
+          // Fast in-memory check (billedKeyCache pre-loaded above)
+          if (!dryRun && billedKeyCache[idempotencyKey]) {
             skipped++;
             continue;
           }
@@ -715,18 +737,6 @@ var BillingEngine = (function () {
           );
 
           if (!dryRun) {
-            // Lock: atomic idempotency re-check + write
-            var lock     = LockService.getScriptLock();
-            var acquired = false;
-            try {
-              lock.waitLock(8000);
-              acquired = true;
-
-              if (isBilled_(idempotencyKey, monthPartition)) {
-                skipped++;
-                continue;
-              }
-
               // Rule A4: validate before FACT write
               ValidationEngine.validate(BILLING_LEDGER_SCHEMA, billingRow, { module: MODULE });
 
@@ -735,9 +745,7 @@ var BillingEngine = (function () {
                 billingRow,
                 { callerModule: MODULE, periodId: monthPartition }
               );
-            } finally {
-              if (acquired) lock.releaseLock();
-            }
+              billedKeyCache[idempotencyKey] = true;  // update in-memory cache
 
             // Transition COMPLETED_BILLABLE → INVOICED (only for completed jobs)
             if (isCompleted) {
