@@ -148,10 +148,19 @@ var ClientTimesheetEngine = (function () {
       // Strip description suffixes like "2605-6039-A Mary's Landing Lot 9-16 OWF"
       var jn  = String(row.job_number  || '').trim().split(/\s+/)[0];
       var ac  = String(row.actor_code  || '').trim().toUpperCase();
-      var hrs = parseFloat(row.hours)  || 0;
-      if (!jn || hrs <= 0) continue;
+      var hrs = parseFloat(row.hours);
+      if (!jn || isNaN(hrs) || hrs === 0) continue;
       if (!byJobDesigner[jn]) byJobDesigner[jn] = {};
       byJobDesigner[jn][ac] = (byJobDesigner[jn][ac] || 0) + hrs;
+    }
+    // Net out jobs/designers where corrections fully reversed the hours
+    var jnKeys = Object.keys(byJobDesigner);
+    for (var j = 0; j < jnKeys.length; j++) {
+      var acMap = byJobDesigner[jnKeys[j]];
+      var acKeys = Object.keys(acMap);
+      for (var a = 0; a < acKeys.length; a++) {
+        if (acMap[acKeys[a]] <= 0) delete acMap[acKeys[a]];
+      }
     }
     return byJobDesigner;
   }

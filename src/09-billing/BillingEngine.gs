@@ -306,7 +306,7 @@ var BillingEngine = (function () {
    * @param {number} year            used for yearless date parsing
    * @returns {Object}  { jobNumber → totalHours }
    */
-  function buildHoursCache_(monthPartition, fromDate, toDate, year) {
+  function buildHoursCache_(monthPartition, fromDate, toDate, year, jobLookup) {
     var rows;
     try {
       rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
@@ -321,11 +321,18 @@ var BillingEngine = (function () {
     var fromYMD = dateToYMD_(fromDate);
     var toYMD   = dateToYMD_(toDate);
 
+    // BTD and SNA are legacy wrong actor codes whose WORK_LOG_MIGRATED rows were
+    // superseded by WORK_LOG_AMENDED rows (runFixBTDtoBIT, runFixSNAtoSVN).
+    // Skip those originals to avoid double-counting. Same pattern as ClientTimesheetEngine.
+    // FACT_WORK_LOGS schema drops migration_batch so it cannot be used as a filter.
+    var SUPERSEDED_MIGRATED = { 'BTD': true, 'SNA': true };
+
     var hoursMap = {};
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
-      // Exclude migrated historical rows
-      if (row.migration_batch) continue;
+      var evType  = String(row.event_type  || '');
+      var actCode = String(row.actor_code  || '').trim().toUpperCase();
+      if (evType === 'WORK_LOG_MIGRATED' && SUPERSEDED_MIGRATED[actCode]) continue;
 
       var parsedDate = parseWorkDate_(row.work_date, year);
       if (!parsedDate) {
@@ -340,13 +347,24 @@ var BillingEngine = (function () {
       var ymd = dateToYMD_(parsedDate);
       if (ymd < fromYMD || ymd > toYMD) continue;
 
-      var jobNum = String(row.job_number || '');
-      var hours  = parseFloat(row.hours) || 0;
-      if (!jobNum || hours <= 0) continue;
+      // Strip description suffixes e.g. "2605-6039-A Mary's Landing Lot 9 OWF"
+      var jobNum = String(row.job_number || '').trim().split(/\s+/)[0];
+      var hours  = parseFloat(row.hours);
+      if (!jobNum || isNaN(hours) || hours === 0) continue;
 
+      // Allow negative hours: runUndoDuplicateDBGFix writes negative WORK_LOG_AMENDED
+      // events to cancel erroneous duplicate corrections. Accumulating them correctly
+      // nets out the duplicates without needing explicit exclusion rules.
       hoursMap[jobNum] = (hoursMap[jobNum] || 0) + hours;
     }
-    return hoursMap;
+
+    // Remove jobs that netted to zero or negative (fully reversed corrections)
+    var filtered = {};
+    var mapKeys  = Object.keys(hoursMap);
+    for (var k = 0; k < mapKeys.length; k++) {
+      if (hoursMap[mapKeys[k]] > 0) filtered[mapKeys[k]] = hoursMap[mapKeys[k]];
+    }
+    return filtered;
   }
 
   // ============================================================
@@ -575,8 +593,15 @@ var BillingEngine = (function () {
         });
       }
 
-      // ── 3. Load hours cache (date-filtered to period) ────
-      var hoursCache = buildHoursCache_(monthPartition, fromDate, toDate, year);
+      // ── 3. Build VW job lookup (moved before hours cache — needed for per-client filtering) ──
+      var allVwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+      var jobLookup = {};
+      for (var v = 0; v < allVwRows.length; v++) {
+        jobLookup[allVwRows[v].job_number] = allVwRows[v];
+      }
+
+      // ── 4. Load hours cache (date-filtered to period) ────
+      var hoursCache = buildHoursCache_(monthPartition, fromDate, toDate, year, jobLookup);
       var hoursCount = Object.keys(hoursCache).length;
 
       Logger.info('BILLING_CACHES_LOADED', {
@@ -592,13 +617,6 @@ var BillingEngine = (function () {
           message:   'No work log hours found for period — nothing to bill. Check FACT_WORK_LOGS partition.',
           period_id: periodId
         });
-      }
-
-      // ── 4. Build VW job lookup map ───────────────────────
-      var allVwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
-      var jobLookup = {};
-      for (var v = 0; v < allVwRows.length; v++) {
-        jobLookup[allVwRows[v].job_number] = allVwRows[v];
       }
 
       // Candidate jobs: all jobs with hours > 0 in this period
@@ -684,6 +702,7 @@ var BillingEngine = (function () {
           }
 
           var totalHours  = hoursCache[jobNumber] || 0;
+          if (totalHours <= 0) { skipped++; continue; }
           var isCompleted = job.current_state === Config.STATES.COMPLETED_BILLABLE;
           var jobStatus   = isCompleted ? 'COMPLETED' : 'IN_PROGRESS';
           var remarks     = isCompleted
@@ -846,6 +865,91 @@ var BillingEngine = (function () {
 // ============================================================
 // RUNNER FUNCTIONS — call from Apps Script editor
 // ============================================================
+
+/**
+ * Dry run: computes billing for 2026-06A (June 1–15), logs all amounts, writes nothing.
+ * Run this first to verify totals before going live.
+ */
+function runBillingRunDryRun_06A() {
+  var actorEmail = 'raj.nair@bluelotuscanada.ca';
+  Logger.info('BILLING_DRY_RUN_MANUAL', { actor: actorEmail, period: '2026-06A' });
+  var result = BillingEngine.runBillingRun(actorEmail, { periodId: '2026-06A', dryRun: true });
+  Logger.info('BILLING_DRY_RUN_RESULT', { result: JSON.stringify(result) });
+  console.log('DRY RUN RESULT: ' + JSON.stringify(result, null, 2));
+}
+
+/**
+ * Live billing run for 2026-06A (June 1–15).
+ * Run runBillingRunDryRun_06A() first and verify totals before calling this.
+ */
+function runBillingRunLive_06A() {
+  var actorEmail = 'raj.nair@bluelotuscanada.ca';
+  var result = BillingEngine.runBillingRun(actorEmail, { periodId: '2026-06A' });
+  Logger.info('BILLING_MANUAL_RESULT', { result: JSON.stringify(result) });
+  console.log('BILLING RESULT: ' + JSON.stringify(result, null, 2));
+}
+
+/**
+ * Diagnostic: shows per-client, per-event-type hour breakdown for June 1-15.
+ * Run this to identify why client totals differ from expected values.
+ */
+function runBillingWorkLogBreakdown_06A() {
+  var MODULE    = 'BillingEngine';
+  var fromYMD   = 20260601;
+  var toYMD     = 20260615;
+  var year      = 2026;
+  var MONTH_MAP = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
+
+  function pd_(raw) {
+    if (!raw) return null;
+    if (raw instanceof Date) return isNaN(raw.getTime()) ? null : raw;
+    var s = String(raw).trim();
+    var iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return new Date(+iso[1], +iso[2]-1, +iso[3]);
+    var mg = s.match(/[A-Za-z]{3}\s+([A-Za-z]{3})\s+(\d{1,2})/);
+    if (mg) { var mi = MONTH_MAP[mg[1].toLowerCase()]; if (mi !== undefined) return new Date(year, mi, +mg[2]); }
+    return null;
+  }
+  function ymd_(d) { return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); }
+
+  var rows   = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: MODULE, periodId: '2026-06' });
+  var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+  var jl = {};
+  for (var v = 0; v < vwRows.length; v++) jl[vwRows[v].job_number] = vwRows[v];
+
+  var byClient = {};
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var d = pd_(row.work_date);
+    if (!d) continue;
+    var wd = ymd_(d);
+    if (wd < fromYMD || wd > toYMD) continue;
+    var jn  = String(row.job_number || '').trim().split(/\s+/)[0];
+    var hrs = parseFloat(row.hours) || 0;
+    if (!jn || hrs <= 0) continue;
+    var vw  = jl[jn];
+    var cli = vw ? String(vw.client_code || '').toUpperCase().trim() : 'UNKNOWN';
+    var evt = String(row.event_type || '');
+    var act = String(row.actor_code || '').trim().toUpperCase();
+    if (!byClient[cli]) byClient[cli] = {};
+    var key = evt + '|' + act;
+    byClient[cli][key] = (byClient[cli][key] || 0) + hrs;
+  }
+
+  var clients = Object.keys(byClient).sort();
+  console.log('=== Work Log Breakdown June 1–15 by Client / Event+Actor ===');
+  for (var c = 0; c < clients.length; c++) {
+    var cli = clients[c];
+    var entries = byClient[cli];
+    var keys    = Object.keys(entries).sort();
+    var total   = 0;
+    for (var k = 0; k < keys.length; k++) total += entries[keys[k]];
+    console.log('\n' + cli + ' — total ' + total + 'h');
+    for (var k = 0; k < keys.length; k++) {
+      console.log('  ' + keys[k] + ': ' + entries[keys[k]] + 'h');
+    }
+  }
+}
 
 /**
  * Dry run: computes billing for the current semi-monthly period,
