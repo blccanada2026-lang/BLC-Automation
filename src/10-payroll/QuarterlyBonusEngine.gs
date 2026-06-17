@@ -1283,6 +1283,77 @@ function runQ1MarkIneligibleSkipped() {
   }
 }
 
+/**
+ * Forces the exact HR-authoritative composite scores from Q1_MANUAL_HRS_ into
+ * the bonus ledger for Q1 2026. Writes a new QUARTERLY_BONUS_AMENDMENT per
+ * designer using composite = m.comp and bonus_inr = m.hrs * m.comp * 25.
+ *
+ * Run this instead of relying on the engine-recalculated composites.
+ * Idempotency key QB_HR_FINAL|{code}|2026-Q1 — safe to re-run.
+ * After this, run runSendQ1BonusLetters().
+ */
+function runQ1ForceHRComposites() {
+  var qPid   = '2026-Q1';
+  var CALLER = 'QuarterlyBonusEngine';
+  var actor  = Session.getActiveUser().getEmail();
+
+  var ledgerRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: CALLER });
+  var existingKeys = {}, byPerson = {};
+  ledgerRows.forEach(function(r) {
+    var key  = String(r.idempotency_key || '').trim();
+    var code = String(r.person_code     || '').trim();
+    if (key.indexOf('QB_HR_FINAL|') === 0) existingKeys[key] = true;
+    if (code && String(r.quarter_period_id || '').trim() === qPid) {
+      if (!byPerson[code] || r.event_type === 'QUARTERLY_BONUS_AMENDMENT') byPerson[code] = r;
+    }
+  });
+
+  var written = 0, skipped = 0;
+  Object.keys(Q1_MANUAL_HRS_).sort().forEach(function(code) {
+    var m   = Q1_MANUAL_HRS_[code];
+    var key = 'QB_HR_FINAL|' + code + '|' + qPid;
+
+    if (existingKeys[key]) {
+      console.log('  SKIP ' + code + ' — already applied');
+      skipped++;
+      return;
+    }
+
+    var existing    = byPerson[code] || {};
+    var errorScore  = parseFloat(existing.error_score)  || 0;
+    var ownRating   = parseFloat(existing.rating_score) || 0;
+    var bonusInr    = Math.round(m.hrs * m.comp * 25 * 100) / 100;
+
+    DAL.appendRow(Config.TABLES.FACT_QUARTERLY_BONUS, {
+      bonus_id:          Identifiers.generateId(),
+      event_type:        'QUARTERLY_BONUS_AMENDMENT',
+      person_code:       code,
+      quarter_period_id: qPid,
+      design_hours:      m.hrs,
+      client_score:      m.comp,
+      error_score:       errorScore,
+      rating_score:      ownRating,
+      composite_score:   m.comp,
+      bonus_inr:         bonusInr,
+      status:            'CALCULATED',
+      pending_reason:    'HR-authoritative composite 2026-06-16: composite = ' + Math.round(m.comp * 10000) / 100 + '%',
+      actor_email:       actor,
+      timestamp:         new Date().toISOString(),
+      idempotency_key:   key
+    }, { callerModule: CALLER });
+
+    console.log('  ' + pad_(code,6) + pad_(m.name,22) +
+                m.hrs + 'h  comp=' + Math.round(m.comp*10000)/100 + '%' +
+                '  → ₹' + bonusInr);
+    written++;
+  });
+
+  console.log('\nDone. ' + written + ' HR composites forced, ' + skipped + ' already done.');
+  if (written > 0 || skipped === Object.keys(Q1_MANUAL_HRS_).length) {
+    console.log('Next: run runSendQ1BonusLetters()');
+  }
+}
+
 /** Diagnoses supervisor_code and pm_code for designers who are still missing ratings. */
 function runDiagnoseRatingAssignments() {
   var missing = ['DBG','DBS','PRS','NMM','AR001','BSG','RKU'];
