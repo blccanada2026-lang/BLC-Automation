@@ -38,13 +38,25 @@
 - `72589ab` fix(validation): drop minLength from job_number in all handlers
 - `15fd4fb` fix(dashboard): filter DS1/UNKNOWN from CEO load balance
 
+**Q1 bonus — COMPLETED ✅ (same session, continued):**
+- `runQ1MarkIneligibleSkipped()` — BIT + 7 PENDING designers (AVM, PRG, RUD, SKR, SMB, SUB, SUB2) marked SKIPPED. Not in HR manual hours → not Q1-eligible.
+- Fixed `runSendBonusLetters` dedup: switched to latest-row-wins across ALL rows before filtering by CALCULATED — previous logic let an old CALCULATED row survive even after a SKIPPED amendment was added.
+- `runQ1ForceHRComposites()` — wrote 16 final amendments using exact HR composites (m.comp from Q1_MANUAL_HRS_) instead of engine-recalculated composites. Supersedes earlier amendments via latest-row-wins dedup.
+- `runSendQ1BonusLetters()` — 16 letters sent to blccanada2026@gmail.com. All amounts verified against HR sheet. Total: ₹72,231.13. Safe to forward.
+
+### Key Commits (Q1 bonus)
+- `fbed9b7` fix(billing): remove job_number pattern from BillingEngine schemas
+- `4ddeb87` chore(docs): update PROJECT_MEMORY + add CTO test plan
+- `220ebb9` fix(bonus): correct letter-send dedup + add Q1 ineligible skip function
+- `7639432` feat(bonus): runQ1ForceHRComposites — pin exact HR composites to ledger
+
 ### Open Items for Next Session
 1. **Client timesheet generator** — new feature needed: per-job breakdown (who, hours, amount) for client invoices. Data exists in FACT_WORK_LOGS + FACT_BILLING_LEDGER; no generator built yet.
-2. **Full testing plan** — see `.claude/context/test-plan.md` (created this session)
-3. **Billing run** — BillingEngine pattern bug now fixed; safe to do first billing run.
-4. **Q1 bonus** — `runQ1ApplyManualCorrections()` + `runSendQ1BonusLetters()` still pending.
-5. **Stale QC_REVIEW migrated jobs** — bulk-update script needed for jobs Sarty already reviewed offline.
-6. **Designer My Hours view** — functional but no refresh button yet.
+2. **Full testing plan** — see `.claude/context/test-plan.md` (created this session). Execute with real jobs across all 6 accounts.
+3. **Billing run** — BillingEngine pattern bug fixed; safe to do first billing run.
+4. **Stale QC_REVIEW migrated jobs** — bulk-update script needed for jobs Sarty already reviewed offline.
+5. **Designer My Hours view** — functional but no refresh button yet.
+6. **Q1 bonus letters** — 16 in CEO inbox, review and forward to designers.
 
 ---
 

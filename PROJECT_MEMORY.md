@@ -89,7 +89,7 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
 
 - **PROD portal live** ✅ — 17 staff active. June 16: 6 production bugs fixed and deployed (see SESSION_LOG 2026-06-16).
 - **BATCH-004 migration complete** ✅ — June 1–15 timesheets fully reconciled: 1278.25h, all 16 actors balanced.
-- **Q1 bonus corrections** — `runQ1ApplyManualCorrections()` not yet run. Run it, then `runSendQ1BonusLetters()`. Letters land in CEO inbox for review. See SESSION_LOG for full detail.
+- **Q1 bonus corrections** — ✅ COMPLETE (2026-06-16). 16 letters sent to CEO inbox (₹72,231.13 total). Review and forward to designers.
 - **Stacey auto-sync** — `runRemoveStaceySyncTrigger()` must be run today (June 16) before cutover.
 - **System testing** — CTO-level testing plan built: `.claude/context/test-plan.md`. Execute with real jobs across all accounts.
 - **Client timesheet generator** — NOT YET BUILT. Data exists (FACT_WORK_LOGS + FACT_BILLING_LEDGER + VW_JOB_CURRENT_STATE). See §7.
@@ -101,7 +101,7 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
 Priority order:
 1. **June 16 FIRST THING**: `runRemoveStaceySyncTrigger()` in Apps Script editor → send cutover email to all designers
 2. **Execute test plan** — `.claude/context/test-plan.md` — systematic real-job testing across all 6 accounts by all 5 roles
-3. Run `runQ1ApplyManualCorrections()` then `runSendQ1BonusLetters()` (Q1 bonus still outstanding)
+3. **Forward Q1 bonus letters** — 16 letters in CEO inbox, review and forward to each designer
 4. **Build client timesheet generator** — `generateClientTimesheet(clientCode, periodId)` in a new `src/11-reporting/ClientTimesheetEngine.gs`; joins FACT_WORK_LOGS + VW_JOB_CURRENT_STATE + DIM_STAFF_ROSTER + FACT_BILLING_LEDGER
 5. Send Q2 rating requests + Q2 feedback requests to clients (via portal)
 6. First June payroll run from V3 (after Phase 3 cutover verified — not before)
@@ -117,7 +117,7 @@ Priority order:
 | Risk | Severity | Status |
 |---|---|---|
 | Stacey sync not removed before June 16 cutover | **CRITICAL** | Run `runRemoveStaceySyncTrigger()` TODAY before cutover email |
-| Q1 bonus letters not yet sent | **HIGH** | Run `runQ1ApplyManualCorrections()` then `runSendQ1BonusLetters()`. See SESSION_LOG. |
+| Q1 bonus letters | Low | ✅ Sent 2026-06-16. 16 letters in CEO inbox — review and forward to designers. |
 | Dead-lettered queue items (overnight) | **HIGH** | Staff must resubmit submissions that errored while minLength bug was active |
 | Client timesheet generator not built | **HIGH** | Sarty needs per-job breakdown with designer hours for client invoices — no function exists yet |
 | Stale QC_REVIEW migrated jobs | Medium | Bulk state update script needed for jobs Sarty reviewed offline before cutover |
