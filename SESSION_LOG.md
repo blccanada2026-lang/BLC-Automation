@@ -5,6 +5,43 @@
 
 ---
 
+## 2026-06-17 Session (Semi-Monthly Billing Engine Rewrite)
+
+### Work Completed
+
+**BillingEngine.gs — full rewrite (commit `a4f1b31`):**
+- Semi-monthly periods: `2026-06A` (1–15th) and `2026-06B` (16–end)
+- Bills ALL jobs with hours in the period (not just COMPLETED_BILLABLE)
+- In-progress jobs billed for their hours but state unchanged — billed again next period for new hours
+- Only COMPLETED_BILLABLE jobs → INVOICED transition
+- New columns: `job_status` ('COMPLETED'/'IN_PROGRESS') and `remarks` on every billing row
+- Defensive work_date parser handles both ISO (`2026-06-15`) and mangled BATCH-004 format (`Mon Jun 01`)
+- FACT_BILLING_LEDGER partitioned monthly (`|2026-06`); semi-monthly period_id stored as row field
+- MART refresh now reads full monthly partition — running B-half no longer erases A-half aggregates
+- Dry-run mode: `options.dryRun=true` → full compute, no writes, logs all amounts
+- Runner functions: `runBillingRunDryRun()`, `runBillingRunManual()`
+- One-time schema patcher: `runPatchBillingLedgerSchema()` — adds job_status + remarks to existing partition headers
+
+**Supporting changes:**
+- `SetupScript.gs`: FACT_BILLING_LEDGER header updated to include job_status + remarks
+- `Portal.gs`: JSDoc updated (period ID example, return shape)
+- `PortalView.html`: confirm dialog + success toast updated for new billing model
+
+### BEFORE FIRST BILLING RUN — Required Sequence
+1. `clasp push --force` → deploy new version via Apps Script editor
+2. `runPatchBillingLedgerSchema()` in Apps Script editor — patches FACT_BILLING_LEDGER|2026-04 header
+3. `runBillingRunDryRun()` — verify amounts, confirm jobs + hours are correct
+4. `runBillingRunManual()` — live run (or use portal billing button)
+
+### Open Items for Next Session
+1. **Execute billing run** — after runPatchBillingLedgerSchema() + dry run verify
+2. **Client timesheet generator** — new feature: per-job breakdown (designer, hours, amount) for client invoices
+3. **Full testing plan** — `.claude/context/test-plan.md` — real-job testing across all 6 accounts / 5 roles
+4. **Stale QC_REVIEW migrated jobs** — bulk-update script needed
+5. **Q1 bonus letters** — 16 in CEO inbox (blccanada2026@gmail.com), review and forward to designers
+
+---
+
 ## 2026-06-16 Session (Live Bug Fixes + Portal Features — Day 2)
 
 ### Work Completed
@@ -50,13 +87,9 @@
 - `220ebb9` fix(bonus): correct letter-send dedup + add Q1 ineligible skip function
 - `7639432` feat(bonus): runQ1ForceHRComposites — pin exact HR composites to ledger
 
-### Open Items for Next Session
-1. **Client timesheet generator** — new feature needed: per-job breakdown (who, hours, amount) for client invoices. Data exists in FACT_WORK_LOGS + FACT_BILLING_LEDGER; no generator built yet.
-2. **Full testing plan** — see `.claude/context/test-plan.md` (created this session). Execute with real jobs across all 6 accounts.
-3. **Billing run** — BillingEngine pattern bug fixed; safe to do first billing run.
-4. **Stale QC_REVIEW migrated jobs** — bulk-update script needed for jobs Sarty already reviewed offline.
-5. **Designer My Hours view** — functional but no refresh button yet.
-6. **Q1 bonus letters** — 16 in CEO inbox, review and forward to designers.
+### Note (updated 2026-06-17)
+Billing run NOT yet executed — BillingEngine was rewritten next session (see 2026-06-17 entry).
+Q1 bonus letters in CEO inbox — ready to forward.
 
 ---
 
