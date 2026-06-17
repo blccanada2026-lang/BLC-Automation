@@ -1223,7 +1223,64 @@ function runQ1ApplyManualCorrections() {
   });
 
   console.log('\nDone. ' + written + ' amendments written, ' + skipped + ' already applied.');
-  if (written > 0) console.log('Next: run runSendQ1BonusLetters()');
+  if (written > 0) console.log('Next: run runQ1MarkIneligibleSkipped() then runSendQ1BonusLetters()');
+}
+
+/**
+ * Marks BIT and the 7 PENDING designers as SKIPPED for Q1 2026.
+ * These codes were not in the HR manual hours sheet → not Q1-eligible.
+ * Writes a QUARTERLY_BONUS_AMENDMENT with status=SKIPPED so the letter-send
+ * function (which uses latest-row-wins dedup) correctly suppresses them.
+ * Idempotent — safe to re-run.
+ */
+function runQ1MarkIneligibleSkipped() {
+  var qPid   = '2026-Q1';
+  var CALLER = 'QuarterlyBonusEngine';
+  var actor  = Session.getActiveUser().getEmail();
+
+  // BIT: different person from JYS; not in HR manual hours → ineligible
+  // AVM, PRG, RUD, SKR, SMB, SUB, SUB2: PENDING with zero ratings; not in HR data → ineligible
+  var ineligible = ['BIT', 'AVM', 'PRG', 'RUD', 'SKR', 'SMB', 'SUB', 'SUB2'];
+
+  var ledgerRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: CALLER });
+  var existingSkipKeys = {};
+  ledgerRows.forEach(function(r) {
+    var key = String(r.idempotency_key || '').trim();
+    if (key.indexOf('QB_SKIP|') === 0) existingSkipKeys[key] = true;
+  });
+
+  var written = 0, skipped = 0;
+  ineligible.forEach(function(code) {
+    var key = 'QB_SKIP|' + code + '|' + qPid;
+    if (existingSkipKeys[key]) {
+      console.log('  SKIP ' + code + ' — already marked');
+      skipped++;
+      return;
+    }
+    DAL.appendRow(Config.TABLES.FACT_QUARTERLY_BONUS, {
+      bonus_id:          Identifiers.generateId(),
+      event_type:        'QUARTERLY_BONUS_AMENDMENT',
+      person_code:       code,
+      quarter_period_id: qPid,
+      design_hours:      0,
+      client_score:      0,
+      error_score:       0,
+      rating_score:      0,
+      composite_score:   0,
+      bonus_inr:         0,
+      status:            'SKIPPED',
+      pending_reason:    'Not in HR Q1 manual hours — ineligible for Q1 bonus',
+      actor_email:       actor,
+      timestamp:         new Date().toISOString(),
+      idempotency_key:   key
+    }, { callerModule: CALLER });
+    console.log('  SKIPPED: ' + code);
+    written++;
+  });
+  console.log('\nDone. ' + written + ' marked SKIPPED, ' + skipped + ' already done.');
+  if (written > 0 || skipped === ineligible.length) {
+    console.log('Next: run runQ1ApplyManualCorrections() then runSendQ1BonusLetters()');
+  }
 }
 
 /** Diagnoses supervisor_code and pm_code for designers who are still missing ratings. */
@@ -1542,26 +1599,27 @@ function runSendBonusLetters(quarterPeriodId) {
 
   // ── Read committed bonus rows ─────────────────────────────────
   var allRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: 'QuarterlyBonusEngine' });
-  var bonusRows = allRows.filter(function(r) {
-    var evType = String(r.event_type || '').trim();
-    return String(r.quarter_period_id || '').trim() === quarterPeriodId &&
-           (evType === 'QUARTERLY_BONUS' || evType === 'QUARTERLY_BONUS_AMENDMENT') &&
-           String(r.status || '').trim() === 'CALCULATED' &&
-           (parseFloat(r.bonus_inr) || 0) > 0;
-  });
 
-  // Deduplicate — keep latest row per person if multiple exist
+  // Latest-row-wins dedup: scan ALL rows for this quarter, keep newest per person,
+  // then filter to CALCULATED + bonus > 0. This ensures a SKIPPED amendment after
+  // an earlier CALCULATED row correctly suppresses the letter.
   var latestByCode = {};
-  bonusRows.forEach(function(r) {
+  allRows.forEach(function(r) {
+    var evType = String(r.event_type || '').trim();
+    if (String(r.quarter_period_id || '').trim() !== quarterPeriodId) return;
+    if (evType !== 'QUARTERLY_BONUS' && evType !== 'QUARTERLY_BONUS_AMENDMENT') return;
     var code = String(r.person_code || '').trim();
     if (!code) return;
-    if (!latestByCode[code] ||
-        String(r.timestamp) > String(latestByCode[code].timestamp)) {
+    if (!latestByCode[code] || String(r.timestamp) > String(latestByCode[code].timestamp)) {
       latestByCode[code] = r;
     }
   });
 
-  var codes = Object.keys(latestByCode);
+  var codes = Object.keys(latestByCode).filter(function(code) {
+    var row = latestByCode[code];
+    return String(row.status || '').trim() === 'CALCULATED' &&
+           (parseFloat(row.bonus_inr) || 0) > 0;
+  });
   console.log('Eligible staff to send: ' + codes.length);
 
   if (codes.length === 0) {
