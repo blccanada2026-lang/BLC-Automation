@@ -1212,6 +1212,76 @@ function createFlatFactSheets() {
   log_('Done. Run runVerify() to confirm.');
 }
 
+// ============================================================
+// TAB CLEANUP — run from Apps Script editor
+// ============================================================
+
+/**
+ * Audits the spreadsheet for tabs that are safe to delete or
+ * should be reviewed. Deletes only confirmed-junk tabs.
+ * Does NOT delete FACT data or migration audit trail.
+ *
+ * Run this, review the output, then confirm before proceeding.
+ */
+function runTabCleanupAudit() {
+  var ss     = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+
+  // Confirmed junk — safe to delete without checking row count
+  var JUNK_TABS = [
+    'Sheet1',
+    'FACT_WORK_LOGS|2001-06',   // typo from BATCH-004 bug (wrong year)
+    'FACT_WORK_LOGS|2028-02',   // impossible future date — migration artifact
+  ];
+  // Also delete any 'Form Responses N' tabs (Google Forms legacy — R1: no Forms)
+  var deleted = [], checked = [], kept = [];
+
+  for (var i = 0; i < sheets.length; i++) {
+    var name  = sheets[i].getName();
+    var nRows = Math.max(0, sheets[i].getLastRow() - 1); // exclude header
+
+    // Form Responses tabs
+    if (/^Form Responses/.test(name)) {
+      ss.deleteSheet(sheets[i]);
+      deleted.push(name + ' (Form Responses legacy)');
+      continue;
+    }
+
+    // Confirmed junk tabs
+    if (JUNK_TABS.indexOf(name) >= 0) {
+      ss.deleteSheet(sheets[i]);
+      deleted.push(name + ' (' + nRows + ' rows)');
+      continue;
+    }
+
+    // Pre-2026 FACT_JOB_EVENTS — report row count for manual decision
+    if (/^FACT_JOB_EVENTS\|20(24|25)-/.test(name)) {
+      checked.push(name + ': ' + nRows + ' rows' + (nRows === 0 ? ' ← SAFE TO DELETE' : ' ← HAS DATA, review before deleting'));
+      continue;
+    }
+
+    // Migration tables — flag for future archiving
+    if (/^MIGRATION_/.test(name)) {
+      checked.push(name + ': ' + nRows + ' rows ← migration complete; archive after 3 months');
+      continue;
+    }
+
+    kept.push(name);
+  }
+
+  console.log('=== TAB CLEANUP AUDIT ===');
+  console.log('\nDELETED (' + deleted.length + '):');
+  deleted.forEach(function(t) { console.log('  ✗ ' + t); });
+
+  console.log('\nREVIEW NEEDED (' + checked.length + '):');
+  checked.forEach(function(t) { console.log('  ? ' + t); });
+
+  console.log('\nKEPT (' + kept.length + '):');
+  kept.forEach(function(t) { console.log('  ✓ ' + t); });
+
+  console.log('\nTotal tabs remaining: ' + (kept.length + checked.length));
+}
+
 /**
  * Installs a nightly time-based trigger for ReportingEngine.
  * Run ONCE from Apps Script editor. CEO only.
