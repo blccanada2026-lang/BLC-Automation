@@ -3407,14 +3407,14 @@ function confirmPaystub() {
 // ── CEO Payroll Actions ────────────────────────────────────────
 
 function runBillingRun() {
-  if (!confirm('Run billing for the current period?\n\nThis will calculate amounts from FACT_WORK_LOGS, write to FACT_BILLING_LEDGER, and mark completed jobs as INVOICED.\n\nThis cannot be undone.')) return;
+  if (!confirm('Run billing for the current semi-monthly period?\n\nThis will calculate amounts from logged hours, write to FACT_BILLING_LEDGER, and mark COMPLETED jobs as INVOICED.\n\nIn-progress jobs will be billed for hours logged but remain in their current state.\n\nThis cannot be undone.')) return;
   showLoading(true);
   TOKEN_RUN
     .withSuccessHandler(function(json) {
       showLoading(false);
       try {
         var result = JSON.parse(json);
-        showToast('Billing run complete: ' + result.billed + ' job(s) billed.', 'success');
+        showToast('Billing run complete: ' + result.processed + ' job(s) billed.', 'success');
         loadData();
       } catch(e) { showToast('Billing run complete.', 'success'); }
     })

@@ -642,8 +642,8 @@ function portal_refreshDashboard(ptoken) {
  * marks jobs INVOICED in VW_JOB_CURRENT_STATE.
  * CEO only (BILLING_RUN permission).
  *
- * @param {string} periodId  e.g. '2026-04' (pass '' for current period)
- * @returns {string}  JSON: { billed, skipped, errors[], period_id }
+ * @param {string} periodId  Semi-monthly ID e.g. '2026-06A' or '2026-06B'. Pass '' for current period.
+ * @returns {string}  JSON: { processed, skipped, errors[], period_id, by_currency }
  */
 function portal_runBillingRun(ptoken, periodId) {
   var email  = PortalAuth.resolveEmail(ptoken);

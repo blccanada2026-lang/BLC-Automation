@@ -228,7 +228,8 @@ var SCHEMAS = {
   'FACT_BILLING_LEDGER': [
     'event_id', 'job_number', 'period_id', 'event_type',
     'timestamp', 'actor_code', 'actor_role',
-    'client_code', 'amount', 'currency', 'invoice_id', 'notes',
+    'client_code', 'amount', 'currency', 'invoice_id',
+    'job_status', 'remarks', 'notes',
     'idempotency_key', 'payload_json'
   ],
 

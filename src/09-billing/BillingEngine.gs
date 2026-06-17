@@ -9,40 +9,43 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  Batch billing engine — NOT queue-driven.               ║
 // ║                                                         ║
-// ║  Billing model: hours × client hourly rate              ║
+// ║  Billing model: semi-monthly periods                    ║
+// ║    2026-06A = June 1–15                                 ║
+// ║    2026-06B = June 16–30                                ║
+// ║                                                         ║
+// ║  Bill ALL jobs that have hours logged in the period,    ║
+// ║  regardless of job state. Only COMPLETED_BILLABLE jobs  ║
+// ║  are transitioned to INVOICED. In-progress jobs stay    ║
+// ║  in their current state and can be billed again in the  ║
+// ║  next period for new hours.                             ║
 // ║                                                         ║
 // ║  runBillingRun(actorEmail, options)                     ║
-// ║    1. Load DIM_CLIENT_RATES → rate cache                ║
-// ║    2. Sum FACT_WORK_LOGS hours per job                  ║
-// ║    3. For each COMPLETED_BILLABLE job:                  ║
+// ║    1. Parse semi-monthly period → fromDate, toDate      ║
+// ║    2. Load DIM_CLIENT_RATES → rate cache                ║
+// ║    3. Sum FACT_WORK_LOGS hours per job (date-filtered)  ║
+// ║    4. For each job with hours > 0 in period:            ║
 // ║         a. Resolve rate (client+product, then client)   ║
 // ║         b. amount = total_hours × hourly_rate           ║
-// ║         c. Write FACT_BILLING_LEDGER                    ║
-// ║         d. Transition VW → INVOICED                     ║
-// ║    4. Refresh MART_BILLING_SUMMARY aggregate            ║
+// ║         c. Write FACT_BILLING_LEDGER (with job_status)  ║
+// ║         d. If COMPLETED_BILLABLE → transition INVOICED  ║
+// ║    5. Refresh MART_BILLING_SUMMARY aggregate            ║
 // ║                                                         ║
 // ║  Permission: BILLING_RUN (PM + CEO)                     ║
 // ╚══════════════════════════════════════════════════════════╝
+//
+// PERIOD IDs:
+//   Semi-monthly: '2026-06A' (1st–15th), '2026-06B' (16th–end)
+//   FACT_BILLING_LEDGER is partitioned monthly: |2026-06
+//   ensurePartition / isBilled_ always use the monthPartition.
 //
 // RATE LOOKUP (DIM_CLIENT_RATES):
 //   Most specific match wins.
 //   Priority 1: client_code + product_code match
 //   Priority 2: client_code match + product_code blank (flat rate)
-//   If no rate found: job is skipped with WARN — never billed at zero.
-//
-// HOURS:
-//   Summed from FACT_WORK_LOGS for the billing period.
-//   If a job has no work log entries, hours default to 0 and
-//   the job is billed at $0 with a WARN (edge case — contact PM).
-//
-// CURRENCIES:
-//   Rate currency is taken from DIM_CLIENT_RATES per client.
-//   Supported: CAD, USD. Each billing record stores its own currency.
-//   Mixed-currency runs are allowed — MART_BILLING_SUMMARY groups by
-//   client_code AND currency for correct totals.
+//   If no rate found: job is skipped with WARN.
 //
 // IDEMPOTENCY:
-//   Key: BILLING|{job_number}|{periodId}
+//   Key: BILLING|{job_number}|{periodId}  (e.g. BILLING|BLC-00001|2026-06A)
 //   Re-running the engine skips already-billed jobs safely.
 // ============================================================
 
@@ -53,13 +56,12 @@ var BillingEngine = (function () {
   // ============================================================
   // PRIVATE SCHEMAS — used by ValidationEngine.validate()
   // Rule A4: validate before every FACT table write.
-  // Defined once at module scope; never mutated.
   // ============================================================
 
   var BILLING_LEDGER_SCHEMA = {
     event_id:        { type: 'string', required: true,  label: 'Event ID' },
     job_number:      { type: 'string', required: true,  label: 'Job Number' },
-    period_id:       { type: 'string', required: true,  pattern: /^\d{4}-\d{2}$/, label: 'Period ID' },
+    period_id:       { type: 'string', required: true,  pattern: /^\d{4}-\d{2}[AB]$/, label: 'Period ID' },
     event_type:      { type: 'string', required: true,  label: 'Event Type' },
     timestamp:       { type: 'string', required: true,  label: 'Timestamp' },
     actor_code:      { type: 'string', required: true,  label: 'Actor Code' },
@@ -67,6 +69,7 @@ var BillingEngine = (function () {
     amount:          { type: 'number', required: true,  min: 0, label: 'Amount' },
     currency:        { type: 'string', required: true,  allowedValues: ['CAD', 'USD'], label: 'Currency' },
     invoice_id:      { type: 'string', required: true,  label: 'Invoice ID' },
+    job_status:      { type: 'string', required: true,  allowedValues: ['COMPLETED', 'IN_PROGRESS'], label: 'Job Status' },
     idempotency_key: { type: 'string', required: true,  label: 'Idempotency Key' }
   };
 
@@ -78,9 +81,131 @@ var BillingEngine = (function () {
     to_state:   { type: 'string', required: true, label: 'To State' },
     timestamp:  { type: 'string', required: true, label: 'Timestamp' },
     actor_code: { type: 'string', required: true, label: 'Actor Code' },
-    period_id:  { type: 'string', required: true, pattern: /^\d{4}-\d{2}$/, label: 'Period ID' },
+    period_id:  { type: 'string', required: true, pattern: /^\d{4}-\d{2}[AB]$/, label: 'Period ID' },
     invoice_id: { type: 'string', required: true, label: 'Invoice ID' }
   };
+
+  // ============================================================
+  // SECTION 0: PERIOD HELPERS
+  //
+  // Semi-monthly period IDs:
+  //   2026-06A → June  1–15
+  //   2026-06B → June 16–30
+  //
+  // FACT_BILLING_LEDGER is partitioned monthly (|2026-06).
+  // parseSemiMonthlyPeriod_ returns monthPartition for all
+  // DAL partition calls; the semi-monthly periodId is stored
+  // as a field value inside each row.
+  // ============================================================
+
+  /**
+   * Parses a semi-monthly period ID into date bounds and the
+   * monthly partition key used by FACT_BILLING_LEDGER.
+   *
+   * @param {string} periodId  e.g. '2026-06A' or '2026-06B'
+   * @returns {{ fromDate: Date, toDate: Date, monthPartition: string, year: number }}
+   * @throws  If periodId is not a valid semi-monthly ID
+   */
+  function parseSemiMonthlyPeriod_(periodId) {
+    var m = periodId.match(/^(\d{4})-(\d{2})([AB])$/);
+    if (!m) {
+      throw new Error('BillingEngine: invalid semi-monthly period ID "' + periodId +
+                      '". Expected format: YYYY-MM[A|B] e.g. 2026-06A');
+    }
+    var year     = parseInt(m[1], 10);
+    var monthIdx = parseInt(m[2], 10) - 1;  // JS months are 0-indexed
+    var half     = m[3];
+
+    var fromDate, toDate;
+    if (half === 'A') {
+      fromDate = new Date(year, monthIdx, 1);
+      toDate   = new Date(year, monthIdx, 15);
+    } else {
+      fromDate = new Date(year, monthIdx, 16);
+      toDate   = new Date(year, monthIdx + 1, 0);  // day 0 of next month = last day
+    }
+
+    return {
+      fromDate:       fromDate,
+      toDate:         toDate,
+      monthPartition: m[1] + '-' + m[2],
+      year:           year
+    };
+  }
+
+  /**
+   * Returns the semi-monthly period ID for the current date.
+   * Day 1–15  → 'YYYY-MMA'
+   * Day 16–31 → 'YYYY-MMB'
+   *
+   * @returns {string}  e.g. '2026-06A'
+   */
+  function generateCurrentBillingPeriodId() {
+    var now   = new Date();
+    var year  = now.getFullYear();
+    var month = now.getMonth() + 1;
+    var mm    = month < 10 ? '0' + month : String(month);
+    var half  = now.getDate() <= 15 ? 'A' : 'B';
+    return year + '-' + mm + half;
+  }
+
+  /**
+   * Converts a Date to an integer YYYYMMDD for timezone-safe comparisons.
+   * Uses local time — same as the dates constructed in parseSemiMonthlyPeriod_.
+   *
+   * @param {Date} d
+   * @returns {number}  e.g. 20260615
+   */
+  function dateToYMD_(d) {
+    return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  }
+
+  /**
+   * Parses a work_date value to a Date object for range comparisons.
+   * Handles:
+   *   - Date objects (Google Sheets may return date cells as Date)
+   *   - ISO strings: '2026-06-15' or '2026-06-15T00:00:00.000Z'
+   *   - Mangled Date.toString() fragments: 'Mon Jun 01' (BATCH-004 legacy)
+   *
+   * All dates are returned in local time to match parseSemiMonthlyPeriod_.
+   *
+   * @param {Date|string} raw
+   * @param {number}      fallbackYear  used when parsing yearless strings
+   * @returns {Date|null}
+   */
+  function parseWorkDate_(raw, fallbackYear) {
+    if (!raw) return null;
+
+    // Google Sheets can return date cells as Date objects
+    if (raw instanceof Date) {
+      return isNaN(raw.getTime()) ? null : raw;
+    }
+
+    var s = String(raw).trim();
+    if (!s) return null;
+
+    // Fast path: YYYY-MM-DD (preferred — portal-submitted work logs)
+    var iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) {
+      return new Date(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10));
+    }
+
+    // Mangled Date.toString() like 'Mon Jun 01' (BATCH-004 rows not fully patched)
+    // Pattern: 3-char weekday + space + 3-char month + space + 1-2 digit day
+    var MONTH_MAP = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5,
+                      jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
+    var mangled = s.match(/[A-Za-z]{3}\s+([A-Za-z]{3})\s+(\d{1,2})/);
+    if (mangled) {
+      var monthIdx = MONTH_MAP[mangled[1].toLowerCase()];
+      if (monthIdx !== undefined) {
+        return new Date(fallbackYear || new Date().getFullYear(), monthIdx, parseInt(mangled[2], 10));
+      }
+    }
+
+    // Last resort: JS Date parser (handles many formats)
+    var d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
 
   // ============================================================
   // SECTION 1: RATE CACHE
@@ -88,8 +213,8 @@ var BillingEngine = (function () {
   // Built once per run from DIM_CLIENT_RATES.
   //
   // Cache shape:
-  //   { 'AXYZCO:LOGO': { hourly_rate: 150, currency: 'CAD' },  // specific
-  //     'AXYZCO:':     { hourly_rate: 120, currency: 'CAD' } }  // flat fallback
+  //   { 'AXYZCO:LOGO': { hourly_rate: 150, currency: 'CAD' },
+  //     'AXYZCO:':     { hourly_rate: 120, currency: 'CAD' } }
   //
   // Key format: '{client_code}:{product_code}'
   //   product_code is '' for flat-rate rows.
@@ -152,11 +277,9 @@ var BillingEngine = (function () {
     var client  = String(clientCode  || '').toUpperCase().trim();
     var product = String(productCode || '').toUpperCase().trim();
 
-    // Try specific: client + product
     var specificKey = client + ':' + product;
     if (rateCache[specificKey]) return rateCache[specificKey];
 
-    // Fallback: client flat rate
     var flatKey = client + ':';
     if (rateCache[flatKey]) return rateCache[flatKey];
 
@@ -166,35 +289,61 @@ var BillingEngine = (function () {
   // ============================================================
   // SECTION 2: HOURS CACHE
   //
-  // Reads FACT_WORK_LOGS for the billing period.
-  // Returns total hours summed per job_number.
-  // Shape: { 'BLC-00001': 8.5, 'BLC-00002': 3.25 }
+  // Reads FACT_WORK_LOGS for the monthly partition but filters
+  // rows to the semi-monthly date range [fromDate, toDate].
+  //
+  // Migration rows (migration_batch set) are excluded from
+  // billing — they represent historical data already captured
+  // in Stacey V2.
+  //
+  // Returns: { 'BLC-00001': 8.5, 'NL-01': 3.25, ... }
   // ============================================================
 
   /**
-   * @param {string} periodId  YYYY-MM
+   * @param {string} monthPartition  e.g. '2026-06'
+   * @param {Date}   fromDate        inclusive start of billing period
+   * @param {Date}   toDate          inclusive end of billing period
+   * @param {number} year            used for yearless date parsing
    * @returns {Object}  { jobNumber → totalHours }
    */
-  function buildHoursCache_(periodId) {
+  function buildHoursCache_(monthPartition, fromDate, toDate, year) {
     var rows;
     try {
       rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
         callerModule: MODULE,
-        periodId:     periodId
+        periodId:     monthPartition
       });
     } catch (e) {
       if (e.code === 'SHEET_NOT_FOUND') return {};
       throw e;
     }
 
+    var fromYMD = dateToYMD_(fromDate);
+    var toYMD   = dateToYMD_(toDate);
+
     var hoursMap = {};
     for (var i = 0; i < rows.length; i++) {
-      // Exclude migrated historical rows — migration_batch tag means the row
-      // came from Stacey import and must not be included in live billing runs.
-      if (rows[i].migration_batch) continue;
-      var jobNum = String(rows[i].job_number || '');
-      var hours  = parseFloat(rows[i].hours) || 0;
-      if (!jobNum) continue;
+      var row = rows[i];
+      // Exclude migrated historical rows
+      if (row.migration_batch) continue;
+
+      var parsedDate = parseWorkDate_(row.work_date, year);
+      if (!parsedDate) {
+        Logger.warn('BILLING_UNPARSEABLE_DATE', {
+          module:    MODULE,
+          job:       row.job_number,
+          work_date: String(row.work_date)
+        });
+        continue;
+      }
+
+      var ymd = dateToYMD_(parsedDate);
+      if (ymd < fromYMD || ymd > toYMD) continue;
+
+      var jobNum = String(row.job_number || '');
+      var hours  = parseFloat(row.hours) || 0;
+      if (!jobNum || hours <= 0) continue;
+
       hoursMap[jobNum] = (hoursMap[jobNum] || 0) + hours;
     }
     return hoursMap;
@@ -208,12 +357,16 @@ var BillingEngine = (function () {
     return 'BILLING|' + jobNumber + '|' + periodId;
   }
 
-  function isBilled_(idempotencyKey, periodId) {
+  /**
+   * @param {string} idempotencyKey
+   * @param {string} monthPartition  e.g. '2026-06' — the sheet partition
+   */
+  function isBilled_(idempotencyKey, monthPartition) {
     try {
       var existing = DAL.readWhere(
         Config.TABLES.FACT_BILLING_LEDGER,
         { idempotency_key: idempotencyKey },
-        { periodId: periodId }
+        { periodId: monthPartition }
       );
       return existing.length > 0;
     } catch (e) {
@@ -228,15 +381,18 @@ var BillingEngine = (function () {
 
   /**
    * @param {Object} job             VW_JOB_CURRENT_STATE row
-   * @param {number} totalHours      Summed from FACT_WORK_LOGS
+   * @param {number} totalHours      Summed from FACT_WORK_LOGS for period
    * @param {Object} rateInfo        { hourly_rate, currency }
    * @param {Object} actor           Resolved RBAC actor
-   * @param {string} periodId
+   * @param {string} periodId        Semi-monthly ID e.g. '2026-06A'
    * @param {string} invoiceId       Shared run-level invoice ID
    * @param {string} idempotencyKey
+   * @param {string} jobStatus       'COMPLETED' or 'IN_PROGRESS'
+   * @param {string} remarks         Human-readable billing note
    * @returns {Object}
    */
-  function buildBillingRow_(job, totalHours, rateInfo, actor, periodId, invoiceId, idempotencyKey) {
+  function buildBillingRow_(job, totalHours, rateInfo, actor, periodId, invoiceId,
+                             idempotencyKey, jobStatus, remarks) {
     var amount = Math.round(totalHours * rateInfo.hourly_rate * 100) / 100;
 
     return {
@@ -251,6 +407,8 @@ var BillingEngine = (function () {
       amount:          amount,
       currency:        rateInfo.currency,
       invoice_id:      invoiceId,
+      job_status:      jobStatus,
+      remarks:         remarks,
       notes:           '',
       idempotency_key: idempotencyKey,
       payload_json:    JSON.stringify({
@@ -265,32 +423,39 @@ var BillingEngine = (function () {
   // ============================================================
   // SECTION 5: MART REFRESH
   //
-  // Rebuilds MART_BILLING_SUMMARY from the full FACT_BILLING_LEDGER
-  // for the period. Groups by client_code + currency separately
-  // so CAD and USD totals are never merged.
+  // Reads ALL rows from the monthly partition of FACT_BILLING_LEDGER
+  // so that running the B half does not erase A half aggregates.
+  // Groups by client_code + currency + period_id so both halves
+  // appear as separate rows in MART_BILLING_SUMMARY.
   // ============================================================
 
-  function refreshMartBillingSummary_(periodId) {
+  /**
+   * @param {string} monthPartition  e.g. '2026-06'
+   */
+  function refreshMartBillingSummary_(monthPartition) {
     var rows;
     try {
       rows = DAL.readAll(Config.TABLES.FACT_BILLING_LEDGER, {
         callerModule: MODULE,
-        periodId:     periodId
+        periodId:     monthPartition
       });
     } catch (e) {
       if (e.code === 'SHEET_NOT_FOUND') return;
       throw e;
     }
 
-    // Aggregate: { 'AXYZCO:CAD' → { client_code, total_amount, currency } }
+    // Aggregate: { 'AXYZCO:CAD:2026-06A' → totals object }
     var totals = {};
     for (var i = 0; i < rows.length; i++) {
       var row      = rows[i];
       var client   = String(row.client_code || 'UNKNOWN');
       var currency = String(row.currency    || 'CAD').toUpperCase();
+      var pid      = String(row.period_id   || monthPartition);
       var amount   = parseFloat(row.amount) || 0;
-      var aggKey   = client + ':' + currency;
-      if (!totals[aggKey]) totals[aggKey] = { client_code: client, total_amount: 0, currency: currency };
+      var aggKey   = client + ':' + currency + ':' + pid;
+      if (!totals[aggKey]) {
+        totals[aggKey] = { client_code: client, total_amount: 0, currency: currency, period_id: pid };
+      }
       totals[aggKey].total_amount += amount;
     }
 
@@ -300,7 +465,7 @@ var BillingEngine = (function () {
     for (var j = 0; j < keys.length; j++) {
       var t = totals[keys[j]];
       martRows.push({
-        period_id:    periodId,
+        period_id:    t.period_id,
         client_code:  t.client_code,
         total_amount: Math.round(t.total_amount * 100) / 100,
         currency:     t.currency,
@@ -308,24 +473,11 @@ var BillingEngine = (function () {
       });
     }
 
-    // Clear MART data rows (keep header), then append fresh aggregates.
-    // NOTE: DAL does not yet expose a clearSheet() method, so this uses SpreadsheetApp
-    // directly. This is an acknowledged A2 exception scoped to MART (non-FACT projection
-    // tables). WriteGuard and CacheManager are not required here — MART is rebuilt from
-    // FACT_BILLING_LEDGER on every run and carries no audit-trail obligation.
-    // TODO: add DAL.clearSheet() and migrate this call when implemented.
+    // Clear MART data rows (keep header), then write fresh aggregates.
+    // NOTE: MART tables are non-FACT projections rebuilt from FACT every run.
+    // Direct SpreadsheetApp access is an acknowledged A2 exception here.
     try {
-      Logger.info('BILLING_MART_CLEAR_START', {
-        module:    MODULE,
-        message:   'Clearing MART_BILLING_SUMMARY before refresh',
-        period_id: periodId
-      });
       DAL.clearSheet(Config.TABLES.MART_BILLING_SUMMARY);
-      Logger.info('BILLING_MART_CLEAR_DONE', {
-        module:    MODULE,
-        message:   'MART_BILLING_SUMMARY cleared',
-        period_id: periodId
-      });
     } catch (e) {
       Logger.warn('BILLING_MART_CLEAR_FAILED', {
         module:  MODULE,
@@ -339,10 +491,9 @@ var BillingEngine = (function () {
     }
 
     Logger.info('BILLING_MART_REFRESHED', {
-      module:    MODULE,
-      message:   'MART_BILLING_SUMMARY refreshed',
-      period_id: periodId,
-      rows:      martRows.length
+      module:         MODULE,
+      month_partition: monthPartition,
+      rows:           martRows.length
     });
   }
 
@@ -351,19 +502,26 @@ var BillingEngine = (function () {
   // ============================================================
 
   /**
-   * Runs a billing pass for all COMPLETED_BILLABLE jobs.
-   * Safe to run multiple times — idempotent per job per period.
+   * Runs a billing pass for all jobs that have hours logged in
+   * the semi-monthly period. Safe to re-run — idempotent per job per period.
+   *
+   * Only COMPLETED_BILLABLE jobs are transitioned to INVOICED.
+   * In-progress jobs remain in their current state and accumulate
+   * hours for subsequent period billing.
    *
    * @param {string} actorEmail
    * @param {Object} [options]
-   * @param {string} [options.periodId]  Default: current period
+   * @param {string}  [options.periodId]  e.g. '2026-06A'. Default: current semi-monthly period.
+   * @param {boolean} [options.dryRun]    true → compute only, no writes
    * @returns {{
    *   processed:    number,
    *   skipped:      number,
    *   errors:       string[],
    *   by_currency:  Object,
    *   invoice_id:   string,
-   *   period_id:    string
+   *   period_id:    string,
+   *   dryRun:       boolean,
+   *   partial:      boolean
    * }}
    */
   function runBillingRun(actorEmail, options) {
@@ -375,45 +533,41 @@ var BillingEngine = (function () {
       var actor = RBAC.resolveActor(actorEmail);
       RBAC.enforcePermission(actor, RBAC.ACTIONS.BILLING_RUN);
 
-      var periodId  = options.periodId || Identifiers.generateCurrentPeriodId();
+      var dryRun   = options.dryRun === true;
+      var periodId = options.periodId || generateCurrentBillingPeriodId();
 
-      // Resolve a stable invoice group ID for this period.
-      // Re-runs reuse the same ID so all jobs billed for a period share
-      // one invoice_id — partial-run + retry does not split the invoice.
-      // Downstream: always group client invoices by period_id; invoice_id
-      // is a grouping convenience only, not the billing authority.
+      // Validate and parse the semi-monthly period
+      var periodParts  = parseSemiMonthlyPeriod_(periodId);
+      var fromDate     = periodParts.fromDate;
+      var toDate       = periodParts.toDate;
+      var monthPartition = periodParts.monthPartition;
+      var year         = periodParts.year;
+
+      // Stable invoice group ID for this period — re-runs reuse it so all jobs
+      // in the same period share one invoice_id (grouping convenience only).
       var invoiceGroupKey = 'INVOICE_GROUP_' + periodId;
       var invoiceId       = PropertiesService.getScriptProperties().getProperty(invoiceGroupKey);
       if (!invoiceId) {
         invoiceId = Identifiers.generateId();
-        PropertiesService.getScriptProperties().setProperty(invoiceGroupKey, invoiceId);
-        Logger.info('BILLING_INVOICE_GROUP_CREATED', {
-          module:     MODULE,
-          message:    'New invoice group ID created for period',
-          period_id:  periodId,
-          invoice_id: invoiceId
-        });
-      } else {
-        Logger.info('BILLING_INVOICE_GROUP_REUSED', {
-          module:     MODULE,
-          message:    'Reusing invoice group ID for period (re-run)',
-          period_id:  periodId,
-          invoice_id: invoiceId
-        });
+        if (!dryRun) {
+          PropertiesService.getScriptProperties().setProperty(invoiceGroupKey, invoiceId);
+        }
       }
 
       Logger.info('BILLING_RUN_START', {
-        module:     MODULE,
-        message:    'Billing run started',
-        period_id:  periodId,
-        invoice_id: invoiceId,
-        actor:      actorEmail
+        module:          MODULE,
+        period_id:       periodId,
+        month_partition: monthPartition,
+        from:            fromDate.toISOString().substring(0, 10),
+        to:              toDate.toISOString().substring(0, 10),
+        invoice_id:      invoiceId,
+        actor:           actorEmail,
+        dry_run:         dryRun
       });
 
       // ── 2. Load rate cache ───────────────────────────────
-      var rateCache  = buildRateCache_();
-      var rateCount  = Object.keys(rateCache).length;
-
+      var rateCache = buildRateCache_();
+      var rateCount = Object.keys(rateCache).length;
       if (rateCount === 0) {
         Logger.warn('BILLING_NO_RATES', {
           module:  MODULE,
@@ -421,9 +575,9 @@ var BillingEngine = (function () {
         });
       }
 
-      // ── 3. Load hours cache ──────────────────────────────
-      var hoursCache  = buildHoursCache_(periodId);
-      var hoursCount  = Object.keys(hoursCache).length;
+      // ── 3. Load hours cache (date-filtered to period) ────
+      var hoursCache = buildHoursCache_(monthPartition, fromDate, toDate, year);
+      var hoursCount = Object.keys(hoursCache).length;
 
       Logger.info('BILLING_CACHES_LOADED', {
         module:      MODULE,
@@ -435,34 +589,40 @@ var BillingEngine = (function () {
       if (hoursCount === 0) {
         Logger.warn('BILLING_NO_WORK_LOGS', {
           module:    MODULE,
-          message:   'No work log hours found for period — all jobs will bill at $0. Check FACT_WORK_LOGS partition.',
+          message:   'No work log hours found for period — nothing to bill. Check FACT_WORK_LOGS partition.',
           period_id: periodId
         });
       }
 
-      // ── 4. Load COMPLETED_BILLABLE jobs ──────────────────
-      var allJobs      = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
-      var billableJobs = allJobs.filter(function (j) {
-        return j.current_state === Config.STATES.COMPLETED_BILLABLE;
-      });
+      // ── 4. Build VW job lookup map ───────────────────────
+      var allVwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+      var jobLookup = {};
+      for (var v = 0; v < allVwRows.length; v++) {
+        jobLookup[allVwRows[v].job_number] = allVwRows[v];
+      }
+
+      // Candidate jobs: all jobs with hours > 0 in this period
+      var jobsToProcess = Object.keys(hoursCache);
 
       Logger.info('BILLING_JOBS_FOUND', {
         module:   MODULE,
-        message:  'Billable jobs loaded',
-        billable: billableJobs.length
+        billable: jobsToProcess.length,
+        period_id: periodId
       });
 
-      // ── 5. Ensure FACT partition ─────────────────────────
-      DAL.ensurePartition(Config.TABLES.FACT_BILLING_LEDGER, periodId, MODULE);
+      // ── 5. Ensure FACT partition (skip in dry-run) ───────
+      if (!dryRun) {
+        DAL.ensurePartition(Config.TABLES.FACT_BILLING_LEDGER, monthPartition, MODULE);
+      }
 
       // ── 6. Process each job ──────────────────────────────
       var processed  = 0;
       var skipped    = 0;
       var errors     = [];
-      var byCurrency = {};  // { 'CAD': 0.00, 'USD': 0.00 }
+      var byCurrency = {};
       var wasPartial = false;
 
-      for (var i = 0; i < billableJobs.length; i++) {
+      for (var i = 0; i < jobsToProcess.length; i++) {
 
         if (HealthMonitor.isApproachingLimit()) {
           HealthMonitor.checkLimits();
@@ -471,26 +631,41 @@ var BillingEngine = (function () {
             module:    MODULE,
             message:   'Billing run truncated by quota limit — re-run to process remaining jobs',
             processed: processed,
-            remaining: billableJobs.length - i,
-            period_id: periodId,
-            invoice_id: invoiceId
+            remaining: jobsToProcess.length - i,
+            period_id: periodId
           });
           break;
         }
 
-        var job            = billableJobs[i];
-        var jobNumber      = job.job_number;
+        var jobNumber = jobsToProcess[i];
+        var job       = jobLookup[jobNumber];
+
+        if (!job) {
+          Logger.warn('BILLING_JOB_NOT_IN_VW', {
+            module:     MODULE,
+            job_number: jobNumber,
+            period_id:  periodId,
+            message:    'Job has hours in FACT_WORK_LOGS but not found in VW_JOB_CURRENT_STATE — skipped'
+          });
+          errors.push(jobNumber + ': not found in VW_JOB_CURRENT_STATE');
+          skipped++;
+          continue;
+        }
+
+        // Never re-bill terminal INVOICED jobs
+        if (job.current_state === Config.STATES.INVOICED) {
+          skipped++;
+          continue;
+        }
+
         var idempotencyKey = buildIdempotencyKey_(jobNumber, periodId);
 
         try {
-          // Fast path: check without lock (optimisation — avoids lock overhead on re-runs).
-          // This is not the correctness gate; the re-check inside the lock is.
-          if (isBilled_(idempotencyKey, periodId)) {
+          if (!dryRun && isBilled_(idempotencyKey, monthPartition)) {
             skipped++;
             continue;
           }
 
-          // Resolve rate (client+product, then client flat)
           var clientCode  = String(job.client_code  || '').toUpperCase().trim();
           var productCode = String(job.product_code || '').toUpperCase().trim();
           var rateInfo    = resolveRate_(rateCache, clientCode, productCode);
@@ -498,7 +673,7 @@ var BillingEngine = (function () {
           if (!rateInfo) {
             Logger.warn('BILLING_NO_RATE', {
               module:       MODULE,
-              message:      'No active rate for client — job skipped. Add a row to DIM_CLIENT_RATES.',
+              message:      'No active rate for client — job skipped',
               job_number:   jobNumber,
               client_code:  clientCode,
               product_code: productCode
@@ -508,141 +683,106 @@ var BillingEngine = (function () {
             continue;
           }
 
-          // Get total hours for this job
-          var totalHours = hoursCache[jobNumber] || 0;
-          if (totalHours === 0) {
-            if (!options.allowZeroHours) {
-              // Block: do not write a $0 invoice row and do not transition to INVOICED.
-              // Job stays COMPLETED_BILLABLE so work logs can be added and billing re-run.
-              // Pass options.allowZeroHours = true to override for intentional $0 billing.
-              Logger.error('BILLING_ZERO_HOURS', {
-                module:      MODULE,
-                message:     'Job blocked — no work log hours found for period. Add work logs and re-run, or pass allowZeroHours:true to force.',
-                job_number:  jobNumber,
-                client_code: clientCode,
-                invoice_id:  invoiceId,
-                period_id:   periodId
-              });
-              errors.push(jobNumber + ': blocked — no hours logged for period ' + periodId);
-              skipped++;
-              continue;
-            }
-            // allowZeroHours override: proceed but still surface as an error.
-            Logger.error('BILLING_ZERO_HOURS_OVERRIDE', {
-              module:      MODULE,
-              message:     'Job billed at $0 — allowZeroHours override active. Do not send to client without review.',
-              job_number:  jobNumber,
-              client_code: clientCode,
-              invoice_id:  invoiceId,
-              period_id:   periodId
-            });
-          }
+          var totalHours  = hoursCache[jobNumber] || 0;
+          var isCompleted = job.current_state === Config.STATES.COMPLETED_BILLABLE;
+          var jobStatus   = isCompleted ? 'COMPLETED' : 'IN_PROGRESS';
+          var remarks     = isCompleted
+            ? 'Job complete — invoiced'
+            : 'Job in progress — partial billing ' + periodId;
 
-          // Build the billing row before acquiring the lock (no shared state involved).
           var billingRow = buildBillingRow_(
-            job, totalHours, rateInfo, actor, periodId, invoiceId, idempotencyKey
+            job, totalHours, rateInfo, actor, periodId, invoiceId,
+            idempotencyKey, jobStatus, remarks
           );
 
-          // Correctness gate: re-check inside a script lock so the isBilled_ read
-          // and the appendRow write are atomic. A concurrent run that passed the
-          // fast-path check above will block here; once it acquires the lock it will
-          // find isBilled_ = true and skip cleanly.
-          // waitLock(8000) throws LockTimeoutException if the lock is not free within
-          // 8 s — the outer catch handles this as BILLING_JOB_ERROR and the job
-          // remains COMPLETED_BILLABLE for the next run.
-          var lock     = LockService.getScriptLock();
-          var acquired = false;
-          try {
-            lock.waitLock(8000);
-            acquired = true;
+          if (!dryRun) {
+            // Lock: atomic idempotency re-check + write
+            var lock     = LockService.getScriptLock();
+            var acquired = false;
+            try {
+              lock.waitLock(8000);
+              acquired = true;
 
-            if (isBilled_(idempotencyKey, periodId)) {
-              skipped++;
-              continue; // finally releases the lock before the loop continues
+              if (isBilled_(idempotencyKey, monthPartition)) {
+                skipped++;
+                continue;
+              }
+
+              // Rule A4: validate before FACT write
+              ValidationEngine.validate(BILLING_LEDGER_SCHEMA, billingRow, { module: MODULE });
+
+              DAL.appendRow(
+                Config.TABLES.FACT_BILLING_LEDGER,
+                billingRow,
+                { callerModule: MODULE, periodId: monthPartition }
+              );
+            } finally {
+              if (acquired) lock.releaseLock();
             }
 
-            // Rule A4: validate before every FACT write.
-            // Throws ValidationError if any required field is absent or malformed —
-            // caught by the outer per-job catch, logged as BILLING_JOB_ERROR.
-            ValidationEngine.validate(BILLING_LEDGER_SCHEMA, billingRow, { module: MODULE });
+            // Transition COMPLETED_BILLABLE → INVOICED (only for completed jobs)
+            if (isCompleted) {
+              StateMachine.assertTransition(
+                Config.STATES.COMPLETED_BILLABLE,
+                Config.STATES.INVOICED,
+                { jobNumber: jobNumber }
+              );
 
-            DAL.appendRow(
-              Config.TABLES.FACT_BILLING_LEDGER,
-              billingRow,
-              { callerModule: MODULE, periodId: periodId }
-            );
-          } finally {
-            if (acquired) lock.releaseLock();
+              var invoicedEvent = {
+                event_id:     Identifiers.generateId(),
+                job_number:   jobNumber,
+                event_type:   Config.STATES.INVOICED,
+                from_state:   Config.STATES.COMPLETED_BILLABLE,
+                to_state:     Config.STATES.INVOICED,
+                timestamp:    billingRow.timestamp,
+                actor_code:   actor.personCode || '',
+                actor_role:   actor.role       || '',
+                period_id:    periodId,
+                invoice_id:   invoiceId,
+                payload_json: JSON.stringify({ billing_event_id: billingRow.event_id })
+              };
+
+              ValidationEngine.validate(INVOICED_EVENT_SCHEMA, invoicedEvent, { module: MODULE });
+
+              DAL.appendRow(
+                Config.TABLES.FACT_JOB_EVENTS,
+                invoicedEvent,
+                { callerModule: MODULE }
+              );
+
+              // Update VW projection (FACT_JOB_EVENTS is the source of truth;
+              // VW is a derived convenience — EventReplayEngine can rebuild if needed)
+              DAL.updateWhere(
+                Config.TABLES.VW_JOB_CURRENT_STATE,
+                { job_number: jobNumber },
+                {
+                  current_state: Config.STATES.INVOICED,
+                  prev_state:    Config.STATES.COMPLETED_BILLABLE,
+                  updated_at:    billingRow.timestamp
+                },
+                { callerModule: MODULE }
+              );
+            }
           }
 
-          // Guard: assert COMPLETED_BILLABLE → INVOICED is a valid transition
-          // before writing any FACT event. Throws INVALID_TRANSITION if not.
-          StateMachine.assertTransition(
-            Config.STATES.COMPLETED_BILLABLE,
-            Config.STATES.INVOICED,
-            { jobNumber: jobNumber }
-          );
-
-          // Write INVOICED transition to FACT_JOB_EVENTS — this is the
-          // source of truth. EventReplayEngine rebuilds VW from this row,
-          // not from the VW updateWhere below.
-          var invoicedEvent = {
-            event_id:     Identifiers.generateId(),
-            job_number:   jobNumber,
-            event_type:   Config.STATES.INVOICED,
-            from_state:   Config.STATES.COMPLETED_BILLABLE,
-            to_state:     Config.STATES.INVOICED,
-            timestamp:    billingRow.timestamp,
-            actor_code:   actor.personCode || '',
-            actor_role:   actor.role       || '',
-            period_id:    periodId,
-            invoice_id:   invoiceId,
-            payload_json: JSON.stringify({ billing_event_id: billingRow.event_id })
-          };
-
-          // Rule A4: validate before FACT_JOB_EVENTS write.
-          ValidationEngine.validate(INVOICED_EVENT_SCHEMA, invoicedEvent, { module: MODULE });
-
-          DAL.appendRow(
-            Config.TABLES.FACT_JOB_EVENTS,
-            invoicedEvent,
-            { callerModule: MODULE }
-          );
-
-          // Update the VW projection from the FACT event just written.
-          // If this fails, FACT_JOB_EVENTS already holds the transition —
-          // EventReplayEngine can reconstruct INVOICED on next VW rebuild.
-          DAL.updateWhere(
-            Config.TABLES.VW_JOB_CURRENT_STATE,
-            { job_number: jobNumber },
-            {
-              current_state: Config.STATES.INVOICED,
-              prev_state:    Config.STATES.COMPLETED_BILLABLE,
-              updated_at:    billingRow.timestamp
-            },
-            { callerModule: MODULE }
-          );
-
-          // Accumulate by currency
           var cur = rateInfo.currency;
           byCurrency[cur] = Math.round(((byCurrency[cur] || 0) + billingRow.amount) * 100) / 100;
           processed++;
 
           Logger.info('BILLING_JOB_BILLED', {
             module:      MODULE,
-            message:     'Job billed',
             job_number:  jobNumber,
             hours:       totalHours,
             rate:        rateInfo.hourly_rate,
             amount:      billingRow.amount,
             currency:    cur,
-            invoice_id:  invoiceId
+            job_status:  jobStatus,
+            dry_run:     dryRun
           });
 
         } catch (jobErr) {
           Logger.error('BILLING_JOB_ERROR', {
             module:     MODULE,
-            message:    'Error billing job — skipping',
             job_number: jobNumber,
             error:      jobErr.message
           });
@@ -652,10 +792,9 @@ var BillingEngine = (function () {
 
       } // end for
 
-      // ── 7. Refresh MART ──────────────────────────────────
-      // Refresh even on re-runs (skipped > 0) in case ledger rows were corrected manually.
-      if (processed > 0 || skipped > 0) {
-        refreshMartBillingSummary_(periodId);
+      // ── 7. Refresh MART (reads full month partition — covers both A and B) ──
+      if (!dryRun && (processed > 0 || skipped > 0)) {
+        refreshMartBillingSummary_(monthPartition);
       }
 
       var result = {
@@ -665,20 +804,23 @@ var BillingEngine = (function () {
         by_currency: byCurrency,
         invoice_id:  invoiceId,
         period_id:   periodId,
+        dryRun:      dryRun,
         partial:     wasPartial
       };
 
       Logger.info('BILLING_RUN_COMPLETE', {
         module:       MODULE,
-        message:      wasPartial ? 'Billing run complete (partial — re-run required)' : 'Billing run complete',
+        message:      dryRun ? 'Billing dry run complete (no writes)' :
+                      wasPartial ? 'Billing run complete (partial — re-run required)' :
+                      'Billing run complete',
         processed:    processed,
         skipped:      skipped,
         error_count:  errors.length,
         by_currency:  JSON.stringify(byCurrency),
         invoice_id:   invoiceId,
         period_id:    periodId,
-        partial:      wasPartial,
-        elapsed_ms:   (HealthMonitor.getStatus() || {}).elapsedMs || 0
+        dry_run:      dryRun,
+        partial:      wasPartial
       });
 
       return result;
@@ -696,3 +838,102 @@ var BillingEngine = (function () {
   };
 
 }());
+
+// ============================================================
+// RUNNER FUNCTIONS — call from Apps Script editor
+// ============================================================
+
+/**
+ * Dry run: computes billing for the current semi-monthly period,
+ * logs all amounts, but writes nothing.
+ * Run this first to verify before the live run.
+ */
+function runBillingRunDryRun() {
+  var actorEmail = 'raj.nair@bluelotuscanada.ca';
+  var periodId   = '';   // blank = current semi-monthly period
+  Logger.info('BILLING_DRY_RUN_MANUAL', { actor: actorEmail, period: periodId || '(current)' });
+  var result = BillingEngine.runBillingRun(actorEmail, { periodId: periodId, dryRun: true });
+  Logger.info('BILLING_DRY_RUN_RESULT', { result: JSON.stringify(result) });
+  console.log('DRY RUN RESULT: ' + JSON.stringify(result, null, 2));
+}
+
+/**
+ * Live billing run for the current semi-monthly period.
+ * Run runBillingRunDryRun() first to verify.
+ *
+ * To run a specific period: set periodId e.g. '2026-06A'
+ */
+function runBillingRunManual() {
+  var actorEmail = 'raj.nair@bluelotuscanada.ca';
+  var periodId   = '';   // blank = current semi-monthly period
+  var result = BillingEngine.runBillingRun(actorEmail, { periodId: periodId });
+  Logger.info('BILLING_MANUAL_RESULT', { result: JSON.stringify(result) });
+  console.log('BILLING RESULT: ' + JSON.stringify(result, null, 2));
+}
+
+/**
+ * ONE-TIME: Patches FACT_BILLING_LEDGER|* header rows to add
+ * 'job_status' and 'remarks' columns after 'invoice_id'.
+ *
+ * Run this ONCE from the Apps Script editor before the first billing run.
+ * Safe to re-run — skips tabs that already have both columns.
+ */
+function runPatchBillingLedgerSchema() {
+  var ss      = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets  = ss.getSheets();
+  var PREFIX  = 'FACT_BILLING_LEDGER|';
+  var patched = 0;
+
+  for (var i = 0; i < sheets.length; i++) {
+    var name = sheets[i].getName();
+    if (name.indexOf(PREFIX) !== 0) continue;
+
+    var sheet   = sheets[i];
+    var lastCol = sheet.getLastColumn();
+    if (lastCol === 0) {
+      // Empty sheet — set full header from SetupScript definition
+      var newHeader = [
+        'event_id', 'job_number', 'period_id', 'event_type',
+        'timestamp', 'actor_code', 'actor_role',
+        'client_code', 'amount', 'currency', 'invoice_id',
+        'job_status', 'remarks', 'notes',
+        'idempotency_key', 'payload_json'
+      ];
+      sheet.getRange(1, 1, 1, newHeader.length).setValues([newHeader]);
+      console.log('SET header on empty sheet: ' + name);
+      patched++;
+      continue;
+    }
+
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var hasJobStatus = headers.indexOf('job_status') >= 0;
+    var hasRemarks   = headers.indexOf('remarks')    >= 0;
+    if (hasJobStatus && hasRemarks) {
+      console.log('SKIP ' + name + ' — already has job_status and remarks');
+      continue;
+    }
+
+    // Insert after 'invoice_id' (or append if not found)
+    var invoiceIdx = headers.indexOf('invoice_id');
+    if (invoiceIdx < 0) {
+      console.log('WARN ' + name + ' — no invoice_id column found; skipping');
+      continue;
+    }
+
+    // Insert two new columns after invoice_id (1-based index)
+    var insertAfter = invoiceIdx + 2;  // +2 because insertColumnAfter is 1-based
+    if (!hasJobStatus) {
+      sheet.insertColumnAfter(insertAfter);
+      sheet.getRange(1, insertAfter + 1).setValue('job_status');
+      insertAfter++;
+    }
+    if (!hasRemarks) {
+      sheet.insertColumnAfter(insertAfter);
+      sheet.getRange(1, insertAfter + 1).setValue('remarks');
+    }
+    console.log('PATCHED ' + name + ' — added job_status + remarks');
+    patched++;
+  }
+
+  console.log('runPatchBillingLedgerSchema complete. Patched: ' + patched);
+}
