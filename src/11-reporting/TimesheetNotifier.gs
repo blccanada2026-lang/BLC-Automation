@@ -611,8 +611,7 @@ var TimesheetNotifier = (function () {
               '&gridlines=false' +
               '&printtitle=false' +
               '&sheetnames=false' +
-              '&pagenumbers=false' +
-              '&attachment=true';
+              '&pagenumbers=false';
 
     var response = UrlFetchApp.fetch(url, {
       headers:            { 'Authorization': 'Bearer ' + ScriptApp.getOAuthToken() },
@@ -640,12 +639,13 @@ var TimesheetNotifier = (function () {
     var sheet = ss.getSheetByName(PDF_STAGING_TAB);
     if (!sheet) {
       sheet = ss.insertSheet(PDF_STAGING_TAB);
-      try { sheet.hideSheet(); } catch (e) { /* already only sheet — harmless */ }
+      // Do not hide — Drive PDF export returns 500 on hidden sheets
     }
 
     try {
       writePdfStagingSheet_(sheet, clientCode, clientData, periodLabel);
-      SpreadsheetApp.flush(); // commit writes before Drive export fetch
+      SpreadsheetApp.flush();    // commit writes
+      Utilities.sleep(2000);     // give Sheets time to commit before Drive export fetch
       return exportStagingAsPdf_(ss, sheet, clientCode + '_Timesheet_' + periodId + '.pdf');
     } finally {
       // Always clear staging, even on error, so no stale data remains
