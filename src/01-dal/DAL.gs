@@ -101,7 +101,7 @@ var DAL = (function () {
     'FACT_JOB_EVENTS':       ['JobCreateHandler', 'JobAssignHandler', 'JobStartHandler', 'JobHoldHandler',
                               'JobResumeHandler', 'ClientReturnHandler',
                               'EventReplayEngine', 'MigrationEngine', 'MigrationReplayEngine',
-                              'JobUpdateHandler', 'StaceyJobImporter'],
+                              'JobUpdateHandler', 'StaceyJobImporter', 'BillingEngine'],
     'FACT_WORK_LOGS':        ['WorkLogHandler', 'MigrationEngine', 'MigrationReplayEngine', 'MigrationReconFiller',
                               'SbsReconFiller_Jan2026', 'SbsReconFiller_Feb2026', 'SbsReconFiller_Mar2026',
                               'SbsReconFiller_Apr2026', 'NorspanReconFiller', 'MatixReconFiller',

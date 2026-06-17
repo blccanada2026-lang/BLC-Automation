@@ -744,10 +744,12 @@ var BillingEngine = (function () {
 
               ValidationEngine.validate(INVOICED_EVENT_SCHEMA, invoicedEvent, { module: MODULE });
 
+              // FACT_JOB_EVENTS is partitioned monthly — pass monthPartition explicitly
+              // to prevent DAL from using data.period_id ('2026-06B') as the partition key.
               DAL.appendRow(
                 Config.TABLES.FACT_JOB_EVENTS,
                 invoicedEvent,
-                { callerModule: MODULE }
+                { callerModule: MODULE, periodId: monthPartition }
               );
 
               // Update VW projection (FACT_JOB_EVENTS is the source of truth;
@@ -834,7 +836,9 @@ var BillingEngine = (function () {
   // PUBLIC API
   // ============================================================
   return {
-    runBillingRun: runBillingRun
+    runBillingRun:                  runBillingRun,
+    generateCurrentBillingPeriodId_: generateCurrentBillingPeriodId,
+    parseSemiMonthlyPeriod_:         parseSemiMonthlyPeriod_
   };
 
 }());
@@ -869,6 +873,98 @@ function runBillingRunManual() {
   var result = BillingEngine.runBillingRun(actorEmail, { periodId: periodId });
   Logger.info('BILLING_MANUAL_RESULT', { result: JSON.stringify(result) });
   console.log('BILLING RESULT: ' + JSON.stringify(result, null, 2));
+}
+
+/**
+ * ONE-TIME REPAIR: Write INVOICED events for jobs that were billed in
+ * FACT_BILLING_LEDGER but whose INVOICED state transition was not written
+ * to FACT_JOB_EVENTS (due to the WRITE_GUARD_DENIED bug in the first run).
+ *
+ * Safe to re-run — skips jobs already in INVOICED state in VW.
+ * Run AFTER adding BillingEngine to FACT_JOB_EVENTS WRITE_PERMISSIONS.
+ */
+function runRepairInvoicedTransitions() {
+  var MODULE         = 'BillingEngine';
+  var periodId       = '2026-06B';
+  var monthPartition = '2026-06';   // FACT_JOB_EVENTS partition is monthly — must pass explicitly
+  var actorEmail     = 'raj.nair@bluelotuscanada.ca';
+  var actor      = RBAC.resolveActor(actorEmail);
+
+  // Jobs billed this period that are still COMPLETED_BILLABLE (transition not written)
+  var stuckJobs = ['BLC-00184', 'BLC-00171', 'BLC-00186'];
+  var repaired  = 0;
+
+  for (var i = 0; i < stuckJobs.length; i++) {
+    var jobNumber = stuckJobs[i];
+
+    // Look up the billing row we already wrote to get the invoice_id
+    var billingRows = [];
+    try {
+      billingRows = DAL.readWhere(
+        Config.TABLES.FACT_BILLING_LEDGER,
+        { job_number: jobNumber },
+        { periodId: '2026-06' }
+      );
+    } catch (e) {
+      console.log('ERROR reading billing row for ' + jobNumber + ': ' + e.message);
+      continue;
+    }
+
+    // Filter to this semi-monthly period
+    var billingRow = null;
+    for (var b = 0; b < billingRows.length; b++) {
+      if (String(billingRows[b].period_id || '') === periodId) {
+        billingRow = billingRows[b];
+        break;
+      }
+    }
+    if (!billingRow) {
+      console.log('SKIP ' + jobNumber + ' — no billing row found for ' + periodId);
+      continue;
+    }
+
+    // Check VW — skip if already INVOICED
+    var vwRows = [];
+    try {
+      vwRows = DAL.readWhere(Config.TABLES.VW_JOB_CURRENT_STATE, { job_number: jobNumber }, {});
+    } catch (e) { /* ignore */ }
+    var vwJob = vwRows[0] || null;
+    if (vwJob && vwJob.current_state === Config.STATES.INVOICED) {
+      console.log('SKIP ' + jobNumber + ' — already INVOICED in VW');
+      continue;
+    }
+
+    var now = new Date().toISOString();
+    var invoicedEvent = {
+      event_id:     Identifiers.generateId(),
+      job_number:   jobNumber,
+      event_type:   Config.STATES.INVOICED,
+      from_state:   Config.STATES.COMPLETED_BILLABLE,
+      to_state:     Config.STATES.INVOICED,
+      timestamp:    now,
+      actor_code:   actor.personCode || '',
+      actor_role:   actor.role       || '',
+      period_id:    periodId,
+      invoice_id:   billingRow.invoice_id,
+      payload_json: JSON.stringify({ billing_event_id: billingRow.event_id, repair: true })
+    };
+
+    try {
+      DAL.appendRow(Config.TABLES.FACT_JOB_EVENTS, invoicedEvent, { callerModule: MODULE, periodId: monthPartition });
+      DAL.updateWhere(
+        Config.TABLES.VW_JOB_CURRENT_STATE,
+        { job_number: jobNumber },
+        { current_state: Config.STATES.INVOICED, prev_state: Config.STATES.COMPLETED_BILLABLE, updated_at: now },
+        { callerModule: MODULE }
+      );
+      console.log('REPAIRED ' + jobNumber + ' → INVOICED (invoice_id=' + billingRow.invoice_id + ')');
+      repaired++;
+    } catch (e) {
+      console.log('ERROR repairing ' + jobNumber + ': ' + e.message);
+    }
+  }
+
+  console.log('runRepairInvoicedTransitions complete. Repaired: ' + repaired + '/' + stuckJobs.length);
 }
 
 /**
@@ -936,4 +1032,125 @@ function runPatchBillingLedgerSchema() {
   }
 
   console.log('runPatchBillingLedgerSchema complete. Patched: ' + patched);
+}
+
+/**
+ * Diagnostic: dumps DIM_CLIENT_RATES and per-job billing preview for the current period.
+ * Run from Apps Script editor to verify rates before going live.
+ */
+function runBillingRateCheck() {
+  var MODULE = 'BillingEngine';
+
+  // 1. Dump all active rates
+  var rateRows = DAL.readAll(Config.TABLES.DIM_CLIENT_RATES, { callerModule: MODULE });
+  console.log('=== DIM_CLIENT_RATES (active rows) ===');
+  var activeRates = [];
+  for (var i = 0; i < rateRows.length; i++) {
+    var r = rateRows[i];
+    var active = String(r.active || '').toUpperCase();
+    if (active !== 'TRUE' && active !== 'YES' && active !== '1') continue;
+    activeRates.push(r);
+    console.log(
+      '  client=' + r.client_code +
+      ' product=' + (r.product_code || '(flat)') +
+      ' rate=' + r.hourly_rate + ' ' + r.currency
+    );
+  }
+  if (activeRates.length === 0) console.log('  (no active rates found)');
+
+  // 2. Show per-job preview for current billing period
+  var periodId  = BillingEngine.generateCurrentBillingPeriodId_();
+  var period    = BillingEngine.parseSemiMonthlyPeriod_(periodId);
+  console.log('\n=== Billing preview: ' + periodId +
+              ' (' + period.fromDate.toDateString() + ' – ' + period.toDate.toDateString() + ') ===');
+
+  // Read work logs for the month
+  var wlRows = [];
+  try {
+    wlRows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+      callerModule: MODULE,
+      periodId: period.monthPartition
+    });
+  } catch (e) {
+    console.log('  No FACT_WORK_LOGS partition for ' + period.monthPartition);
+  }
+
+  var MONTH_MAP = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5,
+                    jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
+  function parseDate_(raw, yr) {
+    if (!raw) return null;
+    if (raw instanceof Date) return isNaN(raw.getTime()) ? null : raw;
+    var s = String(raw).trim();
+    var iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return new Date(parseInt(iso[1],10), parseInt(iso[2],10)-1, parseInt(iso[3],10));
+    var mg = s.match(/[A-Za-z]{3}\s+([A-Za-z]{3})\s+(\d{1,2})/);
+    if (mg) { var mi = MONTH_MAP[mg[1].toLowerCase()]; if (mi !== undefined) return new Date(yr, mi, parseInt(mg[2],10)); }
+    var d = new Date(s); return isNaN(d.getTime()) ? null : d;
+  }
+  function ymd_(d) { return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); }
+
+  var fromYMD = ymd_(period.fromDate), toYMD = ymd_(period.toDate);
+
+  // Sum hours per job (exclude migration_batch rows)
+  var hoursMap = {}, jobClients = {};
+  var allVw = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+  for (var j = 0; j < allVw.length; j++) jobClients[allVw[j].job_number] = allVw[j];
+
+  for (var w = 0; w < wlRows.length; w++) {
+    var row = wlRows[w];
+    if (row.migration_batch) continue;
+    var d = parseDate_(row.work_date, period.year);
+    if (!d) continue;
+    var wy = ymd_(d);
+    if (wy < fromYMD || wy > toYMD) continue;
+    var jn = String(row.job_number || '');
+    if (!jn) continue;
+    hoursMap[jn] = (hoursMap[jn] || 0) + (parseFloat(row.hours) || 0);
+  }
+
+  // Build rate cache
+  var rateCache = {};
+  for (var a = 0; a < activeRates.length; a++) {
+    var ar  = activeRates[a];
+    var cc  = String(ar.client_code  || '').toUpperCase().trim();
+    var pc  = String(ar.product_code || '').toUpperCase().trim();
+    var key = cc + ':' + pc;
+    rateCache[key] = { hourly_rate: parseFloat(ar.hourly_rate)||0, currency: String(ar.currency||'CAD').toUpperCase() };
+  }
+  function resolveRate_(cc, pc) {
+    var c = (cc||'').toUpperCase().trim(), p = (pc||'').toUpperCase().trim();
+    return rateCache[c+':'+p] || rateCache[c+':'] || null;
+  }
+
+  var jobs = Object.keys(hoursMap).sort();
+  var totals = {};
+  for (var k = 0; k < jobs.length; k++) {
+    var jnum  = jobs[k];
+    var hrs   = hoursMap[jnum];
+    var vwJob = jobClients[jnum];
+    var cli   = vwJob ? String(vwJob.client_code||'').toUpperCase().trim() : '?';
+    var prd   = vwJob ? String(vwJob.product_code||'').toUpperCase().trim() : '';
+    var rate  = resolveRate_(cli, prd);
+    var amt   = rate ? Math.round(hrs * rate.hourly_rate * 100) / 100 : null;
+    var cur   = rate ? rate.currency : '?';
+    var state = vwJob ? vwJob.current_state : '?';
+    console.log(
+      '  ' + jnum +
+      ' | client=' + cli +
+      ' | hrs=' + hrs +
+      ' | rate=' + (rate ? rate.hourly_rate + ' ' + cur : 'NO RATE') +
+      ' | amount=' + (amt !== null ? amt + ' ' + cur : 'SKIP') +
+      ' | state=' + state
+    );
+    if (amt !== null) {
+      totals[cur] = Math.round(((totals[cur]||0) + amt) * 100) / 100;
+    }
+  }
+
+  console.log('\n=== Totals ===');
+  var curs = Object.keys(totals);
+  for (var t = 0; t < curs.length; t++) {
+    console.log('  ' + curs[t] + ': ' + totals[curs[t]]);
+  }
+  console.log('  Jobs: ' + jobs.length + '  (no-rate skips: ' + (jobs.length - curs.reduce(function(s,c){ return s; }, 0)) + ')');
 }
