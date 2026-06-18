@@ -40,9 +40,9 @@
 - `getCEODashboard`: same `CEO_EXCLUDED_CODES` guard added to both activeJobsMap and hoursMap loops.
 - BTD/SNA: user manually reassigned VW jobs to correct V3 codes and deactivated in DIM_STAFF_ROSTER. Double-count eliminated.
 
-### Remaining User Actions (spreadsheet)
-- `DIM_STAFF_ROSTER`: change DBS (Deb Sen) role `DESIGNER → QC` for REVIEW button access.
-- `REF_ACCOUNT_DESIGNER_MAP`: add RKU rows for his client accounts (fixes assign dropdown).
+### User Data Fixes (spreadsheet — completed)
+- `DIM_STAFF_ROSTER`: DBS (Deb Sen) role changed `DESIGNER → QC` ✓
+- `REF_ACCOUNT_DESIGNER_MAP`: RKU rows added for his client accounts ✓
 
 ### Key Commits
 - `fa32ecb` fix(rbac,handlers,portal): QC permissions, job_number validation, team visibility
@@ -50,10 +50,14 @@
 - `3c684c0` fix(migration): add runMigratedQCApprovalFixerLIVE wrapper
 - `b099c9b` fix(portal): filter DS1/UNKNOWN from workload panel and nameMap
 - `3bf36fd` fix(portal): unconditionally exclude DS1/UNKNOWN from all dashboard panels
+- `d18604e` fix(portal): absolute final-stage exclusion of retired V2 codes
 
 ### Open Items
 1. Duplicate job_number `260337` in VW_JOB_CURRENT_STATE — needs data cleanup
 2. Q1 bonus letters — still in CEO inbox (blccanada2026@gmail.com), review and forward
+
+### Note on Deployment
+Apps Script `/exec` URL serves versioned snapshots — every `clasp push` must be followed by a "New version" redeploy in the Apps Script editor for changes to take effect at the production URL.
 
 ---
 
