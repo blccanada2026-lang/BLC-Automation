@@ -73,7 +73,7 @@ var TimesheetNotifier = (function () {
   /** CEO email — Script Property overrides hardcoded fallback. */
   function getCeoEmail_() {
     return PropertiesService.getScriptProperties()
-             .getProperty('CEO_BRIEFING_RECIPIENT') || 'raj@bluelotuscanada.ca';
+             .getProperty('CEO_BRIEFING_RECIPIENT') || 'raj.nair@bluelotuscanada.ca';
   }
 
   // ── Timezone guard ───────────────────────────────────────

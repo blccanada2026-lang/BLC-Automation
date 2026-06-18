@@ -358,7 +358,7 @@ function seedTestStaff() {
     }
   ];
 
-  var SEED_CEO_EMAIL = 'raj@bluelotuscanada.ca'; // privileged CEO — ADMIN_CONFIG required
+  var SEED_CEO_EMAIL = 'raj.nair@bluelotuscanada.ca'; // privileged CEO — ADMIN_CONFIG required
   for (var i = 0; i < testStaff.length; i++) {
     var pc = testStaff[i].person_code;
     try {

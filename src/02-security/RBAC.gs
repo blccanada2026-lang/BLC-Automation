@@ -451,7 +451,6 @@ var RBAC = (function () {
   var PRIVILEGED_ACTORS = {
     'system@blclotus.com':         { personCode: 'SYS', role: ROLES.SYSTEM, displayName: 'System Automation' },
     'raj.nair@bluelotuscanada.ca': { personCode: 'RAJ', role: ROLES.CEO,    displayName: 'Raj Nair' },
-    'raj@bluelotuscanada.ca':      { personCode: 'RAJ', role: ROLES.CEO,    displayName: 'Raj Nair' },
     'blccanada2026@gmail.com':     { personCode: 'RAJ', role: ROLES.CEO,    displayName: 'Raj Nair' }
   };
 
