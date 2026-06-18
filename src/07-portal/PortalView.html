@@ -318,7 +318,7 @@
   <div class="stats-bar" id="stats-bar"></div>
 
   <div class="toolbar">
-    <h2>Jobs</h2>
+    <h2>Active Jobs</h2>
     <div class="toolbar-actions">
       <button class="btn-muted btn-sm" id="btn-process-queue" style="display:none">⚙ Process Queue</button>
       <button class="btn-muted btn-sm" id="btn-clients" style="display:none">👥 Clients</button>
@@ -342,6 +342,12 @@
       <tbody id="jobs-tbody"></tbody>
     </table>
   </div>
+
+  <!-- ══ TIER 2: READY TO INVOICE (all roles, collapsed) ═════ -->
+  <div id="tier2-wrap"></div>
+
+  <!-- ══ TIER 3: INVOICED (CEO only, collapsed) ══════════════ -->
+  <div id="tier3-wrap"></div>
 
   <!-- ══ STAFF MANAGEMENT PANEL ══════════════════════════════ -->
   <div id="staff-panel">
@@ -1657,33 +1663,100 @@ function renderStats(stats) {
 
 // ── Jobs Table Rendering ───────────────────────────────────────
 function renderJobs(jobs, actor, perms) {
+  var TIER1 = {
+    INTAKE_RECEIVED: true, ALLOCATED: true, IN_PROGRESS: true,
+    QC_REVIEW: true, MINOR_FIX: true, ON_HOLD: true, CLIENT_RETURN: true
+  };
+  var activeJobs   = (jobs || []).filter(function(j) { return  TIER1[j.current_state]; });
+  var billableJobs = (jobs || []).filter(function(j) { return j.current_state === 'COMPLETED_BILLABLE'; });
+  var invoicedJobs = (jobs || []).filter(function(j) { return j.current_state === 'INVOICED'; });
+
+  // ── Tier 1: Active jobs ────────────────────────────────────
   var tbody = document.getElementById('jobs-tbody');
   while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
-
-  if (!jobs || jobs.length === 0) {
+  if (activeJobs.length === 0) {
     var row = document.createElement('tr');
     var td  = document.createElement('td');
-    td.colSpan = 9;
-    td.className = 'empty-cell';
-    var icon = document.createElement('span');
-    icon.className   = 'icon';
-    icon.textContent = '📋';
-    var msg = document.createElement('span');
-    msg.textContent = 'No jobs found.';
-    td.appendChild(icon);
-    td.appendChild(msg);
-    row.appendChild(td);
-    tbody.appendChild(row);
-    return;
+    td.colSpan = 9; td.className = 'empty-cell';
+    var icon = document.createElement('span'); icon.className = 'icon'; icon.textContent = '📋';
+    var msg  = document.createElement('span'); msg.textContent = 'No active jobs.';
+    td.appendChild(icon); td.appendChild(msg); row.appendChild(td); tbody.appendChild(row);
+  } else if (perms.canViewAll) {
+    renderJobsGrouped_(activeJobs, actor, perms, tbody);
+  } else {
+    activeJobs.forEach(function(job) { tbody.appendChild(buildJobRow(job, actor, perms)); });
   }
 
+  // ── Tier 2: Ready to Invoice (all roles, collapsed) ────────
+  renderTierPanel_('tier2-wrap', billableJobs, actor, perms, '✓  Ready to Invoice', '#166534');
+
+  // ── Tier 3: Invoiced — CEO only ────────────────────────────
+  var t3 = document.getElementById('tier3-wrap');
+  if (t3) { while (t3.firstChild) t3.removeChild(t3.firstChild); t3.style.display = 'none'; }
+  if (perms.canRunPayroll) {
+    renderTierPanel_('tier3-wrap', invoicedJobs, actor, perms, '⬜  Invoiced', '#1e40af');
+  }
+}
+
+function renderTierPanel_(wrapperId, jobs, actor, perms, label, color) {
+  var wrap = document.getElementById(wrapperId);
+  if (!wrap) return;
+  while (wrap.firstChild) wrap.removeChild(wrap.firstChild);
+  if (!jobs || jobs.length === 0) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+
+  // Collapsible header strip
+  var strip = document.createElement('div');
+  strip.style.cssText = 'cursor:pointer;margin-top:16px;padding:10px 14px;' +
+    'background:' + color + '0f;border:1px solid ' + color + '40;border-radius:6px;' +
+    'display:flex;align-items:center;gap:10px;user-select:none;';
+
+  var arrow = document.createElement('span');
+  arrow.textContent = '▶';
+  arrow.style.cssText = 'font-size:10px;color:' + color + ';transition:transform .15s;flex-shrink:0;';
+
+  var titleEl = document.createElement('span');
+  titleEl.style.cssText = 'font-weight:600;font-size:13px;color:' + color + ';';
+  titleEl.textContent = label;
+
+  var badge = document.createElement('span');
+  badge.style.cssText = 'background:' + color + '20;color:' + color + ';' +
+    'border-radius:10px;padding:1px 8px;font-size:11px;font-weight:500;';
+  badge.textContent = jobs.length + (jobs.length === 1 ? ' job' : ' jobs');
+
+  strip.appendChild(arrow); strip.appendChild(titleEl); strip.appendChild(badge);
+
+  // Content panel (hidden by default)
+  var content = document.createElement('div');
+  content.style.display = 'none';
+
+  var tWrap = document.createElement('div');
+  tWrap.className = 'table-wrap';
+  tWrap.style.marginTop = '4px';
+
+  var tbl = document.createElement('table');
+  var thead = document.createElement('thead');
+  var hrow  = document.createElement('tr');
+  ['Job #','Client','Product','Qty','Client Ref','Due Date','State','Assigned',''].forEach(function(h) {
+    var th = document.createElement('th'); th.textContent = h; hrow.appendChild(th);
+  });
+  thead.appendChild(hrow); tbl.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
   if (perms.canViewAll) {
     renderJobsGrouped_(jobs, actor, perms, tbody);
   } else {
-    jobs.forEach(function(job) {
-      tbody.appendChild(buildJobRow(job, actor, perms));
-    });
+    jobs.forEach(function(j) { tbody.appendChild(buildJobRow(j, actor, perms)); });
   }
+  tbl.appendChild(tbody); tWrap.appendChild(tbl); content.appendChild(tWrap);
+
+  strip.addEventListener('click', function() {
+    var open = content.style.display !== 'none';
+    content.style.display = open ? 'none' : 'block';
+    arrow.style.transform  = open ? '' : 'rotate(90deg)';
+  });
+
+  wrap.appendChild(strip); wrap.appendChild(content);
 }
 
 function renderJobsGrouped_(jobs, actor, perms, tbody) {
