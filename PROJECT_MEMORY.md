@@ -9,10 +9,10 @@
 
 | Deadline | Action | Risk if missed |
 |---|---|---|
-| **2026-06-16 (Monday) — BEFORE designer cutover** | Run `runRemoveStaceySyncTrigger()` in Apps Script editor | Sync job fires every 30 min; if not removed it will overwrite post-cutover FACT events |
-| **2026-06-16** | Send cutover email to all staff (portal URL) | Designers log hours in Stacey instead of portal |
-| **2026-Q2 (deadline end of June)** | Send Q2 rating requests via portal (Send Rating Requests → `2026-Q2`) | Q2 quarterly bonus engine lacks input data |
-| **2026-Q2** | Send Q2 feedback requests to clients (Send Feedback Requests → `2026-Q2`) | Q2 quarterly bonus lacks client feedback input |
+| **ASAP** | Confirm with Sarty: job `260337` — same job entered twice, or two separate jobs? | Billing engine may invoice it twice (two COMPLETED_BILLABLE VW rows) |
+| **2026-Q2 (end of June)** | Send Q2 rating requests via portal (Send Rating Requests → `2026-Q2`) | Q2 quarterly bonus lacks rating input |
+| **2026-Q2** | Send Q2 feedback requests to clients | Q2 quarterly bonus lacks client feedback |
+| **End of June** | Forward Q1 bonus letters — 16 in CEO inbox (blccanada2026@gmail.com) | Designers haven't received their Q1 bonus details |
 
 ---
 
@@ -82,16 +82,24 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
 - V2→V3 migration: Jan–May 2026 work logs (2000+ rows), active jobs (168), Stacey auto-sync
 - CEO daily briefing email (8 AM CST Mon–Sat via `runCEODailyBriefing`)
 - CEO portal: client-grouped collapsible jobs view + grouped QC backlog panel
+- **2026-06-16**: PROD cutover complete — Stacey sync removed, staff on V3 portal
+- **2026-06-18**: Post-cutover bug fix batch (Sarty's team feedback):
+  - RBAC: TEAM_LEAD `QC_APPROVE/REJECT: true`; QC role `JOB_START: true`
+  - Handler `job_number maxLength: 30 → 200` — cleared 27 VALIDATION_FAILED + 36 dead-letter items
+  - `buildTeamCodes_()` supervisor_code path — TLs now see direct reports
+  - BillingEngine added to FACT_JOB_EVENTS WRITE_PERMISSIONS
+  - `MigratedQCApprovalFixer` — 121 migrated QC_REVIEW jobs → COMPLETED_BILLABLE
+  - Dashboard: DS1/UNKNOWN/BTD/SNA retired codes excluded from all panels
+  - DBS role → QC; RKU added to REF_ACCOUNT_DESIGNER_MAP (data fixes by user)
 
 ---
 
 ## 6. Current Active Work
 
-- **PROD portal live** ✅ — 17 staff active. June 16: 6 production bugs fixed and deployed (see SESSION_LOG 2026-06-16).
+- **PROD portal live** ✅ — ~17 staff active, post-cutover bugs resolved as of 2026-06-18.
 - **BATCH-004 migration complete** ✅ — June 1–15 timesheets fully reconciled: 1278.25h, all 16 actors balanced.
-- **Q1 bonus corrections** — ✅ COMPLETE (2026-06-16). 16 letters sent to CEO inbox (₹72,231.13 total). Review and forward to designers.
-- **Stacey auto-sync** — `runRemoveStaceySyncTrigger()` must be run today (June 16) before cutover.
-- **System testing** — CTO-level testing plan built: `.claude/context/test-plan.md`. Execute with real jobs across all accounts.
+- **Q1 bonus corrections** — ✅ COMPLETE (2026-06-16). 16 letters in CEO inbox (₹72,231.13 total). Not yet forwarded to designers.
+- **Stacey auto-sync** — ✅ Removed (2026-06-16 cutover).
 - **Client timesheet generator** — NOT YET BUILT. Data exists (FACT_WORK_LOGS + FACT_BILLING_LEDGER + VW_JOB_CURRENT_STATE). See §7.
 
 ---
@@ -99,13 +107,12 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
 ## 7. Pending Work / Next Steps
 
 Priority order:
-1. **June 16 FIRST THING**: `runRemoveStaceySyncTrigger()` in Apps Script editor → send cutover email to all designers
-2. **Execute test plan** — `.claude/context/test-plan.md` — systematic real-job testing across all 6 accounts by all 5 roles
-3. **Forward Q1 bonus letters** — 16 letters in CEO inbox, review and forward to each designer
-4. **Build client timesheet generator** — `generateClientTimesheet(clientCode, periodId)` in a new `src/11-reporting/ClientTimesheetEngine.gs`; joins FACT_WORK_LOGS + VW_JOB_CURRENT_STATE + DIM_STAFF_ROSTER + FACT_BILLING_LEDGER
-5. Send Q2 rating requests + Q2 feedback requests to clients (via portal)
-6. First June payroll run from V3 (after Phase 3 cutover verified — not before)
-7. Stale QC_REVIEW migrated jobs — bulk state update script for jobs Sarty reviewed offline
+1. **Resolve job 260337 duplicate** — confirm with Sarty (same job or two separate), then void/renumber
+2. **Forward Q1 bonus letters** — 16 in CEO inbox (blccanada2026@gmail.com), review and forward to designers
+3. **Send Q2 rating requests + Q2 feedback requests** — via portal before end of June
+4. **Build client timesheet generator** — `generateClientTimesheet(clientCode, periodId)` in new `src/11-reporting/ClientTimesheetEngine.gs`
+5. **First June payroll run from V3** — after all active jobs are in correct state
+6. **Raw Q1 FACT_WORK_LOGS dedup** — 1,694 duplicate rows not yet cleaned (bonus already corrected via amendment)
 
 → Full backlog: `.claude/context/backlog.md`
 → Cutover sequence: `.claude/context/cutover-plan.md`
@@ -116,17 +123,13 @@ Priority order:
 
 | Risk | Severity | Status |
 |---|---|---|
-| Stacey sync not removed before June 16 cutover | **CRITICAL** | Run `runRemoveStaceySyncTrigger()` TODAY before cutover email |
-| Q1 bonus letters | Low | ✅ Sent 2026-06-16. 16 letters in CEO inbox — review and forward to designers. |
-| Dead-lettered queue items (overnight) | **HIGH** | Staff must resubmit submissions that errored while minLength bug was active |
+| Job `260337` duplicate in VW_JOB_CURRENT_STATE | **HIGH** | Two COMPLETED_BILLABLE rows — billing double-invoice risk. Needs Sarty confirmation before fix. |
 | Client timesheet generator not built | **HIGH** | Sarty needs per-job breakdown with designer hours for client invoices — no function exists yet |
-| Stale QC_REVIEW migrated jobs | Medium | Bulk state update script needed for jobs Sarty reviewed offline before cutover |
+| Q1 FACT_WORK_LOGS has 1,694 duplicate rows | Medium | Root cause: CSV re-import. Bonus corrected via amendment. Raw data not cleaned yet. |
 | BIT designer in FACT_QUARTERLY_BONUS | Medium | CALCULATED, composite 52.19% = same as JYS. Is BIT = Bittuu alias = JYS, or different person? |
-| 7 PENDING designers (AVM, PRG, RUD, SKR, SMB, SUB, SUB2) | Medium | All zeros — not in manual. Confirm Q1 eligibility. Mark SKIPPED if ineligible. |
-| Q1 FACT_WORK_LOGS has 1,694 duplicate rows | Medium | Real dupes confirmed (all rows have dates). Root cause: CSV re-import. Bonus corrected via amendment. Raw data not cleaned yet. |
-| `designer@blc.com` (54 jobs) + BTD + SNA in VW_JOB_CURRENT_STATE | Medium | Test/legacy data from migration. Filter applied in CEO briefing + CEO dashboard. Needs purge. |
-| QC backlog inflated by test jobs (~128 items) | Medium | Email-format entries filtered. Jobs with real-looking person_codes still show. |
-| June payroll run before cutover verified | **HIGH** | Rule: do NOT run June payroll until Phase 3 complete. |
+| 7 PENDING designers (AVM, PRG, RUD, SKR, SMB, SUB, SUB2) | Medium | All zeros in Q1. Confirm Q1 eligibility. Mark SKIPPED if ineligible. |
+| Dead-letter queue items (27 VALIDATION_FAILED) | Low | Fix deployed. Affected staff must resubmit any submissions from before 2026-06-18. |
+| Apps Script deployment | Low | `clasp push` alone is NOT enough — must also do "New version" redeploy in Apps Script editor for `/exec` URL to pick up changes. |
 
 ---
 
