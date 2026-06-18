@@ -100,27 +100,43 @@ var PortalData = (function () {
    */
   function buildTeamCodes_(tlPersonCode) {
     var set = {};
+
+    // Path 1: shared-account visibility via REF_ACCOUNT_DESIGNER_MAP
     var mapRows;
     try {
       mapRows = DAL.readAll(Config.TABLES.REF_ACCOUNT_DESIGNER_MAP, { callerModule: 'PortalData' });
     } catch (e) {
-      return set;
+      mapRows = [];
     }
-    if (!mapRows || mapRows.length === 0) return set;
-
-    var tlAccounts = {};
-    for (var i = 0; i < mapRows.length; i++) {
-      var dc = String(mapRows[i].designer_code || '').trim();
-      if (dc === tlPersonCode) {
-        tlAccounts[String(mapRows[i].client_code || '').trim()] = true;
+    if (mapRows && mapRows.length > 0) {
+      var tlAccounts = {};
+      for (var i = 0; i < mapRows.length; i++) {
+        var dc = String(mapRows[i].designer_code || '').trim();
+        if (dc === tlPersonCode) {
+          tlAccounts[String(mapRows[i].client_code || '').trim()] = true;
+        }
+      }
+      for (var j = 0; j < mapRows.length; j++) {
+        var cc   = String(mapRows[j].client_code   || '').trim();
+        var code = String(mapRows[j].designer_code || '').trim();
+        if (tlAccounts[cc] && code) set[code] = true;
       }
     }
 
-    for (var j = 0; j < mapRows.length; j++) {
-      var cc   = String(mapRows[j].client_code   || '').trim();
-      var code = String(mapRows[j].designer_code || '').trim();
-      if (tlAccounts[cc] && code) set[code] = true;
-    }
+    // Path 2: direct-report visibility via supervisor_code in DIM_STAFF_ROSTER
+    var tlCode = (tlPersonCode || '').trim().toUpperCase();
+    try {
+      var rosterRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
+      for (var k = 0; k < rosterRows.length; k++) {
+        var row     = rosterRows[k];
+        var supCode = String(row.supervisor_code || '').trim().toUpperCase();
+        var pc      = String(row.person_code     || '').trim().toUpperCase();
+        var active  = String(row.active          || '').trim().toUpperCase();
+        if (supCode === tlCode && pc && active === 'TRUE') {
+          set[pc] = true;
+        }
+      }
+    } catch (e) { /* fail open — account-based set already populated */ }
 
     return set;
   }

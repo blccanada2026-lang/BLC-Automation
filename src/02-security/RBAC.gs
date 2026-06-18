@@ -250,9 +250,9 @@ var RBAC = (function () {
     },
 
     // ── TEAM_LEAD ─────────────────────────────────────────────
-    // Can create and hold jobs, log work, and submit for QC.
-    // Cannot approve QC (that is the QC reviewer's role),
-    // run financial processes, or modify the queue.
+    // Can create and hold jobs, log work, submit for QC, and
+    // approve/reject QC reviews. Team leads in this system
+    // routinely perform QC on their teams' work.
     TEAM_LEAD: {
       JOB_CREATE:      true,
       JOB_ALLOCATE:    true,
@@ -262,8 +262,8 @@ var RBAC = (function () {
       JOB_VIEW:        true,
       WORK_LOG_SUBMIT: true,
       QC_SUBMIT:       true,
-      QC_APPROVE:      false,
-      QC_REJECT:       false,
+      QC_APPROVE:      true,
+      QC_REJECT:       true,
       BILLING_RUN:     false,
       PAYROLL_RUN:     false,
       PAYROLL_VIEW:    false,
@@ -275,12 +275,13 @@ var RBAC = (function () {
     },
 
     // ── QC ────────────────────────────────────────────────────
-    // Dedicated quality control role. Can approve or reject QC
-    // submissions. Cannot create jobs or touch financial data.
+    // Quality control role. Can approve or reject QC submissions
+    // and also perform design work — in this system QC staff
+    // routinely do both.
     QC: {
       JOB_CREATE:      false,
       JOB_ALLOCATE:    false,
-      JOB_START:       false,  // QC reviewers do not start design jobs
+      JOB_START:       true,   // QC staff also perform design work
       JOB_HOLD:        false,
       JOB_RESUME:      false,
       JOB_VIEW:        true,

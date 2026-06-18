@@ -43,7 +43,7 @@ var QCReassignHandler = (function () {
     job_number: {
       type:      'string',
       required:  true,
-      maxLength: 30,
+      maxLength: 200,
       label:     'Job Number'
     },
     new_reviewer_code: {
