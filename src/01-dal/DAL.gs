@@ -107,7 +107,7 @@ var DAL = (function () {
                               'SbsReconFiller_Apr2026', 'NorspanReconFiller', 'MatixReconFiller',
                               'TitanReconFiller', 'NelsonReconFiller', 'AlbertaReconFiller',
                               'JuneWorkLogImporter'],
-    'FACT_QC_EVENTS':        ['QCHandler', 'QCReassignHandler', 'MigrationEngine'],
+    'FACT_QC_EVENTS':        ['QCHandler', 'QCReassignHandler', 'MigrationEngine', 'MigratedQCApprovalFixer'],
     'FACT_BILLING_LEDGER':   ['BillingEngine', 'MigrationEngine', 'MigrationReplayEngine'],
     'FACT_PAYROLL_LEDGER':   ['PayrollEngine', 'MigrationEngine', 'MigrationReplayEngine'],
     'FACT_SOP_SUBMISSIONS':  ['SOPHandler', 'MigrationEngine'],
@@ -116,7 +116,7 @@ var DAL = (function () {
     'VW_JOB_CURRENT_STATE':  ['EventReplayEngine', 'JobCreateHandler', 'JobAssignHandler', 'JobStartHandler',
                               'JobHoldHandler', 'JobResumeHandler', 'ClientReturnHandler', 'QCHandler',
                               'QCReassignHandler', 'BillingEngine', 'JobUpdateHandler', 'StaceyJobImporter',
-                              'JuneWorkLogImporter'],
+                              'JuneWorkLogImporter', 'MigratedQCApprovalFixer'],
     'VW_DESIGNER_WORKLOAD':  ['EventReplayEngine', 'ReportingEngine'],
 
     // ── Mart tables (reporting aggregates) ──────────────────
