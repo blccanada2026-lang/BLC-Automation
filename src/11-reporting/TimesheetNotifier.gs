@@ -530,126 +530,103 @@ var TimesheetNotifier = (function () {
   // ── Phase 2: PDF generation ──────────────────────────────
 
   /**
-   * Writes client timesheet data to the _PDF_STAGING sheet for export.
+   * Generates a client timesheet PDF via a temporary Google Doc.
    *
-   * A2 EXCEPTION: SpreadsheetApp used directly because DAL has no cell-formatting
-   * API and _PDF_STAGING is a transient rendering surface, not a FACT table.
-   * It is cleared immediately after exportStagingAsPdf_() returns.
-   */
-  function writePdfStagingSheet_(sheet, clientCode, clientData, periodLabel) {
-    sheet.clearContents();
-    sheet.clearFormats();
-
-    var jobs     = clientData.jobs.slice().sort(function (a, b) {
-      return a.job_number < b.job_number ? -1 : 1;
-    });
-    var currency = clientData.currency || 'CAD';
-    var rate     = clientData.rate;
-    var data     = [];
-
-    // Header block
-    data.push(['Blue Lotus Consulting Corporation', '', '', '', '', '']);
-    data.push(['Timesheet / Invoice',               '', '', '', '', '']);
-    data.push([periodLabel,                          '', '', '', '', '']);
-    data.push(['Client: ' + clientCode,              '', '', '', '', '']);
-    data.push(['',                                   '', '', '', '', '']);
-
-    // Column headers row (index 5, 1-based row 6)
-    var hdrRow = data.length + 1;
-    data.push(['Job #', 'Client Ref', 'Type', 'Hours',
-               'Rate (' + currency + '/hr)', 'Amount (' + currency + ')']);
-
-    // Job rows
-    for (var i = 0; i < jobs.length; i++) {
-      var jr = jobs[i];
-      data.push([
-        jr.job_number,
-        jr.client_job_ref || '',
-        jr.product_code   || '',
-        jr.total_hours,
-        rate              || '',
-        jr.amount !== null && jr.amount !== undefined ? jr.amount : ''
-      ]);
-    }
-
-    // Totals row
-    var totalRow = data.length + 1;
-    data.push(['', '', 'TOTAL', clientData.totalHours, '',
-               clientData.totalAmount > 0 ? clientData.totalAmount : '']);
-
-    // Write all values in one call
-    sheet.getRange(1, 1, data.length, 6).setValues(data);
-
-    // Formatting
-    sheet.getRange(1, 1).setFontSize(13).setFontWeight('bold');
-    sheet.getRange(hdrRow, 1, 1, 6)
-         .setFontWeight('bold')
-         .setBackground(BLUE)
-         .setFontColor('#ffffff');
-    sheet.getRange(totalRow, 1, 1, 6)
-         .setFontWeight('bold')
-         .setBackground('#f9fafb');
-    sheet.setColumnWidth(1, 110);
-    sheet.setColumnWidth(2, 140);
-    sheet.setColumnWidth(3, 90);
-    sheet.setColumnWidth(4, 70);
-    sheet.setColumnWidth(5, 120);
-    sheet.setColumnWidth(6, 120);
-  }
-
-  /**
-   * Exports the _PDF_STAGING sheet as a named PDF blob using the Drive export URL.
-   * Requires no third-party service — uses the script's own OAuth token.
-   */
-  function exportStagingAsPdf_(ss, stagingSheet, filename) {
-    var url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() +
-              '/export?format=pdf' +
-              '&gid='          + stagingSheet.getSheetId() +
-              '&size=A4' +
-              '&portrait=true' +
-              '&fitw=true' +
-              '&gridlines=false' +
-              '&printtitle=false' +
-              '&sheetnames=false' +
-              '&pagenumbers=false';
-
-    var response = UrlFetchApp.fetch(url, {
-      headers:            { 'Authorization': 'Bearer ' + ScriptApp.getOAuthToken() },
-      muteHttpExceptions: true
-    });
-
-    if (response.getResponseCode() !== 200) {
-      throw new Error('PDF export HTTP ' + response.getResponseCode() +
-                      ' for ' + filename);
-    }
-
-    return response.getBlob().setName(filename);
-  }
-
-  /**
-   * Generates a PDF timesheet for one client.
-   * Writes to _PDF_STAGING, exports, clears — all in one atomic block.
-   * The staging sheet is cleared in a finally block so it never persists dirty.
+   * Approach: create a temp Doc, write a formatted table, export via
+   * DriveApp.getFileById().getAs(MimeType.PDF), trash the temp Doc.
+   * No UrlFetchApp required — avoids the Drive export URL HTTP 500 issue.
+   *
+   * The temp Doc is always trashed in the finally block even on error.
    *
    * @returns {Blob}
    */
   function generateClientPdf_(clientCode, clientData, periodId, periodLabel) {
-    // A2 EXCEPTION — see module header and writePdfStagingSheet_ comment
-    var ss    = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(PDF_STAGING_TAB);
-    if (!sheet) {
-      sheet = ss.insertSheet(PDF_STAGING_TAB);
-      // Do not hide — Drive PDF export returns 500 on hidden sheets
-    }
+    var currency = clientData.currency || 'CAD';
+    var rate     = clientData.rate;
+    var jobs     = clientData.jobs.slice().sort(function (a, b) {
+      return a.job_number < b.job_number ? -1 : 1;
+    });
+
+    var filename = clientCode + '_Timesheet_' + periodId + '.pdf';
+    var docName  = '_BLC_PDF_' + periodId + '_' + clientCode;
+    var doc      = DocumentApp.create(docName);
+    var docId    = doc.getId();
 
     try {
-      writePdfStagingSheet_(sheet, clientCode, clientData, periodLabel);
-      SpreadsheetApp.flush();    // commit writes
-      Utilities.sleep(2000);     // give Sheets time to commit before Drive export fetch
-      return exportStagingAsPdf_(ss, sheet, clientCode + '_Timesheet_' + periodId + '.pdf');
+      var body = doc.getBody();
+      body.setMarginTop(36).setMarginBottom(36)
+          .setMarginLeft(54).setMarginRight(54);
+
+      // ── Header ─────────────────────────────────────────────
+      var titlePara = body.appendParagraph('Blue Lotus Consulting Corporation');
+      titlePara.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+      titlePara.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+
+      var subPara = body.appendParagraph('Timesheet / Invoice');
+      subPara.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+      subPara.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+
+      body.appendParagraph(periodLabel)
+          .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+      body.appendParagraph('Client: ' + clientCode)
+          .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+      body.appendParagraph('');
+
+      // ── Table ───────────────────────────────────────────────
+      var COL_HEADERS = [
+        'Job #', 'Client Ref', 'Type', 'Hours',
+        'Rate (' + currency + '/hr)', 'Amount (' + currency + ')'
+      ];
+      var tableData = [COL_HEADERS];
+
+      for (var i = 0; i < jobs.length; i++) {
+        var jr = jobs[i];
+        tableData.push([
+          jr.job_number,
+          jr.client_job_ref || '',
+          jr.product_code   || '',
+          String(jr.total_hours),
+          rate ? String(rate) : '',
+          jr.amount !== null && jr.amount !== undefined ? String(jr.amount) : ''
+        ]);
+      }
+      tableData.push([
+        '', '', 'TOTAL', String(clientData.totalHours), '',
+        clientData.totalAmount > 0 ? String(clientData.totalAmount) : ''
+      ]);
+
+      var table = body.appendTable(tableData);
+
+      // Bold + background on header row
+      var hdrRow = table.getRow(0);
+      for (var c = 0; c < COL_HEADERS.length; c++) {
+        var cell = hdrRow.getCell(c);
+        cell.setBackgroundColor('#1a3c5e');
+        cell.getChild(0).asParagraph()
+            .editAsText().setBold(true).setForegroundColor('#ffffff');
+      }
+
+      // Bold total row
+      var lastRow = table.getRow(tableData.length - 1);
+      lastRow.getCell(2).getChild(0).asParagraph()
+             .editAsText().setBold(true);
+      lastRow.getCell(3).getChild(0).asParagraph()
+             .editAsText().setBold(true);
+
+      // ── Footer ──────────────────────────────────────────────
+      body.appendParagraph('');
+      body.appendParagraph('Generated: ' + new Date().toDateString())
+          .setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
+
+      doc.saveAndClose();
+
+      return DriveApp.getFileById(docId)
+               .getAs(MimeType.PDF)
+               .setName(filename);
+
     } finally {
-      // Always clear staging, even on error, so no stale data remains
-      try { sheet.clearContents(); sheet.clearFormats(); } catch (e2) { /* ignore */ }
+      // Always trash the temp Doc — even if export failed
+      try { DriveApp.getFileById(docId).setTrashed(true); } catch (e2) { /* ignore */ }
     }
   }
 
