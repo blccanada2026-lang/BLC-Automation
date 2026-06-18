@@ -33,6 +33,15 @@
 - Dry run: 122/129 QC_REVIEW jobs identified as migrated.
 - Live run: **121 fixed, 1 skipped (duplicate job_number 260337 — idempotency, both VW rows updated), 0 errors.**
 
+**Grouped tree view for PM and TEAM_LEAD (commit `77baedd`):**
+- Gate changed from `canRunPayroll` (CEO only) to `canViewAll` — Sarty (PM) and all TLs now get client-grouped collapsible tree, identical to CEO view.
+
+**Three-tier job view (commit `f8331ba`):**
+- Tier 1 — Active Jobs: INTAKE_RECEIVED→CLIENT_RETURN states. Flat for DESIGNER/QC, client tree for TL/PM/CEO.
+- Tier 2 — Ready to Invoice: COMPLETED_BILLABLE, collapsed by default, all roles. Client tree for canViewAll, flat for others. Lets team verify work before billing cycle.
+- Tier 3 — Invoiced: CEO only, collapsed. Billing complete — rest of team doesn't need it.
+- Toolbar h2 updated: "Jobs" → "Active Jobs".
+
 **Dashboard DS1/UNKNOWN cleanup (commits `b099c9b`, `3bf36fd`):**
 - `buildStaffNameMap_()`: added active filter — inactive roster entries no longer included in nameMap.
 - `renderWorkloadPanel` (PortalView.html): added `!nameMap[who]` guard — codes not in active roster excluded from workload counts.
