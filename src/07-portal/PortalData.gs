@@ -408,7 +408,7 @@ var PortalData = (function () {
     // Only track ACTIVE roster codes — filters out DS1, UNKNOWN, and stray codes.
     // BTD/SNA MIGRATED rows are explicitly skipped (superseded by BIT/SVN amendments).
     // Negative amendment hours (reversals) are intentional and must reduce totals.
-    var SUPERSEDED_CODES = { 'BTD': true, 'SNA': true };
+    var SUPERSEDED_CODES = { 'BTD': true, 'SNA': true, 'DS1': true, 'UNKNOWN': true };
     var hoursMap = {};
     try {
       var workLogs = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
@@ -1075,13 +1075,16 @@ var PortalData = (function () {
     var periodId = Identifiers.generateCurrentPeriodId();
     var today    = new Date();
 
-    // ── 1. Staff name map ─────────────────────────────────────
+    // ── 1. Staff name map (ACTIVE only) ──────────────────────
     var staffNameMap = {};
     try {
       var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
       for (var s = 0; s < staffRows.length; s++) {
-        var scode = String(staffRows[s].person_code || '').trim();
-        if (scode) staffNameMap[scode] = String(staffRows[s].name || scode);
+        var srow     = staffRows[s];
+        var isActive = srow.active === true || String(srow.active || '').toUpperCase() === 'TRUE';
+        if (!isActive) continue;
+        var scode = String(srow.person_code || '').trim();
+        if (scode) staffNameMap[scode] = String(srow.name || scode);
       }
     } catch (e) { /* table may not exist yet */ }
 
@@ -1136,8 +1139,9 @@ var PortalData = (function () {
 
     // ── 6. Load balance ───────────────────────────────────────
     var designerCodes = {};
-    Object.keys(activeJobsMap).forEach(function(c) { designerCodes[c] = true; });
-    Object.keys(hoursMap).forEach(function(c) { designerCodes[c] = true; });
+    // Guard both sources against codes not in the active roster
+    Object.keys(activeJobsMap).forEach(function(c) { if (staffNameMap[c]) designerCodes[c] = true; });
+    Object.keys(hoursMap).forEach(function(c)      { if (staffNameMap[c]) designerCodes[c] = true; });
 
     var loadBalance = [];
     Object.keys(designerCodes).forEach(function(code) {
