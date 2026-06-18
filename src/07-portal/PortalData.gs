@@ -255,6 +255,8 @@ var PortalData = (function () {
     try {
       var rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
       for (var i = 0; i < rows.length; i++) {
+        var isActive = rows[i].active === true || String(rows[i].active || '').toUpperCase() === 'TRUE';
+        if (!isActive) continue;
         var code  = String(rows[i].person_code || '').trim();
         var email = String(rows[i].email       || '').toLowerCase().trim();
         var name  = String(rows[i].name        || code);

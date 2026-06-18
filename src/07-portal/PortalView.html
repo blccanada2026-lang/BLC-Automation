@@ -1570,6 +1570,7 @@ function renderWorkloadPanel(jobs, nameMap) {
     var who = String(j.allocated_to || '').trim();
     var st  = String(j.current_state || '').trim();
     if (!who || !ACTIVE_STATES[st]) continue;
+    if (Object.keys(nameMap).length > 0 && !nameMap[who]) continue;
     if (!counts[who]) counts[who] = { IN_PROGRESS:0, QC_REVIEW:0, ON_HOLD:0, ALLOCATED:0, CLIENT_RETURN:0, total:0 };
     counts[who][st] = (counts[who][st] || 0) + 1;
     counts[who].total++;
