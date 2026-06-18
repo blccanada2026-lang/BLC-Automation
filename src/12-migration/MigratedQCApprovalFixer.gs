@@ -189,12 +189,15 @@ var MigratedQCApprovalFixer = (function () {
 // ── Top-level entry points ──────────────────────────────────
 
 /**
- * Dry run (default): lists migrated QC_REVIEW jobs without writing anything.
- * Pass false to run live.
- *
- * @param {boolean} [dryRun=true]
+ * Dry run: lists migrated QC_REVIEW jobs without writing anything.
  */
 function runMigratedQCApprovalFixer(dryRun) {
   var result = MigratedQCApprovalFixer.run(dryRun !== false);
+  console.log(JSON.stringify(result, null, 2));
+}
+
+/** Live run — selectable from Apps Script dropdown. */
+function runMigratedQCApprovalFixerLIVE() {
+  var result = MigratedQCApprovalFixer.run(false);
   console.log(JSON.stringify(result, null, 2));
 }
