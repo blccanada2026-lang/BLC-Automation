@@ -451,6 +451,10 @@ var PortalData = (function () {
     }
     teamHours.sort(function(a, b) { return b.total_hours - a.total_hours; });
 
+    // Absolute exclusion — retired V2 codes removed regardless of how they entered
+    var HOURS_ABSOLUTE_EXCLUDE = { 'DS1': true, 'UNKNOWN': true, 'BTD': true, 'SNA': true };
+    teamHours = teamHours.filter(function(e) { return !HOURS_ABSOLUTE_EXCLUDE[e.person_code]; });
+
     // ── 3. Payroll status from MART_PAYROLL_SUMMARY ───────────
     var payrollStatus = [];
     try {
@@ -1150,6 +1154,10 @@ var PortalData = (function () {
     // Guard both sources against codes not in the active roster
     Object.keys(activeJobsMap).forEach(function(c) { if (staffNameMap[c]) designerCodes[c] = true; });
     Object.keys(hoursMap).forEach(function(c)      { if (staffNameMap[c]) designerCodes[c] = true; });
+
+    // Absolute exclusion — retired V2 codes removed regardless of how they entered
+    var CEO_ABSOLUTE_EXCLUDE = { 'DS1': true, 'UNKNOWN': true, 'BTD': true, 'SNA': true };
+    Object.keys(CEO_ABSOLUTE_EXCLUDE).forEach(function(c) { delete designerCodes[c]; });
 
     var loadBalance = [];
     Object.keys(designerCodes).forEach(function(code) {
