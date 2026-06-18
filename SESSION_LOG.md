@@ -5,6 +5,50 @@
 
 ---
 
+## 2026-06-18 Session (Team Feedback Bug Fixes + Migrated QC Repair)
+
+### Work Completed
+
+**Timesheet PDF fixes (carried from previous session):**
+- Designer name blank in CEO PDF: `staffMap` stores `{ name, email }` — was accessing `.first_name`/`.last_name`. Fixed to `.name`.
+- Remarks column empty: now populated from `notes` field in FACT_WORK_LOGS (amendment rows excluded).
+- Added `runTimesheetCEOEmailOnly(periodId)` / `sendCEOOnly_()` — re-sends only CEO PDFs, skips designer emails.
+
+**RBAC fixes (commits `fa32ecb`):**
+- `TEAM_LEAD`: `QC_APPROVE/REJECT: false → true` — Sandy (Samar/SDA), Bharath (BCH), Savvy (SVN) REVIEW button now shows.
+- `QC` role: `JOB_START: false → true` — Rajkumar (RKU, QC_REVIEWER) can start design jobs.
+
+**Handler validation fix (commit `fa32ecb`):**
+- `job_number maxLength: 30 → 200` in all 6 handlers: QCHandler, JobHoldHandler, QCReassignHandler, JobResumeHandler, WorkLogHandler, JobStartHandler.
+- Root cause of 27 VALIDATION_FAILED errors + 36 dead-lettered queue items. Dead-letter queue will drain on next QueueProcessor cycle.
+
+**Portal team visibility fix (commit `fa32ecb`):**
+- `buildTeamCodes_()` in PortalData.gs: added supervisor_code path (Path 2). TLs now see direct reports via DIM_STAFF_ROSTER `supervisor_code`, not only shared-account designers via REF_ACCOUNT_DESIGNER_MAP.
+
+**Billing WRITE_GUARD fix:**
+- `BillingEngine` was already added to `FACT_JOB_EVENTS` WRITE_PERMISSIONS in a prior session (local only, never pushed). Pushed today — 3 stuck COMPLETED_BILLABLE jobs (BLC-00184, BLC-00171, BLC-00186) confirmed already INVOICED; repair function skipped.
+
+**Migrated QC_REVIEW repair (commits `9cd28a7`, `3c684c0`):**
+- `MigratedQCApprovalFixer.gs` — identifies migrated jobs (STACEY_JOB| idempotency key) stuck in QC_REVIEW, writes QC_APPROVED event to FACT_QC_EVENTS, transitions VW → COMPLETED_BILLABLE.
+- Dry run: 122/129 QC_REVIEW jobs identified as migrated.
+- Live run: **121 fixed, 1 skipped (duplicate job_number 260337 — idempotency, both VW rows updated), 0 errors.**
+
+### Remaining User Actions (spreadsheet)
+- `DIM_STAFF_ROSTER`: change DBS (Deb Sen) role `DESIGNER → QC` for REVIEW button access.
+- `REF_ACCOUNT_DESIGNER_MAP`: add RKU rows for his client accounts (fixes assign dropdown).
+
+### Key Commits
+- `fa32ecb` fix(rbac,handlers,portal): QC permissions, job_number validation, team visibility
+- `9cd28a7` feat(migration): MigratedQCApprovalFixer — retroactive QC approval for V2 stuck jobs
+- `3c684c0` fix(migration): add runMigratedQCApprovalFixerLIVE wrapper
+
+### Open Items
+1. Duplicate job_number `260337` in VW_JOB_CURRENT_STATE — needs data cleanup
+2. Legacy person codes BTD, SNA still on some VW rows (V2 aliases, not blocking)
+3. Q1 bonus letters — still in CEO inbox (blccanada2026@gmail.com), review and forward
+
+---
+
 ## 2026-06-17 Session (Semi-Monthly Billing Engine Rewrite)
 
 ### Work Completed
