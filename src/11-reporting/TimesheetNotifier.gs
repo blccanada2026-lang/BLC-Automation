@@ -406,6 +406,66 @@ var TimesheetNotifier = (function () {
       }
     }
 
+    // ── Raw entries for PDF (Sarty format) ────────────────────
+    // Group by designer+date+job to net out amendments, then attach to byClient.
+    var entryAccum = {};
+
+    for (var ri = 0; ri < rows.length; ri++) {
+      var rr       = rows[ri];
+      var evType2  = String(rr.event_type || '');
+      var ac2      = String(rr.actor_code || '').trim().toUpperCase();
+
+      if (evType2 === 'WORK_LOG_MIGRATED' && SUPERSEDED_MIGRATED[ac2]) continue;
+
+      var rd = parseWorkDate_(rr.work_date, period.year);
+      if (!rd) continue;
+      var rwd = ymd_(rd);
+      if (rwd < fromYMD || rwd > toYMD) continue;
+
+      var rjn  = String(rr.job_number || '').trim().split(/\s+/)[0];
+      var rhrs = parseFloat(rr.hours);
+      if (!rjn || isNaN(rhrs) || rhrs === 0) continue;
+
+      var rjob = jobMap[rjn];
+      if (!rjob) continue;
+
+      var rcc  = String(rjob.client_code  || 'UNKNOWN').toUpperCase().trim();
+      if (!byClient[rcc]) continue;
+
+      var rpc   = String(rjob.product_code || '').toUpperCase().trim();
+      var rRole = String(rr.actor_role     || '').toUpperCase().trim();
+      var rDesc = (rRole === 'QC') ? 'Quality Check' : 'Design-Quote';
+      var rStaff = staffMap[ac2];
+      var rName  = rStaff
+        ? ((rStaff.first_name || '') + ' ' + (rStaff.last_name || '')).trim()
+        : ac2;
+
+      var eKey = rcc + '|' + ac2 + '|' + rwd + '|' + rjn;
+      if (!entryAccum[eKey]) {
+        entryAccum[eKey] = {
+          client_code:   rcc,
+          date:          rd,
+          date_str:      Utilities.formatDate(rd, 'America/Regina', 'dd-MMM-yyyy'),
+          job_number:    rjn,
+          job_type:      rpc,
+          description:   rDesc,
+          hours:         0,
+          designer:      rName,
+          designer_code: ac2
+        };
+      }
+      entryAccum[eKey].hours += rhrs;
+    }
+
+    var eKeys = Object.keys(entryAccum);
+    for (var ei = 0; ei < eKeys.length; ei++) {
+      var ent = entryAccum[eKeys[ei]];
+      if (ent.hours <= 0) continue;
+      ent.hours = Math.round(ent.hours * 100) / 100;
+      if (!byClient[ent.client_code].entries) byClient[ent.client_code].entries = [];
+      byClient[ent.client_code].entries.push(ent);
+    }
+
     return { byClient: byClient, byDesigner: byDesigner, label: label, staffMap: staffMap };
   }
 
@@ -541,10 +601,9 @@ var TimesheetNotifier = (function () {
    * @returns {Blob}
    */
   function generateClientPdf_(clientCode, clientData, periodId, periodLabel) {
-    var currency = clientData.currency || 'CAD';
-    var rate     = clientData.rate;
-    var jobs     = clientData.jobs.slice().sort(function (a, b) {
-      return a.job_number < b.job_number ? -1 : 1;
+    var entries = (clientData.entries || []).slice().sort(function (a, b) {
+      if (a.designer !== b.designer) return a.designer < b.designer ? -1 : 1;
+      return a.date - b.date;
     });
 
     var filename = clientCode + '_Timesheet_' + periodId + '.pdf';
@@ -562,42 +621,37 @@ var TimesheetNotifier = (function () {
       titlePara.setHeading(DocumentApp.ParagraphHeading.HEADING1);
       titlePara.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
 
-      var subPara = body.appendParagraph('Timesheet / Invoice');
-      subPara.setHeading(DocumentApp.ParagraphHeading.HEADING2);
-      subPara.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-
+      body.appendParagraph('Timesheet')
+          .setHeading(DocumentApp.ParagraphHeading.HEADING2);
       body.appendParagraph(periodLabel)
           .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
       body.appendParagraph('Client: ' + clientCode)
           .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
       body.appendParagraph('');
 
-      // ── Table ───────────────────────────────────────────────
-      var COL_HEADERS = [
-        'Job #', 'Client Ref', 'Type', 'Hours',
-        'Rate (' + currency + '/hr)', 'Amount (' + currency + ')'
-      ];
+      // ── Main detail table ───────────────────────────────────
+      // Columns match Sarty's Drive timesheet format exactly.
+      var COL_HEADERS = ['Sno', 'Date', 'Job #', 'Job Type', 'Description',
+                         'Billable Hours', 'Designer', 'Remarks'];
       var tableData = [COL_HEADERS];
 
-      for (var i = 0; i < jobs.length; i++) {
-        var jr = jobs[i];
+      for (var i = 0; i < entries.length; i++) {
+        var ent = entries[i];
         tableData.push([
-          jr.job_number,
-          jr.client_job_ref || '',
-          jr.product_code   || '',
-          String(jr.total_hours),
-          rate ? String(rate) : '',
-          jr.amount !== null && jr.amount !== undefined ? String(jr.amount) : ''
+          String(i + 1),
+          ent.date_str,
+          ent.job_number,
+          ent.job_type,
+          ent.description,
+          String(ent.hours),
+          ent.designer,
+          ''
         ]);
       }
-      tableData.push([
-        '', '', 'TOTAL', String(clientData.totalHours), '',
-        clientData.totalAmount > 0 ? String(clientData.totalAmount) : ''
-      ]);
 
       var table = body.appendTable(tableData);
 
-      // Bold + background on header row
+      // Dark header row
       var hdrRow = table.getRow(0);
       for (var c = 0; c < COL_HEADERS.length; c++) {
         var cell = hdrRow.getCell(c);
@@ -606,12 +660,38 @@ var TimesheetNotifier = (function () {
             .editAsText().setBold(true).setForegroundColor('#ffffff');
       }
 
-      // Bold total row
-      var lastRow = table.getRow(tableData.length - 1);
-      lastRow.getCell(2).getChild(0).asParagraph()
-             .editAsText().setBold(true);
-      lastRow.getCell(3).getChild(0).asParagraph()
-             .editAsText().setBold(true);
+      body.appendParagraph('');
+
+      // ── Summary table (Designer → Total Hours) ───────────────
+      var designerTotals = {};
+      for (var si = 0; si < entries.length; si++) {
+        var de = entries[si];
+        if (!designerTotals[de.designer]) designerTotals[de.designer] = 0;
+        designerTotals[de.designer] += de.hours;
+      }
+      var designers  = Object.keys(designerTotals).sort();
+      var grandTotal = 0;
+      var sumData    = [['Designer', 'Total Hours']];
+      for (var di = 0; di < designers.length; di++) {
+        var dh = Math.round(designerTotals[designers[di]] * 100) / 100;
+        grandTotal += dh;
+        sumData.push([designers[di], String(dh)]);
+      }
+      grandTotal = Math.round(grandTotal * 100) / 100;
+      sumData.push(['TOTAL', String(grandTotal)]);
+
+      var sumTable = body.appendTable(sumData);
+
+      var sumHdr = sumTable.getRow(0);
+      for (var sc = 0; sc < 2; sc++) {
+        var scell = sumHdr.getCell(sc);
+        scell.setBackgroundColor('#1a3c5e');
+        scell.getChild(0).asParagraph()
+             .editAsText().setBold(true).setForegroundColor('#ffffff');
+      }
+      var sumLast = sumTable.getRow(sumData.length - 1);
+      sumLast.getCell(0).getChild(0).asParagraph().editAsText().setBold(true);
+      sumLast.getCell(1).getChild(0).asParagraph().editAsText().setBold(true);
 
       // ── Footer ──────────────────────────────────────────────
       body.appendParagraph('');
@@ -625,7 +705,6 @@ var TimesheetNotifier = (function () {
                .setName(filename);
 
     } finally {
-      // Always trash the temp Doc — even if export failed
       try { DriveApp.getFileById(docId).setTrashed(true); } catch (e2) { /* ignore */ }
     }
   }
