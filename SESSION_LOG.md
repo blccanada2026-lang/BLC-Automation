@@ -5,7 +5,7 @@
 
 ---
 
-## 2026-06-18 Session (Team Feedback Bug Fixes + Migrated QC Repair)
+## 2026-06-18 Session (Team Feedback Bug Fixes + Migrated QC Repair + Dashboard Cleanup)
 
 ### Work Completed
 
@@ -33,6 +33,13 @@
 - Dry run: 122/129 QC_REVIEW jobs identified as migrated.
 - Live run: **121 fixed, 1 skipped (duplicate job_number 260337 — idempotency, both VW rows updated), 0 errors.**
 
+**Dashboard DS1/UNKNOWN cleanup (commits `b099c9b`, `3bf36fd`):**
+- `buildStaffNameMap_()`: added active filter — inactive roster entries no longer included in nameMap.
+- `renderWorkloadPanel` (PortalView.html): added `!nameMap[who]` guard — codes not in active roster excluded from workload counts.
+- `getLeaderDashboard`: `EXCLUDED_CODES = { DS1, UNKNOWN }` — skipped unconditionally in work log loop (previous check was WORK_LOG_MIGRATED only, non-MIGRATED events were leaking through).
+- `getCEODashboard`: same `CEO_EXCLUDED_CODES` guard added to both activeJobsMap and hoursMap loops.
+- BTD/SNA: user manually reassigned VW jobs to correct V3 codes and deactivated in DIM_STAFF_ROSTER. Double-count eliminated.
+
 ### Remaining User Actions (spreadsheet)
 - `DIM_STAFF_ROSTER`: change DBS (Deb Sen) role `DESIGNER → QC` for REVIEW button access.
 - `REF_ACCOUNT_DESIGNER_MAP`: add RKU rows for his client accounts (fixes assign dropdown).
@@ -41,11 +48,12 @@
 - `fa32ecb` fix(rbac,handlers,portal): QC permissions, job_number validation, team visibility
 - `9cd28a7` feat(migration): MigratedQCApprovalFixer — retroactive QC approval for V2 stuck jobs
 - `3c684c0` fix(migration): add runMigratedQCApprovalFixerLIVE wrapper
+- `b099c9b` fix(portal): filter DS1/UNKNOWN from workload panel and nameMap
+- `3bf36fd` fix(portal): unconditionally exclude DS1/UNKNOWN from all dashboard panels
 
 ### Open Items
 1. Duplicate job_number `260337` in VW_JOB_CURRENT_STATE — needs data cleanup
-2. Legacy person codes BTD, SNA still on some VW rows (V2 aliases, not blocking)
-3. Q1 bonus letters — still in CEO inbox (blccanada2026@gmail.com), review and forward
+2. Q1 bonus letters — still in CEO inbox (blccanada2026@gmail.com), review and forward
 
 ---
 
