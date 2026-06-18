@@ -432,13 +432,14 @@ var TimesheetNotifier = (function () {
       var rcc  = String(rjob.client_code  || 'UNKNOWN').toUpperCase().trim();
       if (!byClient[rcc]) continue;
 
-      var rpc   = String(rjob.product_code || '').toUpperCase().trim();
-      var rRole = String(rr.actor_role     || '').toUpperCase().trim();
-      var rDesc = (rRole === 'QC') ? 'Quality Check' : 'Design-Quote';
-      var rStaff = staffMap[ac2];
-      var rName  = rStaff
-        ? ((rStaff.first_name || '') + ' ' + (rStaff.last_name || '')).trim()
-        : ac2;
+      var rpc     = String(rjob.product_code || '').toUpperCase().trim();
+      var rRole   = String(rr.actor_role     || '').toUpperCase().trim();
+      var rDesc   = (rRole === 'QC') ? 'Quality Check' : 'Design-Quote';
+      var rStaff  = staffMap[ac2];
+      var rName   = rStaff ? rStaff.name : ac2;
+      // Remarks: use notes from the original log row, not from amendments
+      var isAmend = evType2 === 'WORK_LOG_AMENDED';
+      var rNotes  = isAmend ? '' : String(rr.notes || '').trim();
 
       var eKey = rcc + '|' + ac2 + '|' + rwd + '|' + rjn;
       if (!entryAccum[eKey]) {
@@ -451,8 +452,11 @@ var TimesheetNotifier = (function () {
           description:   rDesc,
           hours:         0,
           designer:      rName,
-          designer_code: ac2
+          designer_code: ac2,
+          remarks:       rNotes
         };
+      } else if (!entryAccum[eKey].remarks && rNotes) {
+        entryAccum[eKey].remarks = rNotes;
       }
       entryAccum[eKey].hours += rhrs;
     }
@@ -645,7 +649,7 @@ var TimesheetNotifier = (function () {
           ent.description,
           String(ent.hours),
           ent.designer,
-          ''
+          ent.remarks || ''
         ]);
       }
 
@@ -885,6 +889,32 @@ var TimesheetNotifier = (function () {
     };
   }
 
+  // ── CEO-only re-send ─────────────────────────────────────
+
+  /**
+   * Rebuilds and sends only the CEO client PDF emails for a period.
+   * Designer emails are NOT sent. No idempotency check — always runs.
+   * Use this after the initial send when designers have already received
+   * their verification emails and you only need a fresh client PDF.
+   *
+   * @param {string} periodId  e.g. '2026-06A'
+   */
+  function sendCEOOnly_(periodId) {
+    Logger.info('TIMESHEET_CEO_ONLY_START', { module: MODULE, period_id: periodId });
+    var data   = buildNotificationData_(periodId);
+    var result = sendCEOClientEmails_(data.byClient, periodId, data.label);
+    Logger.info('TIMESHEET_CEO_ONLY_DONE', {
+      module: MODULE, period_id: periodId,
+      sent: result.sent, errors: result.errors
+    });
+    return {
+      ok:        result.errors.length === 0,
+      period_id: periodId,
+      label:     data.label,
+      ceo_emails: result
+    };
+  }
+
   // ── Daily trigger entry point ────────────────────────────
 
   /**
@@ -939,6 +969,7 @@ var TimesheetNotifier = (function () {
   return {
     checkAndRun:    checkAndRun_,
     runForPeriod:   runForPeriod_,
+    sendCEOOnly:    sendCEOOnly_,
     installTrigger: installTrigger_,
     clearSentFlag:  clearSentFlag_
   };
@@ -1001,6 +1032,27 @@ function runTestTimesheetNotifier(periodId) {
   try {
     var result = TimesheetNotifier.runForPeriod(pid, true);
     console.log('[TimesheetNotifier] Dry run result: ' + JSON.stringify(result));
+  } catch (e) {
+    console.log('[TimesheetNotifier] ERROR: ' + e.message);
+    console.log('[TimesheetNotifier] STACK: ' + e.stack);
+  }
+}
+
+/**
+ * Sends only the CEO client PDF emails for a period — skips designer emails.
+ * Use this for all re-sends after the initial notification, since designers
+ * have already received their verification emails.
+ *
+ * No idempotency guard — always sends.
+ *
+ * @param {string} [periodId]  e.g. '2026-06B'. Defaults to current period.
+ */
+function runTimesheetCEOEmailOnly(periodId) {
+  var pid = periodId || '2026-06A';
+  console.log('[TimesheetNotifier] CEO-only send for ' + pid);
+  try {
+    var result = TimesheetNotifier.sendCEOOnly(pid);
+    console.log('[TimesheetNotifier] Result: ' + JSON.stringify(result));
   } catch (e) {
     console.log('[TimesheetNotifier] ERROR: ' + e.message);
     console.log('[TimesheetNotifier] STACK: ' + e.stack);
