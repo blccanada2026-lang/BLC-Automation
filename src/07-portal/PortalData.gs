@@ -407,10 +407,11 @@ var PortalData = (function () {
     } catch (e) { /* table may not exist yet */ }
 
     // ── 2. Aggregate hours from FACT_WORK_LOGS ────────────────
-    // Only track ACTIVE roster codes — filters out DS1, UNKNOWN, and stray codes.
-    // BTD/SNA MIGRATED rows are explicitly skipped (superseded by BIT/SVN amendments).
-    // Negative amendment hours (reversals) are intentional and must reduce totals.
-    var SUPERSEDED_CODES = { 'BTD': true, 'SNA': true, 'DS1': true, 'UNKNOWN': true };
+    // Only track ACTIVE roster codes — filters out stray codes.
+    // BTD/SNA: legacy V2 codes still in roster with active jobs — MIGRATED events skipped.
+    // DS1/UNKNOWN: retired placeholder codes with no V3 successor — excluded unconditionally.
+    var SUPERSEDED_CODES  = { 'BTD': true, 'SNA': true };
+    var EXCLUDED_CODES    = { 'DS1': true, 'UNKNOWN': true };
     var hoursMap = {};
     try {
       var workLogs = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
@@ -421,6 +422,7 @@ var PortalData = (function () {
         var wrow  = workLogs[w];
         var wcode = String(wrow.actor_code || '').trim();
         if (!wcode || !staffNameMap[wcode]) continue; // not on active roster
+        if (EXCLUDED_CODES[wcode]) continue;          // DS1/UNKNOWN: fully retired, no V3 successor
         if (SUPERSEDED_CODES[wcode] && wrow.event_type === 'WORK_LOG_MIGRATED') continue;
         var wrole = String(wrow.actor_role || '').toUpperCase();
         var whrs  = parseFloat(wrow.hours) || 0;
@@ -1111,6 +1113,9 @@ var PortalData = (function () {
       totalActive++;
     }
 
+    // Retired placeholder codes with no V3 successor — excluded from all CEO panels.
+    var CEO_EXCLUDED_CODES = { 'DS1': true, 'UNKNOWN': true };
+
     // ── 4. Active jobs per designer ────────────────────────────
     var activeJobsMap = {};
     for (var j = 0; j < allJobs.length; j++) {
@@ -1118,7 +1123,7 @@ var PortalData = (function () {
       var jst   = String(jrow.current_state || '').trim();
       if (!ACTIVE_ST[jst]) continue;
       var jcode = String(jrow.allocated_to || '').trim();
-      if (!jcode) continue;
+      if (!jcode || CEO_EXCLUDED_CODES[jcode]) continue;
       activeJobsMap[jcode] = (activeJobsMap[jcode] || 0) + 1;
     }
 
@@ -1134,7 +1139,8 @@ var PortalData = (function () {
         var wcode = String(wrow.actor_code || '').trim();
         var whrs  = parseFloat(wrow.hours) || 0;
         if (!wcode || whrs <= 0) continue;
-        if (!staffNameMap[wcode]) continue; // skip legacy/test/unknown codes
+        if (!staffNameMap[wcode]) continue; // skip codes not in active roster
+        if (CEO_EXCLUDED_CODES[wcode]) continue; // skip retired placeholder codes
         hoursMap[wcode] = (hoursMap[wcode] || 0) + whrs;
       }
     } catch (e) { /* no work logs yet */ }
