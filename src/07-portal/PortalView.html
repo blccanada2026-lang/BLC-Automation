@@ -1677,7 +1677,7 @@ function renderJobs(jobs, actor, perms) {
     return;
   }
 
-  if (perms.canRunPayroll) {
+  if (perms.canViewAll) {
     renderJobsGrouped_(jobs, actor, perms, tbody);
   } else {
     jobs.forEach(function(job) {
