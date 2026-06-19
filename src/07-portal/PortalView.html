@@ -1931,7 +1931,7 @@ function buildActionButtons(job, perms) {
   if (perms.canLogWork && (state === 'IN_PROGRESS' || state === 'ALLOCATED')) {
     buttons.push(makeActionBtn('Log Work',   'btn-muted',    'work-log',  job.job_number));
   }
-  if (perms.isDesigner && state === 'IN_PROGRESS') {
+  if (perms.canSubmitQC && state === 'IN_PROGRESS') {
     buttons.push(makeActionBtn('Submit QC',        'btn-primary',  'submit-qc',    job.job_number));
   }
   if (perms.canLogWork && state === 'MINOR_FIX') {

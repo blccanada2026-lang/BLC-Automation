@@ -164,6 +164,11 @@ var PortalData = (function () {
 
     if (!allRows || allRows.length === 0) return [];
 
+    // Exclude VOIDED rows — migration cleanup marker for stale artefacts
+    allRows = allRows.filter(function(row) {
+      return String(row.current_state || '') !== 'VOIDED';
+    });
+
     var staffNames = buildStaffNameMap_();
     for (var n = 0; n < allRows.length; n++) {
       var code = String(allRows[n].allocated_to || '').trim().toUpperCase();
@@ -181,14 +186,19 @@ var PortalData = (function () {
         return at === selfCode || at === selfEmail;
       });
     } else if (role === 'QC' || role === 'QC_REVIEWER') {
-      // QC scope — own design jobs (allocated_to) OR jobs assigned to them as QC reviewer
-      // QC_REVIEW jobs have allocated_to = designer; qc_reviewer_code = this actor
-      var qcCode  = (actor.personCode || '').trim();
-      var qcEmail = (actor.email      || '').toLowerCase();
+      // TEAM scope via REF_ACCOUNT_DESIGNER_MAP — sees all designers on shared accounts
+      // PLUS own jobs and jobs where this actor is the assigned QC reviewer
+      var qcCode    = (actor.personCode || '').trim();
+      var qcEmail   = (actor.email      || '').toLowerCase();
+      var qcTeamCodes = buildTeamCodes_(qcCode);
+      qcTeamCodes[qcCode]   = true;
+      if (qcEmail) qcTeamCodes[qcEmail] = true;
       allRows = allRows.filter(function (row) {
-        var at       = String(row.allocated_to    || '').toLowerCase();
+        var at       = String(row.allocated_to     || '').trim();
         var reviewer = String(row.qc_reviewer_code || '').trim();
-        return at === qcCode.toLowerCase() || at === qcEmail || reviewer === qcCode;
+        return qcTeamCodes[at] === true
+            || qcTeamCodes[at.toLowerCase()] === true
+            || reviewer === qcCode;
       });
     } else if (role === 'TEAM_LEAD') {
       // TEAM scope — jobs allocated to this TL themselves OR their direct reports.
@@ -290,6 +300,7 @@ var PortalData = (function () {
       canViewAll:        actor.scope === RBAC.SCOPES.ALL || actor.scope === RBAC.SCOPES.TEAM,
       isQcReviewer:      RBAC.hasPermission(actor, RBAC.ACTIONS.QC_APPROVE),
       isDesigner:        role === 'DESIGNER' || role === 'TEAM_LEAD' || role === 'QC' || role === 'QC_REVIEWER',
+      canSubmitQC:       role === 'DESIGNER' || role === 'TEAM_LEAD' || role === 'QC' || role === 'QC_REVIEWER' || role === 'PM',
       isLeader:          role === 'CEO' || role === 'PM' || role === 'TEAM_LEAD',
       canRunPayroll:     role === 'CEO',
       canApprovePayroll: role === 'CEO',
@@ -1515,7 +1526,7 @@ var PortalData = (function () {
     RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_SUBMIT);
 
     var periodId   = Identifiers.generateCurrentPeriodId();
-    var personCode = String(actor.personCode || '').trim();
+    var personCode = String(actor.personCode || '').trim().toUpperCase();
 
     var entries    = [];
     var totalHours = 0;
@@ -1527,7 +1538,7 @@ var PortalData = (function () {
       });
       for (var i = 0; i < rows.length; i++) {
         var row = rows[i];
-        if (String(row.actor_code || '').trim() !== personCode) continue;
+        if (String(row.actor_code || '').trim().toUpperCase() !== personCode) continue;
         var hrs = parseFloat(row.hours) || 0;
         entries.push({
           job_number: String(row.job_number  || ''),
