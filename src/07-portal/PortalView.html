@@ -1550,6 +1550,15 @@ function renderPortal_(data) {
   renderJobs(data.jobs, actor, perms);
   renderQuickLinks(actor, perms);
 
+  // My Hours panel — populated from bundled data (no extra server call)
+  var myHoursSection = document.getElementById('my-hours-section');
+  if (perms.canLogWork && data.my_hours) {
+    myHoursSection.style.display = 'block';
+    renderMyHours_(data.my_hours);
+  } else {
+    myHoursSection.style.display = 'none';
+  }
+
   if (perms.isLeader) {
     document.getElementById('leader-dashboard').style.display = 'block';
     renderWorkloadPanel(data.jobs, data.staffNameMap || {});
@@ -3049,6 +3058,38 @@ function makeEmptyDiv_(msg) {
 
 function clearEl_(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
+function renderMyHours_(data) {
+  var body = document.getElementById('my-hours-body');
+  document.getElementById('my-hours-period').textContent = data.period_id || '—';
+  document.getElementById('my-hours-total').textContent  = 'Total: ' + (data.total_hours || 0) + ' hrs';
+  clearEl_(body);
+  if (!data.entries || data.entries.length === 0) {
+    body.appendChild(makeEmptyDiv_('No hours logged this period.')); return;
+  }
+  var tbl = document.createElement('table');
+  tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px';
+  var hrow = tbl.createTHead().insertRow();
+  ['Job', 'Date', 'Hours', 'Notes'].forEach(function(h) {
+    var th = document.createElement('th');
+    th.textContent = h;
+    th.style.cssText = 'text-align:left;padding:4px 8px;border-bottom:1px solid var(--c-border);color:var(--c-muted);font-weight:500';
+    hrow.appendChild(th);
+  });
+  var tbody = tbl.createTBody();
+  data.entries.forEach(function(e) {
+    var tr = tbody.insertRow();
+    var d = new Date(e.work_date);
+    var dateStr = isNaN(d) ? (e.work_date || '—')
+      : d.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear();
+    [e.job_number, dateStr, String(e.hours), e.notes || '—'].forEach(function(val, i) {
+      var td = tr.insertCell();
+      td.textContent = val;
+      td.style.cssText = 'padding:5px 8px;border-bottom:1px solid var(--c-border)' + (i === 2 ? ';font-weight:600' : '');
+    });
+  });
+  body.appendChild(tbl);
+}
+
 function loadMyHours() {
   var body = document.getElementById('my-hours-body');
   clearEl_(body);
@@ -3056,38 +3097,8 @@ function loadMyHours() {
 
   TOKEN_RUN
     .withSuccessHandler(function(json) {
-      var data;
-      try { data = JSON.parse(json); } catch(e) {
-        clearEl_(body); body.appendChild(makeEmptyDiv_('Error loading hours.')); return;
-      }
-      document.getElementById('my-hours-period').textContent = data.period_id || '—';
-      document.getElementById('my-hours-total').textContent  = 'Total: ' + (data.total_hours || 0) + ' hrs';
-      clearEl_(body);
-      if (!data.entries || data.entries.length === 0) {
-        body.appendChild(makeEmptyDiv_('No hours logged this period.')); return;
-      }
-      var tbl = document.createElement('table');
-      tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px';
-      var hrow = tbl.createTHead().insertRow();
-      ['Job', 'Date', 'Hours', 'Notes'].forEach(function(h) {
-        var th = document.createElement('th');
-        th.textContent = h;
-        th.style.cssText = 'text-align:left;padding:4px 8px;border-bottom:1px solid var(--c-border);color:var(--c-muted);font-weight:500';
-        hrow.appendChild(th);
-      });
-      var tbody = tbl.createTBody();
-      data.entries.forEach(function(e) {
-        var tr = tbody.insertRow();
-        var d = new Date(e.work_date);
-        var dateStr = isNaN(d) ? (e.work_date || '—')
-          : d.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear();
-        [e.job_number, dateStr, String(e.hours), e.notes || '—'].forEach(function(val, i) {
-          var td = tr.insertCell();
-          td.textContent = val;
-          td.style.cssText = 'padding:5px 8px;border-bottom:1px solid var(--c-border)' + (i === 2 ? ';font-weight:600' : '');
-        });
-      });
-      body.appendChild(tbl);
+      try { renderMyHours_(JSON.parse(json)); }
+      catch(e) { clearEl_(body); body.appendChild(makeEmptyDiv_('Error loading hours.')); }
     })
     .withFailureHandler(function() {
       clearEl_(body); body.appendChild(makeEmptyDiv_('Failed to load hours.'));

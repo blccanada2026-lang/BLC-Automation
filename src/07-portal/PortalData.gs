@@ -1311,6 +1311,12 @@ var PortalData = (function () {
     var stats       = buildStats_(jobs);
     var perms       = buildPerms_(targetActor);
 
+    // Bundle target user's My Hours so Preview As renders it without an extra server call
+    var myHours = null;
+    if (RBAC.hasPermission(targetActor, RBAC.ACTIONS.WORK_LOG_SUBMIT)) {
+      try { myHours = JSON.parse(getMyHours(targetEmail)); } catch(e) { /* fail silently */ }
+    }
+
     return JSON.stringify({
       actor:             { email: targetActor.email, personCode: targetActor.personCode,
                            role: targetActor.role, displayName: targetActor.displayName,
@@ -1319,6 +1325,7 @@ var PortalData = (function () {
       stats:             stats,
       perms:             perms,
       staffNameMap:      buildStaffNameMap_(),
+      my_hours:          myHours,
       previewMode:       true,
       previewPersonCode: targetPersonCode
     });
