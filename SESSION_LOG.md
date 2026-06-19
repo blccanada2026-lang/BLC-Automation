@@ -5,6 +5,43 @@
 
 ---
 
+## 2026-06-19 Session (Sarty Bug Fixes — 5 issues resolved)
+
+### Work Completed
+
+**Bug 1 & 2 — QC/QC_REVIEWER team visibility (DBS, RKU):**
+- `loadJobs_()` QC/QC_REVIEWER branch now uses `buildTeamCodes_()` — same account-scoped
+  visibility as TEAM_LEAD (REF_ACCOUNT_DESIGNER_MAP Path 1).
+- DBS (QC) and RKU (QC_REVIEWER) now see all designers on shared accounts.
+- **Data action needed:** DBS must be added to REF_ACCOUNT_DESIGNER_MAP for ALBERTA TRUSS + NELSON.
+
+**Bug 3 — ABR hours not showing in My Hours panel:**
+- `getMyHours()` actor_code comparison made case-insensitive (`.toUpperCase()` both sides).
+- Prevents mismatch between DIM_STAFF_ROSTER person_code casing and FACT_WORK_LOGS actor_code.
+
+**Bug 4 — SGO (PM) Submit for QC button missing:**
+- Added `canSubmitQC` perm to `buildPerms_()` — covers DESIGNER + TL + QC + QC_REVIEWER + **PM**.
+- `PortalView.html` Submit QC button changed from `perms.isDesigner` → `perms.canSubmitQC`.
+
+**Bug 5 — 19 stale migration artefact jobs:**
+- `StaleJobVoidEngine.gs` created — `runStaleJobAudit()` (dry run) + `runStaleJobVoid()` (execute).
+- `loadJobs_()` now excludes `current_state = 'VOIDED'` rows from all portal views.
+- **Action needed:** Run `runStaleJobAudit()` then `runStaleJobVoid()` from Apps Script editor.
+
+### Deployment
+- `clasp push --force` to PROD ✅
+- commit `5a01962` — 4 files changed
+- **REDEPLOY REQUIRED** in Apps Script editor (New Version) for portal URL to serve new code
+
+### Next Steps
+1. Add DBS to REF_ACCOUNT_DESIGNER_MAP (ALBERTA TRUSS + NELSON accounts)
+2. Run `runStaleJobVoid()` to void 19 stale jobs
+3. Forward Q1 bonus letters (16 in CEO inbox blccanada2026@gmail.com)
+4. Send Q2 rating requests + Q2 feedback requests before end of June
+5. Resolve job 260337 duplicate (needs Sarty confirmation)
+
+---
+
 ## 2026-06-18 Session (Team Feedback Bug Fixes + Migrated QC Repair + Dashboard Cleanup)
 
 ### Work Completed
