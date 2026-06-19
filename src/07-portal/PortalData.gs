@@ -1554,7 +1554,11 @@ var PortalData = (function () {
     }
 
     // Sort by work_date descending — most recent first
+    // Use Date parsing so migrated entries with inconsistent formats still sort correctly
     entries.sort(function(a, b) {
+      var da = new Date(a.work_date);
+      var db = new Date(b.work_date);
+      if (!isNaN(da) && !isNaN(db)) return db - da;
       return a.work_date < b.work_date ? 1 : -1;
     });
 

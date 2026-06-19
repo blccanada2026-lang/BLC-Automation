@@ -3078,7 +3078,10 @@ function loadMyHours() {
       var tbody = tbl.createTBody();
       data.entries.forEach(function(e) {
         var tr = tbody.insertRow();
-        [e.job_number, e.work_date, String(e.hours), e.notes || '—'].forEach(function(val, i) {
+        var d = new Date(e.work_date);
+        var dateStr = isNaN(d) ? (e.work_date || '—')
+          : d.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear();
+        [e.job_number, dateStr, String(e.hours), e.notes || '—'].forEach(function(val, i) {
           var td = tr.insertCell();
           td.textContent = val;
           td.style.cssText = 'padding:5px 8px;border-bottom:1px solid var(--c-border)' + (i === 2 ? ';font-weight:600' : '');
