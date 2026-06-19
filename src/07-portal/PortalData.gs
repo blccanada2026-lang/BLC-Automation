@@ -298,6 +298,8 @@ var PortalData = (function () {
       canStart:          RBAC.hasPermission(actor, RBAC.ACTIONS.JOB_START),
       canLogWork:        RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_SUBMIT),
       canViewAll:        actor.scope === RBAC.SCOPES.ALL || actor.scope === RBAC.SCOPES.TEAM,
+      canHold:           RBAC.hasPermission(actor, RBAC.ACTIONS.JOB_HOLD),
+      canResume:         RBAC.hasPermission(actor, RBAC.ACTIONS.JOB_RESUME),
       isQcReviewer:      RBAC.hasPermission(actor, RBAC.ACTIONS.QC_APPROVE),
       isDesigner:        role === 'DESIGNER' || role === 'TEAM_LEAD' || role === 'QC' || role === 'QC_REVIEWER',
       canSubmitQC:       role === 'DESIGNER' || role === 'TEAM_LEAD' || role === 'QC' || role === 'QC_REVIEWER' || role === 'PM',

@@ -2009,10 +2009,10 @@ function buildActionButtons(job, perms) {
   if (perms.canAssign && state === 'QC_REVIEW') {
     buttons.push(makeActionBtn('Reassign QC',      'btn-muted',    'qc-reassign',  job.job_number));
   }
-  if (state !== 'ON_HOLD') {
+  if (perms.canHold && state !== 'ON_HOLD') {
     buttons.push(makeActionBtn('Hold',       'btn-warning',  'hold',      job.job_number));
   }
-  if (state === 'ON_HOLD') {
+  if (perms.canResume && state === 'ON_HOLD') {
     buttons.push(makeActionBtn('Resume',     'btn-success',  'resume',    job.job_number));
   }
 
