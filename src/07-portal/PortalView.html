@@ -330,6 +330,13 @@
     </div>
   </div>
 
+  <div id="job-search-wrap" style="margin-bottom:10px;display:none">
+    <input type="search" id="job-search" autocomplete="off"
+           placeholder="Search jobs — number, client, product, status, assignee…"
+           style="width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid var(--c-border);border-radius:6px;font-size:14px;background:var(--c-surface);color:var(--c-text);outline:none">
+    <span id="job-search-count" style="font-size:12px;color:var(--c-muted);margin-top:4px;display:none"></span>
+  </div>
+
   <div class="table-wrap">
     <table>
       <thead>
@@ -1101,6 +1108,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-refresh').addEventListener('click', loadData);
   document.getElementById('btn-process-queue').addEventListener('click', processQueue);
   document.getElementById('btn-create-job').addEventListener('click', openCreateModal);
+  document.getElementById('job-search').addEventListener('input', function() { filterJobs_(this.value); });
 
   document.getElementById('create-client').addEventListener('change', onCreateClientChange);
 
@@ -1261,6 +1269,10 @@ function onDataLoaded(jsonStr) {
   renderStats(_data.stats);
   renderJobs(_data.jobs, actor, _data.perms);
   renderQuickLinks(actor, _data.perms);
+
+  // Show search bar now that jobs are rendered
+  var searchWrap = document.getElementById('job-search-wrap');
+  if (searchWrap) searchWrap.style.display = 'block';
 
   // Show leader dashboard automatically if leader
   if (_data.perms.isLeader) {
@@ -1662,6 +1674,41 @@ function renderStats(stats) {
 }
 
 // ── Jobs Table Rendering ───────────────────────────────────────
+// ── Job Search ─────────────────────────────────────────────────
+function filterJobs_(term) {
+  var q = (term || '').trim().toLowerCase();
+  var jobRows     = document.querySelectorAll('tr[data-search]');
+  var groupHdrs   = document.querySelectorAll('tr[data-group-header]');
+  var countEl     = document.getElementById('job-search-count');
+
+  if (!q) {
+    jobRows.forEach(function(tr) {
+      tr.style.display = tr.dataset.groupMember ? 'none' : '';
+    });
+    groupHdrs.forEach(function(tr) { tr.style.display = ''; });
+    if (countEl) countEl.style.display = 'none';
+    return;
+  }
+
+  var matched = 0;
+  var visibleGroups = {};
+  jobRows.forEach(function(tr) {
+    var hit = (tr.dataset.search || '').indexOf(q) !== -1;
+    tr.style.display = hit ? '' : 'none';
+    if (hit) {
+      matched++;
+      if (tr.dataset.groupMember) visibleGroups[tr.dataset.groupMember] = true;
+    }
+  });
+  groupHdrs.forEach(function(tr) {
+    tr.style.display = visibleGroups[tr.dataset.groupHeader] ? '' : 'none';
+  });
+  if (countEl) {
+    countEl.textContent = matched + (matched === 1 ? ' job' : ' jobs') + ' found';
+    countEl.style.display = 'block';
+  }
+}
+
 function renderJobs(jobs, actor, perms) {
   var TIER1 = {
     INTAKE_RECEIVED: true, ALLOCATED: true, IN_PROGRESS: true,
@@ -1816,9 +1863,11 @@ function renderJobsGrouped_(jobs, actor, perms, tbody) {
     headerTd.appendChild(countBadge);
     headerTd.appendChild(chipsDiv);
     headerRow.appendChild(headerTd);
+    headerRow.dataset.groupHeader = client;
 
     var detailRows = clientJobs.map(function(job) {
       var tr = buildJobRow(job, actor, perms);
+      tr.dataset.groupMember = client;
       tr.style.display = 'none';
       return tr;
     });
@@ -1837,6 +1886,10 @@ function renderJobsGrouped_(jobs, actor, perms, tbody) {
 
 function buildJobRow(job, actor, perms) {
   var tr = document.createElement('tr');
+  tr.dataset.search = [
+    job.job_number, job.client_code, job.product_code,
+    job.client_job_ref, job.current_state, job.assigned_name
+  ].join(' ').toLowerCase().replace(/undefined|null/g, '');
 
   // Job Number
   tr.appendChild(makeCell(function(td) {
