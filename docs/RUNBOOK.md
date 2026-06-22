@@ -145,6 +145,89 @@ Correction sequence:
 
 ---
 
+## Portal Link Secret Operations
+
+### What Is PORTAL_LINK_SECRET
+
+`PORTAL_LINK_SECRET` is a server-side HMAC signing key stored in Apps Script Script Properties. It signs personal portal links sent to each designer.
+
+Every designer portal link carries a capability token in the `?pt=` URL parameter:
+```
+PT1.<person_code>.<HMAC_SHA256(person_code + '|PORTAL|v1', secret)>
+```
+
+The secret is never sent to the client. It exists only in Script Properties and is read exclusively by `src/02-security/PortalAuth.gs` on every portal request to verify the token signature.
+
+**Who this affects:** External and consumer-Gmail designers (~100+ staff). The script owner and same-domain Google Workspace users are authenticated via `Session.getActiveUser().getEmail()` and are unaffected by the portal secret state.
+
+---
+
+### WARNING — runGeneratePortalSecret() Is a Global Rotation
+
+> **Do not run `runGeneratePortalSecret()` without an authorized maintenance window.**
+
+This function:
+- Generates a new random secret and writes it to Script Properties immediately.
+- Invalidates every existing external designer portal link the moment it runs.
+- Locks out all consumer-Gmail designers (~100+ staff) until new links are emailed and opened.
+
+Recovery after accidental rotation requires running `runSendAllPortalLinks()` immediately. Staff must open the new link email and re-bookmark it. Full user recovery takes hours across time zones even after the technical fix is applied in minutes.
+
+---
+
+### Planned Rotation Procedure
+
+Run when security policy requires periodic key rotation, or if the current secret may be compromised.
+
+1. Announce a maintenance window (minimum 30 minutes) to all managers and designers.
+2. Open the PROD Apps Script editor.
+3. Run: `runGeneratePortalSecret()`
+4. Run: `runSendAllPortalLinks()`
+5. Confirm access: ask one test designer to open their new link email and verify the portal loads correctly.
+6. Send WhatsApp/email announcement to all managers: "Portal links have been renewed. Staff should open the newest link email from BLC Nexus and re-bookmark it."
+
+---
+
+### Emergency Recovery Procedure
+
+Use when portal links stop working system-wide — for example, Script Properties were accidentally wiped, the Apps Script project was re-created, or the secret was unintentionally rotated.
+
+1. Open the PROD Apps Script editor.
+2. Run: `runGeneratePortalSecret()`
+3. Run: `runSendAllPortalLinks()`
+4. Confirm: ask one test designer to open the new link email and verify the portal loads.
+5. Send WhatsApp/email announcement to all managers: "Your portal link has been renewed. Ask your designers to open the newest email from BLC Nexus and bookmark the new link."
+
+> **Machine loss does not block this recovery.** The Apps Script editor is accessible from any browser using the Google Workspace account. The old secret value is not required — a new secret is generated from scratch.
+
+---
+
+### Self-Service — Individual Staff Recovering a Lost Link
+
+Individual designers who lose their link do not need admin intervention:
+
+1. Open the portal base URL in a browser (without any `?pt=` token) — the login screen appears.
+2. Enter their work email address.
+3. A new personal link is emailed to them within seconds.
+4. Rate-limited to one request per 10 minutes per email address.
+
+This does **not** rotate the secret. All other designers' existing links remain valid.
+
+---
+
+### Backing Up the Current Secret (Optional)
+
+Backing up the current `PORTAL_LINK_SECRET` value is **not required for machine-loss recovery** — a new secret can always be generated and links re-sent. A backup is only needed if you must preserve existing links and avoid disrupting staff during a DR event.
+
+To back up:
+1. Open Apps Script editor → Project Settings → Script Properties.
+2. Copy the value of `PORTAL_LINK_SECRET`.
+3. Store in 1Password under "BLC Nexus PROD Script Properties".
+
+If no backup is available: generate a new secret with `runGeneratePortalSecret()` and re-send links with `runSendAllPortalLinks()`. Functional impact is zero. Staff disruption is approximately 1–4 hours (time for all staff across time zones to open the new link email).
+
+---
+
 ## Period Operations
 
 ### Closing a Billing Period

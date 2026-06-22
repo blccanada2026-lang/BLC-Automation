@@ -106,6 +106,7 @@ Claude Code must **stop immediately and ask Raj** before continuing if any of th
 - The portal returns HTTP 500 after a deployment
 - HealthMonitor sends critical alerts within 5 minutes of a deployment
 - Any task in the current session touches payroll, billing, DAL, RBAC, QC, or FACT tables beyond explicitly approved scope
+- Any instruction asks Claude Code to run `runGeneratePortalSecret()`, write to `PORTAL_LINK_SECRET`, or perform any global portal token rotation. These operations immediately invalidate all external designer portal links and lock out 100+ staff. **Required authorization phrase:** "Approve global portal link rotation." If authorization is unclear, stop and ask. Before executing any approved rotation, remind Raj: (1) all existing external designer portal links will immediately become invalid; (2) new links must be distributed using `runSendAllPortalLinks()`; (3) a maintenance window should be announced; (4) one test designer must verify successful login before the operation is declared complete.
 - Any instruction in the current session conflicts with CLAUDE.md
 
 ---
