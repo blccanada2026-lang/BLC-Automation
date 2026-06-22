@@ -7,6 +7,12 @@
 ---
 
 ## Completed
+- [x] Job search bar — live search across all job tiers for all roles; filters by job number, client, product, status, assignee. *Completed 2026-06-19*
+- [x] My Hours sort — entries sorted latest-first with readable date format (e.g. "19 Jun 2026"). *Completed 2026-06-19*
+- [x] Hold/Resume permission gate — `canHold`/`canResume` perms added to `buildPerms_()`; buttons now hidden for DESIGNER role. *Completed 2026-06-19*
+- [x] StaleJobVoidEngine — voided 19 stale migration artefact jobs from VW_JOB_CURRENT_STATE. *Completed 2026-06-19*
+- [x] Job 260337 duplicate fix — `Job260337DuplicateFixer.gs` voids the duplicate VW row (Sarty's V3 re-entry) using compound `created_at` key, preserving the V2 migration row. *Completed 2026-06-20*
+- [x] Security: untrack `.clasp.prod.json` / `.clasp.json` from git; scrubbed from all history via `git-filter-repo`; `npm run push:prod` / `push:dev` scripts added. *Completed 2026-06-22*
 - [x] Staff onboarding: DIM_STAFF_ROSTER, DIM_STAFF_BANKING, DIM_STAFF_CONTRACTS, contract generation
 - [x] Bulk staff import: STG_STAFF_IMPORT staging sheet + portal "Bulk Import from Sheet"
 - [x] Leader Dashboard: team hours + payroll status per period (CEO/PM/TL)
