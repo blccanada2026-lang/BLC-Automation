@@ -22,8 +22,14 @@ Before ending any session:
 1. Run `git status`
 2. Summarize all changed files
 3. Commit only if the task is complete and tested
-4. Push only when explicitly approved or required
-5. **Warn clearly if the working tree is dirty — a dirty tree is never silently acceptable**
+4. `git push origin main` — always push after commit (remote is the backup)
+5. `npm run push:prod` — always run after `git push origin main` to deploy to the live Apps Script
+6. **Warn clearly if the working tree is dirty — a dirty tree is never silently acceptable**
+
+**CRITICAL — `npm run push:prod` rule:**
+- Run it ONLY after a successful `git push origin main` (i.e. work is committed and complete)
+- NEVER run mid-session on incomplete or untested code — it pushes all 86 files live immediately
+- After push: remind user to do a New Version redeploy in Apps Script editor if the portal UX changed
 
 ### R5 — PROD Readiness Checklist
 Before any production deployment:
