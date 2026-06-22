@@ -16,7 +16,7 @@
 // ║  getClients(actorEmail)                                 ║
 // ║    → returns all active clients with their rates        ║
 // ║                                                         ║
-// ║  Permission: ADMIN_CONFIG (PM + CEO)                    ║
+// ║  Permission: ADMIN_CONFIG (CEO + ADMIN)                 ║
 // ╚══════════════════════════════════════════════════════════╝
 //
 // PAYLOAD SCHEMA for onboardClient():
@@ -235,19 +235,23 @@ var ClientOnboarding = (function () {
       if (e.code !== 'SHEET_NOT_FOUND') throw e;
     }
 
+    var isCeo = (actor.role === 'CEO');
     return masters
       .filter(function(m) { return String(m.active || '').toUpperCase() === 'TRUE'; })
       .map(function(m) {
         var code    = String(m.client_code || '').toUpperCase().trim();
         var rateRow = rateMap[code] || {};
-        return {
+        var entry = {
           client_code:   code,
           client_name:   m.client_name   || '',
           contact_email: m.contact_email || '',
-          currency:      m.currency      || rateRow.currency || 'CAD',
-          hourly_rate:   rateRow.hourly_rate || '',
           notes:         m.notes         || ''
         };
+        if (isCeo) {
+          entry.currency    = m.currency || rateRow.currency || 'CAD';
+          entry.hourly_rate = rateRow.hourly_rate || '';
+        }
+        return entry;
       });
   }
 

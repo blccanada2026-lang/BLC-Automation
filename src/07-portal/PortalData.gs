@@ -407,7 +407,8 @@ var PortalData = (function () {
     var periodId = Identifiers.generateCurrentPeriodId();
 
     // ── 1. Load staff name map — ACTIVE staff only ───────────
-    var staffNameMap = {};
+    var staffNameMap  = {};
+    var supervisorMap = {};  // supervisor_code → { member_code: true }
     try {
       var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
       for (var s = 0; s < staffRows.length; s++) {
@@ -415,7 +416,13 @@ var PortalData = (function () {
         var isActive = sr.active === true || String(sr.active || '').toUpperCase() === 'TRUE';
         if (!isActive) continue; // exclude inactive, departed, and test actors
         var code = String(sr.person_code || '').trim();
-        if (code) staffNameMap[code] = String(sr.name || code);
+        if (!code) continue;
+        staffNameMap[code] = String(sr.name || code);
+        var supCode = String(sr.supervisor_code || '').trim();
+        if (supCode) {
+          if (!supervisorMap[supCode]) supervisorMap[supCode] = {};
+          supervisorMap[supCode][code] = true;
+        }
       }
     } catch (e) { /* table may not exist yet */ }
 
@@ -468,44 +475,57 @@ var PortalData = (function () {
     var HOURS_ABSOLUTE_EXCLUDE = { 'DS1': true, 'UNKNOWN': true, 'BTD': true, 'SNA': true };
     teamHours = teamHours.filter(function(e) { return !HOURS_ABSOLUTE_EXCLUDE[e.person_code]; });
 
-    // ── 3. Payroll status from MART_PAYROLL_SUMMARY ───────────
+    // ── Scope team_hours by role ──────────────────────────────
+    if (role === 'ADMIN') {
+      teamHours = [];
+    } else if (role === 'TEAM_LEAD') {
+      var tlCode = actor.personCode || '';
+      var tlTeam = supervisorMap[tlCode] || {};
+      teamHours = teamHours.filter(function(e) {
+        return e.person_code === tlCode || !!tlTeam[e.person_code];
+      });
+    }
+    // CEO and PM: no filter — full list returned
+
+    // ── 3. Payroll status — CEO only ──────────────────────────
     var payrollStatus = [];
-    try {
-      var martRows = DAL.readAll(Config.TABLES.MART_PAYROLL_SUMMARY, { callerModule: 'PortalData' });
-      for (var m = 0; m < martRows.length; m++) {
-        var mrow = martRows[m];
-        if (String(mrow.period_id || '') !== periodId) continue;
-        var mcode = String(mrow.person_code || '');
-        payrollStatus.push({
-          person_code:      mcode,
-          name:             staffNameMap[mcode] || mcode,
-          design_pay:       parseFloat(mrow.design_pay)       || 0,
-          qc_pay:           parseFloat(mrow.qc_pay)           || 0,
-          supervisor_bonus: parseFloat(mrow.supervisor_bonus) || 0,
-          total_pay:        parseFloat(mrow.total_pay)        || 0,
-          status:           String(mrow.status || 'NOT_RUN'),
-          annual_bonus_inr: 0  // placeholder — will be populated from FACT_QUARTERLY_BONUS
-        });
-      }
-    } catch (e) { /* MART may be empty */ }
+    if (role === 'CEO') {
+      try {
+        var martRows = DAL.readAll(Config.TABLES.MART_PAYROLL_SUMMARY, { callerModule: 'PortalData' });
+        for (var m = 0; m < martRows.length; m++) {
+          var mrow = martRows[m];
+          if (String(mrow.period_id || '') !== periodId) continue;
+          var mcode = String(mrow.person_code || '');
+          payrollStatus.push({
+            person_code:      mcode,
+            name:             staffNameMap[mcode] || mcode,
+            design_pay:       parseFloat(mrow.design_pay)       || 0,
+            qc_pay:           parseFloat(mrow.qc_pay)           || 0,
+            supervisor_bonus: parseFloat(mrow.supervisor_bonus) || 0,
+            total_pay:        parseFloat(mrow.total_pay)        || 0,
+            status:           String(mrow.status || 'NOT_RUN'),
+            annual_bonus_inr: 0
+          });
+        }
+      } catch (e) { /* MART may be empty */ }
 
-    // ── 4. Annual bonus from FACT_QUARTERLY_BONUS ─────────────
-    var annualBonusMap = {};
-    try {
-      var annualPid  = 'ANNUAL-' + periodId.substring(0, 4);  // e.g. 'ANNUAL-2026'
-      var bonusRows  = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: 'PortalData' });
-      for (var b = 0; b < bonusRows.length; b++) {
-        var br = bonusRows[b];
-        if (String(br.event_type        || '') !== 'ANNUAL_BONUS')  continue;
-        if (String(br.quarter_period_id || '') !== annualPid)       continue;
-        var bcode = String(br.person_code || '').trim();
-        if (bcode) annualBonusMap[bcode] = parseFloat(br.bonus_inr) || 0;
-      }
-    } catch (e) { /* FACT_QUARTERLY_BONUS may be empty */ }
+      // ── 4. Annual bonus from FACT_QUARTERLY_BONUS ─────────────
+      var annualBonusMap = {};
+      try {
+        var annualPid = 'ANNUAL-' + periodId.substring(0, 4);
+        var bonusRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: 'PortalData' });
+        for (var b = 0; b < bonusRows.length; b++) {
+          var br = bonusRows[b];
+          if (String(br.event_type        || '') !== 'ANNUAL_BONUS') continue;
+          if (String(br.quarter_period_id || '') !== annualPid)      continue;
+          var bcode = String(br.person_code || '').trim();
+          if (bcode) annualBonusMap[bcode] = parseFloat(br.bonus_inr) || 0;
+        }
+      } catch (e) { /* FACT_QUARTERLY_BONUS may be empty */ }
 
-    // Populate annual_bonus_inr in payrollStatus
-    for (var p = 0; p < payrollStatus.length; p++) {
-      payrollStatus[p].annual_bonus_inr = annualBonusMap[payrollStatus[p].person_code] || 0;
+      for (var p = 0; p < payrollStatus.length; p++) {
+        payrollStatus[p].annual_bonus_inr = annualBonusMap[payrollStatus[p].person_code] || 0;
+      }
     }
 
     return JSON.stringify({

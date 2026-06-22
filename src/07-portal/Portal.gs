@@ -209,7 +209,9 @@ function portal_createJob(ptoken, payloadJson, designerCode) {
  * @returns {string}  JSON: { ok: true, message }
  */
 function portal_processQueue(ptoken) {
-  PortalAuth.resolveEmail(ptoken);  // B1: require verified identity
+  var email = PortalAuth.resolveEmail(ptoken);
+  var actor = RBAC.resolveActor(email);
+  RBAC.enforcePermission(actor, RBAC.ACTIONS.QUEUE_MODIFY);
   try {
     QueueProcessor.processQueue();
     return JSON.stringify({ ok: true, message: 'Queue processed.' });
@@ -297,7 +299,9 @@ function portal_getActiveDesigners(ptoken) {
  * @returns {string}  JSON array of { personCode, name, role }
  */
 function portal_getQCReviewers(ptoken) {
-  PortalAuth.resolveEmail(ptoken);  // B1: require verified identity
+  var email = PortalAuth.resolveEmail(ptoken);
+  var actor = RBAC.resolveActor(email);
+  RBAC.enforcePermission(actor, RBAC.ACTIONS.JOB_ALLOCATE);
   var QC_ROLES = { QC_REVIEWER: true, TEAM_LEAD: true, PM: true, CEO: true };
   try {
     var rows = DAL.readAll('DIM_STAFF_ROSTER', { callerModule: 'Portal' });

@@ -642,23 +642,26 @@ var StaffOnboarding = (function () {
       var code     = String(row.person_code || '');
       var contract = contractMap[code];
 
-      result.push({
+      var staffEntry = {
         person_code:     code,
         name:            String(row.name          || code),
         email:           String(row.email         || ''),
         role:            String(row.role          || ''),
         supervisor_code: String(row.supervisor_code || ''),
         pm_code:         String(row.pm_code       || ''),
-        pay_currency:    String(row.pay_currency  || 'INR'),
-        pay_design:      parseFloat(row.pay_design) || 0,
-        pay_qc:          parseFloat(row.pay_qc)     || 0,
         bonus_eligible:  String(row.bonus_eligible || '') === 'TRUE',
         effective_from:  String(row.effective_from  || ''),
         has_banking:     !!bankingMap[code],
         contract_status: contract ? contract.status : 'NONE',
         contract_url:    contract ? contract.doc_url : '',
         contract_id:     contract ? contract.contract_id : ''
-      });
+      };
+      if (actor.role === 'CEO') {
+        staffEntry.pay_currency = String(row.pay_currency || 'INR');
+        staffEntry.pay_design   = parseFloat(row.pay_design) || 0;
+        staffEntry.pay_qc       = parseFloat(row.pay_qc)     || 0;
+      }
+      result.push(staffEntry);
     }
 
     // Sort: by role hierarchy then name
