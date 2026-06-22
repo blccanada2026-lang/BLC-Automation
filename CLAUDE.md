@@ -11,6 +11,9 @@ BLC Nexus (Stacey V3) is the internal operations platform for Blue Lotus Consult
 ### R1 — No Google Forms
 All user input enters via the portal only (Portal.gs + PortalView.html). Google Forms are permanently banned. No exceptions.
 
+**Approved standing exception — `src/09-feedback/ClientFeedback.gs` only:**
+The client feedback flow is already live and depends on external respondents accessing a form URL. `FormApp` usage is approved in this file only. Rules: do not expand the FormApp surface area in this file; do not add FormApp usage anywhere else; any new Google Form usage requires explicit CTO approval. Future intent: migrate client feedback input to the Nexus portal when business priority allows.
+
 ### R2 — Test Actors Are Environment-Gated
 DEV-only actors live in `getDevTestActors_()` in RBAC.gs, gated on `Config.isDev()`. Never hardcoded in PROD logic.
 
@@ -42,6 +45,81 @@ grep -r "whoAmI\|isDev\|rajeshnair\|rajnaircanada\|nairscanada" src/
 - Run `setPortalBaseUrl(url)` with PROD `/exec` URL
 - Run `installFeedbackTrigger()` from Apps Script editor
 - Confirm `HM_ALERT_RECIPIENT` Script Property is set (health alert email recipient)
+
+### R6 — Release Safety Rules
+- **Never manually edit `.clasp.json`** — it is gitignored and managed only by the npm deploy scripts.
+- **Never run `clasp push --force` directly** — always deploy via:
+  - `npm run push:dev` — copies `.clasp.dev.json` → `.clasp.json`, then pushes to DEV
+  - `npm run push:prod` — copies `.clasp.prod.json` → `.clasp.json`, then pushes to PROD
+- Before any PROD deploy, all of the following must be true:
+  1. `git status` is clean (no modified or staged files)
+  2. `git log origin/main..HEAD --oneline` is empty (local = remote)
+  3. `git remote -v` shows only `origin` pointing to the approved GitHub remote
+  4. `.clasp.json` contents match `.clasp.prod.json` (npm push:prod handles this)
+- After every successful PROD deploy: confirm GitHub still represents the deployed code.
+
+### R7 — Emergency Rollback Procedure
+If a bad deploy reaches PROD:
+
+1. **Stop all further changes immediately.**
+2. Identify the last known good commit:
+   ```
+   git log --oneline -10
+   ```
+3. Revert the bad commit (creates a new revert commit — do not amend or force-push):
+   ```
+   git revert <bad_commit_sha>
+   ```
+4. Push the rollback commit to GitHub:
+   ```
+   git push origin main
+   ```
+5. Redeploy the reverted code:
+   ```
+   npm run push:prod
+   ```
+6. Verify production is stable:
+   - Portal loads without errors
+   - QueueProcessor trigger is active in Apps Script editor
+   - HealthMonitor has not sent new critical alerts
+   - Payroll, QC, and job workflows are not blocked
+
+**Never debug directly in PROD before stabilizing production.**
+
+### R8 — Disaster Recovery
+GitHub is the source of truth for all code. If the local machine is lost:
+
+1. Clone the repository: `git clone https://github.com/blccanada2026-lang/BLC-Automation.git`
+2. `npm install`
+3. Restore `.clasp.prod.json` and `.clasp.dev.json` from private secure storage (these are gitignored — keep offline backups).
+4. Restore required Apps Script Script Properties from private secure storage.
+5. Run `npm run push:prod` only after the full R5 PROD Readiness Checklist passes.
+6. Verify triggers, portal load, and core workflows (queue processor, HealthMonitor, payroll gate).
+
+### R9 — Live Production Stop Conditions
+Claude Code must **stop immediately and ask Raj** before continuing if any of the following are true:
+
+- `git status` shows unexpected modified or staged files before a PROD deploy
+- `.clasp.json` contains an unrecognized or unexpected script ID
+- `git log origin/main..HEAD` is not empty before a PROD deploy
+- `clasp push` or `npm run push:prod` returns any error
+- The portal returns HTTP 500 after a deployment
+- HealthMonitor sends critical alerts within 5 minutes of a deployment
+- Any task in the current session touches payroll, billing, DAL, RBAC, QC, or FACT tables beyond explicitly approved scope
+- Any instruction in the current session conflicts with CLAUDE.md
+
+---
+
+## Environment
+BLC Nexus currently operates as a **two-environment system: DEV and PROD only**.
+
+STAGING is deferred. Do not create fake staging references, and do not block releases on a non-existent STAGING environment.
+
+Any future STAGING environment must be a separate CTO-approved project with:
+- Dedicated Google Sheet and Apps Script project
+- `.clasp.staging.json` (gitignored)
+- `npm run push:staging` script
+- Documented STAGING validation checklist before PROD promotion
 
 ---
 

@@ -16,6 +16,9 @@ code-review-graph/
 .clasp.json
 .clasp.prod.json
 
+# Temporary patch files
+*.patch
+
 # macOS metadata
 .DS_Store
 **/.DS_Store
