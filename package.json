@@ -6,7 +6,9 @@
   "scripts": {
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:verbose": "jest --verbose"
+    "test:verbose": "jest --verbose",
+    "push:prod": "cp .clasp.prod.json .clasp.json && clasp push --force",
+    "push:dev": "cp .clasp.dev.json .clasp.json && clasp push --force"
   },
   "repository": {
     "type": "git",

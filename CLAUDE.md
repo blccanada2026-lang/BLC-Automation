@@ -35,6 +35,7 @@ grep -r "whoAmI\|isDev\|rajeshnair\|rajnaircanada\|nairscanada" src/
 - All triggers installed and verified (queue processor, feedback, MART refresh)
 - Run `setPortalBaseUrl(url)` with PROD `/exec` URL
 - Run `installFeedbackTrigger()` from Apps Script editor
+- Confirm `HM_ALERT_RECIPIENT` Script Property is set (health alert email recipient)
 
 ---
 

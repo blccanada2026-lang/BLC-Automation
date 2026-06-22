@@ -11,3 +11,7 @@ code-review-graph/
 .claude/mcp.json
 .claude/settings_backup.json
 .claude/rules/code-graph-first.md
+
+# clasp deployment targets — never commit prod/active script IDs
+.clasp.json
+.clasp.prod.json
