@@ -15,3 +15,7 @@ code-review-graph/
 # clasp deployment targets — never commit prod/active script IDs
 .clasp.json
 .clasp.prod.json
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
