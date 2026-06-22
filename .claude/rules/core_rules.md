@@ -280,3 +280,18 @@ Why: DAL runs WriteGuard (access control), CacheManager (quota), and BatchOperat
 | X  | Business logic containment | src/06–13 handlers/engines |
 | Y  | Test gate / no partial progress | tests/ |
 | Z  | Write path integrity (DAL + queue) | src/01-dal, src/05-queue |
+| R1 | PROD deploy traceability | All |
+
+---
+
+## RULE R1 — Git Commit Before Every PROD Deploy
+**Every change deployed to PROD via `npm run push:prod` must have a corresponding git commit. PROD and git HEAD must be identical before every clasp push.**
+
+```javascript
+// REQUIRED sequence before every PROD deploy
+git status          // must be clean
+git log --oneline -3  // confirm HEAD reflects all changes being deployed
+npm run push:prod   // only after git is clean and committed
+```
+
+> Why: A PROD deploy without a git commit creates an unauditable gap — code runs in production with no traceable history. If a bug is introduced, there is no diff to inspect, no rollback point, and no record of what changed. Git and PROD must always be in sync.
