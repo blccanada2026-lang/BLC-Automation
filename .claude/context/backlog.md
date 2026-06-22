@@ -1,12 +1,14 @@
 # Backlog — BLC Nexus
 
 ## Pending
-- [ ] **Leader Dashboard: TL-grouped team hours** — break flat Team Hours table into per-TL sections (e.g. "SVN's team: X hrs"). Currently all staff shown in one flat list sorted by total hours. *Requested 2026-05-07*
+- [ ] **Leader Dashboard: TL-grouped team hours** — break flat Team Hours table into per-TL sections (e.g. "SVN's team: X hrs"). Currently all staff shown in one flat list sorted by total hours. *Requested 2026-05-07* — **Note: A2 (2026-06-22) now scopes TEAM_LEAD to own team only; this feature is about UI grouping for CEO/PM view, still pending.**
+- [ ] **Phase B security roadmap** — B1: fix rating portal functions to use PortalAuth.resolveEmail (currently Session.getActiveUser); B3: tighten QC scope (currently sees all jobs on shared accounts via buildTeamCodes_, should restrict to own allocated/reviewed jobs); B4: audit staffNameMap visibility (full staff directory sent to every authenticated user on every portal load). *Identified 2026-06-22 — awaiting Raj approval to proceed.*
 - [x] **CEO Daily Briefing** — `CEODailyBriefing.run()` + daily trigger (8 AM CST Mon–Sat) + portal "Send Daily Briefing" button. Covers: job pipeline by state, QC backlog, hours not logged today, billing pipeline, dead letter health. *Completed 2026-06-09*
 
 ---
 
 ## Completed
+- [x] Security hardening sprint (Phase A) — A1–A7: payroll/bonus amounts CEO-only, client rates CEO-only, staff pay rates CEO-only, TEAM_LEAD team_hours scoped to own team, ADMIN team_hours empty, RBAC gates added to portal_getQCReviewers and portal_processQueue. Commit ce77350, deployed to PROD 2026-06-22.
 - [x] Job search bar — live search across all job tiers for all roles; filters by job number, client, product, status, assignee. *Completed 2026-06-19*
 - [x] My Hours sort — entries sorted latest-first with readable date format (e.g. "19 Jun 2026"). *Completed 2026-06-19*
 - [x] Hold/Resume permission gate — `canHold`/`canResume` perms added to `buildPerms_()`; buttons now hidden for DESIGNER role. *Completed 2026-06-19*

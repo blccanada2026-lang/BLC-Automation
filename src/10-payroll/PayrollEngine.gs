@@ -536,10 +536,12 @@ var PayrollEngine = (function () {
 
       // ── 5. Process each person ────────────────────────────
       var processed = 0, skipped = 0, errors = [], byPerson = [];
+      var wasPartial = false;
 
       for (var i = 0; i < personCodes.length; i++) {
 
         if (HealthMonitor.isApproachingLimit()) {
+          wasPartial = true;
           Logger.warn('PAYROLL_RUN_PARTIAL', {
             module: MODULE, message: 'Stopping — quota limit approaching',
             processed: processed, remaining: personCodes.length - i
@@ -635,7 +637,7 @@ var PayrollEngine = (function () {
       if (processed > 0) refreshMartPayrollSummary_(periodId);
 
       var result = { processed: processed, skipped: skipped, errors: errors,
-                     by_person: byPerson, period_id: periodId };
+                     by_person: byPerson, period_id: periodId, partial: wasPartial };
       Logger.info('PAYROLL_RUN_COMPLETE', {
         module: MODULE, message: 'Base pay run complete', result: JSON.stringify(result)
       });
@@ -863,84 +865,101 @@ var PayrollEngine = (function () {
   /**
    * @param {string} actorEmail  CEO only
    * @param {string} periodId
-   * @returns {{ processed, skipped, period_id }}
+   * @returns {{ processed, skipped, period_id, partial }}
    */
   function approveAllPayroll(actorEmail, periodId) {
     var actor = RBAC.resolveActor(actorEmail);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_RUN);
     RBAC.enforceFinancialAccess(actor);
 
-    periodId = periodId || Identifiers.generateCurrentPeriodId();
+    HealthMonitor.startExecution(MODULE);
+    var wasPartial = false;
 
-    // Read all payroll rows for the period to find confirmed persons
-    var allRows;
     try {
-      allRows = DAL.readAll(Config.TABLES.FACT_PAYROLL_LEDGER, {
-        callerModule: MODULE,
-        periodId:     periodId
+      periodId = periodId || Identifiers.generateCurrentPeriodId();
+
+      // Read all payroll rows for the period to find confirmed persons
+      var allRows;
+      try {
+        allRows = DAL.readAll(Config.TABLES.FACT_PAYROLL_LEDGER, {
+          callerModule: MODULE,
+          periodId:     periodId
+        });
+      } catch (e) {
+        if (e.code === 'SHEET_NOT_FOUND') allRows = [];
+        else throw e;
+      }
+
+      // Group by person_code → track which events exist
+      var personEvents = {};
+      for (var i = 0; i < allRows.length; i++) {
+        var row   = allRows[i];
+        var code  = String(row.person_code  || '');
+        var etype = String(row.event_type   || '');
+        if (!code) continue;
+        if (!personEvents[code]) personEvents[code] = {};
+        personEvents[code][etype] = true;
+      }
+
+      var processed = 0, skipped = 0;
+      var codes     = Object.keys(personEvents);
+
+      for (var j = 0; j < codes.length; j++) {
+        if (HealthMonitor.isApproachingLimit()) {
+          wasPartial = true;
+          Logger.warn('APPROVE_ALL_PARTIAL', {
+            module: MODULE, message: 'Stopping — quota limit approaching',
+            processed: processed, remaining: codes.length - j
+          });
+          break;
+        }
+
+        var personCode = codes[j];
+        var events     = personEvents[personCode];
+
+        // Only process staff who have confirmed but not yet been processed
+        if (!events['PAYROLL_CONFIRMED']) { skipped++; continue; }
+        if (events['PAYROLL_PROCESSED'])  { skipped++; continue; }
+
+        var idempotencyKey = buildIdempotencyKey_('PAYROLL_PROCESSED', personCode, periodId);
+
+        var processRow = {
+          event_id:        Identifiers.generateId(),
+          period_id:       periodId,
+          event_type:      'PAYROLL_PROCESSED',
+          timestamp:       new Date().toISOString(),
+          actor_code:      actor.personCode || '',
+          actor_role:      actor.role       || '',
+          person_code:     personCode,
+          design_hours:    0,
+          qc_hours:        0,
+          design_pay:      0,
+          qc_pay:          0,
+          bonus_amount:    0,
+          total_pay:       0,
+          status:          'PROCESSED',
+          notes:           'CEO final approval',
+          idempotency_key: idempotencyKey,
+          payload_json:    JSON.stringify({ approved_at: new Date().toISOString() })
+        };
+
+        DAL.appendRow(Config.TABLES.FACT_PAYROLL_LEDGER, processRow, {
+          callerModule: MODULE, periodId: periodId
+        });
+        processed++;
+      }
+
+      if (processed > 0) refreshMartPayrollSummary_(periodId);
+
+      Logger.info('PAYROLL_ALL_APPROVED', {
+        module: MODULE, processed: processed, skipped: skipped, period_id: periodId
       });
-    } catch (e) {
-      if (e.code === 'SHEET_NOT_FOUND') allRows = [];
-      else throw e;
+
+      return { processed: processed, skipped: skipped, period_id: periodId, partial: wasPartial };
+
+    } finally {
+      HealthMonitor.endExecution();
     }
-
-    // Group by person_code → track which events exist
-    var personEvents = {};
-    for (var i = 0; i < allRows.length; i++) {
-      var row   = allRows[i];
-      var code  = String(row.person_code  || '');
-      var etype = String(row.event_type   || '');
-      if (!code) continue;
-      if (!personEvents[code]) personEvents[code] = {};
-      personEvents[code][etype] = true;
-    }
-
-    var processed = 0, skipped = 0;
-    var codes     = Object.keys(personEvents);
-
-    for (var j = 0; j < codes.length; j++) {
-      var personCode = codes[j];
-      var events     = personEvents[personCode];
-
-      // Only process staff who have confirmed but not yet been processed
-      if (!events['PAYROLL_CONFIRMED']) { skipped++; continue; }
-      if (events['PAYROLL_PROCESSED'])  { skipped++; continue; }
-
-      var idempotencyKey = buildIdempotencyKey_('PAYROLL_PROCESSED', personCode, periodId);
-
-      var processRow = {
-        event_id:        Identifiers.generateId(),
-        period_id:       periodId,
-        event_type:      'PAYROLL_PROCESSED',
-        timestamp:       new Date().toISOString(),
-        actor_code:      actor.personCode || '',
-        actor_role:      actor.role       || '',
-        person_code:     personCode,
-        design_hours:    0,
-        qc_hours:        0,
-        design_pay:      0,
-        qc_pay:          0,
-        bonus_amount:    0,
-        total_pay:       0,
-        status:          'PROCESSED',
-        notes:           'CEO final approval',
-        idempotency_key: idempotencyKey,
-        payload_json:    JSON.stringify({ approved_at: new Date().toISOString() })
-      };
-
-      DAL.appendRow(Config.TABLES.FACT_PAYROLL_LEDGER, processRow, {
-        callerModule: MODULE, periodId: periodId
-      });
-      processed++;
-    }
-
-    if (processed > 0) refreshMartPayrollSummary_(periodId);
-
-    Logger.info('PAYROLL_ALL_APPROVED', {
-      module: MODULE, processed: processed, skipped: skipped, period_id: periodId
-    });
-
-    return { processed: processed, skipped: skipped, period_id: periodId };
   }
 
   // ============================================================

@@ -702,7 +702,15 @@ function portal_approveAllPayroll(ptoken, periodId) {
  * @returns {string}  JSON array of { person_code, name, role }
  */
 function portal_getMyRatees(quarterPeriodId, raterCode, raterToken) {
-  var email = Session.getActiveUser().getEmail();
+  // Rating portal dual-auth: Google Workspace users resolve via session email.
+  // External Gmail raters (email = '') fall through to the HMAC raterToken
+  // path inside PortalData.getMyRatees — requireValidRatingToken_() verifies
+  // HMAC-SHA256(raterCode + periodId, RATING_LINK_SECRET) before any actor
+  // resolution. A bare raterCode with no token is rejected with a hard throw.
+  // Do not replace with PortalAuth.resolveEmail(ptoken): this page is accessed
+  // directly from emailed rating links, not the main portal flow — raters have
+  // no portal capability token (ptoken) to present.
+  var email = Session.getActiveUser().getEmail() || '';
   return PortalData.getMyRatees(email, quarterPeriodId, raterCode || null, raterToken || null);
 }
 
@@ -719,7 +727,10 @@ function portal_getMyRatees(quarterPeriodId, raterCode, raterToken) {
  * @returns {string}  JSON array of ratees
  */
 function portal_getMyRateesAs(targetPersonCode, quarterPeriodId) {
-  var email = Session.getActiveUser().getEmail();
+  // CEO preview mode in the rating portal. CEO is always a Google Workspace
+  // user — session email is reliable. No ptoken available: this function is
+  // invoked from QuarterlyRating.html, not the main portal flow.
+  var email = Session.getActiveUser().getEmail() || '';
   return PortalData.getMyRateesAs(email, targetPersonCode, quarterPeriodId);
 }
 
@@ -752,7 +763,9 @@ function portal_getViewDataAs(ptoken, targetPersonCode) {
  * @returns {string}  JSON: { ok: true }
  */
 function portal_submitRating(payloadJson, raterCode, raterToken) {
-  var email = Session.getActiveUser().getEmail();
+  // Same dual-auth pattern as portal_getMyRatees. Session email for Workspace
+  // users; HMAC raterToken for external Gmail raters following an emailed link.
+  var email = Session.getActiveUser().getEmail() || '';
   return PortalData.submitRating(email, payloadJson, raterCode || null, raterToken || null);
 }
 
