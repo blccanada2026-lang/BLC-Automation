@@ -174,6 +174,8 @@ var Config = (function () {
     FACT_CLIENT_FEEDBACK:    'FACT_CLIENT_FEEDBACK',    // client feedback scores per designer per quarter
     DIM_SEQUENCE_COUNTERS:   'DIM_SEQUENCE_COUNTERS',
     REF_ACCOUNT_DESIGNER_MAP: 'REF_ACCOUNT_DESIGNER_MAP', // account team assignments: which designers belong to which client
+    DIM_SOP_TEMPLATES:       'DIM_SOP_TEMPLATES',       // SOP checklist templates per client/software/scope (T13)
+    DIM_SOP_ITEMS:           'DIM_SOP_ITEMS',           // individual checklist items per SOP template (T13)
 
     // Staging tables — transient queue (status-driven, not append-only)
     STG_RAW_INTAKE:        'STG_RAW_INTAKE',
@@ -186,8 +188,9 @@ var Config = (function () {
     FACT_WORK_LOGS:     'FACT_WORK_LOGS',
     FACT_QC_EVENTS:     'FACT_QC_EVENTS',
     FACT_BILLING_LEDGER:'FACT_BILLING_LEDGER',
-    FACT_PAYROLL_LEDGER:'FACT_PAYROLL_LEDGER',
-    FACT_SOP_SUBMISSIONS:'FACT_SOP_SUBMISSIONS',
+    FACT_PAYROLL_LEDGER: 'FACT_PAYROLL_LEDGER',
+    FACT_SOP_AUDITS:     'FACT_SOP_AUDITS',         // SOP item-level audit trail (partitioned by period_id) (T13)
+    FACT_SOP_CURRENT_STATUS: 'FACT_SOP_CURRENT_STATUS', // latest check state per job+item (flat, non-partitioned) (T13)
     FACT_PERFORMANCE_RATINGS: 'FACT_PERFORMANCE_RATINGS',
     FACT_QUARTERLY_BONUS:     'FACT_QUARTERLY_BONUS',     // quarterly + annual bonus calculations (separate from payroll)
 
@@ -316,7 +319,10 @@ var Config = (function () {
     SUBMISSION: 'SUB',   // SUB-202603-04421  (intake submission)
     QUEUE_ITEM: 'QI',    // QI-202603-09912   (queue entry)
     LOG_ENTRY:  'LOG',   // LOG-202603-55021  (system log)
-    EXCEPTION:  'EXC'    // EXC-202603-00003  (system exception)
+    EXCEPTION:  'EXC',   // EXC-202603-00003  (system exception)
+    SOP_AUDIT:  'SA',    // SA-202606-00001   (SOP audit event — FACT_SOP_AUDITS)
+    SOP_TEMPLATE: 'ST',  // ST-202606-00001   (SOP template — DIM_SOP_TEMPLATES)
+    SOP_ITEM:   'SI'     // SI-202606-00001   (SOP item — DIM_SOP_ITEMS)
   };
 
   // ──────────────────────────────────────────────────────────
@@ -395,6 +401,23 @@ var Config = (function () {
     // Maximum billing jobs processed per run before checkpoint.
     billingQuotaCheckEvery: 20
 
+  };
+
+  // ──────────────────────────────────────────────────────────
+  // SOP FEATURE FLAGS
+  // Script Property key names consumed by SopGate.gs (T13).
+  // Read at runtime via PropertiesService — never hardcoded.
+  //
+  // SOP_ENABLED:       'true' | 'false'  — master kill-switch
+  // SOP_MODE:          'WARN_ONLY'       — gate logs but never blocks (pilot phase)
+  //                    'BLOCK'           — gate enforces hard stop (post-pilot)
+  // SOP_PILOT_CLIENTS: comma-separated client codes (e.g. 'SBS,VW')
+  //                    empty string or absent = all clients
+  // ──────────────────────────────────────────────────────────
+  var SOP_FLAGS = {
+    ENABLED:       'SOP_ENABLED',
+    MODE:          'SOP_MODE',
+    PILOT_CLIENTS: 'SOP_PILOT_CLIENTS'
   };
 
   // ──────────────────────────────────────────────────────────
@@ -614,7 +637,10 @@ var Config = (function () {
 
     // Routing / ID constants
     FORM_TYPES:          FORM_TYPES,
-    ID_PREFIXES:         ID_PREFIXES
+    ID_PREFIXES:         ID_PREFIXES,
+
+    // SOP feature flag Script Property key names
+    SOP_FLAGS:           SOP_FLAGS
 
   };
 

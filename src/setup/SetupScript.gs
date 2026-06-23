@@ -264,11 +264,43 @@ var SCHEMAS = {
     'suggestions_text'
   ],
 
-  'FACT_SOP_SUBMISSIONS': [
-    'event_id', 'job_number', 'period_id', 'event_type',
-    'timestamp', 'actor_code', 'actor_role',
-    'checklist_data', 'approved_by', 'notes',
-    'idempotency_key', 'payload_json'
+  // ── T13 SOP Module tables ─────────────────────────────────
+
+  // DIM_SOP_TEMPLATES — one row per checklist template version per client/software/scope
+  'DIM_SOP_TEMPLATES': [
+    'sop_template_id', 'client_code', 'job_type', 'software',
+    'scope_code', 'version', 'status',
+    'effective_from', 'effective_to',
+    'created_by', 'created_at', 'template_hash'
+  ],
+
+  // DIM_SOP_ITEMS — one row per checklist item per template
+  'DIM_SOP_ITEMS': [
+    'sop_item_id', 'sop_template_id', 'item_seq', 'item_code',
+    'item_label', 'item_description', 'is_required',
+    'requires_comment', 'requires_attachment', 'active_flag', 'created_at'
+  ],
+
+  // FACT_SOP_AUDITS — append-only audit trail, one row per item-check event (partitioned)
+  'FACT_SOP_AUDITS': [
+    'audit_id', 'job_id', 'job_number', 'client_code',
+    'designer_email', 'role_at_action',
+    'sop_template_id', 'sop_template_version', 'sop_template_hash',
+    'sop_item_id', 'sop_item_code',
+    'checked_value', 'comment',
+    'action_type', 'source_state', 'target_state',
+    'idempotency_key', 'request_id',
+    'checked_at', 'checked_by', 'row_status',
+    'superseded_by_audit_id', 'created_at'
+  ],
+
+  // FACT_SOP_CURRENT_STATUS — one row per job+item; latest check state only (flat, non-partitioned)
+  'FACT_SOP_CURRENT_STATUS': [
+    'job_id', 'job_number', 'client_code',
+    'sop_template_id', 'sop_template_version', 'sop_template_hash',
+    'sop_item_id', 'sop_item_code',
+    'checked_value', 'comment',
+    'last_audit_id', 'checked_by', 'checked_at', 'updated_at'
   ],
 
   'FACT_PERFORMANCE_RATINGS': [
@@ -396,14 +428,15 @@ var FACT_TABLE_NAMES = [
   'FACT_QC_EVENTS',
   'FACT_BILLING_LEDGER',
   'FACT_PAYROLL_LEDGER',
-  'FACT_SOP_SUBMISSIONS'
+  'FACT_SOP_AUDITS'
 ];
 
 // ── Non-partitioned FACT tables — plain static tabs (no period suffix) ────
 var FLAT_FACT_TABLE_NAMES = [
   'FACT_CLIENT_FEEDBACK',
   'FACT_PERFORMANCE_RATINGS',
-  'FACT_QUARTERLY_BONUS'
+  'FACT_QUARTERLY_BONUS',
+  'FACT_SOP_CURRENT_STATUS'
 ];
 
 // ============================================================

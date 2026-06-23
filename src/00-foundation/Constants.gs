@@ -64,7 +64,10 @@ var Constants = (function () {
     BONUS_CALCULATED:        'BONUS_CALCULATED',
     // ── SOP ─────────────────────────────────────────────────
     SOP_CHECKLIST_SUBMITTED: 'SOP_CHECKLIST_SUBMITTED',
-    SOP_CHECKLIST_APPROVED:  'SOP_CHECKLIST_APPROVED'
+    SOP_CHECKLIST_APPROVED:  'SOP_CHECKLIST_APPROVED',
+    SOP_ITEM_CHECKED:        'SOP_ITEM_CHECKED',        // designer checks or unchecks a single item
+    SOP_CHECKLIST_COMPLETED: 'SOP_CHECKLIST_COMPLETED', // all required items checked — checklist is complete
+    SOP_GATE_BLOCKED:        'SOP_GATE_BLOCKED'         // gate log: job blocked or warned (written in WARN_ONLY and BLOCK mode)
   };
 
   // ──────────────────────────────────────────────────────────

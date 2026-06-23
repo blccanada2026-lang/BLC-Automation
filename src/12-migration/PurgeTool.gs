@@ -234,7 +234,7 @@ var PurgeTool = (function () {
       'FACT_QC_EVENTS|',
       'FACT_BILLING_LEDGER|',
       'FACT_PAYROLL_LEDGER|',
-      'FACT_SOP_SUBMISSIONS|'
+      'FACT_SOP_AUDITS|'
     ];
 
     // Discover all partitioned tabs in the spreadsheet

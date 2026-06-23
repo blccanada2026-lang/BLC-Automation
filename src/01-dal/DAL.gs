@@ -111,7 +111,10 @@ var DAL = (function () {
     'FACT_QC_EVENTS':        ['QCHandler', 'QCReassignHandler', 'MigrationEngine', 'MigratedQCApprovalFixer'],
     'FACT_BILLING_LEDGER':   ['BillingEngine', 'MigrationEngine', 'MigrationReplayEngine'],
     'FACT_PAYROLL_LEDGER':   ['PayrollEngine', 'MigrationEngine', 'MigrationReplayEngine'],
-    'FACT_SOP_SUBMISSIONS':  ['SOPHandler', 'MigrationEngine'],
+    'FACT_SOP_AUDITS':       ['SopChecklistHandler', 'MigrationEngine'],
+    'FACT_SOP_CURRENT_STATUS': ['SopChecklistHandler'],
+    'DIM_SOP_TEMPLATES':     ['SopAdminEngine'],
+    'DIM_SOP_ITEMS':         ['SopAdminEngine'],
 
     // ── View tables (rebuilt projections) ───────────────────
     'VW_JOB_CURRENT_STATE':  ['EventReplayEngine', 'JobCreateHandler', 'JobAssignHandler', 'JobStartHandler',
@@ -151,7 +154,7 @@ var DAL = (function () {
     'FACT_QC_EVENTS':       true,
     'FACT_BILLING_LEDGER':  true,
     'FACT_PAYROLL_LEDGER':  true,
-    'FACT_SOP_SUBMISSIONS': true
+    'FACT_SOP_AUDITS':      true
   };
 
   // FACT tables are the same set as partitioned tables here.

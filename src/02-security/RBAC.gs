@@ -169,6 +169,9 @@ var RBAC = (function () {
     ADMIN_OVERRIDE:     'ADMIN_CONFIG',     // Alias: same as ADMIN_CONFIG
     // ── Performance ratings ──────────────────────────────────
     RATE_STAFF:         'RATE_STAFF',      // Submit quarterly performance ratings (TL, PM, CEO)
+    // ── SOP checklist ────────────────────────────────────────
+    SOP_SAVE:           'SOP_SAVE',        // Save SOP checklist item state (designer, TL, PM, CEO)
+    SOP_ADMIN:          'SOP_ADMIN',       // Manage SOP templates and items (PM, CEO, ADMIN)
   };
 
   // ============================================================
@@ -246,7 +249,9 @@ var RBAC = (function () {
       ADMIN_CONFIG:    false,
       CLIENT_VIEW:     false,
       DATA_EXPORT:     false,
-      RATE_STAFF:      false
+      RATE_STAFF:      false,
+      SOP_SAVE:        true,   // designers fill in their own SOP checklist
+      SOP_ADMIN:       false
     },
 
     // ── TEAM_LEAD ─────────────────────────────────────────────
@@ -271,7 +276,9 @@ var RBAC = (function () {
       ADMIN_CONFIG:    false,
       CLIENT_VIEW:     true,
       DATA_EXPORT:     false,
-      RATE_STAFF:      true
+      RATE_STAFF:      true,
+      SOP_SAVE:        true,   // TLs fill in SOP checklist on behalf of their team
+      SOP_ADMIN:       false
     },
 
     // ── QC ────────────────────────────────────────────────────
@@ -296,7 +303,9 @@ var RBAC = (function () {
       ADMIN_CONFIG:    false,
       CLIENT_VIEW:     false,
       DATA_EXPORT:     false,
-      RATE_STAFF:      false
+      RATE_STAFF:      false,
+      SOP_SAVE:        true,   // QC staff also do design work and fill in checklists
+      SOP_ADMIN:       false
     },
 
     // ── PM (Project Manager) ──────────────────────────────────
@@ -321,7 +330,9 @@ var RBAC = (function () {
       ADMIN_CONFIG:    false,  // PM cannot change system config
       CLIENT_VIEW:     true,
       DATA_EXPORT:     true,
-      RATE_STAFF:      true
+      RATE_STAFF:      true,
+      SOP_SAVE:        true,
+      SOP_ADMIN:       true    // PMs manage SOP templates for their accounts
     },
 
     // ── CEO ───────────────────────────────────────────────────
@@ -346,7 +357,9 @@ var RBAC = (function () {
       ADMIN_CONFIG:    true,
       CLIENT_VIEW:     true,
       DATA_EXPORT:     true,
-      RATE_STAFF:      true
+      RATE_STAFF:      true,
+      SOP_SAVE:        true,
+      SOP_ADMIN:       true
     },
 
     // ── ADMIN ─────────────────────────────────────────────────
@@ -371,7 +384,9 @@ var RBAC = (function () {
       ADMIN_CONFIG:    true,
       CLIENT_VIEW:     true,
       DATA_EXPORT:     true,
-      RATE_STAFF:      false
+      RATE_STAFF:      false,
+      SOP_SAVE:        false,  // admin manages templates, does not fill checklists
+      SOP_ADMIN:       true    // admin can manage SOP templates via admin console
     },
 
     // ── SYSTEM ────────────────────────────────────────────────
@@ -397,7 +412,9 @@ var RBAC = (function () {
       ADMIN_CONFIG:    true,
       CLIENT_VIEW:     true,
       DATA_EXPORT:     true,
-      RATE_STAFF:      true
+      RATE_STAFF:      true,
+      SOP_SAVE:        true,
+      SOP_ADMIN:       true
     },
 
     // ── CLIENT ────────────────────────────────────────────────
@@ -421,7 +438,9 @@ var RBAC = (function () {
       ADMIN_CONFIG:    false,
       CLIENT_VIEW:     true,   // scoped by ScopeFilter to own accounts
       DATA_EXPORT:     false,
-      RATE_STAFF:      false
+      RATE_STAFF:      false,
+      SOP_SAVE:        false,
+      SOP_ADMIN:       false
     }
 
   };
