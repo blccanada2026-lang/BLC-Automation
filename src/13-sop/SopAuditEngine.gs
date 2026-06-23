@@ -46,11 +46,11 @@ var SopAuditEngine = (function () {
       Logger.warn('SOP_RBAC_DENIED', {
         module:      MODULE,
         action:      RBAC.ACTIONS.SOP_SAVE,
-        actorCode:   params.actor && params.actor.person_code,
+        actorCode:   params.actor && params.actor.personCode,
         actorRole:   params.actor && params.actor.role
       });
       throw SopError_('SOP_RBAC_DENIED', 'Actor does not have SOP_SAVE permission', {
-        actorCode: params.actor && params.actor.person_code,
+        actorCode: params.actor && params.actor.personCode,
         actorRole: params.actor && params.actor.role
       });
     }

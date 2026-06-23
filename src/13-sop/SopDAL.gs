@@ -112,6 +112,36 @@ var SopDAL = (function () {
   }
 
   // ──────────────────────────────────────────────────────────
+  // findActiveTemplateForJob
+  // Searches DIM_SOP_TEMPLATES for an ACTIVE template matching
+  // clientCode + jobType (ignoring software/scope_code).
+  // Used when the VW_JOB_CURRENT_STATE row does not carry those
+  // dimensions (PR 4 portal fetch). Returns the first in-date
+  // match, or null if none. Throws if the DAL read fails.
+  // ──────────────────────────────────────────────────────────
+  function findActiveTemplateForJob(clientCode, jobType) {
+    var rows;
+    try {
+      rows = DAL.readWhere(
+        Config.TABLES.DIM_SOP_TEMPLATES,
+        { client_code: clientCode, job_type: jobType, status: 'ACTIVE' },
+        { callerModule: MODULE }
+      );
+    } catch (e) {
+      Logger.error('SOP_DAL_READ_FAILED', { module: MODULE, table: Config.TABLES.DIM_SOP_TEMPLATES, error: e.message });
+      throw e;
+    }
+    if (!rows || rows.length === 0) return null;
+    var today = new Date();
+    var inDate = rows.filter(function (r) {
+      var from = r.effective_from ? new Date(r.effective_from) : null;
+      var to   = r.effective_to   ? new Date(r.effective_to)   : null;
+      return (!from || from <= today) && (!to || to >= today);
+    });
+    return inDate.length > 0 ? inDate[0] : null;
+  }
+
+  // ──────────────────────────────────────────────────────────
   // getCurrentStatus
   // Returns all FACT_SOP_CURRENT_STATUS rows for a job.
   // One row per (job_id, sop_item_id) — the projection of
@@ -345,6 +375,8 @@ var SopDAL = (function () {
     upsertCurrentStatus:      upsertCurrentStatus,
     saveTemplate:             saveTemplate,
     saveItem:                 saveItem,
+    // Portal-facing (PR 4)
+    findActiveTemplateForJob: findActiveTemplateForJob,
     // Admin-facing additions (PR 3)
     getTemplateById:          getTemplateById,
     getItemById:              getItemById,

@@ -253,6 +253,32 @@
     .toast-success { background: var(--c-success); }
     .toast-error   { background: var(--c-danger); }
     .toast-info    { background: var(--c-secondary); }
+    /* ── SOP Checklist (PR 4) ──────────────────────────── */
+    .sop-progress { margin-bottom: 14px; }
+    .sop-progress-label { font-size: 11px; color: var(--c-muted);
+                          display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .sop-progress-bar { height: 6px; background: var(--c-border); border-radius: 3px; overflow: hidden; }
+    .sop-progress-fill { height: 100%; background: var(--c-success); border-radius: 3px; transition: width .3s; }
+    .sop-item { display: flex; align-items: flex-start; gap: 10px;
+                padding: 10px 0; border-bottom: 1px solid var(--c-border); }
+    .sop-item:last-child { border-bottom: none; }
+    .sop-item input[type="checkbox"] { width: 16px; height: 16px; flex-shrink: 0;
+                                       margin-top: 2px; cursor: pointer; accent-color: var(--c-secondary); }
+    .sop-item-body { flex: 1; min-width: 0; }
+    label.sop-item-label { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+                           font-size: 13px; font-weight: 600; color: var(--c-text);
+                           text-transform: none; letter-spacing: normal;
+                           margin-bottom: 0; cursor: pointer; }
+    .sop-required-badge { font-size: 10px; font-weight: 700; color: var(--c-danger);
+                          background: #fee2e2; border-radius: 3px; padding: 1px 5px;
+                          text-transform: uppercase; letter-spacing: .04em; }
+    .sop-item-desc { font-size: 12px; color: var(--c-muted); margin-top: 2px; }
+    .sop-comment-field { margin-top: 6px; }
+    .sop-comment-field textarea { font-size: 12px; min-height: 52px; resize: vertical; }
+    .sop-error-banner { background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius);
+                        color: #991b1b; padding: 8px 12px; font-size: 12px;
+                        margin-bottom: 12px; display: none; }
+    #sop-items-list { max-height: 380px; overflow-y: auto; }
   </style>
 </head>
 <body>
@@ -1044,6 +1070,36 @@
   </div>
 </div>
 
+<!-- ── SOP Checklist Modal (PR 4) ────────────────────────────── -->
+<div class="modal-backdrop" id="modal-sop-checklist">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h3>SOP Checklist</h3>
+      <button class="modal-close" data-close="modal-sop-checklist">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="sop-job-info" class="modal-job-info"></div>
+      <div id="sop-error-banner" class="sop-error-banner"></div>
+      <div id="sop-loading-msg" style="color:var(--c-muted);font-size:13px;">Loading checklist…</div>
+      <div id="sop-checklist-content" style="display:none">
+        <div class="sop-progress">
+          <div class="sop-progress-label">
+            <span id="sop-progress-text">0 of 0 required items checked</span>
+          </div>
+          <div class="sop-progress-bar">
+            <div id="sop-progress-fill" class="sop-progress-fill" style="width:0%"></div>
+          </div>
+        </div>
+        <div id="sop-items-list"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-sop-checklist">Close</button>
+      <button class="btn-primary" id="btn-save-sop-checklist" disabled>Save Progress</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Toast Container ───────────────────────────────────────── -->
 <div id="toast-container"></div>
 
@@ -1167,6 +1223,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Table action delegation — safer than per-row onclick attributes
   document.getElementById('btn-preview-as').addEventListener('click', openPreviewModal);
+  document.getElementById('btn-save-sop-checklist').addEventListener('click', saveSopChecklist_);
 
   document.getElementById('jobs-tbody').addEventListener('click', function(e) {
     var btn = e.target.closest('button[data-action]');
@@ -1184,8 +1241,9 @@ document.addEventListener('DOMContentLoaded', function () {
       case 'qc-review':    openQCReview(jobNum);       break;
       case 'qc-reassign':  openQCReassign(jobNum);    break;
       case 'client-sent':  confirmClientSent(jobNum); break;
-      case 'hold':        openHold(jobNum);      break;
-      case 'resume':      openResume(jobNum);    break;
+      case 'hold':          openHold(jobNum);          break;
+      case 'resume':        openResume(jobNum);        break;
+      case 'sop-checklist': openSopChecklist_(jobNum); break;
     }
   });
 
@@ -1265,6 +1323,9 @@ function onDataLoaded(jsonStr) {
   if (_data.perms.canApprovePayroll) document.getElementById('btn-approve-payroll').style.display = 'inline-block';
   if (_data.perms.isLeader)          document.getElementById('dash-feedback-panel').style.display = 'block';
   if (_data.perms.canRunPayroll)     { document.getElementById('dash-ratings-status-panel').style.display = 'block'; loadRatingsStatus(); }
+
+  // canSaveSop: derived from role — avoids touching PortalData.gs (PR 4)
+  _data.perms.canSaveSop = (['DESIGNER', 'TEAM_LEAD', 'QC', 'PM', 'CEO'].indexOf(actor.role) !== -1);
 
   renderStats(_data.stats);
   renderJobs(_data.jobs, actor, _data.perms);
@@ -1992,6 +2053,9 @@ function buildActionButtons(job, perms) {
   }
   if (perms.canLogWork && (state === 'IN_PROGRESS' || state === 'ALLOCATED')) {
     buttons.push(makeActionBtn('Log Work',   'btn-muted',    'work-log',  job.job_number));
+  }
+  if (perms.canSaveSop && state === 'IN_PROGRESS') {
+    buttons.push(makeActionBtn('Checklist',  'btn-muted',    'sop-checklist', job.job_number));
   }
   if (perms.canSubmitQC && state === 'IN_PROGRESS') {
     buttons.push(makeActionBtn('Submit QC',        'btn-primary',  'submit-qc',    job.job_number));
@@ -4057,6 +4121,165 @@ function submitOnboardClient() {
       showToast('Error: ' + (err.message || String(err)), 'error');
     })
     .portal_onboardClient(JSON.stringify(payload));
+}
+// ── SOP Checklist (PR 4) ───────────────────────────────────────
+var _sopChecklist = null;  // { hasSop, sopTemplateId, sopTemplateVersion, sopTemplateHash, items, completionStatus }
+
+function openSopChecklist_(jobNumber) {
+  _activeJob = findJob(jobNumber);
+  if (!_activeJob) return;
+  setModalJobInfo('sop-job-info', _activeJob);
+
+  // Reset UI
+  _sopChecklist = null;
+  document.getElementById('sop-loading-msg').style.display  = 'block';
+  document.getElementById('sop-checklist-content').style.display = 'none';
+  document.getElementById('sop-error-banner').style.display = 'none';
+  document.getElementById('btn-save-sop-checklist').disabled = true;
+
+  openModal('modal-sop-checklist');
+
+  TOKEN_RUN
+    .withSuccessHandler(function (json) {
+      var data;
+      try { data = JSON.parse(json); } catch (e) { showSopError_('Could not parse checklist response.'); return; }
+      if (!data.hasSop) {
+        showSopError_('No SOP checklist is configured for this job type.');
+        return;
+      }
+      _sopChecklist = data;
+      renderSopItems_(data);
+    })
+    .withFailureHandler(function (err) {
+      showSopError_('Could not load checklist: ' + (err.message || String(err)));
+    })
+    .portal_getSopChecklist(_activeJob.job_number);
+}
+
+function showSopError_(msg) {
+  document.getElementById('sop-loading-msg').style.display = 'none';
+  var banner = document.getElementById('sop-error-banner');
+  banner.textContent = msg;  // textContent — never innerHTML
+  banner.style.display = 'block';
+}
+
+function renderSopItems_(data) {
+  document.getElementById('sop-loading-msg').style.display = 'none';
+  document.getElementById('sop-checklist-content').style.display = 'block';
+  document.getElementById('btn-save-sop-checklist').disabled = false;
+
+  updateSopProgress_(data.completionStatus);
+
+  var list = document.getElementById('sop-items-list');
+  while (list.firstChild) list.removeChild(list.firstChild);
+
+  data.items.forEach(function (item) {
+    var isRequired   = String(item.is_required).toUpperCase()     === 'TRUE';
+    var needsComment = String(item.requires_comment).toUpperCase() === 'TRUE';
+
+    var row = document.createElement('div');
+    row.className = 'sop-item';
+
+    var cb = document.createElement('input');
+    cb.type              = 'checkbox';
+    cb.id                = 'sop-cb-' + item.sop_item_id;
+    cb.checked           = item.checkedValue;
+    cb.dataset.itemId    = item.sop_item_id;
+    cb.dataset.itemCode  = item.item_code;
+    cb.addEventListener('change', onSopCheckChange_);
+
+    var body = document.createElement('div');
+    body.className = 'sop-item-body';
+
+    var lbl = document.createElement('label');
+    lbl.htmlFor   = cb.id;
+    lbl.className = 'sop-item-label';
+    lbl.appendChild(document.createTextNode(item.item_label));
+    if (isRequired) {
+      var badge = document.createElement('span');
+      badge.className   = 'sop-required-badge';
+      badge.textContent = 'Required';
+      lbl.appendChild(badge);
+    }
+    body.appendChild(lbl);
+
+    if (item.item_description) {
+      var desc = document.createElement('div');
+      desc.className   = 'sop-item-desc';
+      desc.textContent = item.item_description;
+      body.appendChild(desc);
+    }
+
+    if (needsComment) {
+      var cWrap = document.createElement('div');
+      cWrap.className = 'sop-comment-field';
+      var ta = document.createElement('textarea');
+      ta.placeholder       = 'Add comment…';
+      ta.dataset.itemId    = item.sop_item_id;
+      ta.value             = item.comment || '';
+      cWrap.appendChild(ta);
+      body.appendChild(cWrap);
+    }
+
+    row.appendChild(cb);
+    row.appendChild(body);
+    list.appendChild(row);
+  });
+}
+
+function onSopCheckChange_() {
+  if (!_sopChecklist) return;
+  var total    = _sopChecklist.items.length;
+  var checked  = 0;
+  var required = _sopChecklist.completionStatus.required;
+  var reqChk   = 0;
+  _sopChecklist.items.forEach(function (item) {
+    var cb  = document.getElementById('sop-cb-' + item.sop_item_id);
+    var ticked = cb && cb.checked;
+    if (ticked) checked++;
+    if (String(item.is_required).toUpperCase() === 'TRUE' && ticked) reqChk++;
+  });
+  updateSopProgress_({ total: total, checked: checked, required: required, requiredChecked: reqChk });
+}
+
+function updateSopProgress_(cs) {
+  var pct = cs.required > 0 ? Math.round((cs.requiredChecked / cs.required) * 100) : 100;
+  document.getElementById('sop-progress-fill').style.width = pct + '%';
+  document.getElementById('sop-progress-text').textContent =
+    cs.requiredChecked + ' of ' + cs.required + ' required items checked';
+}
+
+function saveSopChecklist_() {
+  if (!_sopChecklist || !_activeJob) return;
+
+  var batchRequestId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : 'SOP-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+
+  var items = _sopChecklist.items.map(function (item) {
+    var cb        = document.getElementById('sop-cb-' + item.sop_item_id);
+    var commentEl = document.querySelector(
+      '#sop-items-list textarea[data-item-id="' + item.sop_item_id + '"]'
+    );
+    return {
+      sopItemId:    item.sop_item_id,
+      sopItemCode:  item.item_code,
+      checkedValue: cb ? cb.checked : item.checkedValue,
+      comment:      commentEl ? commentEl.value.trim() : (item.comment || '')
+    };
+  });
+
+  var payload = {
+    jobNumber:       _activeJob.job_number,
+    sopTemplateId:   _sopChecklist.sopTemplateId,
+    sopTemplateHash: _sopChecklist.sopTemplateHash,
+    batchRequestId:  batchRequestId,
+    items:           items
+  };
+
+  document.getElementById('btn-save-sop-checklist').disabled = true;
+  closeModal('modal-sop-checklist');
+  submitAction('SOP_CHECKLIST', payload, 'Checklist saved.');
 }
 </script>
 </body>

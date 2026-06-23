@@ -900,3 +900,122 @@ function portal_sendPortalLinks(ptoken, testEmail, dryRun) {
   RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_RUN); // CEO gate
   return JSON.stringify(PortalAuth.sendAllLinks(testEmail || null, !!dryRun));
 }
+
+// ============================================================
+// portal_getSopChecklist — T13 SOP Checklist (PR 4)
+// Loads the active SOP template for a job and returns all
+// items with their current checked state for the current user.
+// Returns { hasSop: false } if no active template is configured
+// for the job's client+job_type combination.
+//
+// @param {string} ptoken      Portal capability token
+// @param {string} jobNumber   BLC-XXXXX job identifier
+// @returns {string}  JSON — see shape below:
+//   hasSop: false
+//     OR
+//   {
+//     hasSop:             true,
+//     sopTemplateId:      string,
+//     sopTemplateVersion: string,
+//     sopTemplateHash:    string,
+//     items: [{
+//       sop_item_id, item_seq, item_code, item_label,
+//       item_description, is_required, requires_comment,
+//       requires_attachment, checkedValue, comment
+//     }],
+//     completionStatus: { total, checked, required, requiredChecked }
+//   }
+// ============================================================
+function portal_getSopChecklist(ptoken, jobNumber) {
+  var email = PortalAuth.resolveEmail(ptoken);
+  var actor = RBAC.resolveActor(email);
+  RBAC.enforcePermission(actor, RBAC.ACTIONS.SOP_SAVE);
+
+  // Resolve job
+  var jobRows;
+  try {
+    jobRows = DAL.readWhere(
+      Config.TABLES.VW_JOB_CURRENT_STATE,
+      { job_number: jobNumber },
+      { callerModule: 'Portal' }
+    );
+  } catch (e) {
+    Logger.error('PORTAL_SOP_JOB_READ_FAILED', { module: 'Portal', jobNumber: jobNumber, error: e.message });
+    throw e;
+  }
+  if (!jobRows || jobRows.length === 0) {
+    return JSON.stringify({ hasSop: false, reason: 'JOB_NOT_FOUND' });
+  }
+  var job = jobRows[0];
+
+  // Find ACTIVE SOP template for this client + job_type
+  var template;
+  try {
+    template = SopDAL.findActiveTemplateForJob(job.client_code, job.job_type);
+  } catch (e) {
+    Logger.error('PORTAL_SOP_TEMPLATE_READ_FAILED', { module: 'Portal', jobNumber: jobNumber, error: e.message });
+    throw e;
+  }
+  if (!template) {
+    return JSON.stringify({ hasSop: false, reason: 'NO_ACTIVE_TEMPLATE' });
+  }
+
+  // Load active items and compute hash
+  var items        = SopDAL.getSopItems(template.sop_template_id);
+  var templateHash = SopTemplateEngine.computeTemplateHash(items);
+
+  // Load current check state for this job
+  var statusRows = SopDAL.getCurrentStatus(job.job_number);
+  var statusByItemId = {};
+  statusRows.forEach(function (s) { statusByItemId[s.sop_item_id] = s; });
+
+  // Merge items with current status
+  var itemsWithStatus = items.map(function (item) {
+    var s = statusByItemId[item.sop_item_id];
+    return {
+      sop_item_id:          item.sop_item_id,
+      item_seq:             item.item_seq,
+      item_code:            item.item_code,
+      item_label:           item.item_label,
+      item_description:     item.item_description  || '',
+      is_required:          item.is_required,
+      requires_comment:     item.requires_comment,
+      requires_attachment:  item.requires_attachment,
+      checkedValue: s ? (String(s.checked_value).toUpperCase() === 'TRUE') : false,
+      comment:      s ? (s.comment || '') : ''
+    };
+  });
+
+  // Completion summary
+  var total           = itemsWithStatus.length;
+  var checked         = 0;
+  var required        = 0;
+  var requiredChecked = 0;
+  itemsWithStatus.forEach(function (i) {
+    var req = String(i.is_required).toUpperCase() === 'TRUE';
+    if (i.checkedValue) checked++;
+    if (req) { required++; if (i.checkedValue) requiredChecked++; }
+  });
+
+  Logger.info('PORTAL_SOP_LOADED', {
+    module:        'Portal',
+    jobNumber:     jobNumber,
+    sopTemplateId: template.sop_template_id,
+    total:         total,
+    checked:       checked
+  });
+
+  return JSON.stringify({
+    hasSop:              true,
+    sopTemplateId:       template.sop_template_id,
+    sopTemplateVersion:  template.version,
+    sopTemplateHash:     templateHash,
+    items:               itemsWithStatus,
+    completionStatus: {
+      total:           total,
+      checked:         checked,
+      required:        required,
+      requiredChecked: requiredChecked
+    }
+  });
+}
