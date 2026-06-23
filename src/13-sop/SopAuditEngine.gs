@@ -183,9 +183,49 @@ var SopAuditEngine = (function () {
     return true;
   }
 
+  // ──────────────────────────────────────────────────────────
+  // getIncompleteRequiredItems
+  // Returns the subset of required items that are NOT yet checked
+  // TRUE in FACT_SOP_CURRENT_STATUS. Used by SopGate to build
+  // the list of blocking items shown to the designer.
+  //
+  // params:
+  //   jobId           — job to evaluate (job_number used as job_id)
+  //   templateContext — { items: [{sop_item_id, item_code, item_label, is_required}] }
+  //
+  // Returns: [{ sopItemId, sopItemCode, itemLabel }]
+  // ──────────────────────────────────────────────────────────
+  function getIncompleteRequiredItems(jobId, templateContext) {
+    var currentStatus = SopDAL.getCurrentStatus(jobId);
+
+    var statusById = {};
+    currentStatus.forEach(function (row) {
+      statusById[row.sop_item_id] = row;
+    });
+
+    var requiredItems = templateContext.items.filter(function (item) {
+      var f = String(item.is_required).toUpperCase();
+      return f === 'TRUE' || f === '1';
+    });
+
+    return requiredItems.filter(function (item) {
+      var statusRow = statusById[item.sop_item_id];
+      if (!statusRow) return true;
+      var checked = String(statusRow.checked_value).toUpperCase();
+      return checked !== 'TRUE' && checked !== '1';
+    }).map(function (item) {
+      return {
+        sopItemId:   item.sop_item_id,
+        sopItemCode: item.item_code,
+        itemLabel:   item.item_label
+      };
+    });
+  }
+
   return {
-    recordItemCheck:     recordItemCheck,
-    isChecklistComplete: isChecklistComplete
+    recordItemCheck:             recordItemCheck,
+    isChecklistComplete:         isChecklistComplete,
+    getIncompleteRequiredItems:  getIncompleteRequiredItems
   };
 
 }());

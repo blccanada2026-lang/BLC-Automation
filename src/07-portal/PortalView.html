@@ -839,6 +839,7 @@
       </p>
       <div class="field"><label>Notes (optional)</label>
         <textarea id="submit-qc-notes" rows="2" maxlength="500"></textarea></div>
+      <div id="sop-gate-msg" style="display:none;margin-top:10px;padding:10px 12px;border-radius:6px;font-size:13px;line-height:1.5"></div>
     </div>
     <div class="modal-footer">
       <button class="btn-muted" data-close="modal-submit-qc">Cancel</button>
@@ -2374,12 +2375,91 @@ function submitWorkLog() {
 
 function submitForQC() {
   if (!_activeJob) return;
-  var notes = val('submit-qc-notes');
-  var payload = { job_number: _activeJob.job_number };
-  if (notes) payload.notes = notes;
 
+  var jobNumber = _activeJob.job_number;
+  var gateMsg   = document.getElementById('sop-gate-msg');
+  var submitBtn = document.getElementById('btn-submit-qc');
+
+  sopGateMsgClear_(gateMsg);
+  submitBtn.disabled    = true;
+  submitBtn.textContent = 'Checking…';
+
+  TOKEN_RUN
+    .withSuccessHandler(function (json) {
+      submitBtn.disabled    = false;
+      submitBtn.textContent = 'Submit for QC';
+
+      var gate;
+      try { gate = JSON.parse(json); } catch (e) { gate = { gateActive: false }; }
+
+      if (gate.gateActive && gate.mode === 'BLOCK' && !gate.complete) {
+        sopGateMsgShow_(gateMsg, gate.missing || [], jobNumber, false);
+        return;
+      }
+
+      if (gate.gateActive && gate.mode === 'WARN_ONLY' && !gate.complete) {
+        sopGateMsgShow_(gateMsg, gate.missing || [], jobNumber, true);
+        setTimeout(function () { submitForQC_proceed_(jobNumber); }, 1800);
+        return;
+      }
+
+      submitForQC_proceed_(jobNumber);
+    })
+    .withFailureHandler(function () {
+      submitBtn.disabled    = false;
+      submitBtn.textContent = 'Submit for QC';
+      submitForQC_proceed_(jobNumber);
+    })
+    .portal_getSopGateStatus(jobNumber);
+}
+
+function sopGateMsgClear_(gateMsg) {
+  gateMsg.style.display = 'none';
+  while (gateMsg.firstChild) gateMsg.removeChild(gateMsg.firstChild);
+}
+
+function sopGateMsgShow_(gateMsg, missingItems, jobNumber, warnOnly) {
+  sopGateMsgClear_(gateMsg);
+  gateMsg.style.background = '#fff3cd';
+  gateMsg.style.border     = '1px solid #ffc107';
+  gateMsg.style.color      = '#856404';
+
+  var heading = document.createElement('strong');
+  heading.textContent = warnOnly
+    ? 'Warning: some SOP checklist items are not yet checked:'
+    : 'SOP checklist incomplete. Complete these required items before submitting:';
+  gateMsg.appendChild(heading);
+
+  if (missingItems.length > 0) {
+    var ul = document.createElement('ul');
+    ul.style.cssText = 'margin:6px 0 6px 18px;padding:0';
+    missingItems.forEach(function (m) {
+      var li = document.createElement('li');
+      li.textContent = m.itemLabel || m.sopItemCode || '';
+      ul.appendChild(li);
+    });
+    gateMsg.appendChild(ul);
+  }
+
+  if (!warnOnly) {
+    var link = document.createElement('a');
+    link.href          = '#';
+    link.textContent   = 'Open SOP Checklist';
+    link.style.cssText = 'color:#0d6efd;text-decoration:underline';
+    var jn = jobNumber;
+    link.addEventListener('click', function (e) { e.preventDefault(); openSopChecklist_(jn); });
+    gateMsg.appendChild(link);
+  }
+
+  gateMsg.style.display = 'block';
+}
+
+function submitForQC_proceed_(jobNumber) {
+  var notes   = val('submit-qc-notes');
+  var payload = { job_number: jobNumber };
+  if (notes) payload.notes = notes;
   closeModal('modal-submit-qc');
-  submitAction('QC_SUBMIT', payload, _activeJob.job_number + ' submitted for QC review.');
+  submitAction('QC_SUBMIT', payload, jobNumber + ' submitted for QC review.');
 }
 
 function submitHold() {

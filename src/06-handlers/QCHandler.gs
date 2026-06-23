@@ -148,6 +148,9 @@ var QCHandler = (function () {
     RBAC.enforcePermission(actor, RBAC.ACTIONS.QC_SUBMIT);
     StateMachine.assertTransition(view.current_state, Config.STATES.QC_REVIEW, { jobNumber: jobNumber });
 
+    // ── SOP gate (PR 5) — after transition check, before idempotency ──
+    SopGate.checkForQcSubmit(view, actor, queueId);
+
     var idempotencyKey = buildIdempotencyKey_(queueId);
     if (isDuplicate_(idempotencyKey)) {
       Logger.warn('QC_SUBMIT_DUPLICATE', { module: 'QCHandler', message: 'Duplicate QC submit — skipping', job_number: jobNumber });

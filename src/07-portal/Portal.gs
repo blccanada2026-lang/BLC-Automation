@@ -1019,3 +1019,70 @@ function portal_getSopChecklist(ptoken, jobNumber) {
     }
   });
 }
+
+// ============================================================
+// portal_getSopGateStatus — T13 SOP Gate Pre-check (PR 5)
+// Called lazily from the portal when the designer clicks
+// "Submit for QC" — NOT on job panel load (lazy pre-check).
+// Returns the gate evaluation result so the UI can warn or
+// block before sending the QC_SUBMIT to the queue.
+// Server-side SopGate.checkForQcSubmit remains the real gate.
+//
+// @param {string} ptoken      Portal capability token
+// @param {string} jobNumber   BLC-XXXXX job identifier
+// @returns {string}  JSON:
+//   {
+//     gateActive:    boolean,
+//     mode:          'WARN_ONLY' | 'BLOCK' | null,
+//     complete:      boolean,
+//     missing:       [{ sopItemId, sopItemCode, itemLabel }],
+//     reason:        string
+//   }
+// ============================================================
+function portal_getSopGateStatus(ptoken, jobNumber) {
+  // R3 — RBAC unconditionally first
+  var email = PortalAuth.resolveEmail(ptoken);
+  var actor = RBAC.resolveActor(email);
+  RBAC.enforcePermission(actor, RBAC.ACTIONS.SOP_SAVE);
+
+  // Resolve job view
+  var jobRows;
+  try {
+    jobRows = DAL.readWhere(
+      Config.TABLES.VW_JOB_CURRENT_STATE,
+      { job_number: jobNumber },
+      { callerModule: 'Portal' }
+    );
+  } catch (e) {
+    Logger.error('PORTAL_SOP_GATE_JOB_READ_FAILED', { module: 'Portal', jobNumber: jobNumber, error: e.message });
+    return JSON.stringify({ gateActive: false, mode: null, complete: true, missing: [], reason: 'JOB_NOT_FOUND' });
+  }
+  if (!jobRows || jobRows.length === 0) {
+    return JSON.stringify({ gateActive: false, mode: null, complete: true, missing: [], reason: 'JOB_NOT_FOUND' });
+  }
+
+  var result;
+  try {
+    result = SopGate.evaluate_(jobRows[0]);
+  } catch (e) {
+    Logger.error('PORTAL_SOP_GATE_EVAL_FAILED', { module: 'Portal', jobNumber: jobNumber, error: e.message });
+    return JSON.stringify({ gateActive: false, mode: null, complete: true, missing: [], reason: 'EVAL_ERROR' });
+  }
+
+  Logger.info('PORTAL_SOP_GATE_STATUS', {
+    module:     'Portal',
+    jobNumber:  jobNumber,
+    gateActive: result.gateActive,
+    mode:       result.mode,
+    complete:   result.complete,
+    reason:     result.reason
+  });
+
+  return JSON.stringify({
+    gateActive: result.gateActive,
+    mode:       result.mode,
+    complete:   result.complete,
+    missing:    result.missing,
+    reason:     result.reason
+  });
+}
