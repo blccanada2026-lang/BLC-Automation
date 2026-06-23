@@ -210,14 +210,148 @@ var SopDAL = (function () {
     }
   }
 
+  // ──────────────────────────────────────────────────────────
+  // getTemplateById
+  // Returns a single DIM_SOP_TEMPLATES row by primary key, or
+  // null if not found. Used by admin operations that need to
+  // verify template existence and status before acting.
+  // ──────────────────────────────────────────────────────────
+  function getTemplateById(sopTemplateId) {
+    var rows;
+    try {
+      rows = DAL.readWhere(
+        Config.TABLES.DIM_SOP_TEMPLATES,
+        { sop_template_id: sopTemplateId },
+        { callerModule: MODULE }
+      );
+    } catch (e) {
+      Logger.error('SOP_DAL_READ_FAILED', { module: MODULE, table: Config.TABLES.DIM_SOP_TEMPLATES, error: e.message });
+      throw e;
+    }
+    if (!rows || rows.length === 0) return null;
+    return rows[0];
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // getItemById
+  // Returns a single DIM_SOP_ITEMS row by primary key, or null.
+  // Used by editItem to locate the item and its parent template.
+  // ──────────────────────────────────────────────────────────
+  function getItemById(sopItemId) {
+    var rows;
+    try {
+      rows = DAL.readWhere(
+        Config.TABLES.DIM_SOP_ITEMS,
+        { sop_item_id: sopItemId },
+        { callerModule: MODULE }
+      );
+    } catch (e) {
+      Logger.error('SOP_DAL_READ_FAILED', { module: MODULE, table: Config.TABLES.DIM_SOP_ITEMS, error: e.message });
+      throw e;
+    }
+    if (!rows || rows.length === 0) return null;
+    return rows[0];
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // getAllItems
+  // Returns ALL items for a template (active and inactive),
+  // sorted by item_seq. Used by admin operations (copyTemplate,
+  // publishTemplate validation) where inactive items must be
+  // visible. Contrast with getSopItems() which post-filters
+  // to active_flag=TRUE only.
+  // ──────────────────────────────────────────────────────────
+  function getAllItems(sopTemplateId) {
+    var rows;
+    try {
+      rows = DAL.readWhere(
+        Config.TABLES.DIM_SOP_ITEMS,
+        { sop_template_id: sopTemplateId },
+        { callerModule: MODULE }
+      ) || [];
+    } catch (e) {
+      Logger.error('SOP_DAL_READ_FAILED', { module: MODULE, table: Config.TABLES.DIM_SOP_ITEMS, error: e.message });
+      throw e;
+    }
+    rows.sort(function (a, b) { return Number(a.item_seq) - Number(b.item_seq); });
+    return rows;
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // getTemplatesByDimensions
+  // Returns ALL templates (any status) for a given combination
+  // of (clientCode, jobType, software, scopeCode). Used by
+  // copyTemplate to determine the next version number.
+  // ──────────────────────────────────────────────────────────
+  function getTemplatesByDimensions(clientCode, jobType, software, scopeCode) {
+    try {
+      return DAL.readWhere(
+        Config.TABLES.DIM_SOP_TEMPLATES,
+        { client_code: clientCode, job_type: jobType, software: software, scope_code: scopeCode },
+        { callerModule: MODULE }
+      ) || [];
+    } catch (e) {
+      Logger.error('SOP_DAL_READ_FAILED', { module: MODULE, table: Config.TABLES.DIM_SOP_TEMPLATES, error: e.message });
+      throw e;
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // updateTemplate
+  // Applies a partial update to a DIM_SOP_TEMPLATES row.
+  // Used by admin operations: retire (status → RETIRED) and
+  // publish (status → ACTIVE, hash set, effective_from set).
+  // DIM_SOP_TEMPLATES is not a FACT table — updateWhere is allowed.
+  // ──────────────────────────────────────────────────────────
+  function updateTemplate(sopTemplateId, updates) {
+    try {
+      DAL.updateWhere(
+        Config.TABLES.DIM_SOP_TEMPLATES,
+        { sop_template_id: sopTemplateId },
+        updates,
+        { callerModule: 'SopAdminEngine' }
+      );
+    } catch (e) {
+      Logger.error('SOP_DAL_UPDATE_FAILED', { module: MODULE, table: Config.TABLES.DIM_SOP_TEMPLATES, id: sopTemplateId, error: e.message });
+      throw e;
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // updateItem
+  // Applies a partial update to a DIM_SOP_ITEMS row.
+  // Used by editItem — only called when parent template is DRAFT.
+  // DIM_SOP_ITEMS is not a FACT table — updateWhere is allowed.
+  // ──────────────────────────────────────────────────────────
+  function updateItem(sopItemId, updates) {
+    try {
+      DAL.updateWhere(
+        Config.TABLES.DIM_SOP_ITEMS,
+        { sop_item_id: sopItemId },
+        updates,
+        { callerModule: 'SopAdminEngine' }
+      );
+    } catch (e) {
+      Logger.error('SOP_DAL_UPDATE_FAILED', { module: MODULE, table: Config.TABLES.DIM_SOP_ITEMS, id: sopItemId, error: e.message });
+      throw e;
+    }
+  }
+
   return {
-    getActiveTemplate:   getActiveTemplate,
-    getSopItems:         getSopItems,
-    getCurrentStatus:    getCurrentStatus,
-    appendAuditRow:      appendAuditRow,
-    upsertCurrentStatus: upsertCurrentStatus,
-    saveTemplate:        saveTemplate,
-    saveItem:            saveItem
+    getActiveTemplate:        getActiveTemplate,
+    getSopItems:              getSopItems,
+    getCurrentStatus:         getCurrentStatus,
+    appendAuditRow:           appendAuditRow,
+    upsertCurrentStatus:      upsertCurrentStatus,
+    saveTemplate:             saveTemplate,
+    saveItem:                 saveItem,
+    // Admin-facing additions (PR 3)
+    getTemplateById:          getTemplateById,
+    getItemById:              getItemById,
+    getAllItems:               getAllItems,
+    getTemplatesByDimensions: getTemplatesByDimensions,
+    updateTemplate:           updateTemplate,
+    updateItem:               updateItem
   };
 
 }());
