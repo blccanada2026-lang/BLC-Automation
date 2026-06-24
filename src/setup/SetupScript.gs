@@ -1105,6 +1105,17 @@ function runVerify() {
     }
   }
 
+  // Flat FACT tables (non-partitioned — FLAT_FACT_TABLE_NAMES)
+  for (var k = 0; k < FLAT_FACT_TABLE_NAMES.length; k++) {
+    var flatName = FLAT_FACT_TABLE_NAMES[k];
+    if (getTab_(flatName)) {
+      log_('✅  ' + flatName);
+    } else {
+      log_('❌  ' + flatName + '  ← MISSING (run createFlatFactSheets())');
+      allPass = false;
+    }
+  }
+
   // Sequence counter
   var seqSheet = getTab_('DIM_SEQUENCE_COUNTERS');
   if (seqSheet && seqSheet.getLastRow() > 1) {
