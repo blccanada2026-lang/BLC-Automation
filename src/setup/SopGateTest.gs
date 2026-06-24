@@ -440,6 +440,11 @@ function testSopGate_blockIncomplete() {
       vwAfterBlock && vwAfterBlock.current_state === Config.STATES.IN_PROGRESS,
       vwAfterBlock ? vwAfterBlock.current_state : 'null');
 
+    // QueueProcessor retries failed items (MAX_ATTEMPTS=3), so the first
+    // QC_SUBMIT is still PENDING after Part A. Clear it now so it does not
+    // race with the SOP_CHECKLIST item in Part B's processQueueFresh_().
+    clearStalePendingItems_();
+
     // ── Part B: complete the checklist, re-submit QC ──────────
     IntakeService.processSubmission({
       formType:       Config.FORM_TYPES.SOP_CHECKLIST,
