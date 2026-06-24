@@ -5,9 +5,15 @@
 // LOAD ORDER: Setup tier — loads after all T0–T13 files.
 //
 // HOW TO RUN (Apps Script editor):
-//   runSopChecklistHandlerTests()  — all 5 tests, summary at end
+//   Run these batch functions in order. Each fits within the
+//   6-minute GAS execution limit.
 //
-// Individual tests:
+//   runSopChecklistHandlerTests_batch1()  — rbacDenied, jobNotFound (~20s)
+//   runSopChecklistHandlerTests_batch2()  — hashMismatch, job setup (~2 min)
+//   runSopChecklistHandlerTests_batch3()  — happyPath, full queue (~3 min)
+//   runSopChecklistHandlerTests_batch4()  — duplicateBatch, 2 queue rounds (~4 min)
+//
+// Individual tests (also callable directly):
 //   testSopChecklistHandler_happyPath()
 //   testSopChecklistHandler_rbacDenied()
 //   testSopChecklistHandler_hashMismatch()
@@ -27,9 +33,13 @@
 
 // ── Reusable actor stubs ──────────────────────────────────────
 
+// Actor stubs use hardcoded email strings (not TH_* constants) because
+// SopChecklistHandlerTest.gs loads alphabetically before TestHarness.gs,
+// so TH_DESIGNER_EMAIL would be undefined at module init time and
+// assertActorExists_() would throw INVALID_ACTOR on the nil email.
 /** DESIGNER actor — SOP_SAVE=true. */
 var SCH_DESIGNER_ACTOR = {
-  email:         TH_DESIGNER_EMAIL,
+  email:         'designer@blclotus.com',
   personCode:    'DS1',
   role:          'DESIGNER',
   displayName:   'Test Designer',
@@ -92,23 +102,17 @@ function schSeedActiveSopTemplate_(clientCode, jobType, suffix) {
   };
 }
 
-// ── Test runner ───────────────────────────────────────────────
+// ── Test runner helpers ───────────────────────────────────────
 
 /**
- * Runs all 5 SopChecklistHandler tests and prints an aggregate summary.
- * Call from the Apps Script editor.
+ * Runs a named set of test functions and prints an aggregate summary.
+ * Internal helper used by all batch runners.
  *
+ * @param {string}     batchName
+ * @param {Function[]} tests
  * @returns {{ passed: number, failed: number }}
  */
-function runSopChecklistHandlerTests() {
-  var tests = [
-    testSopChecklistHandler_happyPath,
-    testSopChecklistHandler_rbacDenied,
-    testSopChecklistHandler_hashMismatch,
-    testSopChecklistHandler_duplicateBatch,
-    testSopChecklistHandler_jobNotFound
-  ];
-
+function runSchBatch_(batchName, tests) {
   var totalPassed = 0;
   var totalFailed = 0;
 
@@ -124,8 +128,62 @@ function runSopChecklistHandlerTests() {
   });
 
   console.log('');
-  console.log('SOP CHECKLIST HANDLER TESTS — ' + totalPassed + ' passed, ' + totalFailed + ' failed');
+  console.log('SOP CHECKLIST HANDLER TESTS [' + batchName + '] — ' + totalPassed + ' passed, ' + totalFailed + ' failed');
   return { passed: totalPassed, failed: totalFailed };
+}
+
+/**
+ * Batch 1 — Fast (direct handle() calls, no queue).
+ * Tests: rbacDenied, jobNotFound.
+ * Expected runtime: ~20 seconds.
+ *
+ * @returns {{ passed: number, failed: number }}
+ */
+function runSopChecklistHandlerTests_batch1() {
+  return runSchBatch_('batch1: fast', [
+    testSopChecklistHandler_rbacDenied,
+    testSopChecklistHandler_jobNotFound
+  ]);
+}
+
+/**
+ * Batch 2 — Hash mismatch (job setup + direct handle).
+ * Test: hashMismatch. 2 queue rounds for job setup, direct handle() for
+ * mismatch check.
+ * Expected runtime: ~2 minutes.
+ *
+ * @returns {{ passed: number, failed: number }}
+ */
+function runSopChecklistHandlerTests_batch2() {
+  return runSchBatch_('batch2: hashMismatch', [
+    testSopChecklistHandler_hashMismatch
+  ]);
+}
+
+/**
+ * Batch 3 — Happy path (job setup + SOP checklist queue round).
+ * Test: happyPath. 2 queue rounds for job setup + 1 for SOP checklist.
+ * Expected runtime: ~3 minutes.
+ *
+ * @returns {{ passed: number, failed: number }}
+ */
+function runSopChecklistHandlerTests_batch3() {
+  return runSchBatch_('batch3: happyPath', [
+    testSopChecklistHandler_happyPath
+  ]);
+}
+
+/**
+ * Batch 4 — Duplicate batch (job setup + 2 SOP checklist queue rounds).
+ * Test: duplicateBatch. 2 queue rounds for job setup + 2 for idempotency.
+ * Expected runtime: ~4 minutes.
+ *
+ * @returns {{ passed: number, failed: number }}
+ */
+function runSopChecklistHandlerTests_batch4() {
+  return runSchBatch_('batch4: duplicateBatch', [
+    testSopChecklistHandler_duplicateBatch
+  ]);
 }
 
 
@@ -276,6 +334,8 @@ function testSopChecklistHandler_hashMismatch() {
   var counters = { passed: 0, failed: 0 };
 
   try {
+    seedTestStaff();
+
     var jobNumber = thSetupInProgressJob_('sop-hashmm');
     assertH_(results, counters, 'Setup: IN_PROGRESS job created',
       !!jobNumber, 'jobNumber=' + jobNumber);
