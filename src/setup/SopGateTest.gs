@@ -5,9 +5,17 @@
 // LOAD ORDER: Setup tier — loads after all T0–T13 files.
 //
 // HOW TO RUN (Apps Script editor):
-//   runSopGateTests()  — all 9 tests, summary at end
+//   Run these five batch functions in order. Each fits within the
+//   6-minute GAS execution limit. Do not run runSopGateTests_batch5
+//   back-to-back with other batches — it uses 3 queue rounds.
 //
-// Individual tests:
+//   runSopGateTests_batch1()  — Tests 1,6,7  fast (~30s)
+//   runSopGateTests_batch2()  — Tests 2,8    queue rounds (~4 min)
+//   runSopGateTests_batch3()  — Tests 3,9    complete+checklist (~4 min)
+//   runSopGateTests_batch4()  — Test 5       block+complete (~3 min)
+//   runSopGateTests_batch5()  — Test 4       block+incomplete, 3 queues (~5 min)
+//
+// Individual tests (also callable directly):
 //   testSopGate_featureDisabled()
 //   testSopGate_warnOnly_incomplete()
 //   testSopGate_warnOnly_complete()
@@ -98,23 +106,14 @@ var SG_DESIGNER_ACTOR = {
 // ── Test runner ───────────────────────────────────────────────
 
 /**
- * Runs all 9 SopGate tests and prints an aggregate summary.
+ * Runs a named set of test functions and prints an aggregate summary.
+ * Internal helper used by all batch runners.
  *
+ * @param {string}     batchName  Label printed in the summary line.
+ * @param {Function[]} tests      Array of test functions to run.
  * @returns {{ passed: number, failed: number }}
  */
-function runSopGateTests() {
-  var tests = [
-    testSopGate_featureDisabled,
-    testSopGate_warnOnly_incomplete,
-    testSopGate_warnOnly_complete,
-    testSopGate_blockIncomplete,
-    testSopGate_blockComplete,
-    testSopGate_nonPilotClient,
-    testSopGate_noActiveTemplate,
-    testSopGate_qcHandlerRegression,
-    testSopGate_sopChecklistRegression
-  ];
-
+function runSopGateBatch_(batchName, tests) {
   var totalPassed = 0;
   var totalFailed = 0;
 
@@ -130,8 +129,78 @@ function runSopGateTests() {
   });
 
   console.log('');
-  console.log('SOP GATE TESTS — ' + totalPassed + ' passed, ' + totalFailed + ' failed');
+  console.log('SOP GATE TESTS [' + batchName + '] — ' + totalPassed + ' passed, ' + totalFailed + ' failed');
   return { passed: totalPassed, failed: totalFailed };
+}
+
+/**
+ * Batch 1 — Fast (direct evaluate_/checkForQcSubmit calls, no queue).
+ * Tests: 1 (featureDisabled), 6 (nonPilotClient), 7 (noActiveTemplate).
+ * Expected runtime: ~30 seconds.
+ *
+ * @returns {{ passed: number, failed: number }}
+ */
+function runSopGateTests_batch1() {
+  return runSopGateBatch_('batch1: fast', [
+    testSopGate_featureDisabled,
+    testSopGate_nonPilotClient,
+    testSopGate_noActiveTemplate
+  ]);
+}
+
+/**
+ * Batch 2 — WARN_ONLY incomplete + QCHandler regression.
+ * Tests: 2 (warnOnly_incomplete), 8 (qcHandlerRegression).
+ * Each test has one queue round. Expected runtime: ~4 minutes.
+ *
+ * @returns {{ passed: number, failed: number }}
+ */
+function runSopGateTests_batch2() {
+  return runSopGateBatch_('batch2: warn_only + qc regression', [
+    testSopGate_warnOnly_incomplete,
+    testSopGate_qcHandlerRegression
+  ]);
+}
+
+/**
+ * Batch 3 — Complete scenarios + SopChecklist regression.
+ * Tests: 3 (warnOnly_complete), 9 (sopChecklistRegression).
+ * Each test has a checklist queue round. Expected runtime: ~4 minutes.
+ *
+ * @returns {{ passed: number, failed: number }}
+ */
+function runSopGateTests_batch3() {
+  return runSopGateBatch_('batch3: complete + checklist regression', [
+    testSopGate_warnOnly_complete,
+    testSopGate_sopChecklistRegression
+  ]);
+}
+
+/**
+ * Batch 4 — BLOCK + complete.
+ * Tests: 5 (blockComplete).
+ * Two queue rounds (checklist + verify). Expected runtime: ~3 minutes.
+ *
+ * @returns {{ passed: number, failed: number }}
+ */
+function runSopGateTests_batch4() {
+  return runSopGateBatch_('batch4: block+complete', [
+    testSopGate_blockComplete
+  ]);
+}
+
+/**
+ * Batch 5 — BLOCK + incomplete (full integration).
+ * Tests: 4 (blockIncomplete).
+ * Three queue rounds. Run alone to stay within the 6-minute GAS limit.
+ * Expected runtime: ~5 minutes.
+ *
+ * @returns {{ passed: number, failed: number }}
+ */
+function runSopGateTests_batch5() {
+  return runSopGateBatch_('batch5: block+incomplete', [
+    testSopGate_blockIncomplete
+  ]);
 }
 
 

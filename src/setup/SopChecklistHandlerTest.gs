@@ -60,6 +60,18 @@ var SCH_CLIENT_ACTOR = {
  * @returns {{ sopTemplateId, sopItemId, sopItemCode, templateHash }}
  */
 function schSeedActiveSopTemplate_(clientCode, jobType, suffix) {
+  // Retire any accumulated ACTIVE templates for this client+jobType before
+  // creating the new one. findActiveTemplateForJob filters only on client_code
+  // + job_type, so multiple test-seeded templates with different software
+  // values would cause it to return a stale template from a prior test run.
+  var stale;
+  do {
+    stale = SopDAL.findActiveTemplateForJob(clientCode, jobType);
+    if (stale) {
+      SopAdminEngine.retireTemplate(TH_CEO_EMAIL, stale.sop_template_id);
+    }
+  } while (stale);
+
   var r = SopAdminEngine.createTemplate(TH_CEO_EMAIL, {
     clientCode: clientCode,
     jobType:    jobType,
