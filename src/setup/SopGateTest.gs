@@ -9,7 +9,7 @@
 //   6-minute GAS execution limit. Do not run runSopGateTests_batch5
 //   back-to-back with other batches — it uses 3 queue rounds.
 //
-//   runSopGateTests_batch1()  — Tests 1,6,7  fast (~30s)
+//   runSopGateTests_batch1()  — Tests 1,6,7 + noProductCode + duplicatePrevented (fast ~45s)
 //   runSopGateTests_batch2()  — Tests 2,8    queue rounds (~4 min)
 //   runSopGateTests_batch3()  — Tests 3,9    complete+checklist (~4 min)
 //   runSopGateTests_batch4()  — Test 5       block+complete (~3 min)
@@ -23,6 +23,8 @@
 //   testSopGate_blockComplete()
 //   testSopGate_nonPilotClient()
 //   testSopGate_noActiveTemplate()
+//   testSopGate_noProductCode()
+//   testSopGate_duplicateActiveTemplatePrevented()
 //   testSopGate_qcHandlerRegression()
 //   testSopGate_sopChecklistRegression()
 //
@@ -89,6 +91,7 @@ function sgFakeView_(jobNumber, clientCode, jobType) {
     job_number:    jobNumber,
     client_code:   clientCode,
     job_type:      jobType,
+    product_code:  TH_PRODUCT_CODE,
     current_state: Config.STATES.IN_PROGRESS
   };
 }
@@ -135,8 +138,9 @@ function runSopGateBatch_(batchName, tests) {
 
 /**
  * Batch 1 — Fast (direct evaluate_/checkForQcSubmit calls, no queue).
- * Tests: 1 (featureDisabled), 6 (nonPilotClient), 7 (noActiveTemplate).
- * Expected runtime: ~30 seconds.
+ * Tests: 1 (featureDisabled), 6 (nonPilotClient), 7 (noActiveTemplate),
+ *        noProductCode, duplicateActiveTemplatePrevented.
+ * Expected runtime: ~45 seconds.
  *
  * @returns {{ passed: number, failed: number }}
  */
@@ -144,7 +148,9 @@ function runSopGateTests_batch1() {
   return runSopGateBatch_('batch1: fast', [
     testSopGate_featureDisabled,
     testSopGate_nonPilotClient,
-    testSopGate_noActiveTemplate
+    testSopGate_noActiveTemplate,
+    testSopGate_noProductCode,
+    testSopGate_duplicateActiveTemplatePrevented
   ]);
 }
 
@@ -201,6 +207,146 @@ function runSopGateTests_batch5() {
   return runSopGateBatch_('batch5: block+incomplete', [
     testSopGate_blockIncomplete
   ]);
+}
+
+
+// ============================================================
+// TEST: No Product Code
+// view.product_code is blank → gateActive=false, reason='NO_PRODUCT_CODE'.
+// Must never block QC regardless of mode.
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testSopGate_noProductCode() {
+  var results  = [];
+  var counters = { passed: 0, failed: 0 };
+  var restore  = sgSaveSopProps_();
+
+  try {
+    sgSetSopProps_('true', 'BLOCK', TH_CLIENT_CODE);
+
+    var view = {
+      job_number:    'BLC-SG-NOPC-' + Date.now(),
+      client_code:   TH_CLIENT_CODE,
+      job_type:      'STRUCT',
+      product_code:  '',
+      current_state: Config.STATES.IN_PROGRESS
+    };
+
+    var result = SopGate.evaluate_(view);
+    assertH_(results, counters, 'evaluate_: gateActive=false when product_code is blank',
+      result.gateActive === false, 'gateActive=' + result.gateActive);
+    assertH_(results, counters, 'evaluate_: reason=NO_PRODUCT_CODE',
+      result.reason === 'NO_PRODUCT_CODE', 'reason=' + result.reason);
+    assertH_(results, counters, 'evaluate_: complete=true (never blocks)',
+      result.complete === true, 'complete=' + result.complete);
+
+    // Must not throw even in BLOCK mode
+    var threw = false;
+    try {
+      SopGate.checkForQcSubmit(view, SG_DESIGNER_ACTOR, 'SG-NOPC-' + Date.now());
+    } catch (e) { threw = true; }
+    assertH_(results, counters, 'checkForQcSubmit: no throw when product_code is blank', !threw, 'threw unexpectedly');
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  } finally {
+    restore();
+  }
+
+  printResultsH_('testSopGate_noProductCode', results, counters);
+  return counters;
+}
+
+
+// ============================================================
+// TEST: Duplicate Active Template Prevented
+// If DIM_SOP_TEMPLATES has >1 in-date ACTIVE row for the same
+// client_code + scope_code, findActiveTemplateForJob must throw
+// SOP_DUPLICATE_ACTIVE_TEMPLATE, and evaluate_() must propagate it.
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testSopGate_duplicateActiveTemplatePrevented() {
+  var results     = [];
+  var counters    = { passed: 0, failed: 0 };
+  var restore     = sgSaveSopProps_();
+  var templateIds = [];
+  var uniqueScope = 'DUP-SC-' + Date.now();
+
+  try {
+    sgSetSopProps_('true', 'BLOCK', TH_CLIENT_CODE);
+
+    // Create and publish first template with the unique scope
+    var r1 = SopAdminEngine.createTemplate(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, jobType: 'STRUCT',
+      software:   'DUP-SW-A',    scopeCode: uniqueScope
+    });
+    SopAdminEngine.addItem(TH_CEO_EMAIL, r1.sopTemplateId, {
+      item_code: 'DUP-ITEM-A', item_label: 'Dup test A', is_required: 'TRUE'
+    });
+    SopAdminEngine.publishTemplate(TH_CEO_EMAIL, r1.sopTemplateId);
+    templateIds.push(r1.sopTemplateId);
+
+    // Create a second template under a different scope (bypasses the guard),
+    // then directly set it ACTIVE with the same unique scope — forcing a
+    // duplicate condition that the guard normally prevents.
+    var r2 = SopAdminEngine.createTemplate(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, jobType: 'STRUCT',
+      software:   'DUP-SW-B',    scopeCode: uniqueScope + '-TMP'
+    });
+    SopAdminEngine.addItem(TH_CEO_EMAIL, r2.sopTemplateId, {
+      item_code: 'DUP-ITEM-B', item_label: 'Dup test B', is_required: 'TRUE'
+    });
+    SopDAL.updateTemplate(r2.sopTemplateId, {
+      status:         'ACTIVE',
+      scope_code:     uniqueScope,
+      effective_from: '2020-01-01',
+      effective_to:   ''
+    });
+    templateIds.push(r2.sopTemplateId);
+
+    // findActiveTemplateForJob must throw SOP_DUPLICATE_ACTIVE_TEMPLATE
+    var dalCode = null;
+    try {
+      SopDAL.findActiveTemplateForJob(TH_CLIENT_CODE, uniqueScope);
+    } catch (e) { dalCode = e.code; }
+    assertH_(results, counters, 'findActiveTemplateForJob: throws SOP_DUPLICATE_ACTIVE_TEMPLATE',
+      dalCode === 'SOP_DUPLICATE_ACTIVE_TEMPLATE', 'code=' + dalCode);
+
+    // evaluate_() must propagate the error
+    var view = {
+      job_number:    'BLC-SG-DUP-' + Date.now(),
+      client_code:   TH_CLIENT_CODE,
+      job_type:      'STRUCT',
+      product_code:  uniqueScope,
+      current_state: Config.STATES.IN_PROGRESS
+    };
+    var gateCode = null;
+    try {
+      SopGate.evaluate_(view);
+    } catch (e) { gateCode = e.code; }
+    assertH_(results, counters, 'evaluate_: propagates SOP_DUPLICATE_ACTIVE_TEMPLATE',
+      gateCode === 'SOP_DUPLICATE_ACTIVE_TEMPLATE', 'code=' + gateCode);
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  } finally {
+    restore();
+    // Retire both templates by ID to leave DIM_SOP_TEMPLATES clean
+    templateIds.forEach(function (id) {
+      try { SopAdminEngine.retireTemplate(TH_CEO_EMAIL, id); } catch (ignore) {}
+    });
+  }
+
+  printResultsH_('testSopGate_duplicateActiveTemplatePrevented', results, counters);
+  return counters;
 }
 
 

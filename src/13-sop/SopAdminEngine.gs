@@ -88,12 +88,11 @@ var SopAdminEngine = (function () {
       throw SopError_('SOP_MISSING_DIMENSIONS', 'clientCode, jobType, software, and scopeCode are all required', params);
     }
 
-    // Guard: no two ACTIVE templates for the same dimensions
-    var existing = SopDAL.getActiveTemplate(params.clientCode, params.jobType, params.software, params.scopeCode);
+    // Guard: one ACTIVE template per client_code + scope_code (product)
+    var existing = SopDAL.findActiveTemplateByProduct(params.clientCode, params.scopeCode);
     if (existing) {
-      throw SopError_('SOP_ACTIVE_TEMPLATE_EXISTS', 'An ACTIVE SOP template already exists for these dimensions — retire or copy it instead', {
-        clientCode: params.clientCode, jobType: params.jobType,
-        software:   params.software,  scopeCode: params.scopeCode,
+      throw SopError_('SOP_ACTIVE_TEMPLATE_EXISTS', 'An ACTIVE SOP template already exists for this client + scope — retire or copy it instead', {
+        clientCode: params.clientCode, scopeCode: params.scopeCode,
         existingId: existing.sop_template_id
       });
     }
@@ -424,9 +423,9 @@ var SopAdminEngine = (function () {
     // Compute and lock hash
     var templateHash = SopTemplateEngine.computeTemplateHash(activeItems);
 
-    // Auto-retire the current ACTIVE template for these dimensions
-    var currentActive = SopDAL.getActiveTemplate(
-      template.client_code, template.job_type, template.software, template.scope_code
+    // Auto-retire the current ACTIVE template for this client + scope
+    var currentActive = SopDAL.findActiveTemplateByProduct(
+      template.client_code, template.scope_code
     );
     if (currentActive && currentActive.sop_template_id !== sopTemplateId) {
       retireTemplateById_(currentActive.sop_template_id);

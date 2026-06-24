@@ -42,7 +42,7 @@ var SopGate = (function () {
   //     missing:       [{ sopItemId, sopItemCode, itemLabel }],
   //     sopTemplateId: string | null,
   //     reason:        'FEATURE_DISABLED' | 'NON_PILOT_CLIENT' |
-  //                    'NO_TEMPLATE' | 'EVALUATED'
+  //                    'NO_PRODUCT_CODE' | 'NO_TEMPLATE' | 'EVALUATED'
   //   }
   // ──────────────────────────────────────────────────────────
   function evaluate_(view) {
@@ -69,8 +69,11 @@ var SopGate = (function () {
     var mode    = (modeRaw === 'BLOCK') ? 'BLOCK' : 'WARN_ONLY';
 
     // ── 4. Find active template for this job ─────────────────
-    var jobType  = String(view.job_type || '').trim();
-    var template = SopDAL.findActiveTemplateForJob(view.client_code, jobType);
+    var productCode = String(view.product_code || '').trim();
+    if (!productCode) {
+      return { gateActive: false, mode: mode, complete: true, missing: [], sopTemplateId: null, reason: 'NO_PRODUCT_CODE' };
+    }
+    var template = SopDAL.findActiveTemplateForJob(view.client_code, productCode);
     if (!template) {
       return { gateActive: false, mode: mode, complete: true, missing: [], sopTemplateId: null, reason: 'NO_TEMPLATE' };
     }

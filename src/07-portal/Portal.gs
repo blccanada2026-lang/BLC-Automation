@@ -948,10 +948,14 @@ function portal_getSopChecklist(ptoken, jobNumber) {
   }
   var job = jobRows[0];
 
-  // Find ACTIVE SOP template for this client + job_type
+  // Find ACTIVE SOP template for this client + product_code (scope_code)
+  var productCode = String(job.product_code || '').trim();
+  if (!productCode) {
+    return JSON.stringify({ hasSop: false, reason: 'NO_PRODUCT_CODE' });
+  }
   var template;
   try {
-    template = SopDAL.findActiveTemplateForJob(job.client_code, job.job_type);
+    template = SopDAL.findActiveTemplateForJob(job.client_code, productCode);
   } catch (e) {
     Logger.error('PORTAL_SOP_TEMPLATE_READ_FAILED', { module: 'Portal', jobNumber: jobNumber, error: e.message });
     throw e;

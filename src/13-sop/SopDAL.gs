@@ -112,19 +112,20 @@ var SopDAL = (function () {
   }
 
   // ──────────────────────────────────────────────────────────
-  // findActiveTemplateForJob
-  // Searches DIM_SOP_TEMPLATES for an ACTIVE template matching
-  // clientCode + jobType (ignoring software/scope_code).
-  // Used when the VW_JOB_CURRENT_STATE row does not carry those
-  // dimensions (PR 4 portal fetch). Returns the first in-date
-  // match, or null if none. Throws if the DAL read fails.
+  // findActiveTemplateForJob / findActiveTemplateByProduct
+  // Searches DIM_SOP_TEMPLATES for the single ACTIVE template
+  // matching clientCode + scopeCode (product-specific lookup).
+  // One ACTIVE template per client_code + scope_code is the
+  // business invariant. Returns the matching row, or null.
+  // Throws SOP_DUPLICATE_ACTIVE_TEMPLATE if >1 in-date ACTIVE
+  // found (data integrity error — should never occur in PROD).
   // ──────────────────────────────────────────────────────────
-  function findActiveTemplateForJob(clientCode, jobType) {
+  function findActiveTemplateForJob(clientCode, scopeCode) {
     var rows;
     try {
       rows = DAL.readWhere(
         Config.TABLES.DIM_SOP_TEMPLATES,
-        { client_code: clientCode, job_type: jobType, status: 'ACTIVE' },
+        { client_code: clientCode, scope_code: scopeCode, status: 'ACTIVE' },
         { callerModule: MODULE }
       );
     } catch (e) {
@@ -138,7 +139,13 @@ var SopDAL = (function () {
       var to   = r.effective_to   ? new Date(r.effective_to)   : null;
       return (!from || from <= today) && (!to || to >= today);
     });
-    return inDate.length > 0 ? inDate[0] : null;
+    if (inDate.length === 0) return null;
+    if (inDate.length > 1) {
+      throw SopError_('SOP_DUPLICATE_ACTIVE_TEMPLATE', 'More than one active SOP template found for client+scope', {
+        clientCode: clientCode, scopeCode: scopeCode
+      });
+    }
+    return inDate[0];
   }
 
   // ──────────────────────────────────────────────────────────
@@ -375,8 +382,9 @@ var SopDAL = (function () {
     upsertCurrentStatus:      upsertCurrentStatus,
     saveTemplate:             saveTemplate,
     saveItem:                 saveItem,
-    // Portal-facing (PR 4)
-    findActiveTemplateForJob: findActiveTemplateForJob,
+    // Portal-facing and gate-facing (scope-based lookup)
+    findActiveTemplateForJob:   findActiveTemplateForJob,
+    findActiveTemplateByProduct: findActiveTemplateForJob,
     // Admin-facing additions (PR 3)
     getTemplateById:          getTemplateById,
     getItemById:              getItemById,
