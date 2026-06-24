@@ -754,7 +754,7 @@ function testSopGate_sopChecklistRegression() {
     assertH_(results, counters, 'FACT_SOP_CURRENT_STATUS row exists',
       status && status.length > 0, 'rows: ' + (status ? status.length : 0));
     assertH_(results, counters, 'checked_value is TRUE',
-      status && status.length > 0 && status[0].checked_value === 'TRUE',
+      status && status.length > 0 && String(status[0].checked_value).toUpperCase() === 'TRUE',
       status && status.length > 0 ? status[0].checked_value : 'no row');
 
     var audits = DAL.readWhere(

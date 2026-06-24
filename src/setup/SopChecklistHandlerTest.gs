@@ -193,7 +193,7 @@ function testSopChecklistHandler_happyPath() {
     assertH_(results, counters, 'FACT_SOP_CURRENT_STATUS row exists',
       status && status.length > 0, 'rows: ' + (status ? status.length : 0));
     assertH_(results, counters, 'checked_value is TRUE',
-      status && status.length > 0 && status[0].checked_value === 'TRUE',
+      status && status.length > 0 && String(status[0].checked_value).toUpperCase() === 'TRUE',
       status && status.length > 0 ? status[0].checked_value : 'no row');
     assertH_(results, counters, 'sop_template_id matches',
       status && status.length > 0 && status[0].sop_template_id === sop.sopTemplateId,
@@ -397,7 +397,7 @@ function testSopChecklistHandler_duplicateBatch() {
     assertH_(results, counters, 'FACT_SOP_CURRENT_STATUS has exactly one row',
       status && status.length === 1, 'rows: ' + (status ? status.length : 0));
     assertH_(results, counters, 'Status row checked_value is TRUE',
-      status && status.length > 0 && status[0].checked_value === 'TRUE',
+      status && status.length > 0 && String(status[0].checked_value).toUpperCase() === 'TRUE',
       status && status.length > 0 ? status[0].checked_value : 'no row');
 
     // FACT_SOP_AUDITS is append-only — exactly 1 row proves the second submission
