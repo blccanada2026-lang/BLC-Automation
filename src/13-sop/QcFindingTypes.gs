@@ -496,7 +496,7 @@ var QcFindingTypes = (function () {
     }
 
     if (toInsert.length > 0) {
-      BatchOperations.appendRows(Config.TABLES.DIM_QC_FINDING_TYPES, toInsert);
+      DAL.appendRows(Config.TABLES.DIM_QC_FINDING_TYPES, toInsert, { callerModule: 'QcFindingTypes' });
     }
 
     Logger.info('QC_FINDING_TYPES_SEED_COMPLETE', {

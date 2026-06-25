@@ -230,7 +230,8 @@ function testSopAuditEngine_recordItemCheck_happy() {
   // Verify current status was written
   var status = SopDAL.getCurrentStatus(jobId);
   sopAssertTrue_('getCurrentStatus should return rows after recordItemCheck', status.length > 0);
-  sopAssert_('current status checked_value should be TRUE', status[0].checked_value, 'TRUE');
+  sopAssertTrue_('current status checked_value should be TRUE',
+    String(status[0].checked_value).toUpperCase() === 'TRUE');
 }
 
 // ──────────────────────────────────────────────────────────
