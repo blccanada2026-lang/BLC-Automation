@@ -3,12 +3,13 @@
 ## Current Priority Stack
 
 1. Create SOP memory/docs (this document and siblings) ← DONE
-2. Finalize SOP architecture (see SOP_ARCHITECTURE.md) ← DONE
-3. Receive source documents from Raj (Form URL + I-Joist Word doc)
-4. Phase 1–5: Import SBS SOPs into DEV (gated, approval at each phase)
-5. Validate product-specific checklist behavior in DEV
-6. Pilot SBS in WARN_ONLY mode
-7. Phase 2: Design and build SOP Compliance Dashboard (after pilot)
+2. Finalize SOP architecture + Master Charter v2.0 ← DONE
+3. Design GLOBAL_QC_REVIEW_SOP (process template, no source doc needed)
+4. Receive source documents from Raj (Form URL + I-Joist Word doc)
+5. Phase 1–5: Import SBS Designer SOPs into DEV (gated, approval at each phase)
+6. Validate product-specific checklist behavior in DEV
+7. Pilot SBS in WARN_ONLY mode
+8. Phase 2: Design and build SOP Compliance Dashboard (after pilot)
 
 ---
 
@@ -86,11 +87,29 @@ TBD at design time: Looker Studio (current reporting tool) vs portal-embedded ta
 
 ---
 
+---
+
+## Phase 1B — GLOBAL_QC_REVIEW_SOP Design
+
+The QC Review SOP is process-based and does not require a client source document. It can be designed independently of the SBS Designer SOP import.
+
+| Item | Description | Status |
+|---|---|---|
+| Design GLOBAL_QC_REVIEW_SOP | Controls for QC reviewer process | Not started |
+| Map outcomes | PASS / MINOR_ERROR / REWORK | Not started |
+| DEV import | Import to DIM_SOP_TEMPLATES as global template | Not started |
+| Gate wiring | Wire QC SOP into QC submit flow (separate from Designer SOP gate) | Not started |
+
+**Note:** GLOBAL_QC_REVIEW_SOP uses a special key — not `client_code + product_code`. Architecture decision needed at design time (ADR required).
+
+---
+
 ## Future Phases
 
 | Phase | Description |
 |---|---|
-| Phase 3 | Expand to additional clients (MATIX, others) |
+| Phase 3 | Expand to additional clients (MATIX, others) — independent SOP design per ADR-SOP-010 |
 | Phase 4 | Switch SBS from WARN_ONLY to BLOCK after pilot validates coverage |
 | Phase 5 | SOP compliance as input to quarterly bonus calculation |
 | Phase 6 | Client-facing audit export (audit readiness package) |
+| Phase 7 | AI-assisted SOP audit (flag likely-incomplete items based on job history) |

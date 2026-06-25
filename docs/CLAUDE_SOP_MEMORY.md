@@ -1,8 +1,10 @@
 # CLAUDE_SOP_MEMORY.md — BLC Nexus SOP Bootstrap
 
-**Read this file at the start of every SOP-related session.**
+**Read this file at the start of every SOP-related session.**  
+Then read `docs/SOP_GUARDRAILS.md` (safety rules quick-reference).  
 Then paste `docs/SOP_MASTER_PROMPT.md` into the session to activate the governing operating charter.
-This file captures the architecture and status; the Master Prompt governs how to work.
+
+This file = architecture + status. Guardrails = absolute rules. Master Prompt = how to work.
 
 ---
 
@@ -26,6 +28,18 @@ SOP identity = client_code + product_code
 - Multiple versions supported: DRAFT → ACTIVE → RETIRED
 - Never combine multiple products into one template
 
+## Two SOP Families (ADR-SOP-012, ADR-SOP-013)
+
+| Family | Question it answers | Keyed by |
+|---|---|---|
+| **Designer SOP** | Did the designer perform the required work? | `client_code + product_code` |
+| **QC Review SOP** | Did QC properly validate the work? | `GLOBAL_QC_REVIEW_SOP` by default |
+
+- Designer SOP and QC Review SOP are never merged into one template.
+- QC outcomes: **PASS** / **MINOR_ERROR** / **REWORK**
+- Client/product-specific QC SOPs only when unique workflows are truly required (ADR required to justify).
+- `GLOBAL_QC_REVIEW_SOP` key architecture is TBD — an ADR is required at design time.
+
 ---
 
 ## Current Status (as of 2026-06-25)
@@ -39,6 +53,8 @@ SOP identity = client_code + product_code
 | I-Joist Word document | Not yet received |
 | WARN_ONLY pilot | Not started |
 | SOP Compliance Dashboard | Deferred to Phase 2 |
+| GLOBAL_QC_REVIEW_SOP | Not started — can be designed without source doc |
+| Master Prompt version | v2.0 (2026-06-25) |
 
 ---
 
@@ -179,8 +195,9 @@ Outputs will support: team quality review, client audit readiness, designer coac
 
 ## Related Docs
 
-- `docs/SOP_MASTER_PROMPT.md` — governing operating charter (paste into every SOP session)
+- `docs/SOP_GUARDRAILS.md` — safety card (read first, every session)
+- `docs/SOP_MASTER_PROMPT.md` — governing operating charter v2.0 (paste into every SOP session)
 - `docs/SOP_ARCHITECTURE.md` — data model, feature flags, file inventory
-- `docs/SOP_DECISIONS.md` — architectural decision log (ADR-SOP-001 through 011)
+- `docs/SOP_DECISIONS.md` — architectural decision log (ADR-SOP-001 through 013)
 - `docs/SOP_PRODUCT_INVENTORY.md` — per-client, per-product import status
 - `docs/SOP_ROADMAP.md` — phase plan + dashboard specification
