@@ -294,6 +294,21 @@ var SCHEMAS = {
     'superseded_by_audit_id', 'created_at'
   ],
 
+  // DIM_QC_FINDING_TYPES — QC finding taxonomy (Layer 3). Seeded by QcFindingTypes.seed().
+  // 20 columns: finding_code is the controlled vocabulary key.
+  // kpi_weight: 0.5–10.0 (used for compliance scoring in future dashboard).
+  // is_structural_risk: TRUE for findings that could affect structural integrity.
+  // display_order: unique integer for consistent UI ordering.
+  // benchmark_code: optional reference to industry standard (e.g. ISO 9001 clause).
+  'DIM_QC_FINDING_TYPES': [
+    'finding_code', 'finding_label', 'finding_group', 'category',
+    'severity_default', 'kpi_weight', 'is_structural_risk',
+    'product_applicability', 'requires_comment', 'common_in_rework',
+    'active_flag', 'description', 'display_order', 'notes',
+    'created_by', 'created_at', 'last_updated_at', 'last_updated_by',
+    'retired_at', 'benchmark_code'
+  ],
+
   // FACT_SOP_CURRENT_STATUS — one row per job+item; latest check state only (flat, non-partitioned)
   'FACT_SOP_CURRENT_STATUS': [
     'job_id', 'job_number', 'client_code',

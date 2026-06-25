@@ -98,10 +98,10 @@ The QC Review Process is universal by default. It does not use `client_code + pr
 `FACT_QC_REVIEW_CHECKLISTS` stores one row per checklist item per review, matching the `FACT_SOP_AUDITS` pattern. This is required for per-item dashboard analytics (most-missed items, reviewer consistency, audit evidence). JSON blob storage is explicitly rejected.
 
 ### QC Review Outcomes
-Every completed QC review produces exactly one outcome:
-- `PASS` — design meets all requirements
-- `MINOR_ERROR` — errors found, correctable without full rework
-- `REWORK` — design must be returned for significant revision
+Every completed QC review produces exactly one outcome (recorded on `FACT_QC_REVIEW_SESSIONS` — ADR-QMS-007, ADR-QMS-009):
+- `APPROVED` — design meets all requirements
+- `MINOR_REWORK` — minor errors found, correctable without full redesign
+- `MAJOR_REWORK` — design must be returned for significant revision
 
 ### Relationship to Existing QCHandler
 `FACT_QC_REVIEW_CHECKLISTS` is additive. The existing `QCHandler.gs` outcome logic (`SUBMITTED_FOR_QC → QC_COMPLETE`) is not modified. `FACT_QC_REVIEW_CHECKLISTS` records *what the reviewer checked*, while `FACT_QC_EVENTS` records *the state transition*. These are linked by `job_number`.
@@ -123,7 +123,7 @@ Every completed QC review produces exactly one outcome:
 
 ## Section 4 — QC Findings Taxonomy (Layer 3)
 
-> **Status:** Taxonomy defined. Schema pending (PR QMS-2 + QMS-3).  
+> **Status:** Schema defined and seeded (PR QMS-2). `FACT_QC_FINDINGS` table pending (PR QMS-3b).  
 > **Feature flag:** `QMS_FINDINGS_ENABLED` — default `false`
 
 ### Purpose
@@ -166,19 +166,36 @@ Free-text comments are allowed alongside a finding code but not instead of one.
 | `MAJOR` | Significant error — likely requires rework |
 | `CRITICAL` | Structural or safety concern — mandatory rework |
 
-### DIM_QC_FINDING_TYPES Schema
+### DIM_QC_FINDING_TYPES Schema (20 columns — ADR-QMS-012)
+
+> **Status:** Schema defined in PR QMS-2. Seeded with 17 initial codes.
+
 | Column | Description |
 |---|---|
-| `finding_code` | Unique code (UPPER_SNAKE_CASE) |
+| `finding_code` | Unique code (UPPER_SNAKE_CASE) — primary key |
 | `finding_label` | Short label for UI display |
-| `category` | Grouping for dashboard filtering |
-| `severity_default` | Suggested default severity |
-| `product_applicability` | `ALL` or specific product codes |
+| `finding_group` | High-level safety grouping: `STRUCTURAL` / `PROCESS` / `DOCUMENTATION` |
+| `category` | Functional domain: Design / Engineering / QC / Documentation / Client Requirement / Production |
+| `severity_default` | Suggested default severity: INFO / MINOR / MAJOR / CRITICAL |
+| `kpi_weight` | Numeric 0.5–10.0 — used for compliance scoring in future dashboard |
+| `is_structural_risk` | TRUE/FALSE — TRUE for 8 codes that could affect structural integrity (ADR-QMS-015) |
+| `product_applicability` | `ALL` or specific product codes (only `PLATE_ERROR` = `TRUSS` — ADR-QMS-014) |
+| `requires_comment` | Y/N — Y enforced at submission time (only `OTHER` requires comment) |
+| `common_in_rework` | TRUE/FALSE — identifies findings frequently seen in rework jobs |
 | `active_flag` | TRUE/FALSE |
-| `description` | Full description for reviewer guidance |
+| `description` | Full reviewer guidance text |
+| `display_order` | Unique integer — controls consistent UI ordering |
+| `notes` | Internal notes about the finding code |
 | `created_by` | Actor person_code |
 | `created_at` | ISO timestamp |
-| `retired_at` | ISO timestamp if retired |
+| `last_updated_at` | ISO timestamp |
+| `last_updated_by` | Actor person_code |
+| `retired_at` | ISO timestamp if retired (empty string when active) |
+| `benchmark_code` | Optional reference to industry standard or ISO 9001 clause |
+
+**Structural risk codes (8):** LOAD_ERROR, GEOMETRY_ERROR, BEARING_ERROR, CONNECTOR_ERROR, PLATE_ERROR, ENGINEERING_ERROR, WRONG_DESIGN_STANDARD, CALCULATION_ERROR
+
+**Product-restricted codes (1):** PLATE_ERROR — `product_applicability = TRUSS`
 
 ---
 

@@ -133,10 +133,10 @@ This is NOT a duplicate of the Designer SOP. Different actor, different question
 
 Primary users: Team Leads, QC Reviewers, Managers
 
-QC Review outcomes:
-* `PASS` — design meets all requirements
-* `MINOR_ERROR` — errors found, correctable without full rework
-* `REWORK` — design must be returned for significant revision
+QC Review outcomes (aligned to QCHandler vocabulary — ADR-QMS-007):
+* `APPROVED` — design meets all requirements
+* `MINOR_REWORK` — minor errors found, correctable without full redesign
+* `MAJOR_REWORK` — design must be returned for significant revision
 
 Example GLOBAL_QC_PROCESS controls:
 * Designer SOP completion reviewed

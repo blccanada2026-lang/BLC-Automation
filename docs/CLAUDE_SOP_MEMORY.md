@@ -34,7 +34,7 @@ SOP identity = client_code + product_code
 |---|---|---|---|---|
 | **1** | Designer SOP | Did the designer do the work? | `client_code + product_code` | Implemented in DEV |
 | **2** | QC Review Process | Did QC properly validate it? | `qc_process_code = GLOBAL_QC_PROCESS` | Schema pending PR QMS-3 |
-| **3** | QC Findings | What defects were found? | `finding_code` from `DIM_QC_FINDING_TYPES` | Taxonomy pending PR QMS-2 |
+| **3** | QC Findings | What defects were found? | `finding_code` from `DIM_QC_FINDING_TYPES` | Taxonomy seeded (PR QMS-2); FACT tables pending PR QMS-3b |
 
 - Layers 1, 2, and 3 use separate table families (`DIM_SOP_*` / `FACT_SOP_*` vs `DIM_QC_*` / `FACT_QC_*`)
 - QC outcomes: **PASS** / **MINOR_ERROR** / **REWORK**
@@ -55,9 +55,10 @@ SOP identity = client_code + product_code
 | WARN_ONLY pilot | Not started |
 | SOP Compliance Dashboard | Deferred to Phase 2 |
 | GLOBAL_QC_PROCESS template | Not started — can be designed without source doc |
-| QC Findings taxonomy (DIM_QC_FINDING_TYPES) | Defined in docs — schema pending PR QMS-2 |
+| QC Findings taxonomy (DIM_QC_FINDING_TYPES) | Schema defined, 17 codes seeded — PR QMS-2 complete |
 | QMS_ENABLED flag in PROD | `false` (not set — QMS is silent) |
-| PR QMS-1 (documentation) | IN PROGRESS |
+| PR QMS-1 (documentation) | DONE (commit 5d8ddca) |
+| PR QMS-2 (QC finding taxonomy) | IN PROGRESS |
 | Master Prompt version | v3.0 (2026-06-25) |
 
 ---

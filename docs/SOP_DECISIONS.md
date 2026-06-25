@@ -191,3 +191,99 @@ These ADRs document the evolution from SOP module to Quality Management System.
 **Context:** Two storage models were considered for QC review checklist responses: (A) one row per checklist item per review; (B) one JSON blob per review containing all item responses. Both are technically valid. The choice affects dashboard analytics, auditability, and storage volume.  
 **Decision:** Row-per-item (Model A). Reasons: (1) matches the existing `FACT_SOP_AUDITS` pattern — consistency across layers; (2) enables per-item aggregation without JSON parsing (most-missed items, reviewer blind spots); (3) each row is independently auditable — an auditor can verify a specific item without parsing a blob; (4) simpler DAL write path — `BatchOperations.appendRows()` handles N items in one call. Storage volume (estimated 10,000 rows/month at 500 jobs × 20 items) is acceptable in Google Sheets with monthly partitioning (Rule D6).  
 **Consequences:** `FACT_QC_REVIEW_CHECKLISTS` has one row per item per review. Partitioned monthly. Dashboard queries aggregate by item for trend analysis. No JSON columns in the QMS FACT tables.
+
+---
+
+## PR QMS-2 Architecture Decisions
+
+These ADRs were approved by the CTO before implementation of PR QMS-2 (QC Finding Taxonomy). They correct structural gaps identified in the pre-implementation architecture review.
+
+---
+
+### ADR-QMS-007: QC Review outcomes align to existing QCHandler vocabulary
+
+**Status:** Accepted  
+**Date:** 2026-06-25  
+**Context:** Early QMS documentation described QC Review outcomes as `PASS / MINOR_ERROR / REWORK`. The existing `QCHandler.gs` already uses `APPROVED / MINOR_REWORK / MAJOR_REWORK / CLIENT_SENT` as its outcome vocabulary. Introducing a parallel outcome vocabulary would create a terminology clash, confuse reviewers using the portal, and make cross-layer dashboard comparisons incorrect.  
+**Decision:** QC Review outcomes are `APPROVED / MINOR_REWORK / MAJOR_REWORK`. `CLIENT_SENT` is an existing QCHandler state (job returned to client) and is out of scope for the QMS Review Process outcome. All documentation updated to use the correct vocabulary.  
+**Consequences:** No new outcome vocabulary introduced. QMS outcome terminology is consistent with QCHandler. All affected docs updated in PR QMS-2.
+
+---
+
+### ADR-QMS-008: FACT_QC_REVIEW_SESSIONS as parent session record
+
+**Status:** Accepted  
+**Date:** 2026-06-25  
+**Context:** Original PR QMS-3 plan had only `FACT_QC_REVIEW_CHECKLISTS` (item-level rows). There was no parent record to anchor the outcome and reviewer identity for a complete review session. Without a session record, reporting "who reviewed this job and what was the outcome" requires reconstructing session context from item rows — fragile and ambiguous when a reviewer submits multiple review passes on the same job.  
+**Decision:** `FACT_QC_REVIEW_SESSIONS` is added as a parent session record. It holds: `qc_session_id`, `job_number`, `reviewer_person_code`, `qc_process_code`, `outcome`, `session_started_at`, `session_completed_at`, `request_id`. `FACT_QC_REVIEW_CHECKLISTS` rows FK to `qc_session_id`.  
+**Consequences:** Clean parent-child relationship. Session outcome is unambiguous. Dashboard session-level aggregation is straightforward.
+
+---
+
+### ADR-QMS-009: QC Review outcome recorded on FACT_QC_REVIEW_SESSIONS, not FACT_QC_FINDINGS
+
+**Status:** Accepted  
+**Date:** 2026-06-25  
+**Context:** One outcome per review, but potentially many findings per review. If outcome is stored on `FACT_QC_FINDINGS`, a review with 3 findings produces 3 outcome rows — creating apparent duplicates or requiring de-duplication for any dashboard metric. Outcome is a property of the review session, not of an individual finding.  
+**Decision:** QC Review outcome (`APPROVED / MINOR_REWORK / MAJOR_REWORK`) is stored on `FACT_QC_REVIEW_SESSIONS.outcome`. `FACT_QC_FINDINGS` stores defect classifications only (finding_code, severity, comment). `FACT_QC_FINDINGS` and `FACT_QC_REVIEW_CHECKLISTS` FK to the same `qc_session_id`.  
+**Consequences:** One outcome per session row — no de-duplication needed. Finding-level and session-level metrics are independently queryable.
+
+---
+
+### ADR-QMS-010: DIM_QC_PROCESS_TEMPLATES as versioning parent for process items
+
+**Status:** Accepted  
+**Date:** 2026-06-25  
+**Context:** Original design had only `DIM_QC_PROCESS_ITEMS` keyed by `qc_process_code`. If the GLOBAL_QC_PROCESS template needs to be updated (new control added, item retired), there was no mechanism to version the process — the global key would be updated in-place, destroying the audit trail for reviews conducted under prior versions.  
+**Decision:** `DIM_QC_PROCESS_TEMPLATES` is added as a parent table. It holds: `qc_process_template_id`, `qc_process_code`, `version`, `status` (DRAFT/ACTIVE/RETIRED), `effective_from`, `effective_to`, lifecycle metadata. `DIM_QC_PROCESS_ITEMS` holds a FK to `qc_process_template_id`. Pattern mirrors `DIM_SOP_TEMPLATES → DIM_SOP_ITEMS`.  
+**Consequences:** QC process templates are versioned. Reviews reference the exact process template version active at review time. Version management follows the same pattern as Designer SOP templates.
+
+---
+
+### ADR-QMS-011: QMS reviewer identity uses person_code, not email
+
+**Status:** Accepted  
+**Date:** 2026-06-25  
+**Context:** `FACT_SOP_AUDITS` stores `designer_email` (not `person_code`) due to an early implementation choice in Layer 1. All other FACT tables (FACT_QC_EVENTS, FACT_BILLING_LEDGER, FACT_PAYROLL_LEDGER) use `person_code` as the canonical actor identifier. For QMS Layers 2 and 3, using email would perpetuate the inconsistency and make cross-layer reporting harder.  
+**Decision:** `FACT_QC_REVIEW_SESSIONS`, `FACT_QC_REVIEW_CHECKLISTS`, and `FACT_QC_FINDINGS` all use `reviewer_person_code`. The email-as-identity gap in `FACT_SOP_AUDITS` is documented as a known Layer 1 technical debt to be addressed when SBS SOP pilot data is available. A reporting bridge (email → person_code lookup via `DIM_STAFF_ROSTER`) is used for cross-layer dashboard joins until the gap is resolved.  
+**Consequences:** Layers 2 and 3 are internally consistent with the rest of the FACT table family. Layer 1 email gap is isolated and documented. Dashboard joins are implementable via a bridge lookup.
+
+---
+
+### ADR-QMS-012: DIM_QC_FINDING_TYPES expanded to 20 columns for dashboard analytics
+
+**Status:** Accepted  
+**Date:** 2026-06-25  
+**Context:** Original architecture doc defined 10 columns for `DIM_QC_FINDING_TYPES`. For the QMS dashboard to support compliance scoring, safety reporting, and UI filtering, additional structured columns are required at seed time — not as later schema alterations. Adding columns post-seed is disruptive in Google Sheets (requires header fix + data backfill).  
+**Decision:** `DIM_QC_FINDING_TYPES` is defined with 20 columns at seed time: `finding_code`, `finding_label`, `finding_group`, `category`, `severity_default`, `kpi_weight`, `is_structural_risk`, `product_applicability`, `requires_comment`, `common_in_rework`, `active_flag`, `description`, `display_order`, `notes`, `created_by`, `created_at`, `last_updated_at`, `last_updated_by`, `retired_at`, `benchmark_code`. All 17 seed records populate all 20 columns.  
+**Consequences:** Full 20-column schema is defined once. No schema migration needed for dashboard build. kpi_weight, is_structural_risk, and display_order support compliance scoring and safety reporting.
+
+---
+
+### ADR-QMS-013: PR QMS-3 delivered in two sub-PRs (schema first, then engine)
+
+**Status:** Accepted  
+**Date:** 2026-06-25  
+**Context:** PR QMS-3 (QC Review Process schema + engine) is the largest PR in the QMS sequence. Delivering it as one PR risks merging schema and behavioral code together without a clear schema review checkpoint.  
+**Decision:** PR QMS-3 is split: (a) QMS-3a delivers the schema only — `DIM_QC_PROCESS_TEMPLATES`, `DIM_QC_PROCESS_ITEMS`, `FACT_QC_REVIEW_SESSIONS`, `FACT_QC_REVIEW_CHECKLISTS`, `FACT_QC_FINDINGS` in SetupScript + Config; (b) QMS-3b delivers the engine — `QcReviewEngine.gs`, `QcReviewDAL.gs`, handlers, GLOBAL_QC_PROCESS seed data. QMS-3a must be approved before QMS-3b begins.  
+**Consequences:** Schema reviewed independently from business logic. Reduces risk of schema+engine entanglement. Approval gates preserved.
+
+---
+
+### ADR-QMS-014: PLATE_ERROR has product_applicability=TRUSS (only product-specific finding code)
+
+**Status:** Accepted  
+**Date:** 2026-06-25  
+**Context:** Metal connector plate design is specific to truss products. No other finding code in the initial taxonomy is product-restricted — all others apply across all structural products. PLATE_ERROR is not relevant to wood frame floor or I-joist designs.  
+**Decision:** `PLATE_ERROR.product_applicability = 'TRUSS'`. All 16 other initial codes have `product_applicability = 'ALL'`. The `product_applicability` field is checked by `QcReviewEngine` (PR QMS-3) to filter the available finding codes when a reviewer is documenting findings on a non-truss product.  
+**Consequences:** Reviewers on floor/joist jobs are not offered PLATE_ERROR as a finding option. Dashboard filtering by product is accurate from day one. Future product-specific findings follow the same pattern.
+
+---
+
+### ADR-QMS-015: is_structural_risk flag required on all finding codes for safety reporting
+
+**Status:** Accepted  
+**Date:** 2026-06-25  
+**Context:** A QMS dashboard for a structural design firm must be able to report on safety-critical findings separately from process/documentation findings. Without a structural risk flag, every dashboard query that attempts to isolate structural defects must hard-code a list of finding codes — fragile and unmaintainable as the taxonomy grows.  
+**Decision:** Every `DIM_QC_FINDING_TYPES` record has `is_structural_risk` = 'TRUE' or 'FALSE'. Initial taxonomy: 8 codes are structural risk (`LOAD_ERROR`, `GEOMETRY_ERROR`, `BEARING_ERROR`, `CONNECTOR_ERROR`, `PLATE_ERROR`, `ENGINEERING_ERROR`, `WRONG_DESIGN_STANDARD`, `CALCULATION_ERROR`). 9 codes are non-structural. Any new finding code added to the taxonomy must explicitly set this flag — the field is non-nullable.  
+**Consequences:** Safety dashboard metric (structural-risk finding rate) is computable from day one. Classification is transparent and auditable. New finding codes cannot be added without an explicit structural risk decision.

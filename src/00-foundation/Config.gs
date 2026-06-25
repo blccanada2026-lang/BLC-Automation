@@ -176,6 +176,7 @@ var Config = (function () {
     REF_ACCOUNT_DESIGNER_MAP: 'REF_ACCOUNT_DESIGNER_MAP', // account team assignments: which designers belong to which client
     DIM_SOP_TEMPLATES:       'DIM_SOP_TEMPLATES',       // SOP checklist templates per client/software/scope (T13)
     DIM_SOP_ITEMS:           'DIM_SOP_ITEMS',           // individual checklist items per SOP template (T13)
+    DIM_QC_FINDING_TYPES:    'DIM_QC_FINDING_TYPES',   // QC finding taxonomy — controlled vocabulary (T13 QMS Layer 3)
 
     // Staging tables — transient queue (status-driven, not append-only)
     STG_RAW_INTAKE:        'STG_RAW_INTAKE',
@@ -421,6 +422,24 @@ var Config = (function () {
   };
 
   // ──────────────────────────────────────────────────────────
+  // QMS FEATURE FLAGS (Layers 2 + 3)
+  // Script Property key names for QMS enforcement gates.
+  // All default to false — never set to true in PROD without
+  // CTO written approval on the date of the session.
+  //
+  // QMS_ENABLED:              master QMS kill-switch — silences all layers
+  // QMS_QC_PROCESS_ENABLED:   Layer 2 QC Review checklist
+  // QMS_FINDINGS_ENABLED:     Layer 3 QC Findings taxonomy
+  // QMS_DEV_ONLY:             must be 'true' — enforces DEV-only mode
+  // ──────────────────────────────────────────────────────────
+  var QMS_FLAGS = {
+    ENABLED:            'QMS_ENABLED',
+    QC_PROCESS_ENABLED: 'QMS_QC_PROCESS_ENABLED',
+    FINDINGS_ENABLED:   'QMS_FINDINGS_ENABLED',
+    DEV_ONLY:           'QMS_DEV_ONLY'
+  };
+
+  // ──────────────────────────────────────────────────────────
   // PRIVATE: ENVIRONMENT DETECTION
   //
   // Detection strategy: Spreadsheet ID match only.
@@ -640,7 +659,10 @@ var Config = (function () {
     ID_PREFIXES:         ID_PREFIXES,
 
     // SOP feature flag Script Property key names
-    SOP_FLAGS:           SOP_FLAGS
+    SOP_FLAGS:           SOP_FLAGS,
+
+    // QMS feature flag Script Property key names (Layers 2 + 3)
+    QMS_FLAGS:           QMS_FLAGS
 
   };
 
