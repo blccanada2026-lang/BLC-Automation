@@ -115,6 +115,7 @@ var DAL = (function () {
     'FACT_SOP_CURRENT_STATUS': ['SopChecklistHandler'],
     'DIM_SOP_TEMPLATES':     ['SopAdminEngine'],
     'DIM_SOP_ITEMS':         ['SopAdminEngine'],
+    'DIM_QC_FINDING_TYPES':  ['QcFindingTypes'],
 
     // ── View tables (rebuilt projections) ───────────────────
     'VW_JOB_CURRENT_STATE':  ['EventReplayEngine', 'JobCreateHandler', 'JobAssignHandler', 'JobStartHandler',

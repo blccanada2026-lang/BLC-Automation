@@ -69,6 +69,19 @@ function sopAssertFalse_(label, value) {
   }
 }
 
+// Retires any ACTIVE templates for a given combination before a test seeds a
+// new one. Prevents MULTIPLE_ACTIVE_TEMPLATES on repeated test runs against
+// the same hardcoded (client, jobType, software, scope) key.
+function sopRetireActiveTemplates_(clientCode, jobType, software, scopeCode) {
+  var existing = SopDAL.getTemplatesByDimensions(clientCode, jobType, software, scopeCode);
+  if (!existing || existing.length === 0) return;
+  for (var i = 0; i < existing.length; i++) {
+    if (existing[i].status === 'ACTIVE') {
+      SopDAL.updateTemplate(existing[i].sop_template_id, { status: 'RETIRED' });
+    }
+  }
+}
+
 function sopAssertThrows_(label, fn, expectedCode) {
   var threw = false;
   try {
@@ -90,6 +103,8 @@ function sopAssertThrows_(label, fn, expectedCode) {
 function testSopDAL_getActiveTemplate_found() {
   var templateId = 'ST-TEST-GETACTIVE-' + Date.now();
   var itemId     = 'SI-TEST-GETACTIVE-' + Date.now();
+
+  sopRetireActiveTemplates_('TEST-CLIENT', 'STRUCTURAL', 'REVIT', 'FULL');
 
   // Seed template
   SopDAL.saveTemplate({
@@ -141,6 +156,8 @@ function testSopDAL_getActiveTemplate_notFound() {
 function testSopTemplateEngine_hashMismatch() {
   var templateId = 'ST-TEST-HASHMM-' + Date.now();
   var itemId     = 'SI-TEST-HASHMM-' + Date.now();
+
+  sopRetireActiveTemplates_('TEST-HASHMM', 'STRUCT', 'AUTOCAD', 'BASIC');
 
   // Seed template with a deliberately wrong stored hash
   SopDAL.saveTemplate({
