@@ -79,3 +79,30 @@
 **Decision:** Every SOP item must answer: "Can an auditor verify this step was actually completed?" If no → remove.  
 **Target size:** 15–30 items. Hard max: 40 items.  
 **Consequences:** All source documents reviewed against this filter before import. Recommended removals documented in Section C of each import analysis.
+
+---
+
+### ADR-SOP-009: SOP changes use version increment, never in-place edit
+
+**Status:** Accepted  
+**Context:** A client may request SOP changes after a template is ACTIVE. Editing the active template in place destroys the audit trail — in-flight jobs would silently reference different items than when they were created.  
+**Decision:** When a client changes an SOP, do NOT modify the ACTIVE template directly. Instead: compare old vs new, identify additions/removals/severity changes, produce an impact assessment, recommend a version increment, produce a migration plan. The new version goes through DRAFT → ACTIVE lifecycle; the old version is retired.  
+**Consequences:** Full audit history preserved. Every job references the exact template version that was active when it was submitted.
+
+---
+
+### ADR-SOP-010: New client onboarding requires independent SOP design (never copy-paste)
+
+**Status:** Accepted  
+**Context:** As BLC Nexus expands to additional clients (MATIX, NORSPAN, others), there is a risk of copying one client's SOP to another as a shortcut.  
+**Decision:** Each new client requires: (1) product inventory, (2) SOP gap analysis, (3) client-specific controls identified, (4) proposed SOP designed from scratch, (5) import mapping, (6) pilot recommendation. Never copy an existing client's SOP blindly — different clients have different standards, specifications, and failure modes.  
+**Consequences:** More upfront work per client. Better quality and auditability. No cross-contamination of client-specific requirements.
+
+---
+
+### ADR-SOP-011: Item category naming — adopt functional domain categories
+
+**Status:** Accepted  
+**Context:** Earlier design (sop_design_principles memory, pre-2026-06-25) used nature-of-requirement categories: CRITICAL_QUALITY / CLIENT_REQUIREMENT / PROCESS_COMPLIANCE / ENGINEERING_BEST_PRACTICE. The Master Prompt (2026-06-25) introduced functional domain categories: Design / QC / Engineering / Client Requirement / Production / Documentation.  
+**Decision:** Adopt the Master Prompt functional domain categories. They are more actionable for dashboards (filter by domain), easier for designers to classify, and directly map to reporting dimensions. The old category names are retired.  
+**Consequences:** Any future SOP items must use the new category set. The sop_design_principles memory file reflects the updated categories.

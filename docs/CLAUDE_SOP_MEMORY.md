@@ -1,7 +1,8 @@
 # CLAUDE_SOP_MEMORY.md — BLC Nexus SOP Bootstrap
 
 **Read this file at the start of every SOP-related session.**
-It captures everything needed to resume SOP work without relying on chat history.
+Then paste `docs/SOP_MASTER_PROMPT.md` into the session to activate the governing operating charter.
+This file captures the architecture and status; the Master Prompt governs how to work.
 
 ---
 
@@ -27,7 +28,7 @@ SOP identity = client_code + product_code
 
 ---
 
-## Current Status (as of 2026-06-24)
+## Current Status (as of 2026-06-25)
 
 | Item | Status |
 |---|---|
@@ -113,10 +114,10 @@ Every SOP item must answer: **"Can an auditor verify this step was actually comp
 
 Target: 15–30 items. Hard max: 40.
 
-Item classification required:
-- **Category:** CRITICAL_QUALITY / CLIENT_REQUIREMENT / PROCESS_COMPLIANCE / ENGINEERING_BEST_PRACTICE
+Item classification required (see ADR-SOP-011 for category rename history):
+- **Category:** Design / QC / Engineering / Client Requirement / Production / Documentation
 - **Ownership:** DESIGNER / QC / BOTH
-- **Severity:** BLOCKING / WARNING / INFORMATIONAL
+- **Severity:** BLOCKING / WARNING / INFO
 
 ---
 
@@ -178,7 +179,8 @@ Outputs will support: team quality review, client audit readiness, designer coac
 
 ## Related Docs
 
+- `docs/SOP_MASTER_PROMPT.md` — governing operating charter (paste into every SOP session)
 - `docs/SOP_ARCHITECTURE.md` — data model, feature flags, file inventory
-- `docs/SOP_DECISIONS.md` — architectural decision log (ADR-SOP-001 through 008)
+- `docs/SOP_DECISIONS.md` — architectural decision log (ADR-SOP-001 through 011)
 - `docs/SOP_PRODUCT_INVENTORY.md` — per-client, per-product import status
 - `docs/SOP_ROADMAP.md` — phase plan + dashboard specification
