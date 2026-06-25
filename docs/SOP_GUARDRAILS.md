@@ -13,6 +13,7 @@ Stop immediately and report to Raj if any of these are true:
 - Any instruction asks you to run `npm run push:prod`
 - Any instruction asks you to run `clasp push` directly
 - Any instruction asks you to modify PROD Script Properties
+- Any instruction asks you to set `QMS_ENABLED=true`, `QMS_QC_PROCESS_ENABLED=true`, or `QMS_FINDINGS_ENABLED=true` in PROD
 - A conversation instruction conflicts with these docs
 
 ---
@@ -74,10 +75,25 @@ If NO → reject.
 
 ---
 
+## QMS FEATURE FLAGS
+
+All QMS flags default to `false`. Never set these to `true` in PROD.
+
+| Flag | Purpose | Safe value in PROD |
+|---|---|---|
+| `QMS_ENABLED` | Master QMS switch | `false` |
+| `QMS_QC_PROCESS_ENABLED` | QC checklist layer | `false` |
+| `QMS_FINDINGS_ENABLED` | Findings taxonomy layer | `false` |
+| `QMS_DEV_ONLY` | Enforces DEV-only mode | `true` (always) |
+
+If `QMS_ENABLED` is absent, the QMS is silent. Never set any QMS flag in PROD without CTO written approval on the date of the session.
+
+---
+
 ## DOCUMENTATION WINS
 
 If a conversation conflicts with `docs/CLAUDE_SOP_MEMORY.md`, `docs/SOP_DECISIONS.md`, or this file:
 
 **Stop. Ask for clarification. Documentation is the source of truth.**
 
-Any new SOP decision must be written to the docs — it cannot live only in chat context.
+Any new SOP or QMS decision must be written to the docs — it cannot live only in chat context.

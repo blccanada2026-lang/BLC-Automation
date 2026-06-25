@@ -28,17 +28,18 @@ SOP identity = client_code + product_code
 - Multiple versions supported: DRAFT → ACTIVE → RETIRED
 - Never combine multiple products into one template
 
-## Two SOP Families (ADR-SOP-012, ADR-SOP-013)
+## QMS Layer Architecture (ADR-QMS-001 through 006)
 
-| Family | Question it answers | Keyed by |
-|---|---|---|
-| **Designer SOP** | Did the designer perform the required work? | `client_code + product_code` |
-| **QC Review SOP** | Did QC properly validate the work? | `GLOBAL_QC_REVIEW_SOP` by default |
+| Layer | Name | Question | Key | Status |
+|---|---|---|---|---|
+| **1** | Designer SOP | Did the designer do the work? | `client_code + product_code` | Implemented in DEV |
+| **2** | QC Review Process | Did QC properly validate it? | `qc_process_code = GLOBAL_QC_PROCESS` | Schema pending PR QMS-3 |
+| **3** | QC Findings | What defects were found? | `finding_code` from `DIM_QC_FINDING_TYPES` | Taxonomy pending PR QMS-2 |
 
-- Designer SOP and QC Review SOP are never merged into one template.
+- Layers 1, 2, and 3 use separate table families (`DIM_SOP_*` / `FACT_SOP_*` vs `DIM_QC_*` / `FACT_QC_*`)
 - QC outcomes: **PASS** / **MINOR_ERROR** / **REWORK**
-- Client/product-specific QC SOPs only when unique workflows are truly required (ADR required to justify).
-- `GLOBAL_QC_REVIEW_SOP` key architecture is TBD — an ADR is required at design time.
+- `FACT_QC_REVIEW_CHECKLISTS` uses row-per-item model (ADR-QMS-006, CTO decision)
+- Full QMS constitution: `docs/QUALITY_FRAMEWORK.md`
 
 ---
 
@@ -53,8 +54,11 @@ SOP identity = client_code + product_code
 | I-Joist Word document | Not yet received |
 | WARN_ONLY pilot | Not started |
 | SOP Compliance Dashboard | Deferred to Phase 2 |
-| GLOBAL_QC_REVIEW_SOP | Not started — can be designed without source doc |
-| Master Prompt version | v2.0 (2026-06-25) |
+| GLOBAL_QC_PROCESS template | Not started — can be designed without source doc |
+| QC Findings taxonomy (DIM_QC_FINDING_TYPES) | Defined in docs — schema pending PR QMS-2 |
+| QMS_ENABLED flag in PROD | `false` (not set — QMS is silent) |
+| PR QMS-1 (documentation) | IN PROGRESS |
+| Master Prompt version | v3.0 (2026-06-25) |
 
 ---
 
@@ -76,13 +80,24 @@ SOP identity = client_code + product_code
 
 ## Feature Flags
 
+**Layer 1 — Designer SOP:**
+
 | Script Property | Values | Default |
 |---|---|---|
 | `SOP_ENABLED` | `true` / `false` | off (not set) |
 | `SOP_MODE` | `WARN_ONLY` / `BLOCK` | `WARN_ONLY` if absent |
 | `SOP_PILOT_CLIENTS` | Comma-separated codes (e.g. `SBS`) | empty = all clients |
 
-Gate passes silently if: `SOP_ENABLED` is not `true`, client not in pilot list, no active template exists for the product.
+**Layer 2 + 3 — QMS (new, all default false):**
+
+| Script Property | Values | Default |
+|---|---|---|
+| `QMS_ENABLED` | `true` / `false` | off — master QMS switch |
+| `QMS_QC_PROCESS_ENABLED` | `true` / `false` | off — QC checklist layer |
+| `QMS_FINDINGS_ENABLED` | `true` / `false` | off — findings layer |
+| `QMS_DEV_ONLY` | `true` / `false` | `true` — enforces DEV-only mode |
+
+Never set any QMS flag to `true` in PROD without CTO written approval.
 
 ---
 
@@ -196,8 +211,9 @@ Outputs will support: team quality review, client audit readiness, designer coac
 ## Related Docs
 
 - `docs/SOP_GUARDRAILS.md` — safety card (read first, every session)
-- `docs/SOP_MASTER_PROMPT.md` — governing operating charter v2.0 (paste into every SOP session)
-- `docs/SOP_ARCHITECTURE.md` — data model, feature flags, file inventory
-- `docs/SOP_DECISIONS.md` — architectural decision log (ADR-SOP-001 through 013)
+- `docs/SOP_MASTER_PROMPT.md` — governing operating charter v3.0 (paste into every SOP/QMS session)
+- `docs/QUALITY_FRAMEWORK.md` — QMS constitution (13 sections, all layers)
+- `docs/SOP_ARCHITECTURE.md` — data model, feature flags, file inventory (all 3 layers)
+- `docs/SOP_DECISIONS.md` — architectural decision log (ADR-SOP-001 through 013, ADR-QMS-001 through 006)
 - `docs/SOP_PRODUCT_INVENTORY.md` — per-client, per-product import status
-- `docs/SOP_ROADMAP.md` — phase plan + dashboard specification
+- `docs/SOP_ROADMAP.md` — phase plan + QMS PR roadmap

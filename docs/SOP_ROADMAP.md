@@ -2,14 +2,18 @@
 
 ## Current Priority Stack
 
-1. Create SOP memory/docs (this document and siblings) ← DONE
+1. Create SOP memory/docs ← DONE
 2. Finalize SOP architecture + Master Charter v2.0 ← DONE
-3. Design GLOBAL_QC_REVIEW_SOP (process template, no source doc needed)
-4. Receive source documents from Raj (Form URL + I-Joist Word doc)
-5. Phase 1–5: Import SBS Designer SOPs into DEV (gated, approval at each phase)
-6. Validate product-specific checklist behavior in DEV
-7. Pilot SBS in WARN_ONLY mode
-8. Phase 2: Design and build SOP Compliance Dashboard (after pilot)
+3. PR QMS-1: QMS documentation + ADRs ← IN PROGRESS
+4. PR QMS-2: QC Findings taxonomy schema (pending approval)
+5. PR QMS-3: QC Review Process schema (pending approval)
+6. PR QMS-4: DEV test harness (pending approval)
+7. Receive SBS source documents from Raj (Form URL + I-Joist Word doc)
+8. Phase 1–5: Import SBS Designer SOPs into DEV (gated, approval at each phase)
+9. Validate product-specific checklist behavior in DEV
+10. Pilot SBS in WARN_ONLY mode
+11. PR QMS-5: Portal prototype DEV only (pending approval, after schemas validated)
+12. Phase 2: Design and build QMS Compliance Dashboard (after pilot)
 
 ---
 
@@ -86,6 +90,22 @@ TBD at design time: Looker Studio (current reporting tool) vs portal-embedded ta
 - [ ] Raj approves dashboard scope and design before build begins
 
 ---
+
+---
+
+---
+
+## QMS PR Roadmap
+
+| PR | Scope | Status | Gate |
+|---|---|---|---|
+| **QMS-1** | Documentation + ADRs (QUALITY_FRAMEWORK.md, ADR-QMS-001–006, all docs updated) | IN PROGRESS | Approved by Raj |
+| **QMS-2** | QC Findings taxonomy schema (`DIM_QC_FINDING_TYPES`, seed data) | Pending approval | Wait for QMS-1 merge |
+| **QMS-3** | QC Review Process schema (`DIM_QC_PROCESS_ITEMS`, `FACT_QC_REVIEW_CHECKLISTS`, `FACT_QC_FINDINGS`, `QcReviewEngine.gs`, `QcReviewDAL.gs`) | Pending approval | Wait for QMS-2 merge |
+| **QMS-4** | DEV test harness (`QmsTests.gs` — zero regressions required) | Pending approval | Wait for QMS-3 merge |
+| **QMS-5** | Portal prototype DEV only (QC reviewer UI, feature-flagged) | Pending separate approval | Wait for QMS-4 merge + Raj approval |
+
+**Do not start any PR until the prior PR is merged and the next is explicitly approved.**
 
 ---
 

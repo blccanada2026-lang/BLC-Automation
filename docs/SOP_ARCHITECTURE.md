@@ -128,3 +128,101 @@ T13 must not be called by modules in T0–T12. It is a leaf module.
 - Feature flag `SOP_ENABLED` is `false` in PROD — module is present but silent.
 - No SBS SOP templates imported to DEV yet (pending Phase 1–5 gated process).
 - PROD deployment requires: SOP import complete + WARN_ONLY pilot approved.
+
+---
+
+## QMS Layer 2 — QC Review Process
+
+> **Status:** Design approved (ADR-QMS-003). Schema pending PR QMS-3.
+
+### Data Model
+
+#### DIM_QC_PROCESS_ITEMS
+One row per checklist item per QC process template. Keyed by `qc_process_code`.
+
+| Column | Description |
+|---|---|
+| `qc_item_id` | Unique ID |
+| `qc_process_code` | Process key (e.g. `GLOBAL_QC_PROCESS`) |
+| `item_seq` | Display order |
+| `item_code` | Unique code within process (e.g. `GQC-001`) |
+| `item_label` | Short label shown to reviewer |
+| `item_description` | Full reviewer guidance |
+| `is_required` | Y/N |
+| `severity` | INFO / WARNING / BLOCKING |
+| `active_flag` | TRUE/FALSE |
+| `created_at` | ISO timestamp |
+
+#### FACT_QC_REVIEW_CHECKLISTS
+Append-only. One row per checklist item per review per job (row-per-item model — ADR-QMS-006).
+
+| Column | Description |
+|---|---|
+| `qc_review_id` | Unique review session ID |
+| `job_number` | Job being reviewed |
+| `client_code` | Client |
+| `product_code` | Product |
+| `reviewer_email` | Reviewer actor email |
+| `qc_process_code` | FK to DIM_QC_PROCESS_ITEMS |
+| `qc_item_id` | FK to DIM_QC_PROCESS_ITEMS |
+| `checked_value` | Y / N / N_A |
+| `comment` | Optional reviewer note |
+| `checked_at` | ISO timestamp |
+| `request_id` | Idempotency key |
+
+### QC Review Outcomes
+`PASS` / `MINOR_ERROR` / `REWORK` — recorded in `FACT_QC_FINDINGS` or a summary field (design-time decision in PR QMS-3).
+
+---
+
+## QMS Layer 3 — QC Findings
+
+> **Status:** Taxonomy defined. Schema pending PR QMS-2 + QMS-3.
+
+### Data Model
+
+#### DIM_QC_FINDING_TYPES
+Controlled vocabulary. Seeded with 17 initial codes.
+
+| Column | Description |
+|---|---|
+| `finding_code` | Unique code (UPPER_SNAKE_CASE) |
+| `finding_label` | Short display label |
+| `category` | Grouping for dashboard |
+| `severity_default` | INFO / MINOR / MAJOR / CRITICAL |
+| `product_applicability` | ALL or specific codes |
+| `active_flag` | TRUE/FALSE |
+| `description` | Reviewer guidance |
+| `created_by` | Actor person_code |
+| `created_at` | ISO timestamp |
+| `retired_at` | ISO timestamp if retired |
+
+#### FACT_QC_FINDINGS
+Append-only. One row per finding per job per reviewer.
+
+| Column | Description |
+|---|---|
+| `qc_finding_id` | Unique ID |
+| `job_number` | Job |
+| `client_code` | Client |
+| `product_code` | Product |
+| `reviewer_email` | Reviewer |
+| `finding_code` | FK to DIM_QC_FINDING_TYPES |
+| `severity` | INFO / MINOR / MAJOR / CRITICAL |
+| `outcome` | PASS / MINOR_ERROR / REWORK |
+| `comment` | Required for `OTHER` code; optional otherwise |
+| `created_at` | ISO timestamp |
+| `request_id` | Idempotency key |
+
+---
+
+## QMS Feature Flags
+
+| Property | Values | Default | Layer |
+|---|---|---|---|
+| `QMS_ENABLED` | `true` / `false` | off | Master QMS switch |
+| `QMS_QC_PROCESS_ENABLED` | `true` / `false` | off | Layer 2 QC checklist |
+| `QMS_FINDINGS_ENABLED` | `true` / `false` | off | Layer 3 findings |
+| `QMS_DEV_ONLY` | `true` / `false` | `true` | Enforces DEV-only mode |
+
+`QMS_ENABLED=false` silences all QMS layers regardless of sub-flags. Do not set any QMS flag to `true` in PROD until CTO approves.
