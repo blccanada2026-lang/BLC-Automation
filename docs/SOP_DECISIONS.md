@@ -301,4 +301,47 @@ These ADRs were approved by the CTO before implementation of PR QMS-2 (QC Findin
 **Context:** A QC review session has a lifecycle: it opens when a reviewer begins work, and closes when the reviewer submits an outcome. The outcome, completion timestamp, and notes only exist at close time. A naive single-row design would require updating the session row after it is created — violating Rule A5 (FACT tables are append-only). Two alternative designs were considered: (A) a single mutable session row with `updateWhere` at close time; (B) two append-only rows per session with an `event_type` discriminator. Option A is simpler to query but violates A5 and sets a precedent for FACT table mutability in the QMS layer. Option B preserves full audit integrity: both the open and close events are independently timestamped, immutable, and queryable.  
 **Decision:** `FACT_QC_REVIEW_SESSIONS` uses an `event_type` discriminator column with three valid values: `QC_REVIEW_STARTED`, `QC_REVIEW_COMPLETED`, `QC_REVIEW_VOIDED`. Each review session produces exactly two rows sharing a `qc_session_id`: one STARTED row (appended when the review opens) and one COMPLETED or VOIDED row (appended when the review closes). No row is ever updated. The STARTED row carries `qc_template_ids_resolved` and `session_started_at`; the COMPLETED row carries `outcome`, `notes`, and `session_completed_at`. Dashboard queries join the two rows on `qc_session_id` to produce a complete session view. `QcReviewDAL.getOpenSessionForJob()` identifies sessions with a STARTED row but no COMPLETED or VOIDED row.  
 **Additional decision — ID prefix conflict:** The approved prefix `QI` for QC process items conflicts with the existing `QUEUE_ITEM: 'QI'` entry in `Config.ID_PREFIXES`. Resolution: QC process items use prefix `QPI` (QC Process Item). All other approved prefixes (QT, QS, QR, QF) are unaffected. `Config.ID_PREFIXES` and `QcConstants.ID_PREFIXES` both document this with inline comments.  
-**Consequences:** FACT_QC_REVIEW_SESSIONS is fully append-only — no `updateWhere` calls are ever needed. The event_type pattern is consistent with the existing `FACT_QC_FINDINGS` amendment pattern (FINDING_RECORDED / FINDING_CORRECTED). Dashboard queries are slightly more complex (require JOIN on session_id to reconstruct full session) but this is handled cleanly at the reporting layer. Test helpers must account for the two-row pattern.
+**Consequences:** FACT_QC_REVIEW_SESSIONS is fully append-only — no `updateWhere` calls are ever needed. The event_type pattern is consistent with the existing `FACT_QC_FINDINGS` amendment pattern (FINDING_RECORDED / FINDING_CORRECTED). Dashboard queries are slightly more complex (require JOIN on session_id to reconstruct full session) but this is handled cleanly at the reporting layer. Test helpers must account for the two-row pattern.  
+**Partially superseded by ADR-QMS-017:** `qc_template_ids_resolved` (comma-delimited) replaced by `global_template_id`, `product_template_id`, `client_template_id` (three nullable FK columns). Period_id, qc_event_id also added. All other decisions in this ADR remain in force.
+
+---
+
+## QMS-3C-Prep Architecture Decisions
+
+---
+
+### ADR-QMS-017: QMS-3C-Prep schema corrections to FACT_QC_REVIEW_SESSIONS, FACT_QC_REVIEW_CHECKLISTS, FACT_QC_FINDINGS, and FACT_QC_EVENTS
+
+**Status:** Accepted  
+**Date:** 2026-06-26  
+**Context:** Before QMS-3C engine implementation begins, four schema gaps were identified that would require DAL-breaking changes after data was written. These gaps were caught during architecture review (pre-implementation). The corrections are schema-only — no engine, no handler, no portal changes. No QMS data has been written in DEV yet, so no migration is required.
+
+**Gap 1 — period_id missing from FACT_QC_REVIEW_SESSIONS, FACT_QC_REVIEW_CHECKLISTS, FACT_QC_FINDINGS:** All other FACT tables in Nexus include `period_id` as the monthly partition key. The three QMS FACT tables were designed without it, making monthly partitioning (Rule D6) impossible without a schema break after data is written.
+
+**Gap 2 — qc_template_ids_resolved is a comma-delimited string:** The original design stored resolved template IDs as a comma-delimited string (e.g. `"QT-001,QT-002"`). This requires string parsing in every Looker query, is not Sheets-native, and cannot be used in JOIN-equivalent operations.
+
+**Gap 3 — no bidirectional FK between FACT_QC_EVENTS and FACT_QC_REVIEW_SESSIONS:** QcReviewHandler (QMS-3C) will write to both tables when a reviewer submits an outcome. Without cross-table FKs, audit reconstruction requires joining on `job_number` alone, which is non-unique (multiple QC sessions per job are valid).
+
+**Gap 4 — no qc_session_id on FACT_QC_EVENTS:** Pre-QMS rows will have no session context, which is correct. Post-QMS rows written by QcReviewHandler should carry the session ID that drove the outcome.
+
+**Decision:**
+- `FACT_QC_EVENTS`: add `qc_session_id` (nullable). Null on all pre-QMS rows and on rows written by the QCHandler fallback path. Set by QcReviewHandler (QMS-3C+) when a session drives the outcome.
+- `FACT_QC_REVIEW_SESSIONS`: (a) add `period_id` (required, position 3 after event_type); (b) replace `qc_template_ids_resolved` with three nullable FK columns — `global_template_id` (always set on STARTED rows), `product_template_id` (null if no product supplement active), `client_template_id` (null if no client override active); (c) add `qc_event_id` (nullable, FK to FACT_QC_EVENTS.event_id, set on COMPLETED rows by QcReviewHandler, null on STARTED rows).
+- `FACT_QC_REVIEW_CHECKLISTS`: add `period_id` (nullable, position 3 after qc_session_id).
+- `FACT_QC_FINDINGS`: add `period_id` (nullable, position 4 after amendment_of).
+- Template resolution sequencing: global items seq 1–99, product supplement items seq 100–199, client override items seq 200+. This sequencing is enforced by QcReviewEngine (QMS-3C).
+- QcReviewHandler (future T6 handler, QMS-3C) will replace QCHandler Flow B as the reviewer submission path. QCHandler Flow B (QC_APPROVE permission) is maintained as a 30-day fallback after QcReviewHandler is launched, then deprecated. QcReviewHandler owns both the FACT_QC_REVIEW_SESSIONS close row and the FACT_QC_EVENTS outcome write, ensuring the bidirectional FK is always set atomically.
+
+**Consequences:** All four FACT tables now include `period_id` consistent with system-wide partitioning standards. Three-column template tracking eliminates string parsing in queries. The bidirectional FK enables unambiguous audit reconstruction. The `qc_event_id` reference on FACT_QC_REVIEW_SESSIONS.COMPLETED rows closes the dual-write loop. Column counts: FACT_QC_EVENTS 13, FACT_QC_REVIEW_SESSIONS 18, FACT_QC_REVIEW_CHECKLISTS 14, FACT_QC_FINDINGS 16. All existing tests pass unchanged (no data written yet). `runFixHeaders()` (not `runSetupSchemas()`) must be used to apply corrected headers to existing partition tabs.
+
+---
+
+### ADR-QMS-018: HealthMonitor design note — QC sessions open longer than 24 hours
+
+**Status:** Accepted (design note — no implementation)  
+**Date:** 2026-06-26  
+**Context:** A QC review session that is opened (STARTED row written) but never completed leaves a dangling STARTED row in FACT_QC_REVIEW_SESSIONS with no corresponding COMPLETED or VOIDED row. This is a normal in-progress state, but it becomes an operational problem if the reviewer never returns. Without a staleness signal, Nexus management has no visibility into blocked reviews.
+
+**Decision (design note only — implementation deferred to QMS-3C or QMS-3D):** HealthMonitor should include a check for QC sessions where `session_started_at` is older than 24 hours and no COMPLETED or VOIDED row exists for the same `qc_session_id`. This check should emit a `WARN` log event and, optionally, a health alert to `HM_ALERT_RECIPIENT`. The detection query requires a DAL read on the current-period FACT_QC_REVIEW_SESSIONS partition, grouped by `qc_session_id`, filtering for sessions with STARTED but no COMPLETED/VOIDED row and `session_started_at < now - 24h`. No implementation is added in QMS-3C-Prep. This note records the design intent so it is not forgotten when QcReviewEngine is built.
+
+**Consequences:** No code changes. This ADR is a placeholder to ensure HealthMonitor coverage is designed into QcReviewEngine from the start rather than retrofitted. Implementation assigned to QMS-3C or QMS-3D depending on scope fit.

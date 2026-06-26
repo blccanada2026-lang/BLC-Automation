@@ -218,11 +218,14 @@ var SCHEMAS = {
     'idempotency_key', 'payload_json'
   ],
 
+  // qc_session_id: nullable FK to FACT_QC_REVIEW_SESSIONS (ADR-QMS-017).
+  // Null on pre-QMS events; set by QcReviewHandler (QMS-3C+) when session drives outcome.
+  // 13 columns. Written by QCHandler (QC_SUBMIT) and QcReviewHandler (QC_REVIEW_SUBMIT, QMS-3C+).
   'FACT_QC_EVENTS': [
     'event_id', 'job_number', 'period_id', 'event_type',
     'timestamp', 'actor_code', 'actor_role',
     'qc_result', 'rework_notes', 'notes',
-    'idempotency_key', 'payload_json'
+    'idempotency_key', 'payload_json', 'qc_session_id'
   ],
 
   'FACT_BILLING_LEDGER': [
@@ -338,13 +341,17 @@ var SCHEMAS = {
   // Uses event_type discriminator: QC_REVIEW_STARTED / QC_REVIEW_COMPLETED / QC_REVIEW_VOIDED
   // (ADR-QMS-016). One STARTED + one COMPLETED row per session pass. Multiple sessions per job
   // are valid. outcome is null on STARTED rows, set on COMPLETED rows.
-  // qc_template_ids_resolved: comma-separated QT- IDs active at session start (immutable).
-  // 14 columns. Written by QcReviewDAL only.
+  // Template columns: global_template_id (always set), product_template_id (null if no supplement),
+  // client_template_id (null if no override). Replaces qc_template_ids_resolved (ADR-QMS-017).
+  // qc_event_id: FK to FACT_QC_EVENTS row written by QcReviewHandler at session completion.
+  // Null on STARTED rows; set on COMPLETED rows (ADR-QMS-017).
+  // 18 columns. Written by QcReviewDAL only.
   'FACT_QC_REVIEW_SESSIONS': [
-    'qc_session_id', 'event_type',
+    'qc_session_id', 'event_type', 'period_id',
     'job_number', 'client_code', 'product_code',
-    'reviewer_person_code', 'qc_template_ids_resolved',
-    'outcome', 'notes',
+    'reviewer_person_code',
+    'global_template_id', 'product_template_id', 'client_template_id',
+    'qc_event_id', 'outcome', 'notes',
     'session_started_at', 'session_completed_at',
     'request_id', 'created_by', 'created_at'
   ],
@@ -353,9 +360,10 @@ var SCHEMAS = {
   // Row-per-item model (ADR-QMS-006). Partitioned monthly.
   // checked_value: Y / N / NA.
   // client_code, product_code, reviewer_person_code denormalized for direct dashboard filtering.
-  // 13 columns. Written by QcReviewDAL only.
+  // Latest row per (qc_session_id, item_code) wins (autosave pattern).
+  // 14 columns. Written by QcReviewDAL only.
   'FACT_QC_REVIEW_CHECKLISTS': [
-    'qc_response_id', 'qc_session_id',
+    'qc_response_id', 'qc_session_id', 'period_id',
     'qc_item_id', 'item_code', 'qc_process_code',
     'job_number', 'client_code', 'product_code', 'reviewer_person_code',
     'checked_value', 'comment',
@@ -367,9 +375,9 @@ var SCHEMAS = {
   // amendment_of: FK to original qc_finding_id on FINDING_CORRECTED rows; empty on FINDING_RECORDED.
   // corrected_at, corrected_in_revision: set on FINDING_CORRECTED rows only.
   // comment required when finding_code=OTHER or severity=CRITICAL.
-  // 15 columns. Written by QcReviewDAL only.
+  // 16 columns. Written by QcReviewDAL only.
   'FACT_QC_FINDINGS': [
-    'qc_finding_id', 'event_type', 'amendment_of',
+    'qc_finding_id', 'event_type', 'amendment_of', 'period_id',
     'qc_session_id', 'job_number', 'client_code', 'product_code',
     'reviewer_person_code', 'finding_code', 'severity', 'comment',
     'corrected_at', 'corrected_in_revision',

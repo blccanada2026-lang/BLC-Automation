@@ -74,7 +74,7 @@ Three SBS SOPs pending import (Phase 1–5 gated process, Form URL and Word doc 
 
 ## Section 3 — QC Review Process Architecture (Layer 2)
 
-> **Status:** Design approved. Schema pending (PR QMS-3).  
+> **Status:** Schema corrected (QMS-3C-Prep). Engine implementation pending (QMS-3C).  
 > **Feature flag:** `QMS_QC_PROCESS_ENABLED` — default `false`
 
 ### Purpose
@@ -104,7 +104,7 @@ Every completed QC review produces exactly one outcome (recorded on `FACT_QC_REV
 - `MAJOR_REWORK` — design must be returned for significant revision
 
 ### Relationship to Existing QCHandler
-`FACT_QC_REVIEW_CHECKLISTS` is additive. The existing `QCHandler.gs` outcome logic (`SUBMITTED_FOR_QC → QC_COMPLETE`) is not modified. `FACT_QC_REVIEW_CHECKLISTS` records *what the reviewer checked*, while `FACT_QC_EVENTS` records *the state transition*. These are linked by `job_number`.
+`FACT_QC_REVIEW_CHECKLISTS` is additive. The future `QcReviewHandler` (QMS-3C) will become the reviewer submission path, replacing `QCHandler` Flow B (QC_APPROVE). `QcReviewHandler` will own both the `FACT_QC_REVIEW_SESSIONS` close row and the `FACT_QC_EVENTS` outcome write. During the 30-day transition period, `QCHandler` Flow B is maintained as a fallback. The two tables are linked bidirectionally: `FACT_QC_EVENTS.qc_session_id` → `FACT_QC_REVIEW_SESSIONS.qc_session_id` (forward FK set at session completion); `FACT_QC_REVIEW_SESSIONS.qc_event_id` → `FACT_QC_EVENTS.event_id` (reverse FK set on the COMPLETED row). See ADR-QMS-017.
 
 ### Example GLOBAL_QC_PROCESS Items
 *(Design-time — not yet imported)*
@@ -207,9 +207,11 @@ All QMS data is append-only. No FACT table row is ever modified or deleted.
 ```
 Job submitted for QC
   → SopGate evaluates Designer SOP (FACT_SOP_AUDITS)
-  → QC reviewer completes QC checklist (FACT_QC_REVIEW_CHECKLISTS)
-  → QC reviewer records findings (FACT_QC_FINDINGS)
-  → QC outcome recorded (FACT_QC_EVENTS via QCHandler)
+  → QC reviewer opens session (FACT_QC_REVIEW_SESSIONS: QC_REVIEW_STARTED row)
+  → QC reviewer completes QC checklist (FACT_QC_REVIEW_CHECKLISTS, linked by qc_session_id)
+  → QC reviewer records findings (FACT_QC_FINDINGS, linked by qc_session_id)
+  → QcReviewHandler closes session (FACT_QC_REVIEW_SESSIONS: QC_REVIEW_COMPLETED row, qc_event_id set)
+  → QcReviewHandler writes outcome event (FACT_QC_EVENTS: qc_session_id set, links back to session)
 ```
 
 Every row in every FACT table records:
