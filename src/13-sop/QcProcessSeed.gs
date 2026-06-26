@@ -276,3 +276,11 @@ var QcProcessSeed = (function () {
   };
 
 })();
+
+// ──────────────────────────────────────────────────────────
+// Top-level runner — callable from Apps Script editor dropdown.
+// ──────────────────────────────────────────────────────────
+function runQcProcessSeed() {
+  var result = QcProcessSeed.seed();
+  console.log('QcProcessSeed complete: ' + JSON.stringify(result));
+}
