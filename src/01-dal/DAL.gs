@@ -118,8 +118,8 @@ var DAL = (function () {
     'DIM_QC_FINDING_TYPES':  ['QcFindingTypes'],
 
     // ── QMS Layer 2+3 (added QMS-3A — engines registered here when QMS-3C is implemented) ──
-    'DIM_QC_PROCESS_TEMPLATES': ['QcProcessAdminEngine'],
-    'DIM_QC_PROCESS_ITEMS':     ['QcProcessAdminEngine'],
+    'DIM_QC_PROCESS_TEMPLATES': ['QcProcessAdminEngine', 'QcProcessSeed'],
+    'DIM_QC_PROCESS_ITEMS':     ['QcProcessAdminEngine', 'QcProcessSeed'],
     'FACT_QC_REVIEW_SESSIONS':  ['QcReviewDAL'],
     'FACT_QC_REVIEW_CHECKLISTS': ['QcReviewDAL'],
     'FACT_QC_FINDINGS':          ['QcReviewDAL'],

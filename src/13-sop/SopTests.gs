@@ -23,7 +23,9 @@ function testSopAll() {
     testSopAuditEngine_recordItemCheck_duplicate,
     testSopAuditEngine_isChecklistComplete_true,
     testSopAuditEngine_isChecklistComplete_false,
-    testSopAuditEngine_rbacDenied
+    testSopAuditEngine_rbacDenied,
+    testQcProcessSeed_happyPath,
+    testQcProcessSeed_idempotent
   ];
 
   tests.forEach(function (fn) {
@@ -347,6 +349,80 @@ function testSopAuditEngine_isChecklistComplete_false() {
 
   var complete = SopAuditEngine.isChecklistComplete(jobId, templateContext);
   sopAssertFalse_('isChecklistComplete should return false when required item has no status row', complete);
+}
+
+// ──────────────────────────────────────────────────────────
+// Test 9: QcProcessSeed.seed — happy path
+// ──────────────────────────────────────────────────────────
+function testQcProcessSeed_happyPath() {
+  var result = QcProcessSeed.seed();
+
+  sopAssertTrue_('seed should return a templateId', !!result.templateId);
+  sopAssertTrue_('templateId should start with QT-', result.templateId.indexOf('QT-') === 0);
+
+  // Template must exist as ACTIVE GLOBAL_QC_PROCESS
+  var templates = DAL.readWhere(Config.TABLES.DIM_QC_PROCESS_TEMPLATES,
+                                { qc_process_code: 'GLOBAL_QC_PROCESS' });
+  var active = templates.filter(function (r) { return String(r.status) === 'ACTIVE'; });
+  sopAssert_('exactly one ACTIVE GLOBAL_QC_PROCESS template must exist', active.length, 1);
+  sopAssert_('template tier must be GLOBAL', active[0].template_tier, 'GLOBAL');
+  sopAssert_('template version must be 1', String(active[0].version), '1');
+  sopAssert_('adr_reference must be ADR-QMS-016', active[0].adr_reference, 'ADR-QMS-016');
+
+  // Items: must have exactly 12 for the resolved template
+  var items = DAL.readWhere(Config.TABLES.DIM_QC_PROCESS_ITEMS,
+                            { qc_process_template_id: result.templateId });
+  sopAssert_('must have exactly 12 items', items.length, 12);
+
+  // Spot-check GQC-001 severity and GQC-008 requires_comment
+  var byCode = {};
+  items.forEach(function (it) { byCode[it.item_code] = it; });
+
+  sopAssertTrue_('GQC-001 must exist', !!byCode['GQC-001']);
+  sopAssert_('GQC-001 severity must be BLOCKING', byCode['GQC-001'].severity, 'BLOCKING');
+  sopAssert_('GQC-008 requires_comment must be TRUE',
+             String(byCode['GQC-008'].requires_comment).toUpperCase(), 'TRUE');
+  sopAssert_('GQC-004 severity must be WARNING', byCode['GQC-004'].severity, 'WARNING');
+  sopAssert_('GQC-012 severity must be BLOCKING', byCode['GQC-012'].severity, 'BLOCKING');
+}
+
+// ──────────────────────────────────────────────────────────
+// Test 10: QcProcessSeed.seed — idempotency
+// ──────────────────────────────────────────────────────────
+function testQcProcessSeed_idempotent() {
+  // First call — may insert or skip depending on prior state
+  QcProcessSeed.seed();
+
+  // Capture counts after first call
+  var templatesAfterFirst = DAL.readWhere(Config.TABLES.DIM_QC_PROCESS_TEMPLATES,
+                                          { qc_process_code: 'GLOBAL_QC_PROCESS' });
+  var activeAfterFirst = templatesAfterFirst.filter(function (r) {
+    return String(r.status) === 'ACTIVE';
+  });
+  sopAssert_('exactly one ACTIVE template after first seed', activeAfterFirst.length, 1);
+
+  var templateId = activeAfterFirst[0].qc_process_template_id;
+  var itemsAfterFirst = DAL.readWhere(Config.TABLES.DIM_QC_PROCESS_ITEMS,
+                                      { qc_process_template_id: templateId });
+  sopAssert_('12 items after first seed', itemsAfterFirst.length, 12);
+
+  // Second call — must insert 0 duplicates
+  var secondResult = QcProcessSeed.seed();
+  sopAssert_('second seed must insert 0 items', secondResult.itemsInserted, 0);
+  sopAssert_('second seed must skip 12 items', secondResult.itemsSkipped, 12);
+  sopAssertFalse_('second seed must not insert template', secondResult.templateInserted);
+
+  // Counts must not change
+  var templatesAfterSecond = DAL.readWhere(Config.TABLES.DIM_QC_PROCESS_TEMPLATES,
+                                           { qc_process_code: 'GLOBAL_QC_PROCESS' });
+  var activeAfterSecond = templatesAfterSecond.filter(function (r) {
+    return String(r.status) === 'ACTIVE';
+  });
+  sopAssert_('still exactly one ACTIVE template after second seed', activeAfterSecond.length, 1);
+
+  var itemsAfterSecond = DAL.readWhere(Config.TABLES.DIM_QC_PROCESS_ITEMS,
+                                       { qc_process_template_id: templateId });
+  sopAssert_('still 12 items after second seed', itemsAfterSecond.length, 12);
 }
 
 // ──────────────────────────────────────────────────────────
