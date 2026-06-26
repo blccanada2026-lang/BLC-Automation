@@ -309,6 +309,73 @@ var SCHEMAS = {
     'retired_at', 'benchmark_code'
   ],
 
+  // DIM_QC_PROCESS_TEMPLATES — QC process template registry (Layer 2). One row per template version.
+  // template_tier: GLOBAL / PRODUCT_SUPPLEMENT / CLIENT_OVERRIDE
+  // product_code: only set for PRODUCT_SUPPLEMENT tier.
+  // client_code: only set for CLIENT_OVERRIDE tier (requires adr_reference).
+  // template_hash: SHA-256 of all items, set at publish time — empty in DRAFT.
+  // 18 columns. Written by QcProcessAdminEngine only.
+  'DIM_QC_PROCESS_TEMPLATES': [
+    'qc_process_template_id', 'qc_process_code', 'template_tier', 'template_name',
+    'product_code', 'client_code', 'adr_reference', 'version', 'status',
+    'effective_from', 'effective_to', 'template_hash',
+    'created_by', 'created_at', 'published_by', 'published_at',
+    'retired_by', 'retired_at'
+  ],
+
+  // DIM_QC_PROCESS_ITEMS — checklist items per QC process template (Layer 2).
+  // qc_process_code denormalized from parent for direct filtering.
+  // severity: INFO / WARNING / BLOCKING.
+  // 13 columns. Written by QcProcessAdminEngine only.
+  'DIM_QC_PROCESS_ITEMS': [
+    'qc_item_id', 'qc_process_template_id', 'qc_process_code', 'item_seq',
+    'item_code', 'item_label', 'item_description',
+    'is_required', 'severity', 'requires_comment',
+    'active_flag', 'created_by', 'created_at'
+  ],
+
+  // FACT_QC_REVIEW_SESSIONS — QC review session events (Layer 2). Append-only, partitioned.
+  // Uses event_type discriminator: QC_REVIEW_STARTED / QC_REVIEW_COMPLETED / QC_REVIEW_VOIDED
+  // (ADR-QMS-016). One STARTED + one COMPLETED row per session pass. Multiple sessions per job
+  // are valid. outcome is null on STARTED rows, set on COMPLETED rows.
+  // qc_template_ids_resolved: comma-separated QT- IDs active at session start (immutable).
+  // 14 columns. Written by QcReviewDAL only.
+  'FACT_QC_REVIEW_SESSIONS': [
+    'qc_session_id', 'event_type',
+    'job_number', 'client_code', 'product_code',
+    'reviewer_person_code', 'qc_template_ids_resolved',
+    'outcome', 'notes',
+    'session_started_at', 'session_completed_at',
+    'request_id', 'created_by', 'created_at'
+  ],
+
+  // FACT_QC_REVIEW_CHECKLISTS — reviewer responses per checklist item per session (Layer 2).
+  // Row-per-item model (ADR-QMS-006). Partitioned monthly.
+  // checked_value: Y / N / NA.
+  // client_code, product_code, reviewer_person_code denormalized for direct dashboard filtering.
+  // 13 columns. Written by QcReviewDAL only.
+  'FACT_QC_REVIEW_CHECKLISTS': [
+    'qc_response_id', 'qc_session_id',
+    'qc_item_id', 'item_code', 'qc_process_code',
+    'job_number', 'client_code', 'product_code', 'reviewer_person_code',
+    'checked_value', 'comment',
+    'checked_at', 'request_id'
+  ],
+
+  // FACT_QC_FINDINGS — structured defect findings per review session (Layer 3). Append-only, partitioned.
+  // event_type: FINDING_RECORDED / FINDING_CORRECTED.
+  // amendment_of: FK to original qc_finding_id on FINDING_CORRECTED rows; empty on FINDING_RECORDED.
+  // corrected_at, corrected_in_revision: set on FINDING_CORRECTED rows only.
+  // comment required when finding_code=OTHER or severity=CRITICAL.
+  // 15 columns. Written by QcReviewDAL only.
+  'FACT_QC_FINDINGS': [
+    'qc_finding_id', 'event_type', 'amendment_of',
+    'qc_session_id', 'job_number', 'client_code', 'product_code',
+    'reviewer_person_code', 'finding_code', 'severity', 'comment',
+    'corrected_at', 'corrected_in_revision',
+    'created_at', 'request_id'
+  ],
+
   // FACT_SOP_CURRENT_STATUS — one row per job+item; latest check state only (flat, non-partitioned)
   'FACT_SOP_CURRENT_STATUS': [
     'job_id', 'job_number', 'client_code',
@@ -443,7 +510,11 @@ var FACT_TABLE_NAMES = [
   'FACT_QC_EVENTS',
   'FACT_BILLING_LEDGER',
   'FACT_PAYROLL_LEDGER',
-  'FACT_SOP_AUDITS'
+  'FACT_SOP_AUDITS',
+  // QMS Layer 2+3 (added QMS-3A)
+  'FACT_QC_REVIEW_SESSIONS',
+  'FACT_QC_REVIEW_CHECKLISTS',
+  'FACT_QC_FINDINGS'
 ];
 
 // ── Non-partitioned FACT tables — plain static tabs (no period suffix) ────

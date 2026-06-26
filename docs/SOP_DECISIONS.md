@@ -287,3 +287,18 @@ These ADRs were approved by the CTO before implementation of PR QMS-2 (QC Findin
 **Context:** A QMS dashboard for a structural design firm must be able to report on safety-critical findings separately from process/documentation findings. Without a structural risk flag, every dashboard query that attempts to isolate structural defects must hard-code a list of finding codes — fragile and unmaintainable as the taxonomy grows.  
 **Decision:** Every `DIM_QC_FINDING_TYPES` record has `is_structural_risk` = 'TRUE' or 'FALSE'. Initial taxonomy: 8 codes are structural risk (`LOAD_ERROR`, `GEOMETRY_ERROR`, `BEARING_ERROR`, `CONNECTOR_ERROR`, `PLATE_ERROR`, `ENGINEERING_ERROR`, `WRONG_DESIGN_STANDARD`, `CALCULATION_ERROR`). 9 codes are non-structural. Any new finding code added to the taxonomy must explicitly set this flag — the field is non-nullable.  
 **Consequences:** Safety dashboard metric (structural-risk finding rate) is computable from day one. Classification is transparent and auditable. New finding codes cannot be added without an explicit structural risk decision.
+
+---
+
+## QMS-3A Architecture Decisions
+
+---
+
+### ADR-QMS-016: FACT_QC_REVIEW_SESSIONS uses an event_type discriminator to remain append-only
+
+**Status:** Accepted  
+**Date:** 2026-06-26  
+**Context:** A QC review session has a lifecycle: it opens when a reviewer begins work, and closes when the reviewer submits an outcome. The outcome, completion timestamp, and notes only exist at close time. A naive single-row design would require updating the session row after it is created — violating Rule A5 (FACT tables are append-only). Two alternative designs were considered: (A) a single mutable session row with `updateWhere` at close time; (B) two append-only rows per session with an `event_type` discriminator. Option A is simpler to query but violates A5 and sets a precedent for FACT table mutability in the QMS layer. Option B preserves full audit integrity: both the open and close events are independently timestamped, immutable, and queryable.  
+**Decision:** `FACT_QC_REVIEW_SESSIONS` uses an `event_type` discriminator column with three valid values: `QC_REVIEW_STARTED`, `QC_REVIEW_COMPLETED`, `QC_REVIEW_VOIDED`. Each review session produces exactly two rows sharing a `qc_session_id`: one STARTED row (appended when the review opens) and one COMPLETED or VOIDED row (appended when the review closes). No row is ever updated. The STARTED row carries `qc_template_ids_resolved` and `session_started_at`; the COMPLETED row carries `outcome`, `notes`, and `session_completed_at`. Dashboard queries join the two rows on `qc_session_id` to produce a complete session view. `QcReviewDAL.getOpenSessionForJob()` identifies sessions with a STARTED row but no COMPLETED or VOIDED row.  
+**Additional decision — ID prefix conflict:** The approved prefix `QI` for QC process items conflicts with the existing `QUEUE_ITEM: 'QI'` entry in `Config.ID_PREFIXES`. Resolution: QC process items use prefix `QPI` (QC Process Item). All other approved prefixes (QT, QS, QR, QF) are unaffected. `Config.ID_PREFIXES` and `QcConstants.ID_PREFIXES` both document this with inline comments.  
+**Consequences:** FACT_QC_REVIEW_SESSIONS is fully append-only — no `updateWhere` calls are ever needed. The event_type pattern is consistent with the existing `FACT_QC_FINDINGS` amendment pattern (FINDING_RECORDED / FINDING_CORRECTED). Dashboard queries are slightly more complex (require JOIN on session_id to reconstruct full session) but this is handled cleanly at the reporting layer. Test helpers must account for the two-row pattern.

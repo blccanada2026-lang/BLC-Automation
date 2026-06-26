@@ -177,6 +177,8 @@ var Config = (function () {
     DIM_SOP_TEMPLATES:       'DIM_SOP_TEMPLATES',       // SOP checklist templates per client/software/scope (T13)
     DIM_SOP_ITEMS:           'DIM_SOP_ITEMS',           // individual checklist items per SOP template (T13)
     DIM_QC_FINDING_TYPES:    'DIM_QC_FINDING_TYPES',   // QC finding taxonomy — controlled vocabulary (T13 QMS Layer 3)
+    DIM_QC_PROCESS_TEMPLATES: 'DIM_QC_PROCESS_TEMPLATES', // QC process template registry — versioned (T13 QMS Layer 2)
+    DIM_QC_PROCESS_ITEMS:    'DIM_QC_PROCESS_ITEMS',   // QC process checklist items per template (T13 QMS Layer 2)
 
     // Staging tables — transient queue (status-driven, not append-only)
     STG_RAW_INTAKE:        'STG_RAW_INTAKE',
@@ -192,6 +194,9 @@ var Config = (function () {
     FACT_PAYROLL_LEDGER: 'FACT_PAYROLL_LEDGER',
     FACT_SOP_AUDITS:     'FACT_SOP_AUDITS',         // SOP item-level audit trail (partitioned by period_id) (T13)
     FACT_SOP_CURRENT_STATUS: 'FACT_SOP_CURRENT_STATUS', // latest check state per job+item (flat, non-partitioned) (T13)
+    FACT_QC_REVIEW_SESSIONS:   'FACT_QC_REVIEW_SESSIONS',   // QC review session events — partitioned (T13 QMS Layer 2)
+    FACT_QC_REVIEW_CHECKLISTS: 'FACT_QC_REVIEW_CHECKLISTS', // QC reviewer checklist responses — partitioned (T13 QMS Layer 2)
+    FACT_QC_FINDINGS:          'FACT_QC_FINDINGS',           // QC structured defect findings — partitioned (T13 QMS Layer 3)
     FACT_PERFORMANCE_RATINGS: 'FACT_PERFORMANCE_RATINGS',
     FACT_QUARTERLY_BONUS:     'FACT_QUARTERLY_BONUS',     // quarterly + annual bonus calculations (separate from payroll)
 
@@ -323,7 +328,13 @@ var Config = (function () {
     EXCEPTION:  'EXC',   // EXC-202603-00003  (system exception)
     SOP_AUDIT:  'SA',    // SA-202606-00001   (SOP audit event — FACT_SOP_AUDITS)
     SOP_TEMPLATE: 'ST',  // ST-202606-00001   (SOP template — DIM_SOP_TEMPLATES)
-    SOP_ITEM:   'SI'     // SI-202606-00001   (SOP item — DIM_SOP_ITEMS)
+    SOP_ITEM:   'SI',    // SI-202606-00001   (SOP item — DIM_SOP_ITEMS)
+    // QMS Layer 2+3 prefixes (QI is taken by QUEUE_ITEM — ADR-QMS-016)
+    QC_PROCESS_TEMPLATE: 'QT',  // QT-{ts}-{rand}  (QC process template — DIM_QC_PROCESS_TEMPLATES)
+    QC_PROCESS_ITEM:     'QPI', // QPI-{ts}-{rand} (QC process item — DIM_QC_PROCESS_ITEMS)
+    QC_SESSION:          'QS',  // QS-{ts}-{rand}  (QC review session — FACT_QC_REVIEW_SESSIONS)
+    QC_RESPONSE:         'QR',  // QR-{ts}-{rand}  (QC checklist response — FACT_QC_REVIEW_CHECKLISTS)
+    QC_FINDING:          'QF'   // QF-{ts}-{rand}  (QC finding — FACT_QC_FINDINGS)
   };
 
   // ──────────────────────────────────────────────────────────

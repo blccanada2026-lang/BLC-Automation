@@ -117,6 +117,13 @@ var DAL = (function () {
     'DIM_SOP_ITEMS':         ['SopAdminEngine'],
     'DIM_QC_FINDING_TYPES':  ['QcFindingTypes'],
 
+    // ── QMS Layer 2+3 (added QMS-3A — engines registered here when QMS-3C is implemented) ──
+    'DIM_QC_PROCESS_TEMPLATES': ['QcProcessAdminEngine'],
+    'DIM_QC_PROCESS_ITEMS':     ['QcProcessAdminEngine'],
+    'FACT_QC_REVIEW_SESSIONS':  ['QcReviewDAL'],
+    'FACT_QC_REVIEW_CHECKLISTS': ['QcReviewDAL'],
+    'FACT_QC_FINDINGS':          ['QcReviewDAL'],
+
     // ── View tables (rebuilt projections) ───────────────────
     'VW_JOB_CURRENT_STATE':  ['EventReplayEngine', 'JobCreateHandler', 'JobAssignHandler', 'JobStartHandler',
                               'JobHoldHandler', 'JobResumeHandler', 'ClientReturnHandler', 'QCHandler',
