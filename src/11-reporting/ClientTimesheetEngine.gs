@@ -81,6 +81,48 @@ var ClientTimesheetEngine = (function () {
     return map;
   }
 
+  // { product_code → display_name } — optional; empty if DIM_PRODUCT_RATES doesn't exist.
+  function loadProductMap_() {
+    var map = {};
+    try {
+      if (!Config.TABLES.DIM_PRODUCT_RATES) return map;
+      var rows = DAL.readAll(Config.TABLES.DIM_PRODUCT_RATES, { callerModule: MODULE });
+      for (var i = 0; i < rows.length; i++) {
+        var r    = rows[i];
+        var code = String(r.product_code || '').trim().toUpperCase();
+        var name = String(r.product_name || '').trim();
+        if (code && name) map[code] = name;
+      }
+    } catch (e) { /* table may not exist — formatted product_code used as fallback */ }
+    return map;
+  }
+
+  // Resolves a product display name: productMap lookup first, then formatted product_code.
+  function resolveProductName_(productCode, productMap) {
+    if (!productCode) return '';
+    var pc = String(productCode).toUpperCase().trim();
+    if (productMap[pc]) return productMap[pc];
+    return String(productCode).replace(/-/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+  }
+
+  // { person_code → { name, role } } — used for the designer summary section.
+  function loadStaffDetailMap_() {
+    var map = {};
+    try {
+      var rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE });
+      for (var i = 0; i < rows.length; i++) {
+        var r    = rows[i];
+        var code = String(r.person_code || '').trim().toUpperCase();
+        if (!code) continue;
+        map[code] = {
+          name: String(r.name      || code),
+          role: String(r.role      || r.job_title || '')
+        };
+      }
+    } catch (e) { /* return empty */ }
+    return map;
+  }
+
   function loadRateCache_() {
     var cache = {};
     try {
@@ -189,7 +231,7 @@ var ClientTimesheetEngine = (function () {
   // Each element: { work_date, job_number, job_type, client_job_ref, designer_code, hours, notes }
   // work_date = earliest positive-hour date for that (job, designer) pair.
   // notes = unique non-empty notes joined with '; '.
-  function buildWorkLogEntries_(monthPartition, fromDate, toDate, year, clientCode, jobMap) {
+  function buildWorkLogEntries_(monthPartition, fromDate, toDate, year, clientCode, jobMap, productMap) {
     var rows = [];
     try {
       rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
@@ -243,8 +285,8 @@ var ClientTimesheetEngine = (function () {
       entries.push({
         work_date:      a.minDate,
         job_number:     a.job_number,
-        job_type:       String(a.job.job_type       || ''),
-        client_job_ref: String(a.job.client_job_ref || ''),
+        job_type:       resolveProductName_(String(a.job.product_code || ''), productMap || {}),
+        client_job_ref: String(a.job.client_job_ref || '').trim() || ('BLC-' + a.job_number),
         designer_code:  a.designer_code,
         hours:          net,
         notes:          Object.keys(a.notes).join('; ')
@@ -255,11 +297,12 @@ var ClientTimesheetEngine = (function () {
 
   // Public wrapper for testability — returns entries without generating a PDF.
   function getEntries_(clientCode, periodId) {
-    periodId   = periodId || currentPeriod_();
-    var cc     = (clientCode || '').toUpperCase().trim();
-    var period = parsePeriod_(periodId);
-    var jobMap = loadJobMap_();
-    return buildWorkLogEntries_(period.monthPartition, period.fromDate, period.toDate, period.year, cc, jobMap);
+    periodId       = periodId || currentPeriod_();
+    var cc         = (clientCode || '').toUpperCase().trim();
+    var period     = parsePeriod_(periodId);
+    var jobMap     = loadJobMap_();
+    var productMap = loadProductMap_();
+    return buildWorkLogEntries_(period.monthPartition, period.fromDate, period.toDate, period.year, cc, jobMap, productMap);
   }
 
   // ── Main generate function ───────────────────────────────────
@@ -419,13 +462,34 @@ var ClientTimesheetEngine = (function () {
 
   // ── Per-client HTML-to-PDF helpers ──────────────────────────
 
+  // Groups hours by designer across entries[], returns sorted array for the summary section.
+  function buildDesignerSummary_(entries, staffDetailMap) {
+    var totals = {};
+    for (var i = 0; i < entries.length; i++) {
+      var dc = entries[i].designer_code;
+      totals[dc] = (totals[dc] || 0) + entries[i].hours;
+    }
+    var rows = [], codes = Object.keys(totals);
+    for (var k = 0; k < codes.length; k++) {
+      var dc2    = codes[k];
+      var detail = staffDetailMap[dc2] || {};
+      rows.push({
+        name:  detail.name || dc2,
+        role:  detail.role || '',
+        hours: Math.round(totals[dc2] * 100) / 100
+      });
+    }
+    rows.sort(function(a, b) { return a.name < b.name ? -1 : 1; });
+    return rows;
+  }
+
   function escHtml_(s) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   // Renders the timesheet as a self-contained styled HTML document.
   // No intermediate sheet tab — data goes directly from entries[] to HTML string.
-  function buildTimesheetHtml_(clientCode, clientName, address, periodId, label, entries, staffMap) {
+  function buildTimesheetHtml_(clientCode, clientName, address, periodId, label, entries, staffMap, summary) {
     // Sort: work_date ASC, then job_number ASC. S.No assigned after sort.
     entries.sort(function(a, b) {
       var da = ymd_(a.work_date), db = ymd_(b.work_date);
@@ -469,6 +533,30 @@ var ClientTimesheetEngine = (function () {
       '.sub td{font-weight:bold;background:#e8f0fe;border-top:2px solid #1a3c5e}' +
       '.ft{margin-top:24px;font-size:8pt;color:#aaa}';
 
+    var summaryHtml = '';
+    if (summary && summary.length > 0) {
+      var grandTotal = 0;
+      var sumRows    = '';
+      for (var s = 0; s < summary.length; s++) {
+        grandTotal += summary[s].hours;
+        sumRows += '<tr' + (s % 2 ? ' style="background:#f7f9fc"' : '') + '>' +
+          '<td class="num">' + (s + 1) + '</td>' +
+          '<td>' + escHtml_(summary[s].name) + '</td>' +
+          '<td>' + escHtml_(summary[s].role) + '</td>' +
+          '<td class="num">' + summary[s].hours + '</td>' +
+          '</tr>';
+      }
+      grandTotal = Math.round(grandTotal * 100) / 100;
+      summaryHtml =
+        '<h3 style="margin-top:32px;color:#1a3c5e;font-size:11pt">Hours Summary by Team Member</h3>' +
+        '<table><thead><tr>' +
+        '<th class="num">S.No</th><th>Name</th><th>Role</th><th class="num">Total Hours</th>' +
+        '</tr></thead><tbody>' +
+        sumRows +
+        '<tr class="sub"><td colspan="3">Grand Total</td><td class="num">' + grandTotal + '</td></tr>' +
+        '</tbody></table>';
+    }
+
     return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + css + '</style></head><body>' +
       '<p class="cn">' + escHtml_(clientName) + '</p>' +
       '<p class="ca">' + escHtml_(address)    + '</p>' +
@@ -482,6 +570,7 @@ var ClientTimesheetEngine = (function () {
       rowHtml +
       '<tr class="sub"><td colspan="5">TOTAL</td><td class="num">' + totalHours + '</td><td colspan="2"></td></tr>' +
       '</tbody></table>' +
+      summaryHtml +
       '<p class="ft">Generated by BLC Nexus &mdash; Blue Lotus Consulting Corporation</p>' +
       '</body></html>';
   }
@@ -503,15 +592,17 @@ var ClientTimesheetEngine = (function () {
     var cc        = (clientCode || '').toUpperCase().trim();
     var period    = parsePeriod_(periodId);
     var label     = periodLabel_(period);
-    var clientMap = loadClientMap_();
-    var staffMap  = loadStaffMap_();
-    var jobMap    = loadJobMap_();
+    var clientMap     = loadClientMap_();
+    var staffMap      = loadStaffMap_();
+    var staffDetailMap = loadStaffDetailMap_();
+    var jobMap        = loadJobMap_();
+    var productMap    = loadProductMap_();
 
     Logger.info('TIMESHEET_CLIENT_GEN_START', { module: MODULE, client_code: cc, period_id: periodId });
 
     var clientInfo = clientMap[cc] || { client_name: cc, address: '' };
     var entries    = buildWorkLogEntries_(
-      period.monthPartition, period.fromDate, period.toDate, period.year, cc, jobMap
+      period.monthPartition, period.fromDate, period.toDate, period.year, cc, jobMap, productMap
     );
 
     if (entries.length === 0) {
@@ -520,8 +611,9 @@ var ClientTimesheetEngine = (function () {
       return null;
     }
 
+    var summary  = buildDesignerSummary_(entries, staffDetailMap);
     var html     = buildTimesheetHtml_(
-      cc, clientInfo.client_name, clientInfo.address, periodId, label, entries, staffMap
+      cc, clientInfo.client_name, clientInfo.address, periodId, label, entries, staffMap, summary
     );
     var fileName = 'BLC-Timesheet_' + cc + '_' + periodId + '.pdf';
     var driveUrl = exportHtmlAsPdf_(html, fileName);
