@@ -367,3 +367,273 @@ function fmtDate_(d) {
 function jobClientCode_(jobMap, jn) {
   return jn && jobMap[jn] ? String(jobMap[jn].client_code || '') : '';
 }
+
+/** Runner — select this function in the Apps Script editor and click Run. */
+function runPBGAudit_2026_06B() {
+  runDesignerHoursAudit('PBG', '2026-06B');
+}
+
+// ============================================================
+// runAllDesignersAudit — multi-designer billing clearance check
+//
+// Runs the same filter chain as ClientTimesheetEngine for every
+// designer active in the period. Outputs a one-row-per-designer
+// summary to _TEMP_AUDIT_ALL_DESIGNERS.
+//
+// Columns: designer_name | actor_code | client_codes |
+//          raw_hours | timesheet_hours | excluded_hours | delta | status
+//
+// delta = raw − timesheet − excluded. Must be 0 for every row.
+// Any delta ≠ 0 flags a bug in the filter accounting.
+// ============================================================
+
+var AUDIT_TAB_ALL_DESIGNERS = '_TEMP_AUDIT_ALL_DESIGNERS';
+
+/**
+ * Audits all designers with timesheet hours in the given period.
+ * @param {string} [periodId]  e.g. '2026-06B'. Defaults to current period.
+ */
+function runAllDesignersAudit(periodId) {
+  var MODULE = 'AllDesignersAudit';
+
+  // ── Parse period ─────────────────────────────────────────────
+  if (!periodId) {
+    var _n = new Date();
+    var _m = (_n.getMonth() + 1 < 10 ? '0' : '') + (_n.getMonth() + 1);
+    periodId = _n.getFullYear() + '-' + _m + (_n.getDate() <= 15 ? 'A' : 'B');
+  }
+  var pm = periodId.match(/^(\d{4})-(\d{2})([AB])$/);
+  if (!pm) throw new Error('AllDesignersAudit: invalid periodId "' + periodId + '"');
+
+  var year           = parseInt(pm[1], 10);
+  var monthIdx       = parseInt(pm[2], 10) - 1;
+  var half           = pm[3];
+  var fromDate       = half === 'A' ? new Date(year, monthIdx, 1)  : new Date(year, monthIdx, 16);
+  var toDate         = half === 'A' ? new Date(year, monthIdx, 15) : new Date(year, monthIdx + 1, 0);
+  var monthPartition = pm[1] + '-' + pm[2];
+
+  function ymd_(d) { return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); }
+  var fromYMD = ymd_(fromDate), toYMD = ymd_(toDate);
+
+  Logger.info('ALL_DESIGNERS_AUDIT_START', { module: MODULE, period_id: periodId });
+
+  // ── Load reference data ──────────────────────────────────────
+  var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+  var jobMap = {};
+  for (var i = 0; i < vwRows.length; i++) {
+    var vr = vwRows[i];
+    var jn = String(vr.job_number || '').trim();
+    if (jn) jobMap[jn] = { client_code: String(vr.client_code || '').toUpperCase().trim() };
+  }
+
+  var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE });
+  var staffMap  = {};
+  for (var s = 0; s < staffRows.length; s++) {
+    var sr   = staffRows[s];
+    var code = String(sr.person_code || '').trim().toUpperCase();
+    if (code) staffMap[code] = String(sr.name || code);
+  }
+
+  // ── Read work logs ───────────────────────────────────────────
+  var wlRows = [];
+  try {
+    wlRows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+      callerModule: MODULE,
+      periodId:     monthPartition
+    });
+  } catch (e) {
+    Logger.warn('ALL_DESIGNERS_AUDIT_WL_FAIL', { module: MODULE, error: e.message });
+  }
+
+  // ── Group rows by actor_code ─────────────────────────────────
+  var SUPERSEDED = { 'BTD': true, 'SNA': true };
+  var byActor    = {};
+  for (var w = 0; w < wlRows.length; w++) {
+    var row = wlRows[w];
+    var ac  = String(row.actor_code || '').trim().toUpperCase();
+    if (!ac) continue;
+    if (!byActor[ac]) byActor[ac] = [];
+    byActor[ac].push(row);
+  }
+
+  // ── Per-actor audit ──────────────────────────────────────────
+  var results     = [];
+  var actorCodes  = Object.keys(byActor).sort();
+
+  for (var a = 0; a < actorCodes.length; a++) {
+    var ac2  = actorCodes[a];
+    var rows = byActor[ac2];
+
+    var rawHours      = 0;
+    var excludedHours = 0;
+    var netByJob      = {};   // job_number → running net for included rows
+    var clientCodes   = {};
+
+    // Pass 1 — classify each row
+    for (var rr = 0; rr < rows.length; rr++) {
+      var r2  = rows[rr];
+      var hrs = parseFloat(r2.hours);
+      rawHours += isNaN(hrs) ? 0 : hrs;
+
+      var excl = false;
+      if (r2.migration_batch) {
+        excl = true;
+      } else if (r2.event_type === 'WORK_LOG_MIGRATED' && SUPERSEDED[ac2]) {
+        excl = true;
+      } else {
+        var d2 = parseAuditDate_(r2.work_date, year);
+        if (!d2) {
+          excl = true;
+        } else {
+          var wd2 = ymd_(d2);
+          if (wd2 < fromYMD || wd2 > toYMD) {
+            excl = true;
+          } else if (isNaN(hrs) || hrs === 0) {
+            excl = true;
+          } else {
+            var jn2 = String(r2.job_number || '').trim().split(/\s+/)[0];
+            if (!jn2 || !jobMap[jn2]) {
+              excl = true;
+            } else {
+              if (!netByJob[jn2]) netByJob[jn2] = 0;
+              netByJob[jn2] += hrs;
+              clientCodes[jobMap[jn2].client_code] = true;
+            }
+          }
+        }
+      }
+
+      if (excl) excludedHours += isNaN(hrs) ? 0 : hrs;
+    }
+
+    // Pass 2 — net included rows; netted-to-zero jobs move to excluded
+    var timesheetHours = 0;
+    var jobKeys        = Object.keys(netByJob);
+    for (var jj = 0; jj < jobKeys.length; jj++) {
+      var net = Math.round(netByJob[jobKeys[jj]] * 100) / 100;
+      if (net > 0) {
+        timesheetHours += net;
+      } else {
+        excludedHours += netByJob[jobKeys[jj]];
+        delete clientCodes[jobMap[jobKeys[jj]] ? jobMap[jobKeys[jj]].client_code : ''];
+      }
+    }
+
+    // Only report designers with actual timesheet hours in this period
+    if (timesheetHours <= 0) continue;
+
+    rawHours       = Math.round(rawHours       * 100) / 100;
+    timesheetHours = Math.round(timesheetHours * 100) / 100;
+    excludedHours  = Math.round(excludedHours  * 100) / 100;
+    var delta      = Math.round((rawHours - timesheetHours - excludedHours) * 100) / 100;
+
+    results.push({
+      designer_name:   staffMap[ac2] || ac2,
+      actor_code:      ac2,
+      client_codes:    Object.keys(clientCodes).sort().join(', '),
+      raw_hours:       rawHours,
+      timesheet_hours: timesheetHours,
+      excluded_hours:  excludedHours,
+      delta:           delta,
+      status:          delta === 0 ? '✅' : '⚠️ DELTA≠0'
+    });
+  }
+
+  results.sort(function(a, b) { return a.designer_name < b.designer_name ? -1 : 1; });
+
+  var nonZeroDeltas = 0;
+  for (var x = 0; x < results.length; x++) {
+    if (results[x].delta !== 0) nonZeroDeltas++;
+  }
+
+  Logger.info('ALL_DESIGNERS_AUDIT_DONE', {
+    module:           MODULE,
+    period_id:        periodId,
+    designers_audited: results.length,
+    non_zero_deltas:  nonZeroDeltas
+  });
+
+  // ── Write to _TEMP_AUDIT_ALL_DESIGNERS ───────────────────────
+  var COLS = [
+    'Designer Name', 'Actor Code', 'Client(s)',
+    'Raw Hours', 'Timesheet Hours', 'Excluded Hours', 'Delta', 'Status'
+  ];
+
+  var totalRaw       = 0, totalTS  = 0, totalExcl = 0;
+  for (var t = 0; t < results.length; t++) {
+    totalRaw  += results[t].raw_hours;
+    totalTS   += results[t].timesheet_hours;
+    totalExcl += results[t].excluded_hours;
+  }
+
+  var ss  = SpreadsheetApp.getActiveSpreadsheet();
+  var tab = ss.getSheetByName(AUDIT_TAB_ALL_DESIGNERS);
+  if (tab) { tab.clearContents(); tab.clearFormats(); }
+  else     { tab = ss.insertSheet(AUDIT_TAB_ALL_DESIGNERS); }
+
+  // Banner row
+  tab.getRange(1, 1, 1, COLS.length).setValues([[
+    'AUDIT: All Designers — Period ' + periodId,
+    'Run: ' + new Date().toISOString(),
+    'Designers: ' + results.length,
+    'Non-zero deltas: ' + nonZeroDeltas,
+    '', '', '', ''
+  ]]);
+  tab.getRange(1, 1, 1, COLS.length)
+     .setFontWeight('bold')
+     .setBackground('#fff2cc');
+
+  // Column headers
+  tab.getRange(2, 1, 1, COLS.length).setValues([COLS]);
+  tab.getRange(2, 1, 1, COLS.length)
+     .setFontWeight('bold')
+     .setBackground('#cfe2f3');
+
+  // Data rows
+  for (var d = 0; d < results.length; d++) {
+    var r    = results[d];
+    var row  = d + 3;
+    var bg   = r.delta !== 0 ? '#f4cccc' : (d % 2 === 0 ? '#ffffff' : '#f3f6fb');
+    tab.getRange(row, 1, 1, COLS.length).setValues([[
+      r.designer_name, r.actor_code, r.client_codes,
+      r.raw_hours, r.timesheet_hours, r.excluded_hours,
+      r.delta, r.status
+    ]]).setBackground(bg);
+  }
+
+  // Totals row
+  var totalRow = results.length + 3;
+  tab.getRange(totalRow, 1, 1, COLS.length).setValues([[
+    'TOTAL', '', '',
+    Math.round(totalRaw * 100) / 100,
+    Math.round(totalTS  * 100) / 100,
+    Math.round(totalExcl * 100) / 100,
+    Math.round((totalRaw - totalTS - totalExcl) * 100) / 100,
+    nonZeroDeltas === 0 ? '✅ All balanced' : '⚠️ ' + nonZeroDeltas + ' unbalanced'
+  ]]);
+  tab.getRange(totalRow, 1, 1, COLS.length)
+     .setFontWeight('bold')
+     .setBackground('#d9ead3');
+
+  tab.setFrozenRows(2);
+  tab.autoResizeColumns(1, COLS.length);
+
+  console.log('[AllDesignersAudit] Period: ' + periodId +
+              ' | Designers: ' + results.length +
+              ' | Non-zero deltas: ' + nonZeroDeltas);
+  if (nonZeroDeltas > 0) {
+    for (var xx = 0; xx < results.length; xx++) {
+      if (results[xx].delta !== 0) {
+        console.log('  ⚠️ ' + results[xx].actor_code +
+                    ' (' + results[xx].designer_name + ') delta=' + results[xx].delta);
+      }
+    }
+  }
+
+  return { period_id: periodId, designers_audited: results.length, non_zero_deltas: nonZeroDeltas };
+}
+
+/** Runner — select this in the Apps Script editor and click Run. */
+function runAllDesignersAudit_2026_06B() {
+  runAllDesignersAudit('2026-06B');
+}
