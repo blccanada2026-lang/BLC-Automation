@@ -578,8 +578,9 @@ var PortalData = (function () {
     for (var i = 0; i < allStaff.length; i++) {
       var s = allStaff[i];
 
-      // Skip inactive: check explicit active flag first, then effective_to
-      if (s.active === false || String(s.active).toUpperCase().trim() === 'FALSE') continue;
+      // Skip unless explicitly active (whitelist — blank active treated as inactive)
+      var isActive = s.active === true || String(s.active).toUpperCase().trim() === 'TRUE';
+      if (!isActive) continue;
       var effectiveTo = s.effective_to;
       if (effectiveTo instanceof Date) {
         var ety = effectiveTo.getFullYear();
@@ -822,7 +823,8 @@ var PortalData = (function () {
     var staffMap = {}; // person_code → { code, name, role, email, supervisorCode, pmCode }
     for (var i = 0; i < allStaff.length; i++) {
       var s = allStaff[i];
-      if (s.active === false || String(s.active).toUpperCase().trim() === 'FALSE') continue;
+      var isActiveSr = s.active === true || String(s.active).toUpperCase().trim() === 'TRUE';
+      if (!isActiveSr) continue;
       var et = s.effective_to;
       if (et instanceof Date) {
         var ey = et.getFullYear(), em = String(et.getMonth()+1), ed = String(et.getDate());
@@ -971,7 +973,8 @@ var PortalData = (function () {
     var staffMap = {};
     for (var i = 0; i < allStaff.length; i++) {
       var s = allStaff[i];
-      if (s.active === false || String(s.active).toUpperCase().trim() === 'FALSE') continue;
+      var isActiveGap = s.active === true || String(s.active).toUpperCase().trim() === 'TRUE';
+      if (!isActiveGap) continue;
       var et = s.effective_to;
       if (et instanceof Date) {
         var ey = et.getFullYear(), em = String(et.getMonth()+1), ed = String(et.getDate());
