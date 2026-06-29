@@ -5,6 +5,46 @@
 
 ---
 
+## 2026-06-29 Session (260337 fix, QMS-3C-Prep, CI pipeline)
+
+### Work Completed
+
+**Job 260337 duplicate — RESOLVED:**
+- `runJob260337Audit()` modified to write side-by-side VW comparison to `_TEMP_AUDIT_260337` sheet tab.
+- Audit revealed 3 VW rows: 260337 (Roof Truss/AR001), 260337F (I-Joist/SGO correct), 260337 (I-Joist/SGO spurious).
+- `runJob260337Fix()` ran in PROD: spurious row voided, `JOB_DUPLICATE_VOIDED` written to FACT_JOB_EVENTS. `{ status: FIXED, rowsUpdated: 1 }`.
+- Billing double-invoice risk eliminated. PROJECT_MEMORY.md §8 updated.
+
+**QMS-3C-Prep — schema corrections deployed to DEV:**
+- `FACT_QC_EVENTS`: 12 → 13 cols (`qc_session_id` added, nullable FK).
+- `FACT_QC_REVIEW_SESSIONS`: 14 → 18 cols (`period_id`, `qc_event_id`, replaced `qc_template_ids_resolved` with `global_template_id` / `product_template_id` / `client_template_id`).
+- `FACT_QC_REVIEW_CHECKLISTS`: 13 → 14 cols (`period_id` added).
+- `FACT_QC_FINDINGS`: 15 → 16 cols (`period_id` added).
+- ADR-QMS-017 + ADR-QMS-018 added to `docs/SOP_DECISIONS.md`. `docs/QUALITY_FRAMEWORK.md` Sections 3 + 5 updated.
+- DEV validation: `runFixHeaders()` 50/50 ✅, `runVerify()` 50/50 ✅, `runQcFindingTypesTests()` 52/52 ✅, `testSopAll()` 10/10 ✅.
+- **DEV only. Not deployed to PROD. Stop before QMS-3C.**
+
+**CI pipeline:**
+- `.github/workflows/test.yml` created: push to main → `npm install` → `npm test`, Node 20.
+- First Actions run: ✅ passed in 17s.
+
+### Files Changed
+- `src/setup/SetupScript.gs` — 4 schema changes
+- `src/12-migration/Job260337DuplicateFixer.gs` — audit output to sheet tab
+- `docs/SOP_DECISIONS.md` — ADR-QMS-017, ADR-QMS-018
+- `docs/QUALITY_FRAMEWORK.md` — Sections 3 + 5
+- `PROJECT_MEMORY.md` — 260337 risk closed
+- `.github/workflows/test.yml` — new file
+
+### Next Steps
+1. Forward Q1 bonus letters (16 in CEO inbox blccanada2026@gmail.com)
+2. Send Q2 rating requests + Q2 feedback requests before end of June
+3. QMS-3C — DAL + Engine only (no portal) — await CTO go-ahead
+4. Build client timesheet generator (`ClientTimesheetEngine.gs`)
+5. First June payroll run from V3
+
+---
+
 ## 2026-06-19 Session (Sarty Bug Fixes — 5 issues resolved)
 
 ### Work Completed
