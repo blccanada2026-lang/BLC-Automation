@@ -123,7 +123,7 @@ Priority order:
 
 | Risk | Severity | Status |
 |---|---|---|
-| Job `260337` duplicate in VW_JOB_CURRENT_STATE | **HIGH** | Two COMPLETED_BILLABLE rows — billing double-invoice risk. Needs Sarty confirmation before fix. |
+| Job `260337` duplicate in VW_JOB_CURRENT_STATE | ~~HIGH~~ | **RESOLVED 2026-06-29.** Three VW rows found: 260337 (Roof Truss, AR001), 260337F (I-Joist Floor, SGO), and a spurious 260337 (I-Joist Floor, SGO). Spurious row voided via `runJob260337Fix()`. JOB_DUPLICATE_VOIDED written to FACT_JOB_EVENTS. |
 | Client timesheet generator not built | **HIGH** | Sarty needs per-job breakdown with designer hours for client invoices — no function exists yet |
 | Q1 FACT_WORK_LOGS has 1,694 duplicate rows | Medium | Root cause: CSV re-import. Bonus corrected via amendment. Raw data not cleaned yet. |
 | BIT designer in FACT_QUARTERLY_BONUS | Medium | CALCULATED, composite 52.19% = same as JYS. Is BIT = Bittuu alias = JYS, or different person? |
