@@ -383,23 +383,15 @@ var ClientTimesheetEngine = (function () {
     });
   }
 
-  // ── Per-client PDF helpers ───────────────────────────────────
+  // ── Per-client HTML-to-PDF helpers ──────────────────────────
 
-  // Creates or overwrites the TS_{clientCode}_{periodId} sheet tab with a
-  // client-facing timesheet layout. Returns the sheet object.
-  // Direct SpreadsheetApp: reporting output tabs are not FACT tables;
-  // DAL does not support tab creation or arbitrary-layout formatting.
-  function writeClientTimesheetTab_(clientCode, clientName, address, periodId, label, entries, staffMap) {
-    var tabName = 'TS_' + clientCode + '_' + periodId;
-    var ss      = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet   = ss.getSheetByName(tabName);
-    if (sheet) {
-      sheet.clearContents();
-      sheet.clearFormats();
-    } else {
-      sheet = ss.insertSheet(tabName);
-    }
+  function escHtml_(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
 
+  // Renders the timesheet as a self-contained styled HTML document.
+  // No intermediate sheet tab — data goes directly from entries[] to HTML string.
+  function buildTimesheetHtml_(clientCode, clientName, address, periodId, label, entries, staffMap) {
     // Sort: work_date ASC, then job_number ASC. S.No assigned after sort.
     entries.sort(function(a, b) {
       var da = ymd_(a.work_date), db = ymd_(b.work_date);
@@ -407,22 +399,7 @@ var ClientTimesheetEngine = (function () {
       return a.job_number < b.job_number ? -1 : 1;
     });
 
-    var COL_COUNT = 8;
-    var sheetData = [];
-
-    // Header block
-    sheetData.push([clientName,                                   '', '', '', '', '', '', '']);
-    sheetData.push([address,                                      '', '', '', '', '', '', '']);
-    sheetData.push(['Timesheet — ' + label,                  '', '', '', '', '', '', '']);
-    sheetData.push(['Period: ' + periodId,                        '', '', '', '', '', '', '']);
-    sheetData.push(['Generated: ' + new Date().toLocaleString(),  '', '', '', '', '', '', '']);
-    sheetData.push(['',                                           '', '', '', '', '', '', '']);
-
-    // Column headers
-    sheetData.push(['S.No', 'Date', 'Job #', 'Job Type', 'Description', 'Billable Hours', 'Designer', 'Remarks']);
-    var headerRow = sheetData.length; // 1-based = 7
-
-    // Data rows
+    var rowHtml    = '';
     var totalHours = 0;
     for (var i = 0; i < entries.length; i++) {
       var e = entries[i];
@@ -431,60 +408,58 @@ var ClientTimesheetEngine = (function () {
                     (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1) + '-' +
                     (d.getDate()    < 10 ? '0' : '') +  d.getDate();
       totalHours += e.hours;
-      sheetData.push([
-        i + 1,
-        dateStr,
-        e.job_number,
-        e.job_type,
-        e.client_job_ref,
-        e.hours,
-        staffMap[e.designer_code] || e.designer_code,
-        e.notes
-      ]);
+      rowHtml += '<tr' + (i % 2 ? ' style="background:#f7f9fc"' : '') + '>' +
+        '<td class="num">' + (i + 1) + '</td>' +
+        '<td>' + escHtml_(dateStr) + '</td>' +
+        '<td>' + escHtml_(e.job_number) + '</td>' +
+        '<td>' + escHtml_(e.job_type) + '</td>' +
+        '<td>' + escHtml_(e.client_job_ref) + '</td>' +
+        '<td class="num">' + e.hours + '</td>' +
+        '<td>' + escHtml_(staffMap[e.designer_code] || e.designer_code) + '</td>' +
+        '<td>' + escHtml_(e.notes) + '</td>' +
+        '</tr>';
     }
     totalHours = Math.round(totalHours * 100) / 100;
 
-    // Subtotal
-    var subtotalRow = sheetData.length + 1; // 1-based
-    sheetData.push(['TOTAL', '', '', '', '', totalHours, '', '']);
+    var css =
+      'body{font-family:Arial,sans-serif;font-size:10pt;margin:40px;color:#1a1a1a}' +
+      '.cn{font-size:16pt;font-weight:bold;margin:0 0 4px}' +
+      '.ca{font-size:10pt;color:#444;margin:0 0 12px}' +
+      '.dt{font-size:13pt;font-weight:bold;color:#1a3c5e;margin:0 0 2px}' +
+      '.mt{font-size:9pt;color:#666;margin:2px 0}' +
+      'table{width:100%;border-collapse:collapse;margin-top:16px}' +
+      'th{background:#1a3c5e;color:#fff;font-weight:bold;padding:7px 8px;' +
+         'text-align:left;font-size:9pt;border:1px solid #0e2440}' +
+      'th.num,td.num{text-align:right}' +
+      'td{padding:6px 8px;font-size:9pt;border:1px solid #ddd;vertical-align:top}' +
+      '.sub td{font-weight:bold;background:#e8f0fe;border-top:2px solid #1a3c5e}' +
+      '.ft{margin-top:24px;font-size:8pt;color:#aaa}';
 
-    sheet.getRange(1, 1, sheetData.length, COL_COUNT).setValues(sheetData);
-
-    // Formatting
-    sheet.getRange(1, 1).setFontWeight('bold').setFontSize(14);
-    sheet.getRange(3, 1).setFontWeight('bold').setFontSize(12);
-    sheet.getRange(headerRow, 1, 1, COL_COUNT)
-      .setFontWeight('bold')
-      .setBackground('#1a3c5e')
-      .setFontColor('#ffffff');
-    if (entries.length > 0) {
-      sheet.getRange(headerRow + 1, 1, entries.length, COL_COUNT)
-        .setBorder(true, true, true, true, true, true, '#cccccc', SpreadsheetApp.BorderStyle.SOLID);
-    }
-    sheet.getRange(subtotalRow, 1, 1, COL_COUNT)
-      .setFontWeight('bold')
-      .setBackground('#e8f0fe');
-    sheet.autoResizeColumns(1, COL_COUNT);
-
-    return sheet;
+    return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + css + '</style></head><body>' +
+      '<p class="cn">' + escHtml_(clientName) + '</p>' +
+      '<p class="ca">' + escHtml_(address)    + '</p>' +
+      '<p class="dt">Timesheet — ' + escHtml_(label)    + '</p>' +
+      '<p class="mt">Period: '   + escHtml_(periodId) + '</p>' +
+      '<p class="mt">Generated: ' + new Date().toLocaleString() + '</p>' +
+      '<table><thead><tr>' +
+      '<th class="num">S.No</th><th>Date</th><th>Job #</th><th>Job Type</th>' +
+      '<th>Description</th><th class="num">Billable Hours</th><th>Designer</th><th>Remarks</th>' +
+      '</tr></thead><tbody>' +
+      rowHtml +
+      '<tr class="sub"><td colspan="5">TOTAL</td><td class="num">' + totalHours + '</td><td colspan="2"></td></tr>' +
+      '</tbody></table>' +
+      '<p class="ft">Generated by BLC Nexus &mdash; Blue Lotus Consulting Corporation</p>' +
+      '</body></html>';
   }
 
-  // Exports a single sheet tab as PDF to Google Drive and returns the file URL.
-  function exportToPdf_(sheet, fileName) {
-    var ss  = SpreadsheetApp.getActiveSpreadsheet();
-    var url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() +
-              '/export?exportFormat=pdf&format=pdf&gid=' + sheet.getSheetId() +
-              '&size=letter&portrait=true&fitw=true&sheetnames=false' +
-              '&printtitle=false&pagenumbers=true&gridlines=false&fzr=true';
-    var response = UrlFetchApp.fetch(url, {
-      headers:           { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
-      muteHttpExceptions: true
-    });
-    if (response.getResponseCode() !== 200) {
-      throw new Error('PDF export HTTP ' + response.getResponseCode() + ' for ' + fileName);
-    }
-    var file = DriveApp.createFile(response.getBlob().setName(fileName));
-    return file.getUrl();
+  // Uploads an HTML string as a temporary Drive file, converts it to PDF via Drive's
+  // native converter, saves the PDF, trashes the HTML source, and returns the PDF URL.
+  function exportHtmlAsPdf_(htmlContent, fileName) {
+    var htmlBlob = Utilities.newBlob(htmlContent, 'text/html', fileName.replace(/\.pdf$/i, '.html'));
+    var tempFile = DriveApp.createFile(htmlBlob);
+    var pdfFile  = DriveApp.createFile(tempFile.getAs(MimeType.PDF).setName(fileName));
+    tempFile.setTrashed(true);
+    return pdfFile.getUrl();
   }
 
   // Generates a per-client PDF timesheet for the given period.
@@ -511,11 +486,11 @@ var ClientTimesheetEngine = (function () {
       return null;
     }
 
-    var sheet    = writeClientTimesheetTab_(
+    var html     = buildTimesheetHtml_(
       cc, clientInfo.client_name, clientInfo.address, periodId, label, entries, staffMap
     );
     var fileName = 'BLC-Timesheet_' + cc + '_' + periodId + '.pdf';
-    var driveUrl = exportToPdf_(sheet, fileName);
+    var driveUrl = exportHtmlAsPdf_(html, fileName);
 
     Logger.info('TIMESHEET_CLIENT_GEN_COMPLETE', {
       module:      MODULE,
