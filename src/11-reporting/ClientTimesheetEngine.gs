@@ -285,7 +285,9 @@ var ClientTimesheetEngine = (function () {
       entries.push({
         work_date:      a.minDate,
         job_number:     a.job_number,
-        job_type:       resolveProductName_(String(a.job.product_code || ''), productMap || {}),
+        job_type:       resolveProductName_(String(a.job.product_code || ''), productMap || {}) ||
+                        String(a.job.job_type || '') ||
+                        '—',
         client_job_ref: String(a.job.client_job_ref || '').trim() || ('BLC-' + a.job_number),
         designer_code:  a.designer_code,
         hours:          net,
