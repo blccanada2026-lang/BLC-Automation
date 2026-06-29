@@ -36,12 +36,40 @@
 - `PROJECT_MEMORY.md` — 260337 risk closed
 - `.github/workflows/test.yml` — new file
 
+**Rating requests — active flag bug fixed:**
+- `sendRatingRequests`, `getMyRatees`, `getRatingsGaps` all used blacklist filter (`skip if active=FALSE`).
+- Staff with blank `active` field (e.g. Banik Sagar) slipped through.
+- Fixed to whitelist (`include only if active=TRUE`) in all three functions. Deployed to PROD.
+
+**SBS client feedback — data fixes pending (manual sheet edits required):**
+- DIM_CLIENT_MASTER has two SBS rows — blank duplicate must be deleted manually.
+- Good SBS row: update `contact_name` → `AL, Roger, Ray`; update `contact_email` → `aguerra@structuralbuildingsolutions.com,respinoza@structuralbuildingsolutions.com,rrespass@structuralbuildingsolutions.com`
+
+**Dead letter queue investigation:**
+- 35 total dead letter items. 6 from Sarthy (June 19, pre-fix noise). 
+- Bittu + Abhijit submitting JOB_HOLD — RBAC correctly blocking (DESIGNERs cannot hold jobs).
+- Root cause: stale browser cache. Fix: ask Abhijit to hard-refresh portal (Cmd+Shift+R).
+- No code change needed. No data damage.
+
+### Files Changed
+- `src/setup/SetupScript.gs` — 4 QMS schema changes (DEV only)
+- `src/12-migration/Job260337DuplicateFixer.gs` — audit output to sheet tab
+- `src/07-portal/PortalData.gs` — active flag whitelist fix (3 functions)
+- `docs/SOP_DECISIONS.md` — ADR-QMS-017, ADR-QMS-018
+- `docs/QUALITY_FRAMEWORK.md` — Sections 3 + 5
+- `PROJECT_MEMORY.md` — 260337 risk closed
+- `.github/workflows/test.yml` — CI pipeline added
+- `SESSION_LOG.md` — this file
+
 ### Next Steps
-1. Forward Q1 bonus letters (16 in CEO inbox blccanada2026@gmail.com)
-2. Send Q2 rating requests + Q2 feedback requests before end of June
-3. QMS-3C — DAL + Engine only (no portal) — await CTO go-ahead
-4. Build client timesheet generator (`ClientTimesheetEngine.gs`)
-5. First June payroll run from V3
+1. **Manual sheet fix** — DIM_CLIENT_MASTER: delete blank SBS row, update contact_name + contact_email on good SBS row
+2. **Banik Sagar** — set `active=FALSE` + `effective_to` on his DIM_STAFF_ROSTER row
+3. **Ask Abhijit** — hard-refresh portal (Cmd+Shift+R)
+4. Forward Q1 bonus letters (16 in CEO inbox blccanada2026@gmail.com)
+5. Send Q2 rating requests (Test Mode first) + Q2 client feedback requests
+6. QMS-3C — DAL + Engine only (no portal) — await CTO go-ahead
+7. Build client timesheet generator (`ClientTimesheetEngine.gs`)
+8. First June payroll run from V3
 
 ---
 
