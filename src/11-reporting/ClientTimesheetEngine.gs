@@ -119,6 +119,27 @@ var ClientTimesheetEngine = (function () {
     return map;
   }
 
+  // { client_code → { client_name, address } }
+  // Address is the first pipe-delimited segment of the notes field:
+  //   "address | contact | terms | tax"
+  function loadClientMap_() {
+    var map = {};
+    try {
+      var rows = DAL.readAll(Config.TABLES.DIM_CLIENT_MASTER, { callerModule: MODULE });
+      for (var i = 0; i < rows.length; i++) {
+        var r  = rows[i];
+        var cc = String(r.client_code || '').trim().toUpperCase();
+        if (!cc) continue;
+        var address = String(r.notes || '').split('|')[0].trim();
+        map[cc] = {
+          client_name: String(r.client_name || cc),
+          address:     address
+        };
+      }
+    } catch (e) { /* return empty map */ }
+    return map;
+  }
+
   // { jobNumber → { designerCode → hours } }
   function buildHoursMap_(monthPartition, fromDate, toDate, year) {
     var byJobDesigner = {};
@@ -163,6 +184,51 @@ var ClientTimesheetEngine = (function () {
       }
     }
     return byJobDesigner;
+  }
+
+  // Per-row work log entries for a single client — used by PDF timesheet.
+  // Each element: { work_date, job_number, job_type, client_job_ref, designer_code, hours, notes }
+  // Applies same exclusion rules as buildHoursMap_ (migration_batch, SUPERSEDED_MIGRATED).
+  function buildWorkLogEntries_(monthPartition, fromDate, toDate, year, clientCode, jobMap) {
+    var entries = [];
+    var rows    = [];
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+        callerModule: MODULE,
+        periodId:     monthPartition
+      });
+    } catch (e) { return entries; }
+
+    var SUPERSEDED_MIGRATED = { 'BTD': true, 'SNA': true };
+    var fromYMD = ymd_(fromDate), toYMD = ymd_(toDate);
+    var cc      = (clientCode || '').toUpperCase().trim();
+
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (row.migration_batch) continue;
+      if (row.event_type === 'WORK_LOG_MIGRATED' &&
+          SUPERSEDED_MIGRATED[String(row.actor_code || '').trim().toUpperCase()]) continue;
+      var d = parseWorkDate_(row.work_date, year);
+      if (!d) continue;
+      var wd = ymd_(d);
+      if (wd < fromYMD || wd > toYMD) continue;
+      var jn  = String(row.job_number || '').trim().split(/\s+/)[0];
+      var hrs = parseFloat(row.hours);
+      if (!jn || isNaN(hrs) || hrs <= 0) continue;
+      var job = jobMap[jn];
+      if (!job) continue;
+      if (String(job.client_code || '').toUpperCase().trim() !== cc) continue;
+      entries.push({
+        work_date:      d,
+        job_number:     jn,
+        job_type:       String(job.job_type       || ''),
+        client_job_ref: String(job.client_job_ref || ''),
+        designer_code:  String(row.actor_code     || '').trim().toUpperCase(),
+        hours:          Math.round(hrs * 100) / 100,
+        notes:          String(row.notes          || '')
+      });
+    }
+    return entries;
   }
 
   // ── Main generate function ───────────────────────────────────
@@ -320,9 +386,155 @@ var ClientTimesheetEngine = (function () {
     });
   }
 
+  // ── Per-client PDF helpers ───────────────────────────────────
+
+  // Creates or overwrites the TS_{clientCode}_{periodId} sheet tab with a
+  // client-facing timesheet layout. Returns the sheet object.
+  // Direct SpreadsheetApp: reporting output tabs are not FACT tables;
+  // DAL does not support tab creation or arbitrary-layout formatting.
+  function writeClientTimesheetTab_(clientCode, clientName, address, periodId, label, entries, staffMap) {
+    var tabName = 'TS_' + clientCode + '_' + periodId;
+    var ss      = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet   = ss.getSheetByName(tabName);
+    if (sheet) {
+      sheet.clearContents();
+      sheet.clearFormats();
+    } else {
+      sheet = ss.insertSheet(tabName);
+    }
+
+    // Sort: work_date ASC, then job_number ASC. S.No assigned after sort.
+    entries.sort(function(a, b) {
+      var da = ymd_(a.work_date), db = ymd_(b.work_date);
+      if (da !== db) return da - db;
+      return a.job_number < b.job_number ? -1 : 1;
+    });
+
+    var COL_COUNT = 8;
+    var sheetData = [];
+
+    // Header block
+    sheetData.push([clientName,                                   '', '', '', '', '', '', '']);
+    sheetData.push([address,                                      '', '', '', '', '', '', '']);
+    sheetData.push(['Timesheet — ' + label,                  '', '', '', '', '', '', '']);
+    sheetData.push(['Period: ' + periodId,                        '', '', '', '', '', '', '']);
+    sheetData.push(['Generated: ' + new Date().toLocaleString(),  '', '', '', '', '', '', '']);
+    sheetData.push(['',                                           '', '', '', '', '', '', '']);
+
+    // Column headers
+    sheetData.push(['S.No', 'Date', 'Job #', 'Job Type', 'Description', 'Billable Hours', 'Designer', 'Remarks']);
+    var headerRow = sheetData.length; // 1-based = 7
+
+    // Data rows
+    var totalHours = 0;
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      var d = e.work_date;
+      var dateStr = d.getFullYear() + '-' +
+                    (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1) + '-' +
+                    (d.getDate()    < 10 ? '0' : '') +  d.getDate();
+      totalHours += e.hours;
+      sheetData.push([
+        i + 1,
+        dateStr,
+        e.job_number,
+        e.job_type,
+        e.client_job_ref,
+        e.hours,
+        staffMap[e.designer_code] || e.designer_code,
+        e.notes
+      ]);
+    }
+    totalHours = Math.round(totalHours * 100) / 100;
+
+    // Subtotal
+    var subtotalRow = sheetData.length + 1; // 1-based
+    sheetData.push(['TOTAL', '', '', '', '', totalHours, '', '']);
+
+    sheet.getRange(1, 1, sheetData.length, COL_COUNT).setValues(sheetData);
+
+    // Formatting
+    sheet.getRange(1, 1).setFontWeight('bold').setFontSize(14);
+    sheet.getRange(3, 1).setFontWeight('bold').setFontSize(12);
+    sheet.getRange(headerRow, 1, 1, COL_COUNT)
+      .setFontWeight('bold')
+      .setBackground('#1a3c5e')
+      .setFontColor('#ffffff');
+    if (entries.length > 0) {
+      sheet.getRange(headerRow + 1, 1, entries.length, COL_COUNT)
+        .setBorder(true, true, true, true, true, true, '#cccccc', SpreadsheetApp.BorderStyle.SOLID);
+    }
+    sheet.getRange(subtotalRow, 1, 1, COL_COUNT)
+      .setFontWeight('bold')
+      .setBackground('#e8f0fe');
+    sheet.autoResizeColumns(1, COL_COUNT);
+
+    return sheet;
+  }
+
+  // Exports a single sheet tab as PDF to Google Drive and returns the file URL.
+  function exportToPdf_(sheet, fileName) {
+    var ss  = SpreadsheetApp.getActiveSpreadsheet();
+    var url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() +
+              '/export?exportFormat=pdf&format=pdf&gid=' + sheet.getSheetId() +
+              '&size=letter&portrait=true&fitw=true&sheetnames=false' +
+              '&printtitle=false&pagenumbers=true&gridlines=false&fzr=true';
+    var response = UrlFetchApp.fetch(url, {
+      headers:           { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+    if (response.getResponseCode() !== 200) {
+      throw new Error('PDF export HTTP ' + response.getResponseCode() + ' for ' + fileName);
+    }
+    var file = DriveApp.createFile(response.getBlob().setName(fileName));
+    return file.getUrl();
+  }
+
+  // Generates a per-client PDF timesheet for the given period.
+  // Returns { driveUrl, entries } or null if no work log data found.
+  function generateForClient_(clientCode, periodId) {
+    periodId      = periodId || currentPeriod_();
+    var cc        = (clientCode || '').toUpperCase().trim();
+    var period    = parsePeriod_(periodId);
+    var label     = periodLabel_(period);
+    var clientMap = loadClientMap_();
+    var staffMap  = loadStaffMap_();
+    var jobMap    = loadJobMap_();
+
+    Logger.info('TIMESHEET_CLIENT_GEN_START', { module: MODULE, client_code: cc, period_id: periodId });
+
+    var clientInfo = clientMap[cc] || { client_name: cc, address: '' };
+    var entries    = buildWorkLogEntries_(
+      period.monthPartition, period.fromDate, period.toDate, period.year, cc, jobMap
+    );
+
+    if (entries.length === 0) {
+      Logger.warn('TIMESHEET_CLIENT_NO_ROWS', { module: MODULE, client_code: cc, period_id: periodId });
+      console.log('[ClientTimesheetEngine] No billable entries for ' + cc + ' in ' + periodId + ' — PDF skipped.');
+      return null;
+    }
+
+    var sheet    = writeClientTimesheetTab_(
+      cc, clientInfo.client_name, clientInfo.address, periodId, label, entries, staffMap
+    );
+    var fileName = 'BLC-Timesheet_' + cc + '_' + periodId + '.pdf';
+    var driveUrl = exportToPdf_(sheet, fileName);
+
+    Logger.info('TIMESHEET_CLIENT_GEN_COMPLETE', {
+      module:      MODULE,
+      client_code: cc,
+      period_id:   periodId,
+      entries:     entries.length,
+      drive_url:   driveUrl
+    });
+
+    return { driveUrl: driveUrl, entries: entries.length };
+  }
+
   // ── PUBLIC API ───────────────────────────────────────────────
   return {
-    generate: generate
+    generate:           generate,
+    generateForClient:  generateForClient_
   };
 
 }());
@@ -349,6 +561,23 @@ function runGenerateClientTimesheets(periodId) {
                 ' (' + cdata.rows.length + ' jobs)');
   }
   console.log('Sheet written: TIMESHEET|' + pid);
+}
+
+/**
+ * Generates a PDF timesheet for Nelson for the given (or current) period.
+ * PDF is saved to Google Drive. Logs the Drive URL.
+ *
+ * @param {string} [periodId]  e.g. '2026-06B'. Defaults to current period.
+ */
+function runGenerateNelsonTimesheet(periodId) {
+  var pid    = periodId || '2026-06B';
+  var result = ClientTimesheetEngine.generateForClient('NELSON', pid);
+  if (!result) {
+    console.log('[runGenerateNelsonTimesheet] No data for NELSON in ' + pid + ' — nothing generated.');
+    return;
+  }
+  console.log('[runGenerateNelsonTimesheet] PDF generated: ' + result.driveUrl);
+  console.log('[runGenerateNelsonTimesheet] Entries: ' + result.entries + ' | Period: ' + pid);
 }
 
 /**
