@@ -412,8 +412,8 @@ var ClientTimesheetEngine = (function () {
         '<td class="num">' + (i + 1) + '</td>' +
         '<td>' + escHtml_(dateStr) + '</td>' +
         '<td>' + escHtml_(e.job_number) + '</td>' +
-        '<td>' + escHtml_(e.job_type) + '</td>' +
         '<td>' + escHtml_(e.client_job_ref) + '</td>' +
+        '<td>' + escHtml_(e.job_type) + '</td>' +
         '<td class="num">' + e.hours + '</td>' +
         '<td>' + escHtml_(staffMap[e.designer_code] || e.designer_code) + '</td>' +
         '<td>' + escHtml_(e.notes) + '</td>' +
@@ -442,8 +442,8 @@ var ClientTimesheetEngine = (function () {
       '<p class="mt">Period: '   + escHtml_(periodId) + '</p>' +
       '<p class="mt">Generated: ' + new Date().toLocaleString() + '</p>' +
       '<table><thead><tr>' +
-      '<th class="num">S.No</th><th>Date</th><th>Job #</th><th>Job Type</th>' +
-      '<th>Description</th><th class="num">Billable Hours</th><th>Designer</th><th>Remarks</th>' +
+      '<th class="num">S.No</th><th>Date</th><th>Job Ref</th><th>Job #</th>' +
+      '<th>Job Type</th><th class="num">Billable Hours</th><th>Designer</th><th>Remarks</th>' +
       '</tr></thead><tbody>' +
       rowHtml +
       '<tr class="sub"><td colspan="5">TOTAL</td><td class="num">' + totalHours + '</td><td colspan="2"></td></tr>' +
