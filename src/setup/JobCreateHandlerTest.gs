@@ -13,6 +13,7 @@
 //   testJobCreateHandler_invalidPayload()
 //   testJobCreateHandler_wrongState()
 //   testJobCreateHandler_duplicate()
+//   testJobCreateHandler_duplicateJobNumber()
 //
 // Test actors:
 //   PM (JOB_CREATE allowed)  : sarty@blclotus.com  (TH_PM_EMAIL)
@@ -391,7 +392,128 @@ function testJobCreateHandler_duplicate() {
 }
 
 // ============================================================
-// RUNNER — executes all 5 tests and prints combined summary
+// TEST 6 — Duplicate Job Number Guard
+// Pre-insert a VW row for the next job_number that the sequence
+// counter would allocate, then submit a fresh JOB_CREATE.
+// The guard must block the write and return DUPLICATE_JOB_NUMBER.
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testJobCreateHandler_duplicateJobNumber() {
+  var results  = [];
+  var counters = { passed: 0, failed: 0 };
+
+  try {
+    clearStalePendingItems_();
+    DAL._resetApiCallCount();
+
+    // ── Step 1: Read current sequence to predict next job_number ─
+    var seqRows = DAL.readWhere(
+      Config.TABLES.DIM_SEQUENCE_COUNTERS,
+      { counter_name: 'JOB_NUMBER' },
+      { callerModule: 'JobCreateHandlerTest' }
+    );
+    assertH_(results, counters, 'Sequence counter row exists', seqRows.length > 0,
+      'seqRows.length=' + seqRows.length);
+    if (seqRows.length === 0) {
+      printResultsH_('testJobCreateHandler_duplicateJobNumber', results, counters);
+      return counters;
+    }
+
+    var currentSeq    = parseInt(seqRows[0].current_value, 10);
+    var nextJobNumber = Identifiers.generateJobId(currentSeq + 1);
+
+    // ── Step 2: Pre-insert a VW row for that job_number ─────────
+    DAL.appendRow(
+      Config.TABLES.VW_JOB_CURRENT_STATE,
+      {
+        job_number:          nextJobNumber,
+        client_code:         TH_CLIENT_CODE,
+        job_type:            'DESIGN',
+        product_code:        TH_PRODUCT_CODE,
+        quantity:            1,
+        current_state:       Config.STATES.INTAKE_RECEIVED,
+        prev_state:          '',
+        allocated_to:        '',
+        period_id:           TH_PERIOD_ID,
+        created_at:          new Date().toISOString(),
+        updated_at:          new Date().toISOString(),
+        rework_cycle:        0,
+        minor_rework_count:  0,
+        major_rework_count:  0,
+        client_return_count: 0,
+        qc_reviewer_code:    '',
+        client_job_ref:      'TEST-PREINSERTED',
+        target_date:         ''
+      },
+      { callerModule: 'JobCreateHandlerTest' }
+    );
+
+    // ── Step 3: Submit a fresh JOB_CREATE ───────────────────────
+    var createResult = IntakeService.processSubmission({
+      formType:       Config.FORM_TYPES.JOB_CREATE,
+      submitterEmail: TH_PM_EMAIL,
+      payload: {
+        client_code:  TH_CLIENT_CODE,
+        job_type:     'DESIGN',
+        product_code: TH_PRODUCT_CODE,
+        quantity:     1,
+        notes:        'JobCreateHandlerTest duplicateJobNumber'
+      },
+      source: 'TEST'
+    });
+    assertH_(results, counters, 'IntakeService returns ok=true',
+      createResult.ok === true, JSON.stringify(createResult));
+
+    processQueueFresh_();
+
+    // ── Step 4: Queue item must be COMPLETED (guard returned, did not throw) ─
+    var queueItems = DAL.readWhere(
+      Config.TABLES.STG_PROCESSING_QUEUE,
+      { queue_id: createResult.queueId },
+      { callerModule: 'JobCreateHandlerTest' }
+    );
+    var queueItem = queueItems.length > 0 ? queueItems[0] : null;
+    assertH_(results, counters, 'Queue item exists', !!queueItem,
+      'queueId=' + createResult.queueId);
+    assertH_(results, counters, 'Queue item COMPLETED (guard used return, not throw)',
+      queueItem && queueItem.status === 'COMPLETED',
+      queueItem ? queueItem.status : 'null');
+
+    // ── Step 5: VW has exactly 1 row for nextJobNumber (the pre-inserted one) ─
+    var vwRows = DAL.readWhere(
+      Config.TABLES.VW_JOB_CURRENT_STATE,
+      { job_number: nextJobNumber },
+      { callerModule: 'JobCreateHandlerTest' }
+    );
+    assertH_(results, counters, 'VW has exactly 1 row for job_number (no duplicate written)',
+      vwRows.length === 1, 'vwRows.length=' + vwRows.length);
+    assertH_(results, counters, 'VW row is the pre-inserted sentinel (client_job_ref=TEST-PREINSERTED)',
+      vwRows.length > 0 && vwRows[0].client_job_ref === 'TEST-PREINSERTED',
+      vwRows.length > 0 ? String(vwRows[0].client_job_ref) : 'null');
+
+    // ── Step 6: No FACT_JOB_EVENTS row written for nextJobNumber ─
+    var factRows = DAL.readWhere(
+      Config.TABLES.FACT_JOB_EVENTS,
+      { job_number: nextJobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'JobCreateHandlerTest' }
+    );
+    assertH_(results, counters, 'No FACT_JOB_EVENTS row written for blocked job_number',
+      factRows.length === 0, 'factRows.length=' + factRows.length);
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+
+  printResultsH_('testJobCreateHandler_duplicateJobNumber', results, counters);
+  return counters;
+}
+
+// ============================================================
+// RUNNER — executes all 6 tests and prints combined summary
 // ============================================================
 
 /**
@@ -414,7 +536,8 @@ function runJobCreateTests() {
     testJobCreateHandler_rbacDenial,
     testJobCreateHandler_invalidPayload,
     testJobCreateHandler_wrongState,
-    testJobCreateHandler_duplicate
+    testJobCreateHandler_duplicate,
+    testJobCreateHandler_duplicateJobNumber
   ];
 
   for (var i = 0; i < tests.length; i++) {

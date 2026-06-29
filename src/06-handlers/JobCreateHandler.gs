@@ -411,6 +411,33 @@ var JobCreateHandler = (function () {
       sequence:   sequence
     });
 
+    // ── Step 4.5: Dedup guard — block if job_number already in VW ──
+    // The idempotency check in Step 3 prevents same-queue-item replays.
+    // This guard catches the rarer cross-source collision: a migration
+    // replay, a manual counter reset, or a sequence bug that produces a
+    // job_number already live in VW_JOB_CURRENT_STATE. The sequence
+    // counter was already incremented above — a gap in the sequence is
+    // acceptable and harmless.
+    var existingVwRows = DAL.readWhere(
+      Config.TABLES.VW_JOB_CURRENT_STATE,
+      { job_number: jobNumber },
+      { callerModule: 'JobCreateHandler' }
+    );
+    if (existingVwRows.length > 0) {
+      var existingJob = existingVwRows[0];
+      Logger.warn('JOB_CREATE_DUPLICATE_JOB_NUMBER', {
+        module:              'JobCreateHandler',
+        message:             'Job ' + jobNumber + ' already exists in state ' +
+                             existingJob.current_state + ', created ' +
+                             existingJob.created_at + '. Duplicate creation blocked.',
+        job_number:          jobNumber,
+        queue_id:            queueId,
+        existing_state:      existingJob.current_state,
+        existing_created_at: existingJob.created_at
+      });
+      return 'DUPLICATE_JOB_NUMBER';
+    }
+
     // ── Step 5: Ensure FACT_JOB_EVENTS partition exists ────
     var periodId = Identifiers.generateCurrentPeriodId();
 
