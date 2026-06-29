@@ -120,8 +120,6 @@ var ClientTimesheetEngine = (function () {
   }
 
   // { client_code → { client_name, address } }
-  // Address is the first pipe-delimited segment of the notes field:
-  //   "address | contact | terms | tax"
   function loadClientMap_() {
     var map = {};
     try {
@@ -130,10 +128,9 @@ var ClientTimesheetEngine = (function () {
         var r  = rows[i];
         var cc = String(r.client_code || '').trim().toUpperCase();
         if (!cc) continue;
-        var address = String(r.notes || '').split('|')[0].trim();
         map[cc] = {
           client_name: String(r.client_name || cc),
-          address:     address
+          address:     String(r.address     || '')
         };
       }
     } catch (e) { /* return empty map */ }
