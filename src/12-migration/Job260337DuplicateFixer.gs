@@ -23,8 +23,11 @@ var Job260337DuplicateFixer = (function() {
   var JOB_NUM   = '260337';
   var CLIENT    = 'NELSON';
 
+  var AUDIT_TAB = '_TEMP_AUDIT_260337';
+
   /**
-   * Dry run — logs both VW rows for 260337. No data changes.
+   * Dry run — writes both VW rows for 260337 side-by-side to _TEMP_AUDIT_260337.
+   * No changes to any FACT or VW table.
    * @param {string} actorEmail
    */
   function runAudit(actorEmail) {
@@ -36,30 +39,60 @@ var Job260337DuplicateFixer = (function() {
       return String(r.job_number || '') === JOB_NUM;
     });
 
-    Logger.info('JOB260337_AUDIT', {
-      module:    MODULE,
-      rowsFound: matches.length,
-      rows:      matches.map(function(r) {
-        return {
-          current_state: r.current_state,
-          allocated_to:  r.allocated_to,
-          created_at:    r.created_at,
-          updated_at:    r.updated_at
-        };
-      })
+    Logger.info('JOB260337_AUDIT', { module: MODULE, rowsFound: matches.length });
+
+    // Sort oldest first so Row 1 = migration row, Row 2 = portal re-entry
+    matches.sort(function(a, b) {
+      var da = new Date(a.created_at), db = new Date(b.created_at);
+      if (!isNaN(da) && !isNaN(db)) return da - db;
+      return a.created_at < b.created_at ? -1 : 1;
     });
 
+    // Build union of all field names across both rows, preserving insertion order
+    var fieldSet = {}, fields = [];
+    matches.forEach(function(r) {
+      Object.keys(r).forEach(function(k) {
+        if (!fieldSet[k]) { fieldSet[k] = true; fields.push(k); }
+      });
+    });
+
+    var row1 = matches[0] || {};
+    var row2 = matches[1] || {};
+
+    var sheetData = [];
+    // Header
+    sheetData.push([
+      'Field',
+      'Row 1 — Older (Migration / keep)',
+      'Row 2 — Newer (Portal re-entry / void candidate)'
+    ]);
+    // One row per field
+    fields.forEach(function(f) {
+      sheetData.push([f, String(row1[f] !== undefined ? row1[f] : ''), String(row2[f] !== undefined ? row2[f] : '')]);
+    });
+    // Status banner at bottom
+    sheetData.push([]);
     if (matches.length !== 2) {
-      Logger.warn('JOB260337_AUDIT_UNEXPECTED', {
-        module: MODULE,
-        message: 'Expected exactly 2 rows, found ' + matches.length + '. Check before running fix.'
-      });
+      sheetData.push(['STATUS', 'WARNING: Expected 2 rows, found ' + matches.length + '. Do not run fix.', '']);
     } else {
-      Logger.info('JOB260337_AUDIT_READY', {
-        module:  MODULE,
-        message: 'Two rows found. Run runJob260337Fix() to void the duplicate (newer row).'
-      });
+      sheetData.push(['STATUS', 'Two rows confirmed. Run runJob260337Fix() to void Row 2.', '']);
     }
+
+    // Direct SpreadsheetApp: _TEMP_AUDIT_260337 is a one-time diagnostic output tab,
+    // not a FACT table. DAL does not support tab creation or arbitrary-layout writes.
+    var ss   = SpreadsheetApp.getActiveSpreadsheet();
+    var tab  = ss.getSheetByName(AUDIT_TAB);
+    if (tab) {
+      tab.clearContents();
+    } else {
+      tab = ss.insertSheet(AUDIT_TAB);
+    }
+    tab.getRange(1, 1, sheetData.length, 3).setValues(sheetData);
+    tab.getRange(1, 1, 1, 3).setFontWeight('bold');
+    tab.setFrozenRows(1);
+    tab.autoResizeColumns(1, 3);
+
+    Logger.info('JOB260337_AUDIT_WRITTEN', { module: MODULE, tab: AUDIT_TAB, rows: sheetData.length });
   }
 
   /**
@@ -171,11 +204,11 @@ var Job260337DuplicateFixer = (function() {
 
 // ── Top-level runners ─────────────────────────────────────────
 
-/** Audit: log both VW rows for 260337 (no changes). */
+/** Audit: writes both VW rows for 260337 side-by-side to _TEMP_AUDIT_260337. No data changes. */
 function runJob260337Audit() {
   var email = Session.getActiveUser().getEmail();
   Job260337DuplicateFixer.runAudit(email);
-  console.log('Job 260337 audit complete — check Apps Script logs.');
+  console.log('Job 260337 audit complete — open _TEMP_AUDIT_260337 tab in the spreadsheet.');
 }
 
 /** Fix: void the duplicate (newer) VW row for job 260337. Run audit first. */
