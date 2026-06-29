@@ -211,7 +211,7 @@ var ClientTimesheetEngine = (function () {
       if (wd < fromYMD || wd > toYMD) continue;
       var jn  = String(row.job_number || '').trim().split(/\s+/)[0];
       var hrs = parseFloat(row.hours);
-      if (!jn || isNaN(hrs) || hrs <= 0) continue;
+      if (!jn || isNaN(hrs) || hrs === 0) continue;
       var job = jobMap[jn];
       if (!job) continue;
       if (String(job.client_code || '').toUpperCase().trim() !== cc) continue;
