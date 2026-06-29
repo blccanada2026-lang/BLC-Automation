@@ -71,7 +71,7 @@ var Job260337DuplicateFixer = (function() {
       sheetData.push([f, String(row1[f] !== undefined ? row1[f] : ''), String(row2[f] !== undefined ? row2[f] : '')]);
     });
     // Status banner at bottom
-    sheetData.push([]);
+    sheetData.push(['', '', '']);
     if (matches.length !== 2) {
       sheetData.push(['STATUS', 'WARNING: Expected 2 rows, found ' + matches.length + '. Do not run fix.', '']);
     } else {
