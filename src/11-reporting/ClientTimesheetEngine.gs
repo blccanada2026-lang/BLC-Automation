@@ -183,22 +183,27 @@ var ClientTimesheetEngine = (function () {
     return byJobDesigner;
   }
 
-  // Per-row work log entries for a single client — used by PDF timesheet.
+  // Aggregated work log entries for a single client — used by PDF timesheet.
+  // Aggregates by (job_number, designer_code) so WORK_LOG_AMENDED correction rows
+  // net against originals before output. Excludes zero-hour and negative-net rows.
   // Each element: { work_date, job_number, job_type, client_job_ref, designer_code, hours, notes }
-  // Applies same exclusion rules as buildHoursMap_ (migration_batch, SUPERSEDED_MIGRATED).
+  // work_date = earliest positive-hour date for that (job, designer) pair.
+  // notes = unique non-empty notes joined with '; '.
   function buildWorkLogEntries_(monthPartition, fromDate, toDate, year, clientCode, jobMap) {
-    var entries = [];
-    var rows    = [];
+    var rows = [];
     try {
       rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
         callerModule: MODULE,
         periodId:     monthPartition
       });
-    } catch (e) { return entries; }
+    } catch (e) { return []; }
 
     var SUPERSEDED_MIGRATED = { 'BTD': true, 'SNA': true };
     var fromYMD = ymd_(fromDate), toYMD = ymd_(toDate);
     var cc      = (clientCode || '').toUpperCase().trim();
+
+    // Accumulator keyed by "job_number\x00designer_code"
+    var agg = {};
 
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
@@ -215,17 +220,46 @@ var ClientTimesheetEngine = (function () {
       var job = jobMap[jn];
       if (!job) continue;
       if (String(job.client_code || '').toUpperCase().trim() !== cc) continue;
+
+      var ac  = String(row.actor_code || '').trim().toUpperCase();
+      var key = jn + '\x00' + ac;
+      if (!agg[key]) {
+        agg[key] = { job: job, job_number: jn, designer_code: ac, minDate: d, hours: 0, notes: {} };
+      } else if (hrs > 0 && d < agg[key].minDate) {
+        agg[key].minDate = d;
+      }
+      agg[key].hours += hrs;
+      var note = String(row.notes || '').trim();
+      if (note) agg[key].notes[note] = true;
+    }
+
+    // Flatten: exclude zero-net and negative-net rows
+    var entries = [];
+    var keys    = Object.keys(agg);
+    for (var k = 0; k < keys.length; k++) {
+      var a   = agg[keys[k]];
+      var net = Math.round(a.hours * 100) / 100;
+      if (net <= 0) continue;
       entries.push({
-        work_date:      d,
-        job_number:     jn,
-        job_type:       String(job.job_type       || ''),
-        client_job_ref: String(job.client_job_ref || ''),
-        designer_code:  String(row.actor_code     || '').trim().toUpperCase(),
-        hours:          Math.round(hrs * 100) / 100,
-        notes:          String(row.notes          || '')
+        work_date:      a.minDate,
+        job_number:     a.job_number,
+        job_type:       String(a.job.job_type       || ''),
+        client_job_ref: String(a.job.client_job_ref || ''),
+        designer_code:  a.designer_code,
+        hours:          net,
+        notes:          Object.keys(a.notes).join('; ')
       });
     }
     return entries;
+  }
+
+  // Public wrapper for testability — returns entries without generating a PDF.
+  function getEntries_(clientCode, periodId) {
+    periodId   = periodId || currentPeriod_();
+    var cc     = (clientCode || '').toUpperCase().trim();
+    var period = parsePeriod_(periodId);
+    var jobMap = loadJobMap_();
+    return buildWorkLogEntries_(period.monthPartition, period.fromDate, period.toDate, period.year, cc, jobMap);
   }
 
   // ── Main generate function ───────────────────────────────────
@@ -506,7 +540,8 @@ var ClientTimesheetEngine = (function () {
   // ── PUBLIC API ───────────────────────────────────────────────
   return {
     generate:           generate,
-    generateForClient:  generateForClient_
+    generateForClient:  generateForClient_,
+    getEntries:         getEntries_
   };
 
 }());
@@ -522,17 +557,41 @@ var ClientTimesheetEngine = (function () {
  * @param {string} [periodId]  e.g. '2026-06A'. Defaults to current period.
  */
 function runGenerateClientTimesheets(periodId) {
-  var pid    = periodId || '2026-06A';
+  if (!periodId) {
+    var _n = new Date();
+    var _m = (_n.getMonth() + 1 < 10 ? '0' : '') + (_n.getMonth() + 1);
+    periodId = _n.getFullYear() + '-' + _m + (_n.getDate() <= 15 ? 'A' : 'B');
+  }
+  var pid    = periodId;
   var result = ClientTimesheetEngine.generate(pid);
-  var clients = Object.keys(result.clients);
-  console.log('=== Client Timesheet: ' + pid + ' ===');
+  var clients = Object.keys(result.clients).sort();
+
+  console.log('=== Flat Timesheet: ' + pid + ' (' + clients.length + ' clients) ===');
   for (var i = 0; i < clients.length; i++) {
     var cc    = clients[i];
     var cdata = result.clients[cc];
     console.log(cc + ': ' + cdata.totalHours + ' hrs | ' + cdata.currency + ' ' + cdata.totalAmount +
                 ' (' + cdata.rows.length + ' jobs)');
   }
-  console.log('Sheet written: TIMESHEET|' + pid);
+
+  console.log('\n=== Generating per-client PDFs ===');
+  var success = 0, skipped = 0;
+  for (var j = 0; j < clients.length; j++) {
+    var cc2 = clients[j];
+    try {
+      var pdf = ClientTimesheetEngine.generateForClient(cc2, pid);
+      if (pdf) {
+        console.log('[PDF] ' + cc2 + ' — ' + pdf.entries + ' entries → ' + pdf.driveUrl);
+        success++;
+      } else {
+        console.log('[SKIP] ' + cc2 + ' — no billable entries');
+        skipped++;
+      }
+    } catch (e) {
+      console.log('[ERROR] ' + cc2 + ' — ' + e.message);
+    }
+  }
+  console.log('\n=== Done: ' + success + ' PDFs generated, ' + skipped + ' skipped ===');
 }
 
 /**
