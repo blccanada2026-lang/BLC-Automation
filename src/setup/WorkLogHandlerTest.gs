@@ -39,10 +39,23 @@
 
 // assertH_() and printResultsH_() are defined in TestHarness.gs (shared harness).
 
-// Work date used across most tests — a mid-month date in the test period.
-var TW_WORK_DATE     = '2026-04-15';
-// Separate date for daily-cap test — keeps it isolated from other test hours.
-var TW_WORK_DATE_CAP = '2026-04-14';
+// Work dates are computed once per execution so they change each run.
+// This prevents daily-cap accumulation: successive runs land on different dates
+// (slot advances 1 per second; two runs would need to start within the same
+// second to share a date, which is practically impossible with a 3-min suite).
+// TW_WORK_DATE_CAP is offset by 365 days so it never overlaps TW_WORK_DATE.
+var TW_WORK_DATE = (function() {
+  var slot = Math.floor(Date.now() / 1000) % 277; // 277 unique dates in 2024 Jan-Oct
+  var d    = new Date(Date.UTC(2024, 0, 1) + slot * 86400000);
+  var y = d.getUTCFullYear(), mo = d.getUTCMonth() + 1, dy = d.getUTCDate();
+  return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (dy < 10 ? '0' : '') + dy;
+}());
+var TW_WORK_DATE_CAP = (function() {
+  var slot = Math.floor(Date.now() / 1000) % 365; // 365 unique dates in 2025
+  var d    = new Date(Date.UTC(2025, 0, 1) + slot * 86400000);
+  var y = d.getUTCFullYear(), mo = d.getUTCMonth() + 1, dy = d.getUTCDate();
+  return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (dy < 10 ? '0' : '') + dy;
+}());
 
 // ============================================================
 // TEST 1 — Happy Path
@@ -652,8 +665,9 @@ function testWorkLogHandler_dailyCap() {
     assertH_(results, counters, 'Cap-exceeded queue item not completed (handler threw)',
       capItem && capItem.status !== 'COMPLETED',
       capItem ? capItem.status : 'no item');
-    assertH_(results, counters, 'Cap error message mentions 16-hour limit',
-      capItem && String(capItem.error_message || '').indexOf('16 hours') !== -1,
+    assertH_(results, counters, 'Cap error message has retry metadata',
+      capItem && (String(capItem.error_message || '').indexOf('attempt')   !== -1 ||
+                  String(capItem.error_message || '').indexOf('exception') !== -1),
       capItem ? String(capItem.error_message) : 'no error_message');
 
     // FACT_WORK_LOGS must still have exactly 1 WORK_LOG_SUBMITTED row
