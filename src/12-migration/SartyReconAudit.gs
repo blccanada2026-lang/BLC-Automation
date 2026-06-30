@@ -43,7 +43,7 @@ var SARTY_DATA_ = [
 var CLIENT_ALIASES_SR_ = {
   'SBS':     ['SBS'],
   'NORSPAN': ['NORSPAN', 'NORSPAN-MB'],
-  'MATIX':   ['MATIX'],
+  'MATIX':   ['MATIX', 'MATIX-SK'],
   'ALBERTA': ['ALBERTA', 'ALBERTA TRUSS', 'ALBERTATRUSS', 'ALBERTA-TRUSS'],
   'NELSON':  ['NELSON']
 };
