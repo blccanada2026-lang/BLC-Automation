@@ -5,7 +5,7 @@
 // LOAD ORDER: Setup tier — loads after all T0–T7 files.
 //
 // HOW TO RUN (Apps Script editor):
-//   runWorkLogTests()  — all 5 tests, summary at end
+//   runWorkLogTests()  — all 7 tests, summary at end
 //
 // Individual tests:
 //   testWorkLogHandler_happyPath()
@@ -13,6 +13,8 @@
 //   testWorkLogHandler_invalidPayload()
 //   testWorkLogHandler_wrongState()
 //   testWorkLogHandler_duplicate()
+//   testWorkLogHandler_contentDuplicate()
+//   testWorkLogHandler_dailyCap()
 //
 // Test actors:
 //   DESIGNER (WORK_LOG_SUBMIT allowed) : designer@blclotus.com  (TH_DESIGNER_EMAIL)
@@ -37,8 +39,10 @@
 
 // assertH_() and printResultsH_() are defined in TestHarness.gs (shared harness).
 
-// Work date used across all tests — a mid-month date in the test period.
-var TW_WORK_DATE = '2026-04-15';
+// Work date used across most tests — a mid-month date in the test period.
+var TW_WORK_DATE     = '2026-04-15';
+// Separate date for daily-cap test — keeps it isolated from other test hours.
+var TW_WORK_DATE_CAP = '2026-04-14';
 
 // ============================================================
 // TEST 1 — Happy Path
@@ -470,7 +474,212 @@ function testWorkLogHandler_duplicate() {
 }
 
 // ============================================================
-// RUNNER — executes all 5 tests and prints combined summary
+// TEST 6 — Content-based Duplicate Guard
+// Submit identical job+date+hours twice via the full queue flow
+// (two distinct queue_ids, so queue-level idempotency does not
+// fire). Second must be silently skipped; FACT_WORK_LOGS must
+// still contain exactly 1 WORK_LOG_SUBMITTED row for the job.
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testWorkLogHandler_contentDuplicate() {
+  var results  = [];
+  var counters = { passed: 0, failed: 0 };
+
+  try {
+    var jobNumber = thSetupInProgressJob_('wl-content-dupe');
+    if (!jobNumber) {
+      results.push('  SKIP: setup failed');
+      counters.failed++;
+      printResultsH_('testWorkLogHandler_contentDuplicate', results, counters);
+      return counters;
+    }
+
+    DAL._resetApiCallCount();
+
+    // ── First submission — must succeed ─────────────────────
+    IntakeService.processSubmission({
+      formType:       Config.FORM_TYPES.WORK_LOG,
+      submitterEmail: TH_DESIGNER_EMAIL,
+      payload: {
+        job_number: jobNumber,
+        hours:      5.0,
+        work_date:  TW_WORK_DATE,
+        notes:      'WorkLogHandlerTest contentDuplicate first'
+      },
+      source: 'TEST'
+    });
+    processQueueFresh_();
+
+    var logsAfterFirst = DAL.readWhere(
+      Config.TABLES.FACT_WORK_LOGS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'WorkLogHandlerTest' }
+    );
+    var countAfterFirst = 0;
+    for (var i = 0; i < logsAfterFirst.length; i++) {
+      if (logsAfterFirst[i].event_type === Constants.EVENT_TYPES.WORK_LOG_SUBMITTED) countAfterFirst++;
+    }
+    assertH_(results, counters, 'First submission written to FACT_WORK_LOGS',
+      countAfterFirst === 1, 'count=' + countAfterFirst);
+
+    // ── Second submission — same job + date + hours ──────────
+    // Different queue_id → different idempotency key → queue-level
+    // dedup does NOT fire. Content dedup guard should block this.
+    var secondResult = IntakeService.processSubmission({
+      formType:       Config.FORM_TYPES.WORK_LOG,
+      submitterEmail: TH_DESIGNER_EMAIL,
+      payload: {
+        job_number: jobNumber,
+        hours:      5.0,
+        work_date:  TW_WORK_DATE,
+        notes:      'WorkLogHandlerTest contentDuplicate second'
+      },
+      source: 'TEST'
+    });
+    processQueueFresh_();
+
+    // Content dedup returns DUPLICATE_WORK_LOG (no throw) so queue item is COMPLETED
+    var secondItems = DAL.readWhere(
+      Config.TABLES.STG_PROCESSING_QUEUE,
+      { queue_id: secondResult.queueId },
+      { callerModule: 'WorkLogHandlerTest' }
+    );
+    var secondItem = secondItems.length > 0 ? secondItems[0] : null;
+    assertH_(results, counters, 'Content duplicate queue item processed without error',
+      secondItem && secondItem.status === 'COMPLETED',
+      secondItem ? secondItem.status : 'no item');
+
+    // Row count must still be exactly 1
+    var logsAfterSecond = DAL.readWhere(
+      Config.TABLES.FACT_WORK_LOGS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'WorkLogHandlerTest' }
+    );
+    var countAfterSecond = 0;
+    for (var j = 0; j < logsAfterSecond.length; j++) {
+      if (logsAfterSecond[j].event_type === Constants.EVENT_TYPES.WORK_LOG_SUBMITTED) countAfterSecond++;
+    }
+    assertH_(results, counters, 'No duplicate FACT_WORK_LOGS row written (content dedup blocked second)',
+      countAfterSecond === 1, 'count=' + countAfterSecond);
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+
+  printResultsH_('testWorkLogHandler_contentDuplicate', results, counters);
+  return counters;
+}
+
+// ============================================================
+// TEST 7 — Daily Hours Cap
+// Log 14h on TW_WORK_DATE_CAP via the queue, then attempt 4h
+// more on the same date (total 18h > 16h cap). Handler must
+// throw; queue item stays non-COMPLETED; only the first
+// WORK_LOG_SUBMITTED row must exist in FACT_WORK_LOGS.
+//
+// TW_WORK_DATE_CAP is a separate date to avoid accumulation
+// from other tests that also use TH_DESIGNER_CODE.
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testWorkLogHandler_dailyCap() {
+  var results  = [];
+  var counters = { passed: 0, failed: 0 };
+
+  try {
+    var jobNumber = thSetupInProgressJob_('wl-cap');
+    if (!jobNumber) {
+      results.push('  SKIP: setup failed');
+      counters.failed++;
+      printResultsH_('testWorkLogHandler_dailyCap', results, counters);
+      return counters;
+    }
+
+    DAL._resetApiCallCount();
+
+    // ── First submission: 14h — must succeed ────────────────
+    IntakeService.processSubmission({
+      formType:       Config.FORM_TYPES.WORK_LOG,
+      submitterEmail: TH_DESIGNER_EMAIL,
+      payload: {
+        job_number: jobNumber,
+        hours:      14,
+        work_date:  TW_WORK_DATE_CAP,
+        notes:      'WorkLogHandlerTest dailyCap first (14h)'
+      },
+      source: 'TEST'
+    });
+    processQueueFresh_();
+
+    var logsAfterFirst = DAL.readWhere(
+      Config.TABLES.FACT_WORK_LOGS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'WorkLogHandlerTest' }
+    );
+    var countAfterFirst = 0;
+    for (var i = 0; i < logsAfterFirst.length; i++) {
+      if (logsAfterFirst[i].event_type === Constants.EVENT_TYPES.WORK_LOG_SUBMITTED) countAfterFirst++;
+    }
+    assertH_(results, counters, '14h first submission written to FACT_WORK_LOGS',
+      countAfterFirst === 1, 'count=' + countAfterFirst);
+
+    // ── Second submission: 4h — must be rejected by daily cap
+    var capResult = IntakeService.processSubmission({
+      formType:       Config.FORM_TYPES.WORK_LOG,
+      submitterEmail: TH_DESIGNER_EMAIL,
+      payload: {
+        job_number: jobNumber,
+        hours:      4,
+        work_date:  TW_WORK_DATE_CAP,
+        notes:      'WorkLogHandlerTest dailyCap second (4h — should be rejected)'
+      },
+      source: 'TEST'
+    });
+    processQueueFresh_();
+
+    var capItems = DAL.readWhere(
+      Config.TABLES.STG_PROCESSING_QUEUE,
+      { queue_id: capResult.queueId },
+      { callerModule: 'WorkLogHandlerTest' }
+    );
+    var capItem = capItems.length > 0 ? capItems[0] : null;
+    assertH_(results, counters, 'Cap-exceeded queue item not completed (handler threw)',
+      capItem && capItem.status !== 'COMPLETED',
+      capItem ? capItem.status : 'no item');
+    assertH_(results, counters, 'Cap error message mentions 16-hour limit',
+      capItem && String(capItem.error_message || '').indexOf('16 hours') !== -1,
+      capItem ? String(capItem.error_message) : 'no error_message');
+
+    // FACT_WORK_LOGS must still have exactly 1 WORK_LOG_SUBMITTED row
+    var logsAfterCap = DAL.readWhere(
+      Config.TABLES.FACT_WORK_LOGS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'WorkLogHandlerTest' }
+    );
+    var countAfterCap = 0;
+    for (var j = 0; j < logsAfterCap.length; j++) {
+      if (logsAfterCap[j].event_type === Constants.EVENT_TYPES.WORK_LOG_SUBMITTED) countAfterCap++;
+    }
+    assertH_(results, counters, 'No over-cap FACT_WORK_LOGS row written (daily cap blocked second)',
+      countAfterCap === 1, 'count=' + countAfterCap);
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+
+  printResultsH_('testWorkLogHandler_dailyCap', results, counters);
+  return counters;
+}
+
+// ============================================================
+// RUNNER — executes all 7 tests and prints combined summary
 // ============================================================
 
 /**
@@ -482,7 +691,7 @@ function testWorkLogHandler_duplicate() {
 function runWorkLogTests() {
   console.log('');
   console.log('═══════════════════════════════════════════════════════');
-  console.log('  WORK LOG HANDLER TEST SUITE');
+  console.log('  WORK LOG HANDLER TEST SUITE (7 tests)');
   console.log('═══════════════════════════════════════════════════════');
 
   seedTestStaff();
@@ -493,7 +702,9 @@ function runWorkLogTests() {
     testWorkLogHandler_rbacDenial,
     testWorkLogHandler_invalidPayload,
     testWorkLogHandler_wrongState,
-    testWorkLogHandler_duplicate
+    testWorkLogHandler_duplicate,
+    testWorkLogHandler_contentDuplicate,
+    testWorkLogHandler_dailyCap
   ];
 
   for (var i = 0; i < tests.length; i++) {

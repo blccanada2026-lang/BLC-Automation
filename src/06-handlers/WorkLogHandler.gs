@@ -79,13 +79,14 @@ var WorkLogHandler = (function () {
   };
 
   // ============================================================
-  // SECTION 2: IDEMPOTENCY
+  // SECTION 2: DUPLICATE DETECTION
   // ============================================================
 
   function buildIdempotencyKey_(queueId) {
     return Identifiers.buildIdempotencyKey('WORK_LOG', queueId);
   }
 
+  // 2a — Queue-level idempotency (same queue_id redelivered)
   function isDuplicate_(idempotencyKey) {
     try {
       var periodId = Identifiers.generateCurrentPeriodId();
@@ -99,6 +100,72 @@ var WorkLogHandler = (function () {
       if (e.code === 'SHEET_NOT_FOUND') return false;
       throw e;
     }
+  }
+
+  // 2b — Normalise work_date value to 'YYYY-MM-DD' for comparison
+  function normWorkDate_(raw) {
+    if (!raw) return '';
+    if (raw instanceof Date) {
+      if (isNaN(raw.getTime())) return '';
+      var y = raw.getFullYear(), mo = raw.getMonth() + 1, d = raw.getDate();
+      return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (d < 10 ? '0' : '') + d;
+    }
+    var s   = String(raw).trim();
+    var iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
+    var p = new Date(s);
+    if (!isNaN(p.getTime())) {
+      var py = p.getFullYear(), pm = p.getMonth() + 1, pd = p.getDate();
+      return py + '-' + (pm < 10 ? '0' : '') + pm + '-' + (pd < 10 ? '0' : '') + pd;
+    }
+    return s;
+  }
+
+  // 2c — Read all FACT_WORK_LOGS rows for an actor in the current period
+  function getActorPeriodLogs_(actorCode, periodId) {
+    try {
+      return DAL.readWhere(
+        Config.TABLES.FACT_WORK_LOGS,
+        { actor_code: actorCode },
+        { periodId: periodId, callerModule: 'WorkLogHandler' }
+      );
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') return [];
+      throw e;
+    }
+  }
+
+  // 2d — Content-based duplicate: true if a WORK_LOG_SUBMITTED row already
+  // exists with exact match on job_number + work_date + hours.
+  // NOTE: if a prior submission was voided via WorkLogDedupFixer the original
+  // WORK_LOG_SUBMITTED row still exists (FACT tables are append-only).
+  // A legitimate resubmit after a void will be blocked and requires
+  // staff to clear via the DAL audit trail.
+  function isContentDuplicate_(actorLogs, jobNumber, workDate, hours) {
+    for (var i = 0; i < actorLogs.length; i++) {
+      var r = actorLogs[i];
+      if (String(r.event_type || '') !== Constants.EVENT_TYPES.WORK_LOG_SUBMITTED) continue;
+      if (String(r.job_number  || '').trim() !== jobNumber)    continue;
+      if (parseFloat(r.hours)               !== hours)         continue;
+      if (normWorkDate_(r.work_date)         !== workDate)      continue;
+      return true;
+    }
+    return false;
+  }
+
+  // 2e — Net hours already logged by this actor on work_date in the current
+  // period (excludes migration rows; includes void events so duplicates
+  // already voided reduce the running total).
+  function getDailyNetHours_(actorLogs, workDate) {
+    var total = 0;
+    for (var i = 0; i < actorLogs.length; i++) {
+      var r = actorLogs[i];
+      if (r.migration_batch) continue;
+      if (String(r.event_type || '') === 'WORK_LOG_MIGRATED') continue;
+      if (normWorkDate_(r.work_date) !== workDate) continue;
+      total += parseFloat(r.hours) || 0;
+    }
+    return Math.max(0, Math.round(total * 100) / 100);
   }
 
   // ============================================================
@@ -229,8 +296,34 @@ var WorkLogHandler = (function () {
       return 'DUPLICATE';
     }
 
+    // ── Step 5c: Content-based duplicate guard ──────────────
+    var periodId  = Identifiers.generateCurrentPeriodId();
+    var actorCode = String(actor.personCode || '');
+    var actorLogs = getActorPeriodLogs_(actorCode, periodId);
+
+    if (isContentDuplicate_(actorLogs, jobNumber, cleanPayload.work_date, cleanPayload.hours)) {
+      Logger.warn('WORK_LOG_CONTENT_DUPLICATE', {
+        module:     'WorkLogHandler',
+        message:    'Content-based duplicate — skipping',
+        actor_code: actorCode,
+        job_number: jobNumber,
+        work_date:  cleanPayload.work_date,
+        hours:      cleanPayload.hours
+      });
+      return 'DUPLICATE_WORK_LOG';
+    }
+
+    // ── Step 5d: Daily hours cap ────────────────────────────
+    var DAILY_HOURS_CAP = 16;
+    var dailyTotal = getDailyNetHours_(actorLogs, cleanPayload.work_date);
+    if (dailyTotal + cleanPayload.hours > DAILY_HOURS_CAP) {
+      throw new Error(
+        'Daily total would exceed 16 hours. Please verify. ' +
+        '(Already logged: ' + dailyTotal + 'h, Submitting: ' + cleanPayload.hours + 'h)'
+      );
+    }
+
     // ── Step 6: Ensure FACT_WORK_LOGS partition ─────────────
-    var periodId = Identifiers.generateCurrentPeriodId();
     DAL.ensurePartition(Config.TABLES.FACT_WORK_LOGS, periodId, 'WorkLogHandler');
 
     // ── Step 7: Write WORK_LOG_SUBMITTED ────────────────────
