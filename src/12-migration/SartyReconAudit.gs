@@ -50,6 +50,16 @@ var CLIENT_ALIASES_SR_ = {
 
 var SUPERSEDED_SR_ = { 'BTD': true, 'SNA': true };
 
+// CTO-confirmed overrides for nicknames that are ambiguous or not auto-matched.
+// Keys are lowercase nicknames; values are actor_codes. Checked before dynamic matching.
+var NICKNAME_OVERRIDES_SR_ = {
+  'sandy':    'SDA',
+  'abby':     'ABB',
+  'vani':     'VKV',
+  'ravi':     'RKG',
+  'abhishek': 'AR001'
+};
+
 /**
  * Reconciles Sarty's ground-truth totals against the timesheet engine
  * for the given period. Output → _TEMP_AUDIT_SARTY_RECON.
@@ -374,7 +384,15 @@ function runSartyRecon(periodId) {
 //   1 — first 2 chars match + lengths within 3 (weak, flags as ambiguous if tied)
 
 function matchNicknameSR_(nickname, staffByCode) {
-  var nick       = nickname.toLowerCase().trim();
+  var nick = nickname.toLowerCase().trim();
+
+  // CTO-confirmed override takes priority over dynamic matching
+  if (NICKNAME_OVERRIDES_SR_[nick]) {
+    var oc = NICKNAME_OVERRIDES_SR_[nick];
+    var os = staffByCode[oc];
+    return { status: 'MATCHED', actor_code: oc, name: os ? os.name : oc };
+  }
+
   var candidates = [];
   var seen       = {};
 
