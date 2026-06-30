@@ -136,7 +136,7 @@ function runWorkLogDedupFixer(dryRun) {
 
   // ── Write void events ────────────────────────────────────────
   if (toWrite.length > 0 && !dryRun) {
-    DAL.appendRows(Config.TABLES.FACT_WORK_LOGS, toWrite);
+    DAL.appendRows(Config.TABLES.FACT_WORK_LOGS, toWrite, { callerModule: MODULE });
     Logger.info('WORKLOG_DEDUP_FIXER_WRITTEN', { module: MODULE, count: toWrite.length });
   }
 
