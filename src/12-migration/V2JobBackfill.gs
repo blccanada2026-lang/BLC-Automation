@@ -83,6 +83,115 @@ function runV2JobBackfill() {
 }
 
 // ============================================================
+// State reset for 5 of the 7 backfilled jobs.
+// Run from Apps Script editor: runV2BackfillStateReset()
+//
+// What this does (in order):
+//   1. Logs pre-flight VW state for each of the 5 jobs
+//   2. VOIDs any IN_PROGRESS rows — these are the old-portal duplicates.
+//      VOID ≠ delete. Rows remain in VW but loadJobs_() filters them out.
+//   3. Flips each COMPLETED_BILLABLE row → IN_PROGRESS and sets allocated_to.
+//   4. Logs post-flight VW state to confirm.
+//
+// Idempotent: VOID step matches 0 rows if no IN_PROGRESS exists (no-op).
+//             Flip step matches 0 rows if already IN_PROGRESS (no-op).
+//
+// Assignments:
+//   2606-7985  SVN  (Savvy Nath — QC)
+//   2606-8093  BCH  (Bharath)
+//   2606-8087  BCH  (Bharath)
+//   Q260410    RKG  (Ravikumar)
+//   Q260421    RKG  (Ravikumar)
+// ============================================================
+
+function runV2BackfillStateReset() {
+  var MODULE = 'V2BackfillStateReset';
+
+  var RESETS = [
+    { job_number: '2606-7985', allocated_to: 'SVN' },
+    { job_number: '2606-8093', allocated_to: 'BCH' },
+    { job_number: '2606-8087', allocated_to: 'BCH' },
+    { job_number: 'Q260410',   allocated_to: 'RKG' },
+    { job_number: 'Q260421',   allocated_to: 'RKG' }
+  ];
+
+  var now = new Date().toISOString();
+
+  function groupByJobNumber_(rows) {
+    var g = {};
+    for (var i = 0; i < rows.length; i++) {
+      var jn = String(rows[i].job_number || '').trim();
+      if (!g[jn]) g[jn] = [];
+      g[jn].push(rows[i]);
+    }
+    return g;
+  }
+
+  function logJobRows_(label, grouped) {
+    console.log('[V2BackfillStateReset] === ' + label + ' ===');
+    for (var r = 0; r < RESETS.length; r++) {
+      var jn   = RESETS[r].job_number;
+      var rows = grouped[jn] || [];
+      console.log('[V2BackfillStateReset] ' + jn + ': ' + rows.length + ' row(s)');
+      for (var m = 0; m < rows.length; m++) {
+        console.log('   [' + (m + 1) + '] current_state=' + (rows[m].current_state || '(blank)') +
+                    '  allocated_to=' + (rows[m].allocated_to || '(blank)'));
+      }
+    }
+  }
+
+  // ── Pre-flight ───────────────────────────────────────────────
+  var vwBefore = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+  logJobRows_('PRE-FLIGHT STATE', groupByJobNumber_(vwBefore));
+
+  // ── Step 1: VOID IN_PROGRESS rows (old-portal duplicates) ───
+  var voidTotal = 0;
+  for (var v = 0; v < RESETS.length; v++) {
+    var jn = RESETS[v].job_number;
+    var res = DAL.updateWhere(
+      Config.TABLES.VW_JOB_CURRENT_STATE,
+      { job_number: jn, current_state: 'IN_PROGRESS' },
+      { current_state: 'VOIDED', updated_at: now },
+      { callerModule: MODULE }
+    );
+    if (res.updated > 0) {
+      console.log('[V2BackfillStateReset] VOIDED ' + res.updated + ' IN_PROGRESS row(s) for ' + jn +
+                  ' — row(s) hidden from portal, NOT deleted.');
+      voidTotal += res.updated;
+    } else {
+      console.log('[V2BackfillStateReset] VOID: no IN_PROGRESS rows found for ' + jn + ' (no-op).');
+    }
+  }
+
+  // ── Step 2: Flip COMPLETED_BILLABLE → IN_PROGRESS ───────────
+  var flipTotal = 0;
+  for (var f = 0; f < RESETS.length; f++) {
+    var jn       = RESETS[f].job_number;
+    var assignee = RESETS[f].allocated_to;
+    var res = DAL.updateWhere(
+      Config.TABLES.VW_JOB_CURRENT_STATE,
+      { job_number: jn, current_state: 'COMPLETED_BILLABLE' },
+      { current_state: 'IN_PROGRESS', allocated_to: assignee, updated_at: now },
+      { callerModule: MODULE }
+    );
+    if (res.updated > 0) {
+      console.log('[V2BackfillStateReset] FLIPPED ' + jn +
+                  ' COMPLETED_BILLABLE → IN_PROGRESS, allocated_to=' + assignee);
+      flipTotal++;
+    } else {
+      console.log('[V2BackfillStateReset] WARNING: no COMPLETED_BILLABLE row found for ' + jn +
+                  ' — flip skipped. Check VW manually.');
+    }
+  }
+
+  // ── Post-flight ──────────────────────────────────────────────
+  var vwAfter = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+  logJobRows_('POST-FLIGHT STATE', groupByJobNumber_(vwAfter));
+
+  console.log('[V2BackfillStateReset] Done. Voided: ' + voidTotal + '  Flipped: ' + flipTotal);
+}
+
+// ============================================================
 // Diagnostic: print current VW state for all 7 backfilled jobs.
 // Run from Apps Script editor: runV2BackfillAudit()
 // Read-only — no writes.
