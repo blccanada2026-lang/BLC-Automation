@@ -129,7 +129,7 @@ var DAL = (function () {
                               'JobHoldHandler', 'JobResumeHandler', 'ClientReturnHandler', 'QCHandler',
                               'QCReassignHandler', 'BillingEngine', 'JobUpdateHandler', 'StaceyJobImporter',
                               'JuneWorkLogImporter', 'MigratedQCApprovalFixer', 'StaleJobVoidEngine',
-                              'Job260337DuplicateFixer'],
+                              'Job260337DuplicateFixer', 'V2JobBackfill'],
     'VW_DESIGNER_WORKLOAD':  ['EventReplayEngine', 'ReportingEngine'],
 
     // ── Mart tables (reporting aggregates) ──────────────────
