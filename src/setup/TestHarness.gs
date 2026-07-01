@@ -18,7 +18,7 @@
 // ============================================================
 
 // ── Suite-wide constants ──────────────────────────────────────
-var TH_PERIOD_ID      = '2026-06';
+var TH_PERIOD_ID      = Identifiers.generateCurrentPeriodId();
 var TH_CEO_EMAIL      = 'sarthakaespl@gmail.com';  // SGO (PM) — highest PROD role available
 var TH_PM_EMAIL       = 'sarthakaespl@gmail.com';
 var TH_DESIGNER_EMAIL = 'designer@blclotus.com';
