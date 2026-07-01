@@ -37,9 +37,10 @@
 //
 // PERMISSION REQUIRED: RBAC.ACTIONS.WORK_LOG_SUBMIT
 //
-// STATE GUARD: job must exist in VW and not be INVOICED (terminal).
-// Work logs are accepted for any non-terminal state so designers
-// can log retroactively after QC is submitted.
+// STATE GUARD: job must exist in VW and not be in a closed state.
+// Closed states: INVOICED (terminal), VOIDED, CANCELLED.
+// Work logs are accepted for any other state so designers can log
+// retroactively after QC is submitted.
 // ============================================================
 
 var WorkLogHandler = (function () {
@@ -247,15 +248,17 @@ var WorkLogHandler = (function () {
     // ── Step 3: Permission ──────────────────────────────────
     RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_SUBMIT);
 
-    // ── Step 4: Job existence + terminal guard ──────────────
+    // ── Step 4: Job existence + closed-state guard ─────────
     var view = StateMachine.getJobView(jobNumber);
     if (!view) {
       throw new Error('WorkLogHandler: job "' + jobNumber + '" not found in VW_JOB_CURRENT_STATE.');
     }
-    if (StateMachine.isTerminal(view.current_state)) {
+    // Explicit set covers VOIDED/CANCELLED (not in Config.STATES transitions).
+    // isTerminal fallback catches any future terminal state added to Config.
+    var WL_CLOSED_STATES_ = { INVOICED: true, VOIDED: true, CANCELLED: true };
+    if (WL_CLOSED_STATES_[view.current_state] || StateMachine.isTerminal(view.current_state)) {
       throw new Error(
-        'WorkLogHandler: job "' + jobNumber + '" is in terminal state "' +
-        view.current_state + '" — work logs cannot be submitted after invoicing.'
+        'Cannot log hours — job ' + jobNumber + ' is in ' + view.current_state + ' state.'
       );
     }
 

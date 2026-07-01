@@ -5,7 +5,7 @@
 // LOAD ORDER: Setup tier — loads after all T0–T7 files.
 //
 // HOW TO RUN (Apps Script editor):
-//   runWorkLogTests()  — all 7 tests, summary at end
+//   runWorkLogTests()  — all 8 tests, summary at end
 //
 // Individual tests:
 //   testWorkLogHandler_happyPath()
@@ -15,6 +15,7 @@
 //   testWorkLogHandler_duplicate()
 //   testWorkLogHandler_contentDuplicate()
 //   testWorkLogHandler_dailyCap()
+//   testWorkLogHandler_closedState()
 //
 // Test actors:
 //   DESIGNER (WORK_LOG_SUBMIT allowed) : designer@blclotus.com  (TH_DESIGNER_EMAIL)
@@ -693,7 +694,92 @@ function testWorkLogHandler_dailyCap() {
 }
 
 // ============================================================
-// RUNNER — executes all 7 tests and prints combined summary
+// TEST 8 — Closed-state Guard (INVOICED / VOIDED / CANCELLED)
+// Creates an IN_PROGRESS job, then directly updates its VW row
+// to INVOICED via DAL (same pattern as Job260337DuplicateFixer).
+// Calls handle() directly so the exact error text can be verified.
+// FACT_WORK_LOGS must have no row written for the job.
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testWorkLogHandler_closedState() {
+  var results  = [];
+  var counters = { passed: 0, failed: 0 };
+
+  try {
+    var jobNumber = thSetupInProgressJob_('wl-closed');
+    if (!jobNumber) {
+      results.push('  SKIP: setup failed');
+      counters.failed++;
+      printResultsH_('testWorkLogHandler_closedState', results, counters);
+      return counters;
+    }
+
+    // Force the VW row to INVOICED — bypasses the state machine so
+    // the guard fires on the existing row without needing billing to run.
+    DAL.updateWhere(
+      Config.TABLES.VW_JOB_CURRENT_STATE,
+      { job_number: jobNumber },
+      { current_state: 'INVOICED' },
+      { callerModule: 'WorkLogHandlerTest' }
+    );
+
+    var vwAfterForce = StateMachine.getJobView(jobNumber);
+    assertH_(results, counters, 'VW row forced to INVOICED',
+      vwAfterForce && vwAfterForce.current_state === 'INVOICED',
+      vwAfterForce ? vwAfterForce.current_state : 'null');
+
+    // Call handle() directly — gives us the raw error message to assert on
+    var designerActor = RBAC.resolveActor(TH_DESIGNER_EMAIL);
+    var fakeQueueItem = {
+      queue_id:     'TEST-CLOSED-' + Identifiers.generateId(),
+      payload_json: JSON.stringify({
+        job_number: jobNumber,
+        hours:      2.0,
+        work_date:  TW_WORK_DATE
+      })
+    };
+
+    var threw  = false;
+    var errMsg = '';
+    try {
+      WorkLogHandler.handle(fakeQueueItem, designerActor);
+    } catch (e) {
+      threw  = true;
+      errMsg = String(e.message || '');
+    }
+
+    assertH_(results, counters, 'handle() throws for INVOICED job', threw,
+      threw ? 'threw as expected' : 'no exception');
+    assertH_(results, counters, 'Error message: "Cannot log hours"',
+      errMsg.indexOf('Cannot log hours') !== -1, errMsg);
+    assertH_(results, counters, 'Error message contains job number',
+      errMsg.indexOf(jobNumber) !== -1, errMsg);
+    assertH_(results, counters, 'Error message contains state name',
+      errMsg.indexOf('INVOICED') !== -1, errMsg);
+
+    // No FACT_WORK_LOGS row written
+    var logs = DAL.readWhere(
+      Config.TABLES.FACT_WORK_LOGS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'WorkLogHandlerTest' }
+    );
+    assertH_(results, counters, 'No FACT_WORK_LOGS row written for closed job',
+      logs.length === 0, 'rows found: ' + logs.length);
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+
+  printResultsH_('testWorkLogHandler_closedState', results, counters);
+  return counters;
+}
+
+// ============================================================
+// RUNNER — executes all 8 tests and prints combined summary
 // ============================================================
 
 /**
