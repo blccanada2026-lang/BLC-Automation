@@ -192,6 +192,47 @@ function runV2BackfillStateReset() {
 }
 
 // ============================================================
+// Recovery: restore the 5 VOIDed rows back to IN_PROGRESS and
+// set allocated_to. Run from Apps Script editor:
+//   runV2BackfillStateRecovery()
+// Safe to re-run — idempotent.
+// ============================================================
+
+function runV2BackfillStateRecovery() {
+  var MODULE = 'V2BackfillStateReset';
+
+  var RESETS = [
+    { job_number: '2606-7985', allocated_to: 'SVN' },
+    { job_number: '2606-8093', allocated_to: 'BCH' },
+    { job_number: '2606-8087', allocated_to: 'BCH' },
+    { job_number: 'Q260410',   allocated_to: 'RKG' },
+    { job_number: 'Q260421',   allocated_to: 'RKG' }
+  ];
+
+  var now = new Date().toISOString();
+  var fixed = 0;
+
+  for (var i = 0; i < RESETS.length; i++) {
+    var jn       = RESETS[i].job_number;
+    var assignee = RESETS[i].allocated_to;
+    var res = DAL.updateWhere(
+      Config.TABLES.VW_JOB_CURRENT_STATE,
+      { job_number: jn, current_state: 'VOIDED' },
+      { current_state: 'IN_PROGRESS', allocated_to: assignee, updated_at: now },
+      { callerModule: MODULE }
+    );
+    if (res.updated > 0) {
+      console.log('[V2BackfillStateRecovery] RESTORED ' + jn + ' → IN_PROGRESS, allocated_to=' + assignee);
+      fixed++;
+    } else {
+      console.log('[V2BackfillStateRecovery] SKIP ' + jn + ' — no VOIDED row found (already restored?)');
+    }
+  }
+
+  console.log('[V2BackfillStateRecovery] Done. Restored: ' + fixed + ' of ' + RESETS.length);
+}
+
+// ============================================================
 // Diagnostic: print current VW state for all 7 backfilled jobs.
 // Run from Apps Script editor: runV2BackfillAudit()
 // Read-only — no writes.
