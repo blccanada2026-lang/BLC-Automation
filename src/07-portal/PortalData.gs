@@ -1575,7 +1575,7 @@ var PortalData = (function () {
         entries.push({
           job_number: String(row.job_number  || ''),
           hours:      hrs,
-          work_date:  String(row.work_date   || ''),
+          work_date:  normWorkDate_(row.work_date),
           notes:      String(row.notes       || ''),
           event_type: String(row.event_type  || '')
         });
@@ -1599,6 +1599,28 @@ var PortalData = (function () {
       total_hours: Math.round(totalHours * 100) / 100,
       entries:     entries
     });
+  }
+
+  // Normalises any work_date value (Date object or string) to 'YYYY-MM-DD'.
+  // Google Sheets auto-converts date strings to Date serials on write; DAL
+  // returns them as JS Date objects. Downstream code (portal widget, sorting)
+  // needs a consistent YYYY-MM-DD string.
+  function normWorkDate_(raw) {
+    if (!raw) return '';
+    if (raw instanceof Date) {
+      if (isNaN(raw.getTime())) return '';
+      var y = raw.getFullYear(), mo = raw.getMonth() + 1, d = raw.getDate();
+      return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (d < 10 ? '0' : '') + d;
+    }
+    var s   = String(raw).trim();
+    var iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
+    var p = new Date(s);
+    if (!isNaN(p.getTime())) {
+      var py = p.getFullYear(), pm = p.getMonth() + 1, pd = p.getDate();
+      return py + '-' + (pm < 10 ? '0' : '') + pm + '-' + (pd < 10 ? '0' : '') + pd;
+    }
+    return s;
   }
 
 }());
