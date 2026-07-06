@@ -54,7 +54,7 @@
 // PAYLOAD SCHEMA (from form / STG_PROCESSING_QUEUE.payload_json):
 //   client_code   string  required   min 2 chars
 //   job_type      string  required   allowed values from payload
-//   product_code  string  optional
+//   product_code  string  required   must be non-blank (e.g. 'Roof Truss', 'Floor Truss')
 //   quantity      number  required   1–99999
 //   notes         string  optional   max 500 chars
 //   submitted_at  string  optional   ISO date string
@@ -94,7 +94,7 @@ var JobCreateHandler = (function () {
     },
     product_code: {
       type:      'string',
-      required:  false,
+      required:  false,   // blank/absent caught by post-validation guard below
       maxLength: 30,
       label:     'Product Code'
     },
@@ -362,6 +362,15 @@ var JobCreateHandler = (function () {
         actor:  actor
       }
     );
+
+    // ── Step 2a: product_code guard ─────────────────────────
+    // ValidationEngine passes blank optional fields through; enforce here
+    // so the error message is specific and actionable for the submitter.
+    if (!cleanPayload.product_code || String(cleanPayload.product_code).trim() === '') {
+      throw new Error(
+        'Product type is required. Please select a product (e.g. Roof Truss, Floor Truss).'
+      );
+    }
 
     Logger.info('JOB_CREATE_VALIDATED', {
       module:      'JobCreateHandler',

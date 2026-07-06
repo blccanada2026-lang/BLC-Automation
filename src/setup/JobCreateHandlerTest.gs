@@ -5,7 +5,7 @@
 // LOAD ORDER: Setup tier — loads after all T0–T7 files.
 //
 // HOW TO RUN (Apps Script editor):
-//   runJobCreateTests()  — all 5 tests, summary at end
+//   runJobCreateTests()  — all 7 tests, summary at end
 //
 // Individual tests:
 //   testJobCreateHandler_happyPath()
@@ -14,6 +14,7 @@
 //   testJobCreateHandler_wrongState()
 //   testJobCreateHandler_duplicate()
 //   testJobCreateHandler_duplicateJobNumber()
+//   testJobCreateHandler_blankProductCode()
 //
 // Test actors:
 //   PM (JOB_CREATE allowed)  : sarty@blclotus.com  (TH_PM_EMAIL)
@@ -513,6 +514,68 @@ function testJobCreateHandler_duplicateJobNumber() {
 }
 
 // ============================================================
+// TEST 7 — Blank product_code rejection
+// PM submits JOB_CREATE with product_code absent → handler guard
+// throws before sequence counter is touched → no job allocated.
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testJobCreateHandler_blankProductCode() {
+  var results  = [];
+  var counters = { passed: 0, failed: 0 };
+
+  try {
+    clearStalePendingItems_();
+    DAL._resetApiCallCount();
+
+    var jobNumberBefore = getLatestJobNumber_();
+
+    // product_code intentionally omitted
+    var createResult = IntakeService.processSubmission({
+      formType:       Config.FORM_TYPES.JOB_CREATE,
+      submitterEmail: TH_PM_EMAIL,
+      payload: {
+        client_code: TH_CLIENT_CODE,
+        job_type:    'DESIGN',
+        quantity:    1
+      },
+      source: 'TEST'
+    });
+    processQueueFresh_();
+
+    var queueItems = DAL.readWhere(
+      Config.TABLES.STG_PROCESSING_QUEUE,
+      { queue_id: createResult.queueId },
+      { callerModule: 'JobCreateHandlerTest' }
+    );
+    var queueItem = queueItems.length > 0 ? queueItems[0] : null;
+    assertH_(results, counters, 'Queue item exists', !!queueItem,
+      'queueId=' + createResult.queueId);
+    assertH_(results, counters, 'Queue item not completed (product_code guard)',
+      queueItem && queueItem.status !== 'COMPLETED',
+      queueItem ? queueItem.status : 'null');
+    assertH_(results, counters, 'Queue item error_message has retry metadata',
+      queueItem && (String(queueItem.error_message || '').indexOf('attempt') !== -1 ||
+                    String(queueItem.error_message || '').indexOf('exception') !== -1),
+      queueItem ? String(queueItem.error_message) : 'no error_message');
+
+    var jobNumberAfter = getLatestJobNumber_();
+    assertH_(results, counters, 'No new job_number allocated after product_code rejection',
+      jobNumberAfter === jobNumberBefore,
+      'before=' + jobNumberBefore + ' after=' + jobNumberAfter);
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+
+  printResultsH_('testJobCreateHandler_blankProductCode', results, counters);
+  return counters;
+}
+
+// ============================================================
 // RUNNER — executes all 6 tests and prints combined summary
 // ============================================================
 
@@ -537,7 +600,8 @@ function runJobCreateTests() {
     testJobCreateHandler_invalidPayload,
     testJobCreateHandler_wrongState,
     testJobCreateHandler_duplicate,
-    testJobCreateHandler_duplicateJobNumber
+    testJobCreateHandler_duplicateJobNumber,
+    testJobCreateHandler_blankProductCode
   ];
 
   for (var i = 0; i < tests.length; i++) {
