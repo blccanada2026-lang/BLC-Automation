@@ -16,6 +16,7 @@
 //   testWorkLogHandler_contentDuplicate()
 //   testWorkLogHandler_dailyCap()
 //   testWorkLogHandler_closedState()
+//   testWorkLogHandler_rbacFirst()
 //
 // Test actors:
 //   DESIGNER (WORK_LOG_SUBMIT allowed) : designer@blclotus.com  (TH_DESIGNER_EMAIL)
@@ -779,6 +780,66 @@ function testWorkLogHandler_closedState() {
 }
 
 // ============================================================
+// TEST 9 — RBAC Fires Before Parse/Validate (R3 compliance)
+// A CLIENT actor (WORK_LOG_SUBMIT=false) submits payload_json that
+// is malformed JSON — it would fail JSON.parse AND (if parsed)
+// would fail ValidationEngine.validate. If RBAC ran after either
+// of those steps, the thrown error would be a parse/validation
+// error, not PERMISSION_DENIED. Per R3, RBAC.enforcePermission()
+// must be the unconditional first statement in handle().
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testWorkLogHandler_rbacFirst() {
+  var results  = [];
+  var counters = { passed: 0, failed: 0 };
+
+  try {
+    // CLIENT role has WORK_LOG_SUBMIT=false (same actor shape as Test 2).
+    var clientActor = {
+      email:            'testclient@example.com',
+      personCode:       'EXT',
+      role:             'CLIENT',
+      displayName:      'External Client',
+      isActive:         true,
+      canAccessBilling: false,
+      _rbacResolved:    true
+    };
+
+    // Deliberately malformed JSON — if JSON.parse ran before RBAC,
+    // this throws "invalid JSON in payload_json" instead of PERMISSION_DENIED.
+    var malformedQueueItem = {
+      queue_id:     'TEST-RBAC-FIRST-' + Identifiers.generateId(),
+      payload_json: '{ this is not valid JSON'
+    };
+
+    var threw  = false;
+    var errMsg = '';
+    try {
+      WorkLogHandler.handle(malformedQueueItem, clientActor);
+    } catch (e) {
+      threw  = true;
+      errMsg = String(e.message || '');
+    }
+
+    assertH_(results, counters, 'handle() throws for CLIENT actor with malformed JSON', threw);
+    assertH_(results, counters, 'Error is PERMISSION_DENIED (RBAC ran first)',
+      errMsg.indexOf('PERMISSION_DENIED') !== -1, errMsg);
+    assertH_(results, counters, 'Error does NOT mention invalid JSON (parse never reached)',
+      errMsg.indexOf('invalid JSON') === -1, errMsg);
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+
+  printResultsH_('testWorkLogHandler_rbacFirst', results, counters);
+  return counters;
+}
+
+// ============================================================
 // RUNNER — executes all 8 tests and prints combined summary
 // ============================================================
 
@@ -791,7 +852,7 @@ function testWorkLogHandler_closedState() {
 function runWorkLogTests() {
   console.log('');
   console.log('═══════════════════════════════════════════════════════');
-  console.log('  WORK LOG HANDLER TEST SUITE (7 tests)');
+  console.log('  WORK LOG HANDLER TEST SUITE (8 tests)');
   console.log('═══════════════════════════════════════════════════════');
 
   seedTestStaff();
@@ -804,7 +865,8 @@ function runWorkLogTests() {
     testWorkLogHandler_wrongState,
     testWorkLogHandler_duplicate,
     testWorkLogHandler_contentDuplicate,
-    testWorkLogHandler_dailyCap
+    testWorkLogHandler_dailyCap,
+    testWorkLogHandler_rbacFirst
   ];
 
   for (var i = 0; i < tests.length; i++) {

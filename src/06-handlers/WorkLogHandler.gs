@@ -201,10 +201,11 @@ var WorkLogHandler = (function () {
   // ============================================================
   // SECTION 4: HANDLE
   //
-  // Flow:
-  //   1. Parse payload_json
-  //   2. Validate payload
-  //   3. Enforce WORK_LOG_SUBMIT permission
+  // Flow (R3: RBAC is the unconditional first statement — before
+  // Logger.info, before JSON.parse, before anything else):
+  //   1. Enforce WORK_LOG_SUBMIT permission
+  //   2. Parse payload_json
+  //   3. Validate payload
   //   4. Verify job exists in VW and is not terminal
   //   5. Idempotency check
   //   6. Ensure FACT_WORK_LOGS partition
@@ -219,6 +220,10 @@ var WorkLogHandler = (function () {
    * @throws  {Error}
    */
   function handle(queueItem, actor) {
+    // ── Step 1: Permission (R3 — the unconditional first statement,
+    // before Logger.info, before JSON.parse, before anything else) ──
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_SUBMIT);
+
     var queueId = queueItem.queue_id || '(unknown)';
 
     Logger.info('WORK_LOG_START', {
@@ -227,7 +232,7 @@ var WorkLogHandler = (function () {
       queue_id: queueId
     });
 
-    // ── Step 1: Parse ───────────────────────────────────────
+    // ── Step 2: Parse ───────────────────────────────────────
     var rawPayload = queueItem.payload_json || '{}';
     var payload;
     try {
@@ -236,7 +241,7 @@ var WorkLogHandler = (function () {
       throw new Error('WorkLogHandler: invalid JSON in payload_json for queue_id "' + queueId + '": ' + e.message);
     }
 
-    // ── Step 2: Validate ────────────────────────────────────
+    // ── Step 3: Validate ────────────────────────────────────
     var cleanPayload = ValidationEngine.validate(
       WORK_LOG_SCHEMA,
       payload,
@@ -244,9 +249,6 @@ var WorkLogHandler = (function () {
     );
 
     var jobNumber = cleanPayload.job_number;
-
-    // ── Step 3: Permission ──────────────────────────────────
-    RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_SUBMIT);
 
     // ── Step 4: Job existence + closed-state guard ─────────
     var view = StateMachine.getJobView(jobNumber);
