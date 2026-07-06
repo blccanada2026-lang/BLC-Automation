@@ -69,7 +69,8 @@ var Constants = (function () {
     SOP_CHECKLIST_COMPLETED: 'SOP_CHECKLIST_COMPLETED', // all required items checked — checklist is complete
     SOP_GATE_BLOCKED:        'SOP_GATE_BLOCKED',        // gate log: job blocked or warned (written in WARN_ONLY and BLOCK mode)
     // ── Admin corrections ───────────────────────────────────
-    JOB_STATE_CORRECTED:     'JOB_STATE_CORRECTED'      // admin/migration manual state correction with audit note
+    JOB_STATE_CORRECTED:     'JOB_STATE_CORRECTED',     // admin/migration manual state correction with audit note
+    WORK_LOG_PERIOD_FIXED:   'WORK_LOG_PERIOD_FIXED'    // migration fix: malformed period_id normalised to YYYY-MM
   };
 
   // ──────────────────────────────────────────────────────────

@@ -107,7 +107,7 @@ var DAL = (function () {
                               'SbsReconFiller_Jan2026', 'SbsReconFiller_Feb2026', 'SbsReconFiller_Mar2026',
                               'SbsReconFiller_Apr2026', 'MatixReconFiller',
                               'NelsonReconFiller', 'AlbertaReconFiller',
-                              'JuneWorkLogImporter', 'WorkLogDedupFixer'],
+                              'JuneWorkLogImporter', 'WorkLogDedupFixer', 'WorkLogPeriodFixer'],
     'FACT_QC_EVENTS':        ['QCHandler', 'QCReassignHandler', 'MigrationEngine', 'MigratedQCApprovalFixer'],
     'FACT_BILLING_LEDGER':   ['BillingEngine', 'MigrationEngine', 'MigrationReplayEngine'],
     'FACT_PAYROLL_LEDGER':   ['PayrollEngine', 'MigrationEngine', 'MigrationReplayEngine'],
