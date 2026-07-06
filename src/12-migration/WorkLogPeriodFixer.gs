@@ -94,7 +94,12 @@ var WorkLogPeriodFixer = (function () {
       }
 
       // ── Find malformed rows and build amendment events ───────
-      var toWrite = [];
+      var toWrite       = [];
+      var ptDateFix     = 0;
+      var ptBlankFix    = 0;
+      var ptSkipped     = 0;
+      var ptUnparseable = 0;
+
       for (var r = 0; r < rows.length; r++) {
         var row = rows[r];
         if (!isMalformed_(row.period_id)) continue;
@@ -103,19 +108,22 @@ var WorkLogPeriodFixer = (function () {
         if (!originalId) continue;
 
         if (alreadyFixed[originalId]) {
+          ptSkipped++;
           totalSkipped++;
           continue;
         }
 
         var corrected = toPeriodId_(row.period_id);
+        var fixType   = 'date';
         // Blank period_id: derive from the partition tab name (encodes correct month)
         if (!corrected) {
           var rawCheck = (row.period_id instanceof Date) ? '' : String(row.period_id || '').trim();
-          if (rawCheck === '') corrected = partition;
+          if (rawCheck === '') { corrected = partition; fixType = 'blank'; }
         }
         if (!corrected) {
           console.log('[WorkLogPeriodFixer] UNPARSEABLE period_id for event_id=' +
                       originalId + ' value=' + String(row.period_id));
+          ptUnparseable++;
           totalUnparseable++;
           continue;
         }
@@ -144,12 +152,16 @@ var WorkLogPeriodFixer = (function () {
         };
 
         toWrite.push({ event: fixEvent, partition: corrected });
+        if (fixType === 'blank') ptBlankFix++; else ptDateFix++;
+      }
 
-        if (dryRun) {
-          console.log('[WorkLogPeriodFixer] DRY-RUN would fix: event_id=' + originalId +
-                      ' | job=' + String(row.job_number || '') +
-                      ' | period_id "' + rawVal + '" → "' + corrected + '"');
-        }
+      // ── Per-partition dry-run summary (always log, even if 0 fixable) ──
+      if (dryRun) {
+        console.log('[WorkLogPeriodFixer] partition ' + partition +
+                    ' — fix ' + toWrite.length +
+                    ' (' + ptDateFix + ' Date, ' + ptBlankFix + ' blank)' +
+                    ' | skipped ' + ptSkipped +
+                    ' | unparseable ' + ptUnparseable);
       }
 
       // ── Write fix events ─────────────────────────────────────
@@ -170,18 +182,12 @@ var WorkLogPeriodFixer = (function () {
             byPartition[targetPt],
             { callerModule: MODULE, periodId: targetPt }
           );
-          console.log('[WorkLogPeriodFixer] partition ' + partition +
-                      ' → wrote ' + byPartition[targetPt].length +
-                      ' fix event(s) to ' + targetPt);
+          console.log('[WorkLogPeriodFixer] wrote ' + byPartition[targetPt].length +
+                      ' fix event(s) to partition ' + targetPt);
         }
       }
 
-      totalFixed   += dryRun ? 0 : toWrite.length;
-      totalSkipped += dryRun ? 0 : 0; // already counted above per row
-      if (dryRun && toWrite.length > 0) {
-        console.log('[WorkLogPeriodFixer] partition ' + partition +
-                    ' — would fix ' + toWrite.length + ' row(s)');
-      }
+      totalFixed += dryRun ? 0 : toWrite.length;
     }
 
     console.log('[WorkLogPeriodFixer] ' + (dryRun ? 'DRY-RUN' : 'DONE') +
