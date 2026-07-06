@@ -108,6 +108,11 @@ var WorkLogPeriodFixer = (function () {
         }
 
         var corrected = toPeriodId_(row.period_id);
+        // Blank period_id: derive from the partition tab name (encodes correct month)
+        if (!corrected) {
+          var rawCheck = (row.period_id instanceof Date) ? '' : String(row.period_id || '').trim();
+          if (rawCheck === '') corrected = partition;
+        }
         if (!corrected) {
           console.log('[WorkLogPeriodFixer] UNPARSEABLE period_id for event_id=' +
                       originalId + ' value=' + String(row.period_id));
