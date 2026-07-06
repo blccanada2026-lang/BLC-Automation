@@ -84,7 +84,7 @@ function runSartyConfirmationSheet() {
     var sRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE });
     for (var s = 0; s < sRows.length; s++) {
       var sc = String(sRows[s].person_code || '').trim().toUpperCase();
-      if (sc) staffNames[sc] = String(sRows[s].name || sc).trim();
+      if (sc) staffNames[sc] = String(sRows[s].display_name || sRows[s].name || sc).trim();
     }
   } catch (e) {
     Logger.warn('SC_STAFF_FAIL', { module: MODULE, error: e.message });

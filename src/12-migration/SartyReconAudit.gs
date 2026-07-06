@@ -97,7 +97,7 @@ function runSartyRecon(periodId) {
       var sr   = staffRows[s];
       var code = String(sr.person_code || '').trim().toUpperCase();
       if (!code) continue;
-      var full  = String(sr.name || code).trim();
+      var full  = String(sr.display_name || sr.name || code).trim();
       staffByCode[code] = { name: full, first_name: full.split(/\s+/)[0] };
     }
   } catch (e) {

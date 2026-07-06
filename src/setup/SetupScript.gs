@@ -82,7 +82,8 @@ var SCHEMAS = {
     'person_code', 'name', 'email', 'role',
     'supervisor_code', 'pm_code', 'pay_currency',
     'pay_design', 'pay_qc', 'bonus_eligible',
-    'active', 'effective_from', 'effective_to'
+    'active', 'effective_from', 'effective_to',
+    'display_name'   // informal ops name (e.g. "Pabby"); blank until populated
   ],
 
   // FX rates for payroll currency conversion (all rates are X→INR).
@@ -891,9 +892,9 @@ function seedAccountDesignerMap_() {
  * Inactive staff (Active=No) are included with active='FALSE' and effective_to='2025-12-31'.
  * Safe to re-run — skips person_codes that already exist.
  *
- * Columns (13): person_code, name, email, role, supervisor_code, pm_code,
+ * Columns (14): person_code, name, email, role, supervisor_code, pm_code,
  *               pay_currency, pay_design, pay_qc, bonus_eligible,
- *               active, effective_from, effective_to
+ *               active, effective_from, effective_to, display_name
  */
 function seedDimStaffRoster_() {
   log_('Seeding DIM_STAFF_ROSTER…');
@@ -904,37 +905,38 @@ function seedDimStaffRoster_() {
   }
 
   // Columns: person_code, name, email, role, supervisor_code, pm_code,
-  //          pay_currency, pay_design, pay_qc, bonus_eligible, active, effective_from, effective_to
+  //          pay_currency, pay_design, pay_qc, bonus_eligible, active, effective_from, effective_to, display_name
   // All rates in INR. Inactive staff: active='FALSE', effective_to='2025-12-31'.
   // pm_code=SGO for all (Sarty Gosh is PM on all accounts).
+  // display_name: informal ops name — leave blank until populated via sheet directly.
   var STAFF = [
-    // Active (13 values each — active='TRUE' at position 10)
-    ['SGO',  'Sarty Gosh',        'sarthakaespl@gmail.com',           'PM',          '',    'SGO', 'INR', 500, 500, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['BCH',  'Bharath Charles',   'bharathchunarkar121@gmail.com',     'TEAM_LEAD',   'SGO', 'SGO', 'INR', 400, 400, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['SDA',  'Samar Kumar Das',   'samar.das1995@gmail.com',           'TEAM_LEAD',   'SGO', 'SGO', 'INR', 350, 350, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['SVN',  'Savvy Nath',        'subonath2018@gmail.com',            'TEAM_LEAD',   'SDA', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['PBG',  'Pabitra Gosh',      'pabitra8846@gmail.com',             'TEAM_LEAD',   'SDA', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['JYS',  'Joy Sarkar',        'joysarkar21.1143@gmail.com',        'DESIGNER',    '',    'SGO', 'INR', 350, 350, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['DBG',  'Debby Gosh',        'debiaespl@gmail.com',               'DESIGNER',    'SGO', 'SGO', 'INR', 450, 450, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['DBS',  'Deb Sen',           'Debnathsen9831@gmail.com',          'DESIGNER',    'SGO', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['RKU',  'Raj Kumar',         'rky9133@gmail.com',                 'QC_REVIEWER', 'BCH', 'SGO', 'INR', 350, 350, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['PRS',  'Priyanka S',        'priyanka.santra613@gmail.com',      'DESIGNER',    'PBG', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['ABB',  'Abhijit Bera',      'abhijitshilpamandira@gmail.com',    'DESIGNER',    'SVN', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['SYR',  'Sayan Roy',         'sr5062407@gmail.com',               'DESIGNER',    'BCH', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['BSG',  'Banik Sagar',       'sagarbanik77@gmail.com',            'DESIGNER',    'SDA', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['VKV',  'Vani KV',           'kolimivani@gmail.com',              'DESIGNER',    'BCH', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['RKG',  'RaviKumar Gummadi', 'ravigummadi12@gmail.com',           'DESIGNER',    'BCH', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['NMM',  'Nitesh Mishra',     'nitishrickybahl.nrb@gmail.com',     'DESIGNER',    'PBG', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
-    ['AR001','Abhisek Rit',       'abhisek.architect@gmail.com',       'DESIGNER',    'SGO', 'SGO', 'INR', 350, 350, 'TRUE',  'TRUE',  '2026-03-12', ''],
-    ['BIT',  'Bittu Dalui',      'bittudalui2002@gmail.com',          'DESIGNER',    'SVN', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', ''],
+    // Active (14 values each — display_name blank at position 13)
+    ['SGO',  'Sarty Gosh',        'sarthakaespl@gmail.com',           'PM',          '',    'SGO', 'INR', 500, 500, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['BCH',  'Bharath Charles',   'bharathchunarkar121@gmail.com',     'TEAM_LEAD',   'SGO', 'SGO', 'INR', 400, 400, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['SDA',  'Samar Kumar Das',   'samar.das1995@gmail.com',           'TEAM_LEAD',   'SGO', 'SGO', 'INR', 350, 350, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['SVN',  'Savvy Nath',        'subonath2018@gmail.com',            'TEAM_LEAD',   'SDA', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['PBG',  'Pabitra Gosh',      'pabitra8846@gmail.com',             'TEAM_LEAD',   'SDA', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', '', 'Pabby'],
+    ['JYS',  'Joy Sarkar',        'joysarkar21.1143@gmail.com',        'DESIGNER',    '',    'SGO', 'INR', 350, 350, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['DBG',  'Debby Gosh',        'debiaespl@gmail.com',               'DESIGNER',    'SGO', 'SGO', 'INR', 450, 450, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['DBS',  'Deb Sen',           'Debnathsen9831@gmail.com',          'DESIGNER',    'SGO', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['RKU',  'Raj Kumar',         'rky9133@gmail.com',                 'QC_REVIEWER', 'BCH', 'SGO', 'INR', 350, 350, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['PRS',  'Priyanka S',        'priyanka.santra613@gmail.com',      'DESIGNER',    'PBG', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['ABB',  'Abhijit Bera',      'abhijitshilpamandira@gmail.com',    'DESIGNER',    'SVN', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['SYR',  'Sayan Roy',         'sr5062407@gmail.com',               'DESIGNER',    'BCH', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['BSG',  'Banik Sagar',       'sagarbanik77@gmail.com',            'DESIGNER',    'SDA', 'SGO', 'INR', 300, 300, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['VKV',  'Vani KV',           'kolimivani@gmail.com',              'DESIGNER',    'BCH', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['RKG',  'RaviKumar Gummadi', 'ravigummadi12@gmail.com',           'DESIGNER',    'BCH', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['NMM',  'Nitesh Mishra',     'nitishrickybahl.nrb@gmail.com',     'DESIGNER',    'PBG', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
+    ['AR001','Abhisek Rit',       'abhisek.architect@gmail.com',       'DESIGNER',    'SGO', 'SGO', 'INR', 350, 350, 'TRUE',  'TRUE',  '2026-03-12', '', ''],
+    ['BIT',  'Bittu Dalui',       'bittudalui2002@gmail.com',          'DESIGNER',    'SVN', 'SGO', 'INR', 250, 250, 'TRUE',  'TRUE',  '2025-01-01', '', ''],
     // Inactive (active='FALSE', effective_to='2025-12-31')
-    ['SKR',  'Sai Kris',          'sai.kris@bluelotuscanada.ca',       'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
-    ['SMB',  'Sammy Banerjee',    'sammy@bluelotuscanada.ca',          'DESIGNER',    '',    'SGO', 'INR', 450, 450, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
-    ['SUB',  'Suman Bera',        's.bera@bluelotuscanada.ca',         'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
-    ['SUB2', 'Sunit Barui',       's.barui@bluelotuscanada.ca',        'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
-    ['RUD',  'Rupa Das',          'rupa.das@bluelotuscanada.ca',       'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
-    ['PRG',  'Pritam Gosh',       'pritam@bluelotuscanada.ca',         'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31'],
-    ['AVM',  'Ashok Vemuri',      'ashok.allpoints@gmail.com',         'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31']
+    ['SKR',  'Sai Kris',          'sai.kris@bluelotuscanada.ca',       'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31', ''],
+    ['SMB',  'Sammy Banerjee',    'sammy@bluelotuscanada.ca',          'DESIGNER',    '',    'SGO', 'INR', 450, 450, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31', ''],
+    ['SUB',  'Suman Bera',        's.bera@bluelotuscanada.ca',         'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31', ''],
+    ['SUB2', 'Sunit Barui',       's.barui@bluelotuscanada.ca',        'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31', ''],
+    ['RUD',  'Rupa Das',          'rupa.das@bluelotuscanada.ca',       'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31', ''],
+    ['PRG',  'Pritam Gosh',       'pritam@bluelotuscanada.ca',         'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31', ''],
+    ['AVM',  'Ashok Vemuri',      'ashok.allpoints@gmail.com',         'DESIGNER',    '',    'SGO', 'INR', 250, 250, 'FALSE', 'FALSE', '2025-01-01', '2025-12-31', '']
   ];
 
   var existing = {};
@@ -961,9 +963,9 @@ function seedDimStaffRoster_() {
 }
 
 /**
- * Clears ALL data rows from DIM_STAFF_ROSTER and re-seeds with correct 13-column data.
+ * Clears ALL data rows from DIM_STAFF_ROSTER and re-seeds with correct 14-column data.
  * Use this to fix column misalignment caused by earlier seeds that were missing the
- * `active` column. Safe — DIM_STAFF_ROSTER is a dimension table, not a FACT table.
+ * `active` or `display_name` column. Safe — DIM_STAFF_ROSTER is a dimension table, not a FACT table.
  */
 function resetAndReseedStaffRoster() {
   var sheet = getTab_('DIM_STAFF_ROSTER');

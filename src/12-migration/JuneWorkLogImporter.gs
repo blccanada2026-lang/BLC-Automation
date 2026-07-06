@@ -62,9 +62,15 @@ function buildJuneStaffLookup_() {
   try {
     var rows = DAL.readAll('DIM_STAFF_ROSTER', { callerModule: 'JuneWorkLogImporter' });
     (rows || []).forEach(function(r) {
-      var code  = String(r.person_code || '').trim();
-      var name  = String(r.name        || '').trim().toLowerCase();
+      var code        = String(r.person_code  || '').trim();
+      var name        = String(r.name         || '').trim().toLowerCase();
+      var displayName = String(r.display_name || '').trim().toLowerCase();
       if (!code || !name) return;
+      if (displayName) {
+        nameMap[displayName] = code;
+        var dfirst = displayName.split(/\s+/)[0];
+        if (dfirst && !firstMap[dfirst]) firstMap[dfirst] = code;
+      }
       nameMap[name] = code;
       var first = name.split(/\s+/)[0];
       if (first && !firstMap[first]) firstMap[first] = code;

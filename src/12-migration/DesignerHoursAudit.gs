@@ -431,7 +431,7 @@ function runAllDesignersAudit(periodId) {
   for (var s = 0; s < staffRows.length; s++) {
     var sr   = staffRows[s];
     var code = String(sr.person_code || '').trim().toUpperCase();
-    if (code) staffMap[code] = String(sr.name || code);
+    if (code) staffMap[code] = String(sr.display_name || sr.name || code);
   }
 
   // ── Read work logs ───────────────────────────────────────────

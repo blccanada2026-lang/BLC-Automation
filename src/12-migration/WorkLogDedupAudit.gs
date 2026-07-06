@@ -46,7 +46,7 @@ function runWorkLogDedupAudit(monthPartition) {
     for (var s = 0; s < staffRows.length; s++) {
       var sr   = staffRows[s];
       var code = String(sr.person_code || '').trim().toUpperCase();
-      if (code) staffMap[code] = String(sr.name || code);
+      if (code) staffMap[code] = String(sr.display_name || sr.name || code);
     }
   } catch (e) {
     Logger.warn('WORKLOG_DEDUP_STAFF_FAIL', { module: MODULE, error: e.message });
