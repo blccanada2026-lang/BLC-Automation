@@ -206,6 +206,85 @@ var WorkLogPeriodFixer = (function () {
 
 }());
 
+/**
+ * Prints up to N examples of unparseable period_id rows across all
+ * scan partitions. Read-only — no writes.
+ * Run from Apps Script editor: runWorkLogPeriodFixer_ShowUnparseable()
+ */
+function runWorkLogPeriodFixer_ShowUnparseable() {
+  var MODULE     = 'WorkLogPeriodFixer';
+  var MAX        = 5;
+  var collected  = [];
+
+  var SCAN_PARTITIONS = [
+    '2025-10', '2025-11', '2025-12',
+    '2026-01', '2026-02', '2026-03',
+    '2026-04', '2026-05', '2026-06', '2026-07'
+  ];
+
+  for (var p = 0; p < SCAN_PARTITIONS.length && collected.length < MAX; p++) {
+    var partition = SCAN_PARTITIONS[p];
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+        callerModule: MODULE,
+        periodId:     partition
+      });
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') continue;
+      throw e;
+    }
+
+    for (var r = 0; r < rows.length && collected.length < MAX; r++) {
+      var row = rows[r];
+      var val = row.period_id;
+
+      // Already well-formed — skip
+      if (!(val instanceof Date) && /^\d{4}-\d{2}$/.test(String(val || '').trim())) continue;
+
+      // Attempt parse — collect only the ones that fail
+      var parsed = null;
+      if (val instanceof Date) {
+        parsed = 'DATE_OBJECT';  // parseable — skip
+        continue;
+      }
+      var s   = String(val || '').trim();
+      var hit = s.match(/^(\d{4})-(\d{2})/);
+      if (hit) continue;  // parseable prefix — skip
+      var d = new Date(s);
+      if (!isNaN(d.getTime())) continue;  // parseable as date string — skip
+
+      collected.push({
+        partition:   partition,
+        raw_value:   s || '(blank)',
+        type:        typeof val,
+        event_id:    String(row.event_id   || '(none)'),
+        job_number:  String(row.job_number || '(none)'),
+        actor_code:  String(row.actor_code || '(none)'),
+        event_type:  String(row.event_type || '(none)')
+      });
+    }
+  }
+
+  console.log('=== WorkLogPeriodFixer — Unparseable period_id samples ===');
+  console.log('Showing up to ' + MAX + ' of 137 unparseable rows:');
+  console.log('');
+  for (var i = 0; i < collected.length; i++) {
+    var ex = collected[i];
+    console.log('[' + (i + 1) + '] partition:  ' + ex.partition);
+    console.log('     raw_value: "' + ex.raw_value + '"  (typeof ' + ex.type + ')');
+    console.log('     job:       ' + ex.job_number);
+    console.log('     actor:     ' + ex.actor_code);
+    console.log('     event_id:  ' + ex.event_id);
+    console.log('     type:      ' + ex.event_type);
+    console.log('');
+  }
+  if (collected.length === 0) {
+    console.log('No unparseable rows found — all malformed values are Date objects or parseable strings.');
+  }
+  console.log('=== End ===');
+}
+
 /** Dry-run — previews fixes without writing anything. */
 function runWorkLogPeriodFixer_DryRun() {
   WorkLogPeriodFixer.run(true);
