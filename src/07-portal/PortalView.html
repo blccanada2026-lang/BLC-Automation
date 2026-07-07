@@ -3429,13 +3429,21 @@ function renderMyHours_(data) {
 
     var cells = [e.job_number, dateStr, String(e.hours), e.notes || '—'];
     if (showActor) cells.splice(1, 0, e.actor_name || e.actor_code || '—');
-    cells.forEach(function(val) {
+    var hoursCellIndex = showActor ? 3 : 2;
+    cells.forEach(function(val, i) {
       var td = tr.insertCell();
-      td.textContent = val;
+      if (i === hoursCellIndex && e.corrected_status) {
+        td.textContent = val + ' ';
+        var tag = document.createElement('span');
+        tag.style.cssText = 'color:var(--c-muted);font-weight:400;font-size:11px';
+        tag.textContent = e.corrected_status === 'VOIDED' ? '(voided)' : '(amended)';
+        td.appendChild(tag);
+      } else {
+        td.textContent = val;
+      }
       td.style.cssText = 'padding:5px 8px;border-bottom:1px solid var(--c-border)';
     });
     // Bold the Hours cell specifically (index depends on whether Designer column is shown)
-    var hoursCellIndex = showActor ? 3 : 2;
     if (tr.cells[hoursCellIndex]) tr.cells[hoursCellIndex].style.fontWeight = '600';
 
     if (showActions) {
@@ -3448,6 +3456,17 @@ function renderMyHours_(data) {
         muted.textContent = e.event_type === 'WORK_LOG_AMENDED' ? '(correction)' :
                              e.event_type === 'WORK_LOG_VOIDED'  ? '(void)' : '—';
         actionsTd.appendChild(muted);
+      } else if (e.corrected_status) {
+        // Already corrected — Edit/Void/Reassign disabled. Prevents
+        // delta-stacking: findOriginalEntry_ would still match this
+        // immutable original row and silently double-apply a second
+        // correction. To correct again, void the whole entry (server
+        // still allows a fresh distinct void/entry pair) and re-submit.
+        var doneMsg = document.createElement('span');
+        doneMsg.title = 'Already corrected — to change this further, void the entry and re-submit fresh';
+        doneMsg.style.cssText = 'color:var(--c-muted);font-size:11px;cursor:help';
+        doneMsg.textContent = 'Already ' + (e.corrected_status === 'VOIDED' ? 'voided' : 'amended');
+        actionsTd.appendChild(doneMsg);
       } else {
         var locked      = !!e.period_locked;
         var canOverride = !!perms.hasAllWorkScope;

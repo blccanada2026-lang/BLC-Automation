@@ -1572,7 +1572,9 @@ var PortalData = (function () {
    * @param {string} email
    * @returns {string}  JSON: { period_id, total_hours, scope, entries[] }
    *   entry: { event_id, job_number, hours, work_date, notes, event_type,
-   *            actor_code, actor_name, period_locked }
+   *            actor_code, actor_name, period_locked, corrected_status }
+   *   corrected_status (WORK_LOG_SUBMITTED rows only): 'AMENDED' | 'VOIDED'
+   *   if a correction already exists against this row, else absent.
    */
   function getMyHours(email) {
     var actor = RBAC.resolveActor(email);
@@ -1654,6 +1656,33 @@ var PortalData = (function () {
 
     for (var f = 0; f < entries.length; f++) {
       entries[f].period_locked = !!(closedJobs[entries[f].job_number] || payrollClosedActors[entries[f].actor_code]);
+    }
+
+    // ── corrected_status — links a WORK_LOG_AMENDED/VOIDED row back to
+    // the original WORK_LOG_SUBMITTED event_id it corrects, so the UI can
+    // disable Edit/Void/Reassign on an already-corrected row (prevents
+    // delta-stacking: findOriginalEntry_ matches the immutable original
+    // row every time, so a second correction would silently double-apply
+    // instead of being rejected). FACT_WORK_LOGS has no real amendment_of
+    // column (dropped by DAL — not in the header), so the reference is
+    // parsed from the notes text WorkLogCorrectionHandler writes:
+    // "Amendment of event_id X. ..." / "Void of event_id X. ..." —
+    // VOIDED takes priority over AMENDED if (unexpectedly) both exist. ──
+    var CORRECTION_NOTE_RE = /^(Amendment|Void) of event_id (\S+)\./;
+    var correctedOriginals = {}; // original event_id -> 'AMENDED' | 'VOIDED'
+    for (var g = 0; g < entries.length; g++) {
+      var et = entries[g].event_type;
+      if (et !== Constants.EVENT_TYPES.WORK_LOG_AMENDED && et !== Constants.EVENT_TYPES.WORK_LOG_VOIDED) continue;
+      var m = String(entries[g].notes || '').match(CORRECTION_NOTE_RE);
+      if (!m) continue;
+      var origId = m[2];
+      var status = et === Constants.EVENT_TYPES.WORK_LOG_VOIDED ? 'VOIDED' : 'AMENDED';
+      if (correctedOriginals[origId] !== 'VOIDED') correctedOriginals[origId] = status;
+    }
+    for (var h = 0; h < entries.length; h++) {
+      if (entries[h].event_type === Constants.EVENT_TYPES.WORK_LOG_SUBMITTED && correctedOriginals[entries[h].event_id]) {
+        entries[h].corrected_status = correctedOriginals[entries[h].event_id];
+      }
     }
 
     // Sort by work_date descending — most recent first
