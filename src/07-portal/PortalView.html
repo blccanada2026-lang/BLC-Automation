@@ -1228,6 +1228,19 @@ var VALID_STATES = {
   COMPLETED_BILLABLE: true, INVOICED: true
 };
 
+// Correctable original work-log event types — Edit/Void/Reassign buttons
+// in renderMyHours_() only render for these; everything else (WORK_LOG_
+// AMENDED/VOIDED — audit-trail rows) gets a muted label instead. Must
+// match Constants.CORRECTABLE_WORK_LOG_EVENT_TYPES in
+// src/00-foundation/Constants.gs. This file is served via
+// HtmlService.createHtmlOutputFromFile (no server-side templating), so
+// the two lists can't be shared directly — update both together.
+var CORRECTABLE_WORK_LOG_EVENT_TYPES = {
+  WORK_LOG_SUBMITTED: true,
+  WORK_LOG_MIGRATED:  true,
+  WORK_LOG_MIGRATION: true
+};
+
 // ── App state ─────────────────────────────────────────────────
 var _data      = null;   // { actor, jobs, stats, perms }
 var _activeJob             = null;   // job object for the currently-open modal
@@ -3450,7 +3463,7 @@ function renderMyHours_(data) {
       var actionsTd = tr.insertCell();
       actionsTd.style.cssText = 'padding:5px 8px;border-bottom:1px solid var(--c-border);white-space:nowrap';
 
-      if (e.event_type !== 'WORK_LOG_SUBMITTED') {
+      if (!CORRECTABLE_WORK_LOG_EVENT_TYPES[e.event_type]) {
         var muted = document.createElement('span');
         muted.style.cssText = 'color:var(--c-muted);font-size:11px';
         muted.textContent = e.event_type === 'WORK_LOG_AMENDED' ? '(correction)' :

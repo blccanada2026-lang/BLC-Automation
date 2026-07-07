@@ -59,6 +59,9 @@ var Constants = (function () {
     WORK_LOG_SUBMITTED:      'WORK_LOG_SUBMITTED',
     WORK_LOG_AMENDED:        'WORK_LOG_AMENDED',
     WORK_LOG_VOIDED:         'WORK_LOG_VOIDED',        // zeroes out an original entry (negative hours delta)
+    WORK_LOG_MIGRATED:       'WORK_LOG_MIGRATED',      // V2->V3 migration import (most importers)
+    WORK_LOG_MIGRATION:      'WORK_LOG_MIGRATION',     // V2->V3 migration import — inconsistent variant used by
+                                                        // SbsReconFiller_Feb2026/Mar2026/Apr2026.gs (pre-existing typo)
     // ── Payroll ─────────────────────────────────────────────
     PAYROLL_CALCULATED:      'PAYROLL_CALCULATED',
     PAYROLL_AMENDED:         'PAYROLL_AMENDED',
@@ -73,6 +76,26 @@ var Constants = (function () {
     JOB_STATE_CORRECTED:     'JOB_STATE_CORRECTED',     // admin/migration manual state correction with audit note
     WORK_LOG_PERIOD_FIXED:   'WORK_LOG_PERIOD_FIXED'    // migration fix: malformed period_id normalised to YYYY-MM
   };
+
+  // ──────────────────────────────────────────────────────────
+  // CORRECTABLE WORK LOG EVENT TYPES
+  // Single source of truth (backend) for which FACT_WORK_LOGS
+  // event_type values WorkLogCorrectionHandler.findOriginalEntry_()
+  // may target for amend/void/reassign, and which PortalData.getMyHours()
+  // treats as an "original" row eligible for the chained-edit
+  // (corrected_status) check. WORK_LOG_AMENDED/WORK_LOG_VOIDED rows are
+  // themselves audit trail, never correctable.
+  //
+  // PortalView.html has no server-side templating (served via
+  // HtmlService.createHtmlOutputFromFile, not createTemplateFromFile) so
+  // this cannot be shared directly with the client — it keeps its own
+  // matching literal CORRECTABLE_WORK_LOG_EVENT_TYPES object. Update both
+  // together.
+  // ──────────────────────────────────────────────────────────
+  var CORRECTABLE_WORK_LOG_EVENT_TYPES = {};
+  CORRECTABLE_WORK_LOG_EVENT_TYPES[EVENT_TYPES.WORK_LOG_SUBMITTED] = true;
+  CORRECTABLE_WORK_LOG_EVENT_TYPES[EVENT_TYPES.WORK_LOG_MIGRATED]  = true;
+  CORRECTABLE_WORK_LOG_EVENT_TYPES[EVENT_TYPES.WORK_LOG_MIGRATION] = true;
 
   // ──────────────────────────────────────────────────────────
   // STAFF ROLES
@@ -161,6 +184,7 @@ var Constants = (function () {
   // ──────────────────────────────────────────────────────────
   return {
     EVENT_TYPES:     EVENT_TYPES,
+    CORRECTABLE_WORK_LOG_EVENT_TYPES: CORRECTABLE_WORK_LOG_EVENT_TYPES,
     ROLES:           ROLES,
     QUEUE_STATUSES:  QUEUE_STATUSES,
     INTAKE_STATUSES: INTAKE_STATUSES,

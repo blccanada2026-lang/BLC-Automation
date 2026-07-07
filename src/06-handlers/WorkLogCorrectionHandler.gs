@@ -209,7 +209,12 @@ var WorkLogCorrectionHandler = (function () {
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
         if (normCode_(r.actor_code) !== normActor) continue;
-        if (String(r.event_type || '') !== Constants.EVENT_TYPES.WORK_LOG_SUBMITTED) continue;
+        // Correctable originals: live WORK_LOG_SUBMITTED plus migrated
+        // entries (WORK_LOG_MIGRATED / WORK_LOG_MIGRATION) — CTO policy
+        // decision 2026-07-07. Constants.CORRECTABLE_WORK_LOG_EVENT_TYPES
+        // is the shared source; PortalView.html keeps a matching literal
+        // list (no server-side templating available to share it directly).
+        if (!Constants.CORRECTABLE_WORK_LOG_EVENT_TYPES[String(r.event_type || '')]) continue;
         if (normWorkDate_(r.work_date) !== normDate) continue;
         if (expectedHours != null && parseFloat(r.hours) !== expectedHours) continue;
         matches.push({ row: r, periodId: pid });
@@ -218,7 +223,7 @@ var WorkLogCorrectionHandler = (function () {
 
     if (matches.length === 0) {
       throw new Error(
-        'WorkLogCorrectionHandler: no matching WORK_LOG_SUBMITTED entry found for ' +
+        'WorkLogCorrectionHandler: no matching correctable entry found for ' +
         'actor_code=' + actorCode + ' job_number=' + jobNumber + ' work_date=' + workDate +
         (expectedHours != null ? ' hours=' + expectedHours : '') + '.'
       );
@@ -252,10 +257,14 @@ var WorkLogCorrectionHandler = (function () {
       throw e;
     }
 
+    // Correctable originals (SUBMITTED + migrated variants) plus the two
+    // correction-delta event types — a migrated entry's hours must count
+    // toward the baseline or a first-ever void of one would be falsely
+    // rejected as driving the net negative from zero.
     var NETTED = {};
-    NETTED[Constants.EVENT_TYPES.WORK_LOG_SUBMITTED] = true;
-    NETTED[Constants.EVENT_TYPES.WORK_LOG_AMENDED]   = true;
-    NETTED[Constants.EVENT_TYPES.WORK_LOG_VOIDED]    = true;
+    for (var netKey in Constants.CORRECTABLE_WORK_LOG_EVENT_TYPES) NETTED[netKey] = true;
+    NETTED[Constants.EVENT_TYPES.WORK_LOG_AMENDED] = true;
+    NETTED[Constants.EVENT_TYPES.WORK_LOG_VOIDED]  = true;
 
     var total = 0;
     for (var i = 0; i < rows.length; i++) {

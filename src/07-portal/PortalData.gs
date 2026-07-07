@@ -1573,7 +1573,8 @@ var PortalData = (function () {
    * @returns {string}  JSON: { period_id, total_hours, scope, entries[] }
    *   entry: { event_id, job_number, hours, work_date, notes, event_type,
    *            actor_code, actor_name, period_locked, corrected_status }
-   *   corrected_status (WORK_LOG_SUBMITTED rows only): 'AMENDED' | 'VOIDED'
+   *   corrected_status (correctable-original rows only — see
+   *   Constants.CORRECTABLE_WORK_LOG_EVENT_TYPES): 'AMENDED' | 'VOIDED'
    *   if a correction already exists against this row, else absent.
    */
   function getMyHours(email) {
@@ -1680,7 +1681,11 @@ var PortalData = (function () {
       if (correctedOriginals[origId] !== 'VOIDED') correctedOriginals[origId] = status;
     }
     for (var h = 0; h < entries.length; h++) {
-      if (entries[h].event_type === Constants.EVENT_TYPES.WORK_LOG_SUBMITTED && correctedOriginals[entries[h].event_id]) {
+      // Correctable originals only (SUBMITTED + migrated variants) — must
+      // match WorkLogCorrectionHandler's findOriginalEntry_ exactly, or a
+      // migrated row that's already been corrected would keep showing
+      // active buttons in the portal.
+      if (Constants.CORRECTABLE_WORK_LOG_EVENT_TYPES[entries[h].event_type] && correctedOriginals[entries[h].event_id]) {
         entries[h].corrected_status = correctedOriginals[entries[h].event_id];
       }
     }
