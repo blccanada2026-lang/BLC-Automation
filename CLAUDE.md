@@ -28,6 +28,7 @@ Before ending any session:
 4. `git push origin main` — always push after commit (remote is the backup)
 5. `npm run push:prod` — always run after `git push origin main` to deploy to the live Apps Script
 6. **Warn clearly if the working tree is dirty — a dirty tree is never silently acceptable**
+7. If any commit in this session modified `PortalView.html` or `Portal.gs`, the session-end checklist MUST include: "New Version redeploy completed in Apps Script editor (Deploy → Manage → Edit → New Version)." Flag this explicitly in the session-end summary.
 
 **CRITICAL — `npm run push:prod` rule:**
 - Run it ONLY after a successful `git push origin main` (i.e. work is committed and complete)
@@ -45,6 +46,7 @@ grep -r "whoAmI\|isDev\|rajeshnair\|rajnaircanada\|nairscanada" src/
 - Run `setPortalBaseUrl(url)` with PROD `/exec` URL
 - Run `installFeedbackTrigger()` from Apps Script editor
 - Confirm `HM_ALERT_RECIPIENT` Script Property is set (health alert email recipient)
+- If `PortalView.html` or `Portal.gs` changed: confirm New Version redeploy was executed. The `/exec` URL serves the last manually deployed version, NOT the latest clasp push.
 
 ### R6 — Release Safety Rules
 - **Never manually edit `.clasp.json`** — it is gitignored and managed only by the npm deploy scripts.
