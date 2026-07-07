@@ -832,6 +832,78 @@
   </div>
 </div>
 
+<!-- ══ EDIT WORK LOG MODAL (WORK_LOG_AMEND) ═══════════════════ -->
+<div class="modal-backdrop" id="modal-edit-worklog">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Edit Hours</h3>
+      <button class="modal-close" data-close="modal-edit-worklog">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-job-info" id="edit-worklog-info"></div>
+      <div id="edit-worklog-lock-badge" style="display:none;margin-bottom:10px;padding:8px 10px;border-radius:6px;font-size:12px;background:var(--c-warning-bg,#fff3cd);color:var(--c-warning-text,#8a6500)">
+        ⚠ Period locked — admin override
+      </div>
+      <div class="field"><label>New Hours</label>
+        <input id="edit-worklog-hours" type="number" step="0.25" min="0" max="24"></div>
+      <div class="field"><label>Reason (required)</label>
+        <textarea id="edit-worklog-reason" rows="2" maxlength="500" placeholder="Why is this being corrected?"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-edit-worklog">Cancel</button>
+      <button class="btn-primary" id="btn-confirm-edit-worklog">Save Correction</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ VOID WORK LOG MODAL (WORK_LOG_VOID) ═══════════════════ -->
+<div class="modal-backdrop" id="modal-void-worklog">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Void Hours</h3>
+      <button class="modal-close" data-close="modal-void-worklog">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="void-worklog-lock-badge" style="display:none;margin-bottom:10px;padding:8px 10px;border-radius:6px;font-size:12px;background:var(--c-warning-bg,#fff3cd);color:var(--c-warning-text,#8a6500)">
+        ⚠ Period locked — admin override
+      </div>
+      <p id="void-worklog-confirm-msg" style="font-size:14px;margin-bottom:12px"></p>
+      <div class="field"><label>Reason (required)</label>
+        <textarea id="void-worklog-reason" rows="2" maxlength="500" placeholder="Why is this being voided?"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-void-worklog">Cancel</button>
+      <button class="btn-danger" id="btn-confirm-void-worklog">Void Hours</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ REASSIGN WORK LOG MODAL (WORK_LOG_REASSIGN) ════════════ -->
+<div class="modal-backdrop" id="modal-reassign-worklog">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Reassign Hours</h3>
+      <button class="modal-close" data-close="modal-reassign-worklog">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-job-info" id="reassign-worklog-info"></div>
+      <div id="reassign-worklog-lock-badge" style="display:none;margin-bottom:10px;padding:8px 10px;border-radius:6px;font-size:12px;background:var(--c-warning-bg,#fff3cd);color:var(--c-warning-text,#8a6500)">
+        ⚠ Period locked — admin override
+      </div>
+      <div class="field"><label>New Job Number</label>
+        <input id="reassign-worklog-job" list="reassign-job-options" placeholder="Type or pick a job number" autocomplete="off">
+        <datalist id="reassign-job-options"></datalist>
+      </div>
+      <div class="field"><label>Reason (required)</label>
+        <textarea id="reassign-worklog-reason" rows="2" maxlength="500" placeholder="Why is this being reassigned?"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-reassign-worklog">Cancel</button>
+      <button class="btn-primary" id="btn-confirm-reassign-worklog">Reassign Hours</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ SUBMIT FOR QC MODAL ═══════════════════════════════════ -->
 <div class="modal-backdrop" id="modal-submit-qc">
   <div class="modal">
@@ -1185,6 +1257,9 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('work-log-date').addEventListener('change', refreshWorkLogDateSummary_);
   document.getElementById('btn-work-log-confirm-cancel').addEventListener('click', resetWorkLogFooter_);
   document.getElementById('btn-work-log-confirm-ok').addEventListener('click', confirmWorkLogSubmit_);
+  document.getElementById('btn-confirm-edit-worklog').addEventListener('click',     confirmEditWorkLog_);
+  document.getElementById('btn-confirm-void-worklog').addEventListener('click',     confirmVoidWorkLog_);
+  document.getElementById('btn-confirm-reassign-worklog').addEventListener('click', confirmReassignWorkLog_);
   document.getElementById('btn-submit-qc').addEventListener('click',        submitForQC);
   document.getElementById('btn-submit-hold').addEventListener('click',      submitHold);
   document.getElementById('btn-submit-resume').addEventListener('click',    submitResume);
@@ -2435,18 +2510,24 @@ function refreshWorkLogDateSummary_() {
   var date = val('work-log-date');
   if (!el) return;
 
-  if (!date || !_data || !_data.my_hours || !_data.my_hours.entries) {
+  if (!date || !_data || !_data.my_hours || !_data.my_hours.entries || !_data.actor) {
     el.textContent = '';
     return;
   }
 
+  var myCode = String(_data.actor.personCode || '').trim().toUpperCase();
+
+  // Own entries only for this date — My Hours may now contain team/all
+  // rows for TL/PM/CEO/ADMIN viewers, but this form logs the submitting
+  // user's own hours, so the live total must reflect only their own.
   var entries = _data.my_hours.entries.filter(function(e) {
     var wd = e.work_date;
     if (wd && typeof wd === 'object' && wd.getFullYear) {
       var y = wd.getFullYear(), mo = wd.getMonth() + 1, d = wd.getDate();
       wd = y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (d < 10 ? '0' : '') + d;
     }
-    return String(wd || '').substr(0, 10) === date;
+    return String(wd || '').substr(0, 10) === date &&
+           String(e.actor_code || '').trim().toUpperCase() === myCode;
   });
 
   el.textContent = '';
@@ -2455,11 +2536,25 @@ function refreshWorkLogDateSummary_() {
     return;
   }
 
-  var parts = entries.map(function(e) { return e.job_number + ' (' + e.hours + 'h)'; });
+  // Net hours per job (amend deltas and void negatives already signed correctly)
+  var byJob = {};
+  var totalHours = 0;
+  entries.forEach(function(e) {
+    var hrs = parseFloat(e.hours) || 0;
+    byJob[e.job_number] = (byJob[e.job_number] || 0) + hrs;
+    totalHours += hrs;
+  });
+  var jobCount = Object.keys(byJob).filter(function(jn) { return Math.round(byJob[jn] * 100) / 100 !== 0; }).length;
+  totalHours = Math.round(totalHours * 100) / 100;
+
   var lbl = document.createElement('strong');
-  lbl.textContent = 'Already logged today:';
+  lbl.textContent = 'Total logged for ' + date + ': ' + totalHours + ' hour' + (totalHours === 1 ? '' : 's') +
+                     ' across ' + jobCount + ' job' + (jobCount === 1 ? '' : 's');
   el.appendChild(lbl);
-  el.appendChild(document.createTextNode(' ' + parts.join(', ')));
+
+  var parts = entries.map(function(e) { return e.job_number + ' (' + e.hours + 'h)'; });
+  el.appendChild(document.createElement('br'));
+  el.appendChild(document.createTextNode(parts.join(', ')));
 }
 
 function submitForQC() {
@@ -3291,36 +3386,110 @@ function makeEmptyDiv_(msg) {
 
 function clearEl_(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
+// entry lookup by event_id — populated on every renderMyHours_() call,
+// used by the Edit/Void/Reassign click handlers below.
+var _myHoursEntryById = {};
+
 function renderMyHours_(data) {
   var body = document.getElementById('my-hours-body');
   document.getElementById('my-hours-period').textContent = data.period_id || '—';
   document.getElementById('my-hours-total').textContent  = 'Total: ' + (data.total_hours || 0) + ' hrs';
   clearEl_(body);
+  _myHoursEntryById = {};
+
   if (!data.entries || data.entries.length === 0) {
     body.appendChild(makeEmptyDiv_('No hours logged this period.')); return;
   }
+
+  var perms      = (_data && _data.perms) || {};
+  var showActor  = data.scope && data.scope !== 'SELF';
+  var showActions = perms.canAmendWork || perms.canVoidWork || perms.canReassignWork;
+
   var tbl = document.createElement('table');
   tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px';
   var hrow = tbl.createTHead().insertRow();
-  ['Job', 'Date', 'Hours', 'Notes'].forEach(function(h) {
+  var headers = ['Job', 'Date', 'Hours', 'Notes'];
+  if (showActor)   headers.splice(1, 0, 'Designer');
+  if (showActions) headers.push('Actions');
+  headers.forEach(function(h) {
     var th = document.createElement('th');
     th.textContent = h;
     th.style.cssText = 'text-align:left;padding:4px 8px;border-bottom:1px solid var(--c-border);color:var(--c-muted);font-weight:500';
     hrow.appendChild(th);
   });
+
   var tbody = tbl.createTBody();
   data.entries.forEach(function(e) {
+    if (e.event_id) _myHoursEntryById[e.event_id] = e;
+
     var tr = tbody.insertRow();
     var d = new Date(e.work_date);
     var dateStr = isNaN(d) ? (e.work_date || '—')
       : d.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getFullYear();
-    [e.job_number, dateStr, String(e.hours), e.notes || '—'].forEach(function(val, i) {
+
+    var cells = [e.job_number, dateStr, String(e.hours), e.notes || '—'];
+    if (showActor) cells.splice(1, 0, e.actor_name || e.actor_code || '—');
+    cells.forEach(function(val) {
       var td = tr.insertCell();
       td.textContent = val;
-      td.style.cssText = 'padding:5px 8px;border-bottom:1px solid var(--c-border)' + (i === 2 ? ';font-weight:600' : '');
+      td.style.cssText = 'padding:5px 8px;border-bottom:1px solid var(--c-border)';
     });
+    // Bold the Hours cell specifically (index depends on whether Designer column is shown)
+    var hoursCellIndex = showActor ? 3 : 2;
+    if (tr.cells[hoursCellIndex]) tr.cells[hoursCellIndex].style.fontWeight = '600';
+
+    if (showActions) {
+      var actionsTd = tr.insertCell();
+      actionsTd.style.cssText = 'padding:5px 8px;border-bottom:1px solid var(--c-border);white-space:nowrap';
+
+      if (e.event_type !== 'WORK_LOG_SUBMITTED') {
+        var muted = document.createElement('span');
+        muted.style.cssText = 'color:var(--c-muted);font-size:11px';
+        muted.textContent = e.event_type === 'WORK_LOG_AMENDED' ? '(correction)' :
+                             e.event_type === 'WORK_LOG_VOIDED'  ? '(void)' : '—';
+        actionsTd.appendChild(muted);
+      } else {
+        var locked      = !!e.period_locked;
+        var canOverride = !!perms.hasAllWorkScope;
+        var disabled    = locked && !canOverride;
+
+        if (locked && canOverride) {
+          var badge = document.createElement('span');
+          badge.title = 'Period locked — admin override';
+          badge.textContent = '⚠';
+          badge.style.cssText = 'color:var(--c-warning);margin-right:4px;cursor:help';
+          actionsTd.appendChild(badge);
+        }
+
+        if (perms.canAmendWork) {
+          actionsTd.appendChild(wlcMakeActionBtn_('Edit', 'btn-ghost', e.event_id, disabled,
+            disabled ? 'Period closed — contact admin' : 'Correct hours', openEditWorkLog_));
+        }
+        if (perms.canVoidWork) {
+          actionsTd.appendChild(wlcMakeActionBtn_('Void', 'btn-danger', e.event_id, disabled,
+            disabled ? 'Period closed — contact admin' : 'Void this entry', openVoidWorkLog_));
+        }
+        if (perms.canReassignWork) {
+          actionsTd.appendChild(wlcMakeActionBtn_('Reassign', 'btn-muted', e.event_id, disabled,
+            disabled ? 'Period closed — contact admin' : 'Move hours to a different job', openReassignWorkLog_));
+        }
+      }
+    }
   });
   body.appendChild(tbl);
+}
+
+/** Builds a small inline action button for a My Hours row. */
+function wlcMakeActionBtn_(label, cssClass, eventId, disabled, title, onClick) {
+  var btn = document.createElement('button');
+  btn.className = cssClass + ' btn-sm';
+  btn.textContent = label;
+  btn.title = title;
+  btn.style.cssText = 'margin-right:4px;padding:2px 8px;font-size:11px';
+  btn.disabled = disabled;
+  if (disabled) btn.style.opacity = '0.45';
+  btn.addEventListener('click', function() { onClick(_myHoursEntryById[eventId]); });
+  return btn;
 }
 
 function loadMyHours() {
@@ -3330,13 +3499,160 @@ function loadMyHours() {
 
   TOKEN_RUN
     .withSuccessHandler(function(json) {
-      try { renderMyHours_(JSON.parse(json)); }
+      try {
+        var parsed = JSON.parse(json);
+        _data.my_hours = parsed; // keep in sync for refreshWorkLogDateSummary_
+        renderMyHours_(parsed);
+        wlcPopulateReassignJobOptions_();
+      }
       catch(e) { clearEl_(body); body.appendChild(makeEmptyDiv_('Error loading hours.')); }
     })
     .withFailureHandler(function() {
       clearEl_(body); body.appendChild(makeEmptyDiv_('Failed to load hours.'));
     })
     .portal_getMyHours();
+}
+
+// ── Work log corrections: Edit / Void / Reassign ────────────────
+var _editTarget = null, _voidTarget = null, _reassignTarget = null;
+
+function openEditWorkLog_(entry) {
+  if (!entry) return;
+  _editTarget = entry;
+  document.getElementById('edit-worklog-info').textContent =
+    entry.job_number + ' — ' + entry.work_date + ' — currently ' + entry.hours + 'h';
+  document.getElementById('edit-worklog-hours').value = entry.hours;
+  document.getElementById('edit-worklog-reason').value = '';
+  document.getElementById('edit-worklog-lock-badge').style.display = entry.period_locked ? '' : 'none';
+  openModal('modal-edit-worklog');
+}
+
+function confirmEditWorkLog_() {
+  if (!_editTarget) return;
+  var newHours = parseFloat(val('edit-worklog-hours'));
+  var reason   = val('edit-worklog-reason').trim();
+  if (isNaN(newHours) || newHours < 0 || newHours > 24) return showToast('New hours must be between 0 and 24.', 'error');
+  if (!reason) return showToast('Reason is required.', 'error');
+
+  var payload = {
+    actor_code:     _editTarget.actor_code,
+    job_number:     _editTarget.job_number,
+    work_date:      _editTarget.work_date,
+    original_hours: _editTarget.hours,
+    new_hours:      newHours,
+    reason:         reason
+  };
+
+  showLoading(true);
+  TOKEN_RUN
+    .withSuccessHandler(function() {
+      showLoading(false);
+      closeModal('modal-edit-worklog');
+      showToast('Hours corrected.', 'success');
+      loadMyHours();
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_submitAction('WORK_LOG_AMEND', JSON.stringify(payload));
+}
+
+function openVoidWorkLog_(entry) {
+  if (!entry) return;
+  _voidTarget = entry;
+  document.getElementById('void-worklog-confirm-msg').textContent =
+    'Void ' + entry.hours + ' hours on job ' + entry.job_number + ' for date ' + entry.work_date + '?';
+  document.getElementById('void-worklog-reason').value = '';
+  document.getElementById('void-worklog-lock-badge').style.display = entry.period_locked ? '' : 'none';
+  openModal('modal-void-worklog');
+}
+
+function confirmVoidWorkLog_() {
+  if (!_voidTarget) return;
+  var reason = val('void-worklog-reason').trim();
+  if (!reason) return showToast('Reason is required.', 'error');
+
+  var payload = {
+    actor_code: _voidTarget.actor_code,
+    job_number: _voidTarget.job_number,
+    work_date:  _voidTarget.work_date,
+    hours:      _voidTarget.hours,
+    reason:     reason
+  };
+
+  showLoading(true);
+  TOKEN_RUN
+    .withSuccessHandler(function() {
+      showLoading(false);
+      closeModal('modal-void-worklog');
+      showToast('Entry voided.', 'success');
+      loadMyHours();
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_submitAction('WORK_LOG_VOID', JSON.stringify(payload));
+}
+
+function openReassignWorkLog_(entry) {
+  if (!entry) return;
+  _reassignTarget = entry;
+  document.getElementById('reassign-worklog-info').textContent =
+    entry.job_number + ' — ' + entry.work_date + ' — ' + entry.hours + 'h';
+  document.getElementById('reassign-worklog-job').value = '';
+  document.getElementById('reassign-worklog-reason').value = '';
+  document.getElementById('reassign-worklog-lock-badge').style.display = entry.period_locked ? '' : 'none';
+  wlcPopulateReassignJobOptions_();
+  openModal('modal-reassign-worklog');
+}
+
+function confirmReassignWorkLog_() {
+  if (!_reassignTarget) return;
+  var newJob = val('reassign-worklog-job').trim();
+  var reason = val('reassign-worklog-reason').trim();
+  if (!newJob) return showToast('New job number is required.', 'error');
+  if (newJob === _reassignTarget.job_number) return showToast('New job must be different from the current job.', 'error');
+  if (!reason) return showToast('Reason is required.', 'error');
+
+  var payload = {
+    actor_code:     _reassignTarget.actor_code,
+    job_number:     _reassignTarget.job_number,
+    work_date:      _reassignTarget.work_date,
+    hours:          _reassignTarget.hours,
+    new_job_number: newJob,
+    reason:         reason
+  };
+
+  showLoading(true);
+  TOKEN_RUN
+    .withSuccessHandler(function() {
+      showLoading(false);
+      closeModal('modal-reassign-worklog');
+      showToast('Hours reassigned.', 'success');
+      loadMyHours();
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_submitAction('WORK_LOG_REASSIGN', JSON.stringify(payload));
+}
+
+/** Populates the <datalist> job picker for the Reassign modal from bundled job data. */
+function wlcPopulateReassignJobOptions_() {
+  var dl = document.getElementById('reassign-job-options');
+  if (!dl || !_data || !_data.jobs) return;
+  clearEl_(dl);
+  var CLOSED = { INVOICED: true, VOIDED: true, CANCELLED: true };
+  _data.jobs.forEach(function(j) {
+    if (CLOSED[j.current_state]) return;
+    var opt = document.createElement('option');
+    opt.value = j.job_number;
+    opt.label = j.job_number + ' — ' + (j.client_code || '') + ' / ' + (j.product_code || '');
+    dl.appendChild(opt);
+  });
 }
 
 function loadLeaderDashboard() {

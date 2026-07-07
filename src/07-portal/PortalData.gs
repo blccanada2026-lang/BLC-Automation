@@ -306,7 +306,15 @@ var PortalData = (function () {
       isLeader:          role === 'CEO' || role === 'PM' || role === 'TEAM_LEAD',
       canRunPayroll:     role === 'CEO',
       canApprovePayroll: role === 'CEO',
-      canManageStaff:    role === 'CEO' || role === 'ADMIN'
+      canManageStaff:    role === 'CEO' || role === 'ADMIN',
+      // Work log corrections. Raw role !== 'QC' excludes plain QC actors
+      // even though RBAC.PERMISSION_MATRIX['QC'] must say true for
+      // WORK_LOG_AMEND/VOID so the QC_REVIEWER alias (same canonical row)
+      // passes — see WorkLogCorrectionHandler.gs's checkCorrectionScope_.
+      canAmendWork:      role !== 'QC' && RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_AMEND),
+      canVoidWork:       role !== 'QC' && RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_VOID),
+      canReassignWork:   RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_REASSIGN),
+      hasAllWorkScope:   actor.scope === RBAC.SCOPES.ALL
     };
   }
 
@@ -1545,13 +1553,26 @@ var PortalData = (function () {
   // ============================================================
 
   /**
-   * Returns the logged-in user's own work log entries for the current
-   * period, grouped by job_number. Available to any role that has
-   * WORK_LOG_SUBMIT permission (DESIGNER, TL, QC, QC_REVIEWER, PM, CEO).
+   * Returns work log entries for the current period, scoped by role —
+   * mirrors the SELF / TEAM / ALL scoping already used in loadJobs_:
+   *   DESIGNER, QC          — SELF: only the caller's own entries (unchanged
+   *                           behavior — byte-identical to before this scope
+   *                           expansion for these roles)
+   *   TEAM_LEAD             — TEAM: caller's own + team members' entries
+   *                           (buildTeamCodes_, same helper loadJobs_ uses)
+   *   PM, CEO, ADMIN, SYSTEM — ALL: every entry in the period
+   *
+   * total_hours always reflects the CALLER's OWN hours only — "My Hours"
+   * — even when entries[] now contains other people's rows for TEAM/ALL
+   * scope. Each entry carries actor_code/actor_name and a period_locked
+   * flag (Check 1: payroll already calculated for that actor+period:
+   * Check 2: the job is INVOICED/VOIDED/CANCELLED) so the portal can grey
+   * out correction buttons without a separate round-trip per row.
    *
    * @param {string} email
-   * @returns {string}  JSON: { period_id, total_hours, entries[] }
-   *   entry: { job_number, hours, work_date, notes, event_type }
+   * @returns {string}  JSON: { period_id, total_hours, scope, entries[] }
+   *   entry: { event_id, job_number, hours, work_date, notes, event_type,
+   *            actor_code, actor_name, period_locked }
    */
   function getMyHours(email) {
     var actor = RBAC.resolveActor(email);
@@ -1559,6 +1580,19 @@ var PortalData = (function () {
 
     var periodId   = Identifiers.generateCurrentPeriodId();
     var personCode = String(actor.personCode || '').trim().toUpperCase();
+    var scope      = RBAC.getScopeForRole(actor.role);
+    var staffNames = buildStaffNameMap_();
+
+    // ── Visibility set — null means "no filter" (ALL scope) ──────────
+    var visibleCodes = null;
+    if (scope === RBAC.SCOPES.SELF) {
+      visibleCodes = {};
+      visibleCodes[personCode] = true;
+    } else if (scope === RBAC.SCOPES.TEAM) {
+      visibleCodes = buildTeamCodes_(actor.personCode);
+      visibleCodes[personCode] = true;
+    }
+    // scope === ALL (PM/CEO/ADMIN/SYSTEM) → visibleCodes stays null
 
     var entries    = [];
     var totalHours = 0;
@@ -1569,20 +1603,57 @@ var PortalData = (function () {
         periodId:     periodId
       });
       for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
-        if (String(row.actor_code || '').trim().toUpperCase() !== personCode) continue;
+        var row      = rows[i];
+        var rowActor = String(row.actor_code || '').trim().toUpperCase();
+        if (visibleCodes && !visibleCodes[rowActor]) continue;
+
         var hrs = parseFloat(row.hours) || 0;
         entries.push({
-          job_number: String(row.job_number  || ''),
-          hours:      hrs,
-          work_date:  normWorkDate_(row.work_date),
-          notes:      String(row.notes       || ''),
-          event_type: String(row.event_type  || '')
+          event_id:     String(row.event_id    || ''),
+          job_number:   String(row.job_number  || ''),
+          hours:        hrs,
+          work_date:    normWorkDate_(row.work_date),
+          notes:        String(row.notes       || ''),
+          event_type:   String(row.event_type  || ''),
+          actor_code:   rowActor,
+          actor_name:   staffNames[rowActor] || rowActor
         });
-        totalHours += hrs;
+        if (rowActor === personCode) totalHours += hrs;
       }
     } catch (e) {
       if (e.code !== 'SHEET_NOT_FOUND') throw e;
+    }
+
+    // ── Period-locked flag — batched per unique job_number / actor_code,
+    // not per row, to keep cost bounded for TEAM/ALL scope views ────────
+    var uniqueJobs = {}, uniqueActors = {};
+    for (var e = 0; e < entries.length; e++) {
+      uniqueJobs[entries[e].job_number] = true;
+      uniqueActors[entries[e].actor_code] = true;
+    }
+
+    var closedJobs = {}; // job_number -> true if INVOICED/VOIDED/CANCELLED
+    var JOB_CLOSED_STATES_ = { INVOICED: true, VOIDED: true, CANCELLED: true };
+    try {
+      var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: 'PortalData' });
+      for (var v = 0; v < vwRows.length; v++) {
+        var jn = String(vwRows[v].job_number || '');
+        if (uniqueJobs[jn] && JOB_CLOSED_STATES_[vwRows[v].current_state]) closedJobs[jn] = true;
+      }
+    } catch (e) { /* fail open — treated as not-closed */ }
+
+    var payrollClosedActors = {}; // actor_code -> true if payroll already calculated this period
+    try {
+      var payrollRows = DAL.readAll(Config.TABLES.FACT_PAYROLL_LEDGER, { callerModule: 'PortalData', periodId: periodId });
+      for (var p = 0; p < payrollRows.length; p++) {
+        if (String(payrollRows[p].event_type || '') !== 'PAYROLL_CALCULATED') continue;
+        var pc = String(payrollRows[p].person_code || '').trim().toUpperCase();
+        if (uniqueActors[pc]) payrollClosedActors[pc] = true;
+      }
+    } catch (e) { /* SHEET_NOT_FOUND — no payroll run yet this period, fail open */ }
+
+    for (var f = 0; f < entries.length; f++) {
+      entries[f].period_locked = !!(closedJobs[entries[f].job_number] || payrollClosedActors[entries[f].actor_code]);
     }
 
     // Sort by work_date descending — most recent first
@@ -1597,6 +1668,7 @@ var PortalData = (function () {
     return JSON.stringify({
       period_id:   periodId,
       total_hours: Math.round(totalHours * 100) / 100,
+      scope:       scope,
       entries:     entries
     });
   }
