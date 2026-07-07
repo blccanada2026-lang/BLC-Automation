@@ -273,15 +273,16 @@ function thSetupMinorFixJob_(tag) {
 //
 // Execution plan for 6-minute Apps Script accounts (7 calls total):
 //
-//   runV3Tests_1to3()       — suites 1–3  (~4.5 min, confirmed)
-//   runV3Tests_4to5()       — suites 4–5  (~4 min, estimated)
-//   runWorkLogTests()       — suite  6    (~1 min)
-//   runQCHandlerTests()     — suite  7    (~5.5 min, borderline — run solo)
-//   runJobUpdateTests()     — suite  8    (~3 min)
-//   runQCHandlerFlowTests() — suite  9    (~2 min)
-//   runQCReassignTests()    — suite  10   (~5.5 min, borderline — run solo)
+//   runV3Tests_1to3()            — suites 1–3  (~4.5 min, confirmed)
+//   runV3Tests_4to5()            — suites 4–5  (~4 min, estimated)
+//   runWorkLogTests()            — suite  6    (~1 min)
+//   runQCHandlerTests()          — suite  7    (~5.5 min, borderline — run solo)
+//   runJobUpdateTests()          — suite  8    (~3 min)
+//   runQCHandlerFlowTests()      — suite  9    (~2 min)
+//   runQCReassignTests()         — suite  10   (~5.5 min, borderline — run solo)
+//   runWorkLogCorrectionTests()  — suite  11   (~1.5 min, estimated — run solo)
 //
-// runV3HandlerTests() runs all 10 — only reliable on 30-min Workspace accounts.
+// runV3HandlerTests() runs all 11 — only reliable on 30-min Workspace accounts.
 
 /**
  * Suites 1–3: JobCreate, JobAssign, JobStart.
@@ -370,14 +371,14 @@ function runSuiteGroup_(label, suites) {
 }
 
 /**
- * Runs all 10 V3 handler test suites and prints a combined summary.
+ * Runs all 11 V3 handler test suites and prints a combined summary.
  * Each suite runner (runJobCreateTests, runJobStartTests, etc.) is
  * defined in its own *HandlerTest.gs file and returns {passed, failed}.
  * NOTE: likely times out on 6-minute accounts — use runV3Tests_1to5()
  * and runV3Tests_6to10() instead.
  */
 function runV3HandlerTests() {
-  runSuiteGroup_('1–10', [
+  runSuiteGroup_('1–11', [
     { name: '1 — JobCreateHandler',      fn: runJobCreateTests       },
     { name: '2 — JobAssignHandler',      fn: runJobAssignTests       },
     { name: '3 — JobStartHandler',       fn: runJobStartTests        },
@@ -387,6 +388,7 @@ function runV3HandlerTests() {
     { name: '7 — QCHandler',             fn: runQCHandlerTests       },
     { name: '8 — JobUpdateHandler',      fn: runJobUpdateTests       },
     { name: '9 — QCHandler Flow B/C',    fn: runQCHandlerFlowTests   },
-    { name: '10 — QCReassignHandler',    fn: runQCReassignTests      }
+    { name: '10 — QCReassignHandler',    fn: runQCReassignTests      },
+    { name: '11 — WorkLogCorrectionHandler', fn: runWorkLogCorrectionTests }
   ]);
 }

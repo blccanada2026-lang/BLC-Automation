@@ -58,6 +58,7 @@ var Constants = (function () {
     // ── Work logs ───────────────────────────────────────────
     WORK_LOG_SUBMITTED:      'WORK_LOG_SUBMITTED',
     WORK_LOG_AMENDED:        'WORK_LOG_AMENDED',
+    WORK_LOG_VOIDED:         'WORK_LOG_VOIDED',        // zeroes out an original entry (negative hours delta)
     // ── Payroll ─────────────────────────────────────────────
     PAYROLL_CALCULATED:      'PAYROLL_CALCULATED',
     PAYROLL_AMENDED:         'PAYROLL_AMENDED',

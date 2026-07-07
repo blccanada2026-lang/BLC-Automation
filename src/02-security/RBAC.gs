@@ -3,7 +3,8 @@
 // src/02-security/RBAC.gs
 //
 // LOAD ORDER: First file in T2. Loads after all T0 and T1 files.
-// DEPENDENCIES: Config (T0), Constants (T0)
+// DEPENDENCIES: Config (T0), Constants (T0), DAL (T1) — buildTeamCodes() reads
+//   REF_ACCOUNT_DESIGNER_MAP and DIM_STAFF_ROSTER
 //
 // ╔══════════════════════════════════════════════════════════╗
 // ║  RBAC.enforcePermission() MUST BE THE FIRST CALL IN     ║
@@ -146,6 +147,9 @@ var RBAC = (function () {
     JOB_VIEW:           'JOB_VIEW',        // Read job data (all non-client roles)
     // ── Work logs ────────────────────────────────────────────
     WORK_LOG_SUBMIT:    'WORK_LOG_SUBMIT', // Submit design or QC hours
+    WORK_LOG_AMEND:     'WORK_LOG_AMEND',  // Correct hours on an existing entry
+    WORK_LOG_VOID:      'WORK_LOG_VOID',   // Zero out an existing entry
+    WORK_LOG_REASSIGN:  'WORK_LOG_REASSIGN', // Void an entry and re-log it against a different job
     // ── QC ───────────────────────────────────────────────────
     QC_SUBMIT:          'QC_SUBMIT',       // Submit a job for QC review
     QC_APPROVE:         'QC_APPROVE',      // Approve a QC review
@@ -239,6 +243,9 @@ var RBAC = (function () {
       JOB_RESUME:      false,
       JOB_VIEW:        true,
       WORK_LOG_SUBMIT: true,
+      WORK_LOG_AMEND:  true,   // own entries only — scope enforced in handler, open periods only
+      WORK_LOG_VOID:   true,   // own entries only — scope enforced in handler, open periods only
+      WORK_LOG_REASSIGN: false, // designers cannot reassign hours to another job
       QC_SUBMIT:       true,   // designers submit their completed work for QC review
       QC_APPROVE:      false,
       QC_REJECT:       false,
@@ -266,6 +273,9 @@ var RBAC = (function () {
       JOB_RESUME:      true,
       JOB_VIEW:        true,
       WORK_LOG_SUBMIT: true,
+      WORK_LOG_AMEND:  true,   // own + team members' entries — scope enforced in handler, open periods only
+      WORK_LOG_VOID:   true,   // own + team members' entries — scope enforced in handler, open periods only
+      WORK_LOG_REASSIGN: true, // TL may reassign own or team members' hours to another job
       QC_SUBMIT:       true,
       QC_APPROVE:      true,
       QC_REJECT:       true,
@@ -293,6 +303,17 @@ var RBAC = (function () {
       JOB_RESUME:      false,
       JOB_VIEW:        true,
       WORK_LOG_SUBMIT: true,   // logs QC hours against reviewed jobs
+      // NOTE: 'QC_REVIEWER' is an alias that canonicalizes to this same
+      // 'QC' row (see ROLES map above) — the matrix cannot give the two
+      // different coarse eligibility. This row is deliberately permissive
+      // (true) so a QC_REVIEWER actor passes RBAC.enforcePermission().
+      // WorkLogCorrectionHandler then reads the RAW (pre-alias) actor.role
+      // string: 'QC_REVIEWER' → own-entries-only (per spec, same as
+      // DESIGNER); plain 'QC' → rejected with "no correction authority"
+      // even though this matrix row says true.
+      WORK_LOG_AMEND:  true,
+      WORK_LOG_VOID:   true,
+      WORK_LOG_REASSIGN: false, // neither QC nor QC_REVIEWER may reassign
       QC_SUBMIT:       true,
       QC_APPROVE:      true,
       QC_REJECT:       true,
@@ -320,6 +341,9 @@ var RBAC = (function () {
       JOB_RESUME:      true,
       JOB_VIEW:        true,
       WORK_LOG_SUBMIT: true,
+      WORK_LOG_AMEND:  true,   // any entry, any period — overrides period lock
+      WORK_LOG_VOID:   true,   // any entry, any period — overrides period lock
+      WORK_LOG_REASSIGN: true,
       QC_SUBMIT:       true,
       QC_APPROVE:      true,
       QC_REJECT:       true,
@@ -347,6 +371,9 @@ var RBAC = (function () {
       JOB_RESUME:      true,
       JOB_VIEW:        true,
       WORK_LOG_SUBMIT: true,
+      WORK_LOG_AMEND:  true,   // any entry, any period — overrides period lock
+      WORK_LOG_VOID:   true,   // any entry, any period — overrides period lock
+      WORK_LOG_REASSIGN: true,
       QC_SUBMIT:       true,
       QC_APPROVE:      true,
       QC_REJECT:       true,
@@ -374,6 +401,9 @@ var RBAC = (function () {
       JOB_RESUME:      false,
       JOB_VIEW:        true,
       WORK_LOG_SUBMIT: false,
+      WORK_LOG_AMEND:  true,   // any entry, any period — overrides period lock (admin corrections domain)
+      WORK_LOG_VOID:   true,   // any entry, any period — overrides period lock (admin corrections domain)
+      WORK_LOG_REASSIGN: true,
       QC_SUBMIT:       false,
       QC_APPROVE:      false,
       QC_REJECT:       false,
@@ -402,6 +432,14 @@ var RBAC = (function () {
       JOB_RESUME:      true,
       JOB_VIEW:        true,
       WORK_LOG_SUBMIT: true,
+      // WORK_LOG_AMEND/VOID/REASSIGN: false per explicit CTO spec.
+      // Deliberately breaks the "SYSTEM: true for all" invariant
+      // documented above — flagged to CTO 2026-07-07. Any future
+      // migration/replay script that needs to correct a work log
+      // must do so under a human (PM/CEO/ADMIN) actor, not SYSTEM.
+      WORK_LOG_AMEND:  false,
+      WORK_LOG_VOID:   false,
+      WORK_LOG_REASSIGN: false,
       QC_SUBMIT:       true,
       QC_APPROVE:      true,
       QC_REJECT:       true,
@@ -428,6 +466,9 @@ var RBAC = (function () {
       JOB_RESUME:      false,
       JOB_VIEW:        false,  // read via CLIENT_VIEW, not JOB_VIEW
       WORK_LOG_SUBMIT: false,
+      WORK_LOG_AMEND:  false,
+      WORK_LOG_VOID:   false,
+      WORK_LOG_REASSIGN: false,
       QC_SUBMIT:       false,
       QC_APPROVE:      false,
       QC_REJECT:       false,
@@ -778,6 +819,67 @@ var RBAC = (function () {
     return ROLE_SCOPES[canonical] || SCOPES.SELF; // safe default
   }
 
+  /**
+   * Returns the set of person_codes that share a "team" with the given
+   * TEAM_LEAD/PM person_code, via the same two-path logic PortalData.gs
+   * uses internally for portal job-list scoping:
+   *   Path 1 — shared-account visibility via REF_ACCOUNT_DESIGNER_MAP
+   *   Path 2 — direct-report visibility via supervisor_code in DIM_STAFF_ROSTER
+   *
+   * This is a T2-tier port of PortalData's private buildTeamCodes_().
+   * It exists here (rather than being called directly from PortalData)
+   * so T6 handlers can determine team membership without depending on
+   * T7 Portal code — Rule A1 forbids a lower tier depending on a higher
+   * one. PortalData's own copy is left untouched to avoid touching the
+   * live portal's job-list scoping in this change; the duplication is
+   * tracked as follow-up cleanup (unify behind this shared version).
+   *
+   * @param {string} tlPersonCode  person_code of the TEAM_LEAD/PM
+   * @returns {Object}  { personCode: true, ... }
+   */
+  function buildTeamCodes(tlPersonCode) {
+    var set = {};
+
+    // Path 1: shared-account visibility via REF_ACCOUNT_DESIGNER_MAP
+    var mapRows;
+    try {
+      mapRows = DAL.readAll(Config.TABLES.REF_ACCOUNT_DESIGNER_MAP, { callerModule: 'RBAC' });
+    } catch (e) {
+      mapRows = [];
+    }
+    if (mapRows && mapRows.length > 0) {
+      var tlAccounts = {};
+      for (var i = 0; i < mapRows.length; i++) {
+        var dc = String(mapRows[i].designer_code || '').trim();
+        if (dc === tlPersonCode) {
+          tlAccounts[String(mapRows[i].client_code || '').trim()] = true;
+        }
+      }
+      for (var j = 0; j < mapRows.length; j++) {
+        var cc   = String(mapRows[j].client_code   || '').trim();
+        var code = String(mapRows[j].designer_code || '').trim();
+        if (tlAccounts[cc] && code) set[code] = true;
+      }
+    }
+
+    // Path 2: direct-report visibility via supervisor_code in DIM_STAFF_ROSTER
+    var tlCode = (tlPersonCode || '').trim().toUpperCase();
+    try {
+      var rosterRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'RBAC' });
+      for (var k = 0; k < rosterRows.length; k++) {
+        var row     = rosterRows[k];
+        var supCode = String(row.supervisor_code || '').trim().toUpperCase();
+        var pc      = String(row.person_code     || '').trim().toUpperCase();
+        var active  = String(row.active          || '').trim().toUpperCase();
+        if (supCode === tlCode && pc && active === 'TRUE') {
+          set[pc] = true;
+        }
+      }
+    } catch (e) { /* fail open — account-based set already populated */ }
+
+    return set;
+  }
+
   // ============================================================
   // SECTION 10: PUBLIC — PERMISSION CHECKS
   // ============================================================
@@ -1097,6 +1199,7 @@ var RBAC = (function () {
     resolveActor:       resolveActor,       // email → full actor object
     getUserRole:        getUserRole,        // email → role string
     getScopeForRole:    getScopeForRole,
+    buildTeamCodes:     buildTeamCodes,     // TL/PM person_code → { personCode: true, ... }
     assertActorExists:  assertActorExists,  // validates actor was resolver-produced
 
     // ── Permission checks (boolean) ───────────────────────────
