@@ -412,6 +412,16 @@
         <span>My Hours — <span id="my-hours-period">—</span></span>
         <span id="my-hours-total" style="font-size:12px;font-weight:400;color:var(--c-muted)"></span>
       </div>
+      <div style="padding:10px 14px 0;display:flex;gap:8px;flex-wrap:wrap">
+        <input type="search" id="my-hours-search" autocomplete="off"
+               placeholder="Search designer, job, or date…"
+               style="flex:1;min-width:180px;box-sizing:border-box;padding:7px 10px;border:1px solid var(--c-border);border-radius:6px;font-size:13px;background:var(--c-surface);color:var(--c-text);outline:none">
+        <div id="my-hours-designer-filter-wrap" style="display:none">
+          <select id="my-hours-designer-filter"
+                  style="padding:7px 10px;border:1px solid var(--c-border);border-radius:6px;font-size:13px;background:var(--c-surface);color:var(--c-text)">
+          </select>
+        </div>
+      </div>
       <div class="dash-panel-body" id="my-hours-body">
         <div class="dash-empty">Loading…</div>
       </div>
@@ -1259,6 +1269,8 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-process-queue').addEventListener('click', processQueue);
   document.getElementById('btn-create-job').addEventListener('click', openCreateModal);
   document.getElementById('job-search').addEventListener('input', function() { filterJobs_(this.value); });
+  document.getElementById('my-hours-search').addEventListener('input', applyMyHoursFilters_);
+  document.getElementById('my-hours-designer-filter').addEventListener('change', applyMyHoursFilters_);
 
   document.getElementById('create-client').addEventListener('change', onCreateClientChange);
 
@@ -1715,7 +1727,9 @@ function renderPortal_(data) {
   var myHoursSection = document.getElementById('my-hours-section');
   if (perms.canLogWork && data.my_hours) {
     myHoursSection.style.display = 'block';
-    renderMyHours_(data.my_hours);
+    _myHoursRawData = data.my_hours; // so the search/designer filter works in Preview-As mode too
+    populateMyHoursDesignerFilter_(data.my_hours);
+    applyMyHoursFilters_();
   } else {
     myHoursSection.style.display = 'none';
   }
@@ -3403,7 +3417,7 @@ function clearEl_(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 // used by the Edit/Void/Reassign click handlers below.
 var _myHoursEntryById = {};
 
-function renderMyHours_(data) {
+function renderMyHours_(data, isFiltered) {
   var body = document.getElementById('my-hours-body');
   document.getElementById('my-hours-period').textContent = data.period_id || '—';
   document.getElementById('my-hours-total').textContent  = 'Total: ' + (data.total_hours || 0) + ' hrs';
@@ -3411,7 +3425,8 @@ function renderMyHours_(data) {
   _myHoursEntryById = {};
 
   if (!data.entries || data.entries.length === 0) {
-    body.appendChild(makeEmptyDiv_('No hours logged this period.')); return;
+    body.appendChild(makeEmptyDiv_(isFiltered ? 'No entries match your search.' : 'No hours logged this period.'));
+    return;
   }
 
   var perms      = (_data && _data.perms) || {};
@@ -3533,8 +3548,10 @@ function loadMyHours() {
     .withSuccessHandler(function(json) {
       try {
         var parsed = JSON.parse(json);
-        _data.my_hours = parsed; // keep in sync for refreshWorkLogDateSummary_
-        renderMyHours_(parsed);
+        _data.my_hours   = parsed; // keep in sync for refreshWorkLogDateSummary_
+        _myHoursRawData  = parsed; // unfiltered source for the search/designer filter
+        populateMyHoursDesignerFilter_(parsed);
+        applyMyHoursFilters_();
         wlcPopulateReassignJobOptions_();
       }
       catch(e) { clearEl_(body); body.appendChild(makeEmptyDiv_('Error loading hours.')); }
@@ -3543,6 +3560,76 @@ function loadMyHours() {
       clearEl_(body); body.appendChild(makeEmptyDiv_('Failed to load hours.'));
     })
     .portal_getMyHours();
+}
+
+// ── My Hours search / designer filter — pure client-side, no server call ──
+var _myHoursRawData = null; // unfiltered { period_id, total_hours, scope, entries[] } from the last load
+
+function myHoursEntryMatchesSearch_(e, searchLower) {
+  if (!searchLower) return true;
+  var haystack = [e.actor_name || '', e.actor_code || '', e.job_number || '', e.work_date || ''].join(' ').toLowerCase();
+  return haystack.indexOf(searchLower) !== -1;
+}
+
+/** Rebuilds the My Hours designer dropdown from the currently-loaded entries. Hidden entirely for SELF scope. */
+function populateMyHoursDesignerFilter_(data) {
+  var wrap = document.getElementById('my-hours-designer-filter-wrap');
+  var sel  = document.getElementById('my-hours-designer-filter');
+  if (!wrap || !sel) return;
+
+  if (!data.scope || data.scope === 'SELF') {
+    wrap.style.display = 'none';
+    clearEl_(sel);
+    return;
+  }
+  wrap.style.display = '';
+
+  var current = sel.value; // preserve selection across reloads (e.g. after a correction refresh) if still valid
+  clearEl_(sel);
+
+  var allOpt = document.createElement('option');
+  allOpt.value = '';
+  allOpt.textContent = 'All Designers';
+  sel.appendChild(allOpt);
+
+  var seen  = {};
+  var names = [];
+  (data.entries || []).forEach(function(e) {
+    if (!e.actor_code || seen[e.actor_code]) return;
+    seen[e.actor_code] = true;
+    names.push({ code: e.actor_code, name: e.actor_name || e.actor_code });
+  });
+  names.sort(function(a, b) { return a.name.localeCompare(b.name); });
+  names.forEach(function(n) {
+    var opt = document.createElement('option');
+    opt.value = n.code;
+    opt.textContent = n.name;
+    sel.appendChild(opt);
+  });
+
+  if (current && seen[current]) sel.value = current;
+}
+
+/** Filters _myHoursRawData by the current search text + designer selection and re-renders. */
+function applyMyHoursFilters_() {
+  if (!_myHoursRawData) return;
+
+  var searchLower = (val('my-hours-search') || '').trim().toLowerCase();
+  var designerSel  = document.getElementById('my-hours-designer-filter');
+  var designerCode = designerSel ? designerSel.value : '';
+
+  var filteredEntries = _myHoursRawData.entries.filter(function(e) {
+    if (designerCode && e.actor_code !== designerCode) return false;
+    return myHoursEntryMatchesSearch_(e, searchLower);
+  });
+
+  var view = {
+    period_id:   _myHoursRawData.period_id,
+    total_hours: _myHoursRawData.total_hours,
+    scope:       _myHoursRawData.scope,
+    entries:     filteredEntries
+  };
+  renderMyHours_(view, !!(searchLower || designerCode));
 }
 
 // ── Work log corrections: Edit / Void / Reassign ────────────────
