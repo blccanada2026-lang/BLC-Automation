@@ -115,6 +115,17 @@ var WorkLogCorrectionHandler = (function () {
   // SECTION 2: SHARED HELPERS
   // ============================================================
 
+  // Normalises a person/actor code for comparison. DAL.readWhere does an
+  // exact string match — FACT_WORK_LOGS.actor_code has historically been
+  // stored with inconsistent casing (same root cause as the ABR bug fixed
+  // in PortalData.getMyHours: "actor_code comparison made case-insensitive").
+  // Every actor_code/person_code comparison in this file reads broadly
+  // (drops the code from the DAL condition) and filters manually via this
+  // normaliser on both sides, instead of trusting readWhere's exact match.
+  function normCode_(raw) {
+    return String(raw || '').trim().toUpperCase();
+  }
+
   function normWorkDate_(raw) {
     if (!raw) return '';
     if (raw instanceof Date) {
@@ -175,6 +186,7 @@ var WorkLogCorrectionHandler = (function () {
    */
   function findOriginalEntry_(actorCode, jobNumber, workDate, expectedHours) {
     var normDate   = normWorkDate_(workDate);
+    var normActor  = normCode_(actorCode);
     var candidates = candidatePeriodIds_(workDate);
     var matches    = []; // { row, periodId }
 
@@ -182,9 +194,11 @@ var WorkLogCorrectionHandler = (function () {
       var pid  = candidates[c];
       var rows;
       try {
+        // actor_code deliberately NOT in the DAL condition — readWhere is an
+        // exact match and stored casing is inconsistent (see normCode_).
         rows = DAL.readWhere(
           Config.TABLES.FACT_WORK_LOGS,
-          { actor_code: actorCode, job_number: jobNumber },
+          { job_number: jobNumber },
           { periodId: pid, callerModule: MODULE }
         );
       } catch (e) {
@@ -194,6 +208,7 @@ var WorkLogCorrectionHandler = (function () {
 
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
+        if (normCode_(r.actor_code) !== normActor) continue;
         if (String(r.event_type || '') !== Constants.EVENT_TYPES.WORK_LOG_SUBMITTED) continue;
         if (normWorkDate_(r.work_date) !== normDate) continue;
         if (expectedHours != null && parseFloat(r.hours) !== expectedHours) continue;
@@ -223,11 +238,13 @@ var WorkLogCorrectionHandler = (function () {
    * (stores the delta), and WORK_LOG_VOIDED (stores a negative value).
    */
   function netJobHours_(actorCode, jobNumber, periodId) {
+    var normActor = normCode_(actorCode);
     var rows;
     try {
+      // actor_code deliberately NOT in the DAL condition — see normCode_.
       rows = DAL.readWhere(
         Config.TABLES.FACT_WORK_LOGS,
-        { actor_code: actorCode, job_number: jobNumber },
+        { job_number: jobNumber },
         { periodId: periodId, callerModule: MODULE }
       );
     } catch (e) {
@@ -242,6 +259,7 @@ var WorkLogCorrectionHandler = (function () {
 
     var total = 0;
     for (var i = 0; i < rows.length; i++) {
+      if (normCode_(rows[i].actor_code) !== normActor) continue;
       if (!NETTED[String(rows[i].event_type || '')]) continue;
       total += parseFloat(rows[i].hours) || 0;
     }
@@ -253,13 +271,16 @@ var WorkLogCorrectionHandler = (function () {
    * @returns {{ closed: boolean, reason: string, message: string }}
    */
   function checkPeriodClosed_(actorCode, periodId, jobNumber) {
+    var normActor = normCode_(actorCode);
     // ── Check 1: payroll already calculated for this actor+period ──
     try {
+      // person_code deliberately NOT in the DAL condition — see normCode_.
       var payrollRows = DAL.readWhere(
         Config.TABLES.FACT_PAYROLL_LEDGER,
-        { person_code: actorCode, event_type: 'PAYROLL_CALCULATED' },
+        { event_type: 'PAYROLL_CALCULATED' },
         { periodId: periodId, callerModule: MODULE }
       );
+      payrollRows = payrollRows.filter(function(r) { return normCode_(r.person_code) === normActor; });
       if (payrollRows.length > 0) {
         return {
           closed:  true,
