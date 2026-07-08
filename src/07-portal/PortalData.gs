@@ -1585,10 +1585,16 @@ var PortalData = (function () {
    * An allow-list is used instead of enumerating every such type so any
    * future one-off fixer's event_type is hidden by default, not shown by
    * default.
+   *
+   * WORK_LOG_MIGRATION is included alongside WORK_LOG_MIGRATED — same
+   * semantic type (V2->V3 migration import), just an inconsistent literal
+   * string used by the SBS ReconFiller scripts (Feb/Mar/Apr 2026). Both
+   * represent real historical hours, not internal maintenance noise.
    */
   var MY_HOURS_VISIBLE_EVENT_TYPES_ = {};
   MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_SUBMITTED] = true;
   MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_MIGRATED]  = true;
+  MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_MIGRATION] = true;
   MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_AMENDED]   = true;
   MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_VOIDED]    = true;
 
