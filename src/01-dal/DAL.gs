@@ -102,7 +102,8 @@ var DAL = (function () {
                               'JobResumeHandler', 'ClientReturnHandler',
                               'EventReplayEngine', 'MigrationEngine', 'MigrationReplayEngine',
                               'JobUpdateHandler', 'StaceyJobImporter', 'BillingEngine', 'JuneWorkLogImporter',
-                              'StaleJobVoidEngine', 'Job260337DuplicateFixer', 'V2StateCorrection'],
+                              'StaleJobVoidEngine', 'Job260337DuplicateFixer', 'V2StateCorrection',
+                              'NorspanClientCodeFixer'],
     'FACT_WORK_LOGS':        ['WorkLogHandler', 'WorkLogCorrectionHandler', 'MigrationEngine', 'MigrationReplayEngine', 'MigrationReconFiller',
                               'SbsReconFiller_Jan2026', 'SbsReconFiller_Feb2026', 'SbsReconFiller_Mar2026',
                               'SbsReconFiller_Apr2026', 'MatixReconFiller',
@@ -131,7 +132,7 @@ var DAL = (function () {
                               'QCReassignHandler', 'BillingEngine', 'JobUpdateHandler', 'StaceyJobImporter',
                               'JuneWorkLogImporter', 'MigratedQCApprovalFixer', 'StaleJobVoidEngine',
                               'Job260337DuplicateFixer', 'V2JobBackfill', 'V2BackfillStateReset', 'V2StateCorrection',
-                              'JobCreateHandlerTest', 'WorkLogCorrectionHandlerTest'],
+                              'JobCreateHandlerTest', 'WorkLogCorrectionHandlerTest', 'NorspanClientCodeFixer'],
     'VW_DESIGNER_WORKLOAD':  ['EventReplayEngine', 'ReportingEngine'],
 
     // ── Mart tables (reporting aggregates) ──────────────────
