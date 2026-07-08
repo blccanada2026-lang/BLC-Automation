@@ -6,6 +6,9 @@
 //   runOrphanJobNumberFixer()       — DRY RUN (default). No writes.
 //   runOrphanJobNumberFixer(true)   — DRY RUN, explicit.
 //   runOrphanJobNumberFixer(false)  — LIVE. Writes corrections.
+//   runOrphanJobNumberFixer_LIVE()  — LIVE wrapper (no args to select
+//                                     in the editor's function picker).
+//                                     Same pattern as WorkLogPeriodFixer.gs.
 //
 // Fixes the post-cutover orphans (see WorkLogOrphanAudit.gs /
 // runOrphanJobNumberNormalizationDiagnostic()) where stripping
@@ -262,4 +265,13 @@ function runOrphanJobNumberFixer(dryRun) {
     entriesSkippedEventType:  entriesBadEventType,
     hoursMoved:               hoursMoved
   };
+}
+
+/**
+ * Live wrapper — no arguments, so it's directly selectable in the
+ * Apps Script editor's function picker. Same pattern as
+ * WorkLogPeriodFixer.gs's runWorkLogPeriodFixer_LIVE().
+ */
+function runOrphanJobNumberFixer_LIVE() {
+  return runOrphanJobNumberFixer(false);
 }
