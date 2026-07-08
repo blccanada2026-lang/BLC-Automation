@@ -323,3 +323,169 @@ function discoverWorkLogPartitions_() {
   periods.sort();
   return periods;
 }
+
+// ============================================================
+// SECTION: job_number normalization diagnostic
+//
+// HOW TO RUN (Apps Script editor):
+//   runOrphanJobNumberNormalizationDiagnostic()
+//
+// Reads the orphan list already written to _TEMP_AUDIT_ORPHAN_JOBS_RECENT
+// (run runWorkLogOrphanAuditRecent() first) and checks whether stripping
+// everything after the first space or underscore in job_number resolves
+// each orphan to a real VW_JOB_CURRENT_STATE row. This catches cases
+// where FACT_WORK_LOGS.job_number carries a client/lot description
+// suffix that VW never had (e.g. "2605-6039-A Mary's Landing Lot 9-16 OWF"
+// vs VW's "2605-6039-A").
+//
+// "job assign & help" is flagged separately — it's admin overhead
+// logged against no real job, not a normalization case.
+//
+// Console-only output. Read-only — no sheet writes.
+// ============================================================
+
+var ADMIN_OVERHEAD_JOB_NUMBER = 'job assign & help';
+
+/**
+ * Diagnoses post-cutover orphans from _TEMP_AUDIT_ORPHAN_JOBS_RECENT:
+ * strips each job_number down to the token before the first space or
+ * underscore, and checks whether that normalized form exists in
+ * VW_JOB_CURRENT_STATE. Logs one line per orphan plus a summary.
+ * Read-only — no sheet writes.
+ */
+function runOrphanJobNumberNormalizationDiagnostic() {
+  var MODULE = 'WorkLogOrphanAudit';
+
+  var orphanRows = readOrphanTabRows_(AUDIT_TAB_ORPHAN_JOBS_RECENT);
+
+  var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+  var vwJobSet = {};
+  for (var v = 0; v < vwRows.length; v++) {
+    var vjn = String(vwRows[v].job_number || '').trim();
+    if (vjn) vwJobSet[vjn] = true;
+  }
+
+  var totalOrphans    = orphanRows.length;
+  var resolvedCount   = 0, remainingCount   = 0, specialCount   = 0;
+  var resolvedHours   = 0, remainingHours   = 0, specialHours   = 0;
+
+  console.log('[OrphanNormalizationDiagnostic] Original job_number → normalized → VW match');
+
+  for (var i = 0; i < orphanRows.length; i++) {
+    var row      = orphanRows[i];
+    var original = row.job_number;
+    var hours    = row.total_hours;
+
+    if (isAdminOverheadJobNumber_(original)) {
+      specialCount++;
+      specialHours += hours;
+      console.log('[SPECIAL] ' + original + ' → (admin overhead — not a real job, excluded from resolve/remain totals)');
+      continue;
+    }
+
+    var normalized = normalizeJobNumber_(original);
+    var matched    = !!vwJobSet[normalized];
+
+    console.log(original + ' → ' + normalized + ' → VW match: ' + (matched ? 'YES' : 'NO'));
+
+    if (matched) {
+      resolvedCount++;
+      resolvedHours += hours;
+    } else {
+      remainingCount++;
+      remainingHours += hours;
+    }
+  }
+
+  console.log('--- SUMMARY ---');
+  console.log('Total post-cutover orphans: ' + totalOrphans);
+  console.log('Admin overhead ("' + ADMIN_OVERHEAD_JOB_NUMBER + '"): ' + specialCount + ' (' + specialHours + ' hours) — excluded from resolve/remain');
+  console.log('Resolve with normalization: ' + resolvedCount + ' (' + resolvedHours + ' hours)');
+  console.log('Remain truly orphaned: ' + remainingCount + ' (' + remainingHours + ' hours)');
+
+  Logger.info('ORPHAN_NORMALIZATION_DIAGNOSTIC_DONE', {
+    module:          MODULE,
+    totalOrphans:    totalOrphans,
+    adminOverhead:   specialCount,
+    resolvedCount:   resolvedCount,
+    resolvedHours:   resolvedHours,
+    remainingCount:  remainingCount,
+    remainingHours:  remainingHours
+  });
+
+  return {
+    totalOrphans:   totalOrphans,
+    adminOverhead:  specialCount,
+    adminOverheadHours: specialHours,
+    resolvedCount:  resolvedCount,
+    resolvedHours:  resolvedHours,
+    remainingCount: remainingCount,
+    remainingHours: remainingHours
+  };
+}
+
+/**
+ * Strips a job_number down to the token before the first space or
+ * underscore. "2605-6039-A Mary's Landing Lot 9-16 OWF" → "2605-6039-A".
+ * "2606-7042-A_Foxbank Lot 00.0133" → "2606-7042-A". No space/underscore
+ * present → returned unchanged.
+ */
+function normalizeJobNumber_(jobNumber) {
+  var s   = String(jobNumber || '').trim();
+  var idx = s.search(/[ _]/);
+  return idx === -1 ? s : s.substring(0, idx);
+}
+
+/**
+ * True if jobNumber is the admin-overhead pseudo job "job assign & help"
+ * (case-insensitive, whitespace-collapsed) — not a real job, so it
+ * should never be checked against VW_JOB_CURRENT_STATE.
+ */
+function isAdminOverheadJobNumber_(jobNumber) {
+  var norm = String(jobNumber || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return norm === ADMIN_OVERHEAD_JOB_NUMBER;
+}
+
+/**
+ * Reads the orphan rows already written to an orphan-audit tab
+ * (e.g. _TEMP_AUDIT_ORPHAN_JOBS_RECENT) by writeOrphanAuditTab_().
+ * Locates the header row by scanning for the 'job_number' label, then
+ * reads every data row below it. Read-only.
+ *
+ * @param {string} tabName
+ * @returns {Object[]} [{ job_number, total_hours, entries, actor_codes, partitions, vw_row_exists }]
+ */
+function readOrphanTabRows_(tabName) {
+  var ss  = SpreadsheetApp.getActiveSpreadsheet();
+  var tab = ss.getSheetByName(tabName);
+  if (!tab) {
+    throw new Error('Tab "' + tabName + '" not found. Run runWorkLogOrphanAuditRecent() first.');
+  }
+
+  var values = tab.getDataRange().getValues();
+
+  var headerRowIdx = -1;
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim() === 'job_number') { headerRowIdx = i; break; }
+  }
+  if (headerRowIdx === -1) {
+    throw new Error('Could not find "job_number" header row in "' + tabName + '".');
+  }
+
+  var rows = [];
+  for (var r = headerRowIdx + 1; r < values.length; r++) {
+    var jn = String(values[r][0] || '').trim();
+    if (!jn) continue; // skip blank rows / "no orphans found" placeholder row
+    var hours = parseFloat(values[r][1]);
+    if (isNaN(hours)) hours = 0;
+    rows.push({
+      job_number:     jn,
+      total_hours:    hours,
+      entries:        values[r][2],
+      actor_codes:    values[r][3],
+      partitions:     values[r][4],
+      vw_row_exists:  values[r][5]
+    });
+  }
+  return rows;
+}
