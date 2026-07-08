@@ -1576,7 +1576,22 @@ var PortalData = (function () {
    *   corrected_status (correctable-original rows only — see
    *   Constants.CORRECTABLE_WORK_LOG_EVENT_TYPES): 'AMENDED' | 'VOIDED'
    *   if a correction already exists against this row, else absent.
+   *
+   * VISIBLE_EVENT_TYPES_ — allow-list, not a blacklist. FACT_WORK_LOGS
+   * carries internal maintenance/correction-tooling event types that were
+   * never meant for user eyes (e.g. WORK_LOG_PERIOD_FIXED — the period_id
+   * fixer's 0-hour rows; WORK_LOG_DUPLICATE_VOIDED — a one-off dedup
+   * fixer's literal event_type string, never added to Constants.EVENT_TYPES).
+   * An allow-list is used instead of enumerating every such type so any
+   * future one-off fixer's event_type is hidden by default, not shown by
+   * default.
    */
+  var MY_HOURS_VISIBLE_EVENT_TYPES_ = {};
+  MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_SUBMITTED] = true;
+  MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_MIGRATED]  = true;
+  MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_AMENDED]   = true;
+  MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_VOIDED]    = true;
+
   function getMyHours(email) {
     var actor = RBAC.resolveActor(email);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_SUBMIT);
@@ -1609,6 +1624,7 @@ var PortalData = (function () {
         var row      = rows[i];
         var rowActor = String(row.actor_code || '').trim().toUpperCase();
         if (visibleCodes && !visibleCodes[rowActor]) continue;
+        if (!MY_HOURS_VISIBLE_EVENT_TYPES_[String(row.event_type || '')]) continue;
 
         var hrs = parseFloat(row.hours) || 0;
         entries.push({
