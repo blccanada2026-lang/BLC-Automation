@@ -5,6 +5,68 @@
 
 ---
 
+## 2026-06-30 → 2026-07-08 Sprint (Billing Hardening — job fixes, CI, timesheets, work log corrections, orphan cleanup)
+
+> Multi-day rollup entry — see git log for individual commits. Exceeds the usual 40-line
+> guideline deliberately: PROJECT_MEMORY.md and this file had drifted several sessions
+> behind actual work (e.g. still listed the client timesheet generator as "not built"
+> after it had shipped). This entry catches both files up in one pass.
+
+### Work Completed
+
+**Job 260337 duplicate — RESOLVED in PROD** (carried over from 2026-06-29 entry, confirmed stable).
+
+**CI pipeline live:** `.github/workflows/test.yml` — push to `main` → `npm install` → `npm test` (Node 20). Green since first run.
+
+**Job creation dedup guard:** `JobCreateHandler` blocks duplicate `job_number` creation (`3eef807`); `VwJobDedupAudit.gs` added to scan VW for duplicate job_numbers.
+
+**Client timesheet generator — shipped:** HTML-to-PDF generation (replaces Sheets export) for all clients, per-designer hours summary, product-based job type with fallback job ref, negative-correction-hours netting, client-facing "Job Ref / Job #" column rename, `DIM_CLIENT_MASTER.address` fix. (`70703de`, `dd78007`, `b82f65b`, `9b665e0`, `fa410ab`, `63ec063`, `fa20216`, `13f987c`)
+
+**Full work log dedup audit:** duplicate-key scanner for 2026-06 partition (`a1a8d8c`) found 6 duplicate entries (5 Category 1 pre-billing dupes + 1 ABB); voided via `WorkLogDedupFixer` (`0cefd5b` + follow-up write-permission/appendRows fixes).
+
+**Sarty ground-truth reconciliation (June 06B):** `SartyReconAudit.gs` / `SartyConfirmation.gs` built and run — identified client mis-attribution (BCH, DBS billed under wrong client) and missing hours (PBG, DBG, AR001). MATIX client_code alias corrected; CTO-confirmed nickname overrides applied. (`19db02a`, `bf3deec`, `c75b650`, `dca63cf`, `c2f4afa`)
+
+**Work log submission hardening:** content-based duplicate guard + 16h daily cap (ADR-WL-002), closed-job guard (ADR-WL-003), portal UI (disable-on-submit button, confirm dialog, show existing entries for the date). (`7e624ed`, `a4c6934`, `5f7e4a0`, `bfd987b`)
+
+**Work log correction system shipped:** amend / void / reassign handlers in `WorkLogCorrectionHandler.gs` with RBAC hierarchy (DESIGNER/QC_REVIEWER → TEAM_LEAD → PM/CEO/ADMIN), period-close guard (payroll-calculated OR job-closed, PM/CEO/ADMIN override), portal UI with Edit/Void/Reassign buttons + search/filter on My Hours, chained-edit protection (disables actions on already-corrected rows), migrated-entry support. (`6cc5c2c`, `4850848`, `da7ef25`, `5c5e026`, `adf70a6`, `0268dd8`)
+
+**V2 backfill state corrections:** 7 jobs backfilled into VW_JOB_CURRENT_STATE, then state-corrected after audit found 5 needed a reset. (`41ce5ab`, `44a205d`, `e3803a2`, `b620f2c`, `5a59c07`, `b4bc47e`)
+
+**product_code required at job creation** (ADR-JOB-002) — post-validation guard with actionable error message, not a schema change.
+
+**Staff `display_name` column added to DIM_STAFF_ROSTER** for ops reconciliation (`f796eaa`).
+
+**Malformed period_id normalized** across 9,873 FACT_WORK_LOGS rows (`3a2c7bc`, plus blank-period_id-from-partition handling `813f509` and per-partition dry-run breakdown `9ed2094`).
+
+**R3 RBAC compliance fix:** `WorkLogHandler` — `RBAC.enforcePermission()` moved to the unconditional first statement (`a663337`).
+
+**Job_number normalization guard + retroactive orphan cleanup (ADR-WL-001):** `WorkLogHandler` now normalizes job_number before the VW check and FACT_WORK_LOGS write. Full orphan audit (`WorkLogOrphanAudit.gs`) found **1,448 total orphans**: 1,382 pre-cutover (expected — migration imported raw hours without job-lifecycle events for jobs already closed before cutover) and 66 post-cutover (unexpected). Of the 66: 46 resolved via normalization + `OrphanJobNumberFixer.gs` net-zero void/re-submit (99.75 hours moved, net zero to actor totals), 19 remain genuinely orphaned (need a manual VW decision), 1 is admin overhead (`"job assign & help"`, intentionally skipped). `OrphanJobNumberFixer` registered in `DAL.gs` `FACT_WORK_LOGS` `WRITE_PERMISSIONS`.
+
+**Dead letter queue investigated:** 1 real blocked job (NORSPAN — Sarty notified, see Sarty's new email re: NORSPAN below), 14 historical QC_SUBMIT failures — all pre-existing and resolved by `MigratedQCApprovalFixer` (no new action needed).
+
+**Portal redeploy requirement added to R4/R5 checklists** — `clasp push` alone doesn't update the live `/exec` webapp version; New Version redeploy required after any `PortalView.html`/`Portal.gs` change.
+
+**Code graph rebuilt:** 139 files, 1,957 nodes, 21,904 edges (code-review-graph MCP index).
+
+### Known Issue — Not Yet Fixed
+- **`submitted_at`/`created_at` bug in `writeQueueItem`** — identified, not yet fixed. Needs a follow-up session.
+
+### Files Changed
+Too many individual files across ~9 days to list exhaustively — see `git log --oneline` for the full commit range (`19db02a` through `3475845`). Key new files: `src/12-migration/WorkLogOrphanAudit.gs`, `src/12-migration/OrphanJobNumberFixer.gs`, `src/06-handlers/WorkLogCorrectionHandler.gs`, `src/11-reporting/ClientTimesheetEngine.gs`, `.github/workflows/test.yml`. Docs: `docs/SOP_DECISIONS.md` (ADR-WL-001/002/003, ADR-JOB-002), `PROJECT_MEMORY.md`.
+
+### Next Steps
+1. **New Sarty-reported issue (2026-07-08, not yet investigated):** duplicate NORSPAN client entries (plain "NORSPAN" — 55 jobs — vs. "NORSPAN-MB" — 4 jobs — in DIM_CLIENT_MASTER/portal job list) and `WORK_LOG_PERIOD_FIXED` maintenance rows visible to Sarty in My Hours (should be filtered from that view). Needs its own investigation session — not yet started.
+2. **19 remaining truly-orphaned job_numbers** — need a manual decision (create VW rows vs. write off) before they can be resolved.
+3. **Admin overhead policy** — decide how `"job assign & help"`-style non-job hours should be tracked going forward (separate pseudo-job in VW? excluded entirely?).
+4. **Fix `submitted_at`/`created_at` bug in `writeQueueItem`.**
+5. **Test suite uses real staff identities** — flagged as a risk, needs a DEV-only test actor pass.
+6. **Inactive staff security check** — review RBAC/portal access for staff marked inactive.
+7. Forward Q1 bonus letters (16 in CEO inbox, still pending from prior sessions).
+8. First June payroll run from V3 (blocked on June billing — see below).
+9. June billing pending — blocked on Sarty confirmation + outstanding designer hour submissions.
+
+---
+
 ## 2026-06-29 Session (260337 fix, QMS-3C-Prep, CI pipeline)
 
 ### Work Completed

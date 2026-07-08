@@ -100,19 +100,27 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
 - **BATCH-004 migration complete** ✅ — June 1–15 timesheets fully reconciled: 1278.25h, all 16 actors balanced.
 - **Q1 bonus corrections** — ✅ COMPLETE (2026-06-16). 16 letters in CEO inbox (₹72,231.13 total). Not yet forwarded to designers.
 - **Stacey auto-sync** — ✅ Removed (2026-06-16 cutover).
-- **Client timesheet generator** — NOT YET BUILT. Data exists (FACT_WORK_LOGS + FACT_BILLING_LEDGER + VW_JOB_CURRENT_STATE). See §7.
+- **Client timesheet generator** — ✅ BUILT (HTML-to-PDF, all clients, designer summary, product fallback). See SESSION_LOG.md 2026-06-30→07-08 entry.
+- **Work log correction system** — ✅ SHIPPED — amend/void/reassign with RBAC hierarchy + period-close guard, portal UI on My Hours.
+- **Work log job_number orphan cleanup** — ✅ 46 of 66 post-cutover orphans resolved (see §7 for the 19 remaining + §12 ADR-WL-001).
+- **June billing** — **PENDING**, blocked on Sarty confirmation of the June 06B reconciliation findings (client mis-attribution: BCH, DBS; missing hours: PBG, DBG, AR001) and outstanding designer hour submissions.
+- **New Sarty-reported portal issue (2026-07-08, not yet investigated)** — duplicate NORSPAN client entries in the job list, and `WORK_LOG_PERIOD_FIXED` maintenance rows visible in My Hours. See §8.
 
 ---
 
 ## 7. Pending Work / Next Steps
 
 Priority order:
-1. **Resolve job 260337 duplicate** — confirm with Sarty (same job or two separate), then void/renumber
-2. **Forward Q1 bonus letters** — 16 in CEO inbox (blccanada2026@gmail.com), review and forward to designers
-3. **Send Q2 rating requests + Q2 feedback requests** — via portal before end of June
-4. **Build client timesheet generator** — `generateClientTimesheet(clientCode, periodId)` in new `src/11-reporting/ClientTimesheetEngine.gs`
-5. **First June payroll run from V3** — after all active jobs are in correct state
-6. **Raw Q1 FACT_WORK_LOGS dedup** — 1,694 duplicate rows not yet cleaned (bonus already corrected via amendment)
+1. **Investigate Sarty's 2026-07-08 email** — (a) duplicate NORSPAN client entries (plain "NORSPAN" 55 jobs vs. "NORSPAN-MB" 4 jobs — same class of problem as MATIX vs. MATIX-SK); (b) `WORK_LOG_PERIOD_FIXED` system-maintenance rows visible to Sarty in My Hours — need to be filtered from that view. **Not yet investigated as of this entry.**
+2. **19 truly orphaned job_numbers** (post-cutover, don't resolve via normalization) — need a manual decision: create VW rows for them, or write them off. See ADR-WL-001.
+3. **Admin overhead policy decision** — how should `"job assign & help"`-style non-job hours be tracked going forward? Separate pseudo-job in VW, or excluded entirely from work-log reporting?
+4. **Fix `submitted_at`/`created_at` bug in `writeQueueItem`** — identified 2026-07-08, not yet fixed.
+5. **Test suite uses real staff identities** — flagged as a risk; needs a DEV-only test actor pass so test runs can't affect real staff data.
+6. **Inactive staff security check** — review RBAC/portal access for staff marked inactive in DIM_STAFF_ROSTER.
+7. **June billing** — resolve pending on Sarty confirmation + outstanding designer hour submissions, then run first June payroll from V3.
+8. **Forward Q1 bonus letters** — 16 in CEO inbox (blccanada2026@gmail.com), review and forward to designers.
+9. **Send Q2 rating requests + Q2 feedback requests** — via portal (may be overtaken by events — confirm current quarter status before sending).
+10. **Raw Q1 FACT_WORK_LOGS dedup** — 1,694 duplicate rows from Jan–Mar CSV re-import not yet cleaned (bonus already corrected via amendment; distinct from the 6 June duplicates found and voided this sprint).
 
 → Full backlog: `.claude/context/backlog.md`
 → Cutover sequence: `.claude/context/cutover-plan.md`
@@ -124,12 +132,20 @@ Priority order:
 | Risk | Severity | Status |
 |---|---|---|
 | Job `260337` duplicate in VW_JOB_CURRENT_STATE | ~~HIGH~~ | **RESOLVED 2026-06-29.** Three VW rows found: 260337 (Roof Truss, AR001), 260337F (I-Joist Floor, SGO), and a spurious 260337 (I-Joist Floor, SGO). Spurious row voided via `runJob260337Fix()`. JOB_DUPLICATE_VOIDED written to FACT_JOB_EVENTS. |
-| Client timesheet generator not built | **HIGH** | Sarty needs per-job breakdown with designer hours for client invoices — no function exists yet |
-| Q1 FACT_WORK_LOGS has 1,694 duplicate rows | Medium | Root cause: CSV re-import. Bonus corrected via amendment. Raw data not cleaned yet. |
+| Client timesheet generator not built | ~~HIGH~~ | **RESOLVED — shipped this sprint.** HTML-to-PDF, all clients, designer summary, product fallback. |
+| Full work log dedup (June) | ~~Medium~~ | **RESOLVED.** 6 duplicates (5 Category 1 + 1 ABB) found and voided via `WorkLogDedupFixer`. |
+| Q1 FACT_WORK_LOGS has 1,694 duplicate rows | Medium | **STILL OPEN — distinct from the June dedup above.** Root cause: Jan–Mar CSV re-import. Bonus corrected via amendment. Raw data not cleaned yet. |
+| **Duplicate NORSPAN client entries** | **HIGH — new, 2026-07-08** | Sarty reports plain "NORSPAN" (55 jobs) and "NORSPAN-MB" (4 jobs) both showing in the portal job list — same class of problem as MATIX vs. MATIX-SK. Likely either a second `client_code` entry in DIM_CLIENT_MASTER, or 55 jobs created with the wrong client_code. Those 55 jobs may be billing to a phantom client. **Not yet investigated** — flagged from Sarty's email, no diagnosis run yet. |
+| **`WORK_LOG_PERIOD_FIXED` rows visible in My Hours** | **Medium — new, 2026-07-08** | Sarty sees 0-hour system-maintenance rows ("period_id normalised...") from the period_id fixer in their My Hours view. These are internal maintenance events, not real work entries, and should be filtered out of that view. **Not yet fixed.** |
+| 1,448 total FACT_WORK_LOGS → VW orphan job_numbers | Medium | 1,382 pre-cutover (expected — migration artifact, see §11) + 66 post-cutover. Of the 66: 46 resolved via `OrphanJobNumberFixer` (99.75h moved, net zero), 19 remain genuinely orphaned (need manual VW decision), 1 is admin overhead ("job assign & help"). See ADR-WL-001. |
+| `submitted_at`/`created_at` bug in `writeQueueItem` | Medium | Identified 2026-07-08. Not yet fixed — needs a follow-up session. |
+| Test suite uses real staff identities | Medium | Test runs should use DEV-only synthetic actors, not real staff person_codes — risk of test data touching real staff records. Needs a pass to isolate. |
+| Inactive staff security check | Medium | Portal/RBAC access for staff marked `active=FALSE` in DIM_STAFF_ROSTER has not been explicitly re-verified since the active-flag whitelist fix (2026-06-29). |
 | BIT designer in FACT_QUARTERLY_BONUS | Medium | CALCULATED, composite 52.19% = same as JYS. Is BIT = Bittuu alias = JYS, or different person? |
 | 7 PENDING designers (AVM, PRG, RUD, SKR, SMB, SUB, SUB2) | Medium | All zeros in Q1. Confirm Q1 eligibility. Mark SKIPPED if ineligible. |
 | Dead-letter queue items (27 VALIDATION_FAILED) | Low | Fix deployed. Affected staff must resubmit any submissions from before 2026-06-18. |
-| Apps Script deployment | Low | `clasp push` alone is NOT enough — must also do "New version" redeploy in Apps Script editor for `/exec` URL to pick up changes. |
+| Dead-letter queue — full investigation | ~~Low~~ | **RESOLVED.** 1 real blocked job (NORSPAN, Sarty notified — separate from the NORSPAN client-duplicate issue above); 14 historical QC_SUBMIT failures, all pre-existing and resolved by `MigratedQCApprovalFixer`. |
+| Apps Script deployment | Low | `clasp push` alone is NOT enough — must also do "New version" redeploy in Apps Script editor for `/exec` URL to pick up changes. Portal redeploy requirement now explicit in R4/R5 checklists. |
 
 ---
 
@@ -204,6 +220,10 @@ runCEODailyBriefing()             # live run — sends email
 | CEO not in DIM_STAFF_ROSTER | RBAC hardcodes CEO email; keeps staff dimension clean |
 | All currency stored in INR at persistence layer | Single-currency storage simplifies payroll engine; FX conversion happens at run time |
 | Test runner split into 1–3 / 4–5 sub-runners (not full suite) | Consumer Apps Script 6-min limit; can't run all 50 tests in one execution |
+| **ADR-WL-001** — job_number normalization guard + net-zero retroactive fixer (not additive amendment) | Handler-level normalization prevents new orphans; net-zero void+resubmit avoids double-counting hours in PayrollEngine.aggregateHours_() (sums by actor_code+period regardless of job_number/event_type). Full ADR: `docs/SOP_DECISIONS.md` |
+| **ADR-WL-002** — 16-hour daily cap on work log submissions | Catches data-entry mistakes at submission time rather than in payroll/billing reconciliation weeks later. Full ADR: `docs/SOP_DECISIONS.md` |
+| **ADR-WL-003** — closed-job guard blocks work log submission against INVOICED/VOIDED/CANCELLED jobs | Protects billing integrity once a job is invoiced; corrections route through WorkLogCorrectionHandler instead. Full ADR: `docs/SOP_DECISIONS.md` |
+| **ADR-JOB-002** — product_code required at job creation, enforced via post-validation guard (not schema `required: true`) | Generic ValidationEngine message isn't actionable for a dropdown-driven submission; product_code drives job_type, SOP template resolution, and timesheet columns downstream. Full ADR: `docs/SOP_DECISIONS.md` |
 
 ---
 

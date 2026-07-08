@@ -345,3 +345,49 @@ These ADRs were approved by the CTO before implementation of PR QMS-2 (QC Findin
 **Decision (design note only — implementation deferred to QMS-3C or QMS-3D):** HealthMonitor should include a check for QC sessions where `session_started_at` is older than 24 hours and no COMPLETED or VOIDED row exists for the same `qc_session_id`. This check should emit a `WARN` log event and, optionally, a health alert to `HM_ALERT_RECIPIENT`. The detection query requires a DAL read on the current-period FACT_QC_REVIEW_SESSIONS partition, grouped by `qc_session_id`, filtering for sessions with STARTED but no COMPLETED/VOIDED row and `session_started_at < now - 24h`. No implementation is added in QMS-3C-Prep. This note records the design intent so it is not forgotten when QcReviewEngine is built.
 
 **Consequences:** No code changes. This ADR is a placeholder to ensure HealthMonitor coverage is designed into QcReviewEngine from the start rather than retrofitted. Implementation assigned to QMS-3C or QMS-3D depending on scope fit.
+
+---
+
+## Billing Hardening Sprint — Work Log & Job Creation Decisions
+
+---
+
+### ADR-WL-001: job_number normalization as defense in depth (guard + retroactive fixer)
+
+**Status:** Accepted  
+**Date:** 2026-07-08  
+**Context:** Post-cutover work log submissions occasionally carried a client/lot description suffix on `job_number` after a space or underscore (e.g. `"2605-6039-A Mary's Landing Lot 9-16 OWF"` instead of `"2605-6039-A"`). Because `VW_JOB_CURRENT_STATE` never has a row for the full descriptive string, a full FACT_WORK_LOGS → VW_JOB_CURRENT_STATE audit (`WorkLogOrphanAudit.gs`) found 1,448 total orphaned job_numbers across all partitions (1,382 pre-cutover, expected — see ADR context below; 66 post-cutover, unexpected). Of the 66 post-cutover orphans, normalization (strip everything after the first space/underscore) resolved 46 to a real VW row; 1 (`"job assign & help"`) is admin overhead, not a real job; 19 do not resolve and remain genuinely orphaned.  
+**Decision:** Two-layer fix. (1) **Guard** — `WorkLogHandler.handle()` normalizes `job_number` (strip to the token before the first space/underscore) immediately after payload validation, before the VW existence check and before the FACT_WORK_LOGS write, logging `WORK_LOG_JOB_NUMBER_NORMALIZED` (WARN) when normalization changes the value. This prevents new orphans of this shape at the source. (2) **Retroactive fixer** — `OrphanJobNumberFixer.gs` (`runOrphanJobNumberFixer(dryRun)`, wrapper `runOrphanJobNumberFixer_LIVE()`) resolves the 46 existing post-cutover orphans via a **net-zero void + re-submit** (not a single additive `WORK_LOG_AMENDED` row): for each correctable row, writes a `WORK_LOG_VOIDED` row under the original job_number (hours negated) plus a `WORK_LOG_SUBMITTED` row under the normalized job_number (same hours). Idempotent via `ORPHAN_JOB_FIX_<original event_id>` key, checked both by DAL scan and `IdempotencyEngine`.  
+**Why net-zero, not additive:** `PayrollEngine.aggregateHours_()` sums `FACT_WORK_LOGS` hours by `actor_code` + period only — it does not filter by `job_number` or `event_type`, and the only exclusion (`row.migration_batch`) is not a column present on the 2026-06/07 partitions these orphans live in. A single additive `WORK_LOG_AMENDED` row under the normalized job_number, with the original orphan row left untouched, would have doubled the actor's counted hours the moment payroll runs for that period. Net-zero re-attribution (matching the existing `WORK_LOG_REASSIGN` pattern in `WorkLogCorrectionHandler.gs`) keeps the actor's total hours unchanged regardless of payroll timing.  
+**Result:** `runOrphanJobNumberFixer_LIVE()` run in PROD — 46 job_numbers resolved, 99.75 hours moved (net zero to actor totals). 19 orphans remain genuinely un-resolvable (need a manual VW row decision — see PROJECT_MEMORY.md §7) and 1 admin-overhead entry (`"job assign & help"`) was intentionally skipped.  
+**Consequences:** New malformed submissions of this shape are caught at the handler before ever reaching FACT_WORK_LOGS. The 1,382 pre-cutover orphans were left untouched by this sprint — they predate the portal and were expected (migration imported raw work-log hours without corresponding job-lifecycle events for jobs already completed before cutover; see PROJECT_MEMORY.md §11). `OrphanJobNumberFixer` was added to `DAL.gs`'s `FACT_WORK_LOGS` `WRITE_PERMISSIONS` list — required before its writes could pass the write guard.
+
+---
+
+### ADR-WL-002: 16-hour daily cap on work log submissions
+
+**Status:** Accepted  
+**Date:** 2026-06-30  
+**Context:** Designers could submit unlimited hours per work_date with no sanity check. A fat-fingered entry (e.g. 80 instead of 8) would silently corrupt payroll and billing hours with no guard until manual reconciliation caught it weeks later.  
+**Decision:** `WorkLogHandler.handle()` Step 5d computes net hours already logged by the actor on the submitted `work_date` (`getDailyNetHours_`, excluding migration rows) and rejects the submission if adding the new hours would exceed 16h/day, with an error message showing already-logged vs. submitted hours. Shipped alongside a content-based duplicate guard (Step 5c: rejects an exact actor+job+date+hours repeat as a silent `DUPLICATE_WORK_LOG`, not an error).  
+**Consequences:** Obvious data-entry mistakes are caught at submission time. Legitimate long days (up to 16h) are still allowed — the cap is a sanity bound, not a policy limit on actual work hours. Test suite required dynamic per-run work dates (`TW_WORK_DATE`, offset slot logic) to avoid cross-test accumulation against the same actor+date.
+
+---
+
+### ADR-WL-003: Closed-job guard on work log submission
+
+**Status:** Accepted  
+**Date:** 2026-07-01  
+**Context:** Without a state check, designers could log hours against a job already in `INVOICED`, `VOIDED`, or `CANCELLED` state — appending new hours to a job whose invoice has already gone to the client, corrupting billing records after the fact.  
+**Decision:** `WorkLogHandler.handle()` Step 4 checks `StateMachine.getJobView(jobNumber).current_state` before accepting a submission. `INVOICED`, `VOIDED`, `CANCELLED` are explicitly blocked (not all covered by `Config.STATES` transitions); `StateMachine.isTerminal()` is checked as a fallback so any future terminal state added to `Config` is covered automatically. Rejected submissions throw `"Cannot log hours — job {job_number} is in {state} state."`  
+**Consequences:** Once a job is invoiced, its hours ledger is frozen against new work-log submissions. Legitimate corrections to a closed job's history go through the dedicated correction handlers (`WorkLogCorrectionHandler.gs` — amend/void/reassign), which have their own RBAC hierarchy and an explicit ALL-scope override for PM/CEO/ADMIN, rather than reopening the closed-job guard on the submission path itself.
+
+---
+
+### ADR-JOB-002: product_code required at job creation
+
+**Status:** Accepted  
+**Date:** 2026-07-06  
+**Context:** `JobCreateHandler`'s payload schema allowed `product_code` to be blank (`required: false`). Downstream, `product_code` drives job_type classification/fallback, SOP template resolution (product-scoped SOPs), QC finding applicability (e.g. `PLATE_ERROR` is TRUSS-specific), and client timesheet product/job-type columns. Blank `product_code` at the source pushed fallback-handling complexity into every one of those downstream consumers instead of validating once where the job is created. A related audit (`BlankProductAudit.gs`) found existing blank-`product_code` jobs for SBS and NORSPAN in one period.  
+**Decision:** Enforced with a **post-validation guard**, not a schema `required: true` change — `ValidationEngine`'s generic "field is required" message isn't actionable for a job-creation submitter choosing from a product dropdown. `JobCreateHandler.handle()` Step 2a explicitly checks `cleanPayload.product_code` for blank/absent after validation and throws a specific, actionable message: `"Product type is required. Please select a product (e.g. Roof Truss, Floor Truss)."` The schema field itself stays `required: false` with a comment explaining the guard handles enforcement.  
+**Consequences:** All new jobs must specify a product at creation; existing blank-`product_code` jobs identified by `BlankProductAudit.gs` are a separate cleanup item, not retroactively touched by this guard. Downstream product-dependent logic (job_type fallback, SOP template resolution, timesheet generation) can now assume `product_code` is always present for jobs created after 2026-07-06.
