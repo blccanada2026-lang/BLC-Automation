@@ -80,6 +80,31 @@ var WorkLogHandler = (function () {
   };
 
   // ============================================================
+  // SECTION 1b: JOB NUMBER NORMALIZATION
+  //
+  // Portal work-log submissions have occasionally carried a
+  // client/lot description suffix on job_number (e.g.
+  // "2605-6039-A Mary's Landing Lot 9-16 OWF" instead of
+  // "2605-6039-A"). Since VW_JOB_CURRENT_STATE never has a row
+  // for the full descriptive string, those rows became orphans in
+  // FACT_WORK_LOGS with no matching VW projection. Stripping the
+  // suffix before the Step 4 existence check and before the write
+  // keeps both aligned.
+  // ============================================================
+
+  /**
+   * Strips a job_number down to the token before the first space
+   * or underscore. No space/underscore present → returned unchanged.
+   * @param {string} jobNumber
+   * @returns {string}
+   */
+  function normalizeJobNumber_(jobNumber) {
+    var s   = String(jobNumber || '').trim();
+    var idx = s.search(/[ _]/);
+    return idx === -1 ? s : s.substring(0, idx);
+  }
+
+  // ============================================================
   // SECTION 2: DUPLICATE DETECTION
   // ============================================================
 
@@ -249,6 +274,22 @@ var WorkLogHandler = (function () {
     );
 
     var jobNumber = cleanPayload.job_number;
+
+    // ── Step 3b: Normalize job_number before any lookup or write ──
+    // Must run before Step 4 so the VW existence check and the
+    // FACT_WORK_LOGS write both use the same, correct job_number.
+    var normalizedJobNumber = normalizeJobNumber_(jobNumber);
+    if (normalizedJobNumber !== jobNumber) {
+      Logger.warn('WORK_LOG_JOB_NUMBER_NORMALIZED', {
+        module:     'WorkLogHandler',
+        message:    'job_number normalized before FACT_WORK_LOGS write',
+        queue_id:   queueId,
+        original:   jobNumber,
+        normalized: normalizedJobNumber
+      });
+      jobNumber              = normalizedJobNumber;
+      cleanPayload.job_number = normalizedJobNumber;
+    }
 
     // ── Step 4: Job existence + closed-state guard ─────────
     var view = StateMachine.getJobView(jobNumber);

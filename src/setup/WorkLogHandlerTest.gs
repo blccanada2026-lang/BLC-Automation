@@ -5,7 +5,7 @@
 // LOAD ORDER: Setup tier — loads after all T0–T7 files.
 //
 // HOW TO RUN (Apps Script editor):
-//   runWorkLogTests()  — all 8 tests, summary at end
+//   runWorkLogTests()  — 9 tests, summary at end
 //
 // Individual tests:
 //   testWorkLogHandler_happyPath()
@@ -15,8 +15,14 @@
 //   testWorkLogHandler_duplicate()
 //   testWorkLogHandler_contentDuplicate()
 //   testWorkLogHandler_dailyCap()
+//   testWorkLogHandler_jobNumberNormalization()
 //   testWorkLogHandler_closedState()
 //   testWorkLogHandler_rbacFirst()
+//
+// NOTE: testWorkLogHandler_closedState() is defined below but was
+// already absent from the runWorkLogTests() tests[] array before this
+// change — pre-existing gap, not introduced here. Run it individually
+// if you need it.
 //
 // Test actors:
 //   DESIGNER (WORK_LOG_SUBMIT allowed) : designer@blclotus.com  (TH_DESIGNER_EMAIL)
@@ -55,6 +61,14 @@ var TW_WORK_DATE = (function() {
 var TW_WORK_DATE_CAP = (function() {
   var slot = Math.floor(Date.now() / 1000) % 365; // 365 unique dates in 2025
   var d    = new Date(Date.UTC(2025, 0, 1) + slot * 86400000);
+  var y = d.getUTCFullYear(), mo = d.getUTCMonth() + 1, dy = d.getUTCDate();
+  return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (dy < 10 ? '0' : '') + dy;
+}());
+// TW_WORK_DATE_NORM uses 2026 so it never overlaps TW_WORK_DATE (2024) or
+// TW_WORK_DATE_CAP (2025) — avoids daily-cap accumulation across tests.
+var TW_WORK_DATE_NORM = (function() {
+  var slot = Math.floor(Date.now() / 1000) % 200; // 200 unique dates in 2026
+  var d    = new Date(Date.UTC(2026, 0, 1) + slot * 86400000);
   var y = d.getUTCFullYear(), mo = d.getUTCMonth() + 1, dy = d.getUTCDate();
   return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (dy < 10 ? '0' : '') + dy;
 }());
@@ -780,6 +794,122 @@ function testWorkLogHandler_closedState() {
 }
 
 // ============================================================
+// TEST — job_number Normalization Guard (Fix A)
+// Submits a work log whose job_number carries a description
+// suffix after a space (e.g. "<job> Mary's Landing Lot 9-16 OWF").
+// WorkLogHandler must strip everything after the first space or
+// underscore BEFORE the VW existence check and the FACT_WORK_LOGS
+// write, so:
+//   - the queue item completes (job resolves against VW)
+//   - FACT_WORK_LOGS stores the normalized job_number, not the raw one
+//   - a WORK_LOG_JOB_NUMBER_NORMALIZED warning is logged to _SYS_LOGS
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testWorkLogHandler_jobNumberNormalization() {
+  var results  = [];
+  var counters = { passed: 0, failed: 0 };
+
+  try {
+    var jobNumber = thSetupInProgressJob_('wl-normalize');
+    assertH_(results, counters, 'Setup: IN_PROGRESS job created', !!jobNumber,
+      'jobNumber=' + jobNumber);
+    if (!jobNumber) { results.push('  SKIP: setup failed'); return counters; }
+
+    DAL._resetApiCallCount();
+
+    var rawJobNumber = jobNumber + " Mary's Landing Lot 9-16 OWF";
+
+    var logResult = IntakeService.processSubmission({
+      formType:       Config.FORM_TYPES.WORK_LOG,
+      submitterEmail: TH_DESIGNER_EMAIL,
+      payload: {
+        job_number: rawJobNumber,
+        hours:      2.5,
+        work_date:  TW_WORK_DATE_NORM,
+        notes:      'WorkLogHandlerTest jobNumberNormalization'
+      },
+      source: 'TEST'
+    });
+    assertH_(results, counters, 'IntakeService returns ok=true',
+      logResult.ok === true, JSON.stringify(logResult));
+
+    processQueueFresh_();
+
+    // ── Queue item must complete — normalization makes the job resolvable ──
+    var queueItems = DAL.readWhere(
+      Config.TABLES.STG_PROCESSING_QUEUE,
+      { queue_id: logResult.queueId },
+      { callerModule: 'WorkLogHandlerTest' }
+    );
+    var queueItem = queueItems.length > 0 ? queueItems[0] : null;
+    assertH_(results, counters, 'Queue item completed (job resolved after normalization)',
+      queueItem && queueItem.status === 'COMPLETED',
+      queueItem ? queueItem.status : 'no item');
+
+    // ── FACT_WORK_LOGS row must be stored under the NORMALIZED job_number ──
+    var logs = DAL.readWhere(
+      Config.TABLES.FACT_WORK_LOGS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'WorkLogHandlerTest' }
+    );
+    var logEvent = null;
+    for (var i = 0; i < logs.length; i++) {
+      if (logs[i].event_type === Constants.EVENT_TYPES.WORK_LOG_SUBMITTED) {
+        logEvent = logs[i]; break;
+      }
+    }
+    assertH_(results, counters, 'FACT_WORK_LOGS row written under normalized job_number',
+      !!logEvent, 'rows found for normalized job_number: ' + logs.length);
+    assertH_(results, counters, 'Stored job_number has no description suffix',
+      logEvent && logEvent.job_number === jobNumber,
+      logEvent ? logEvent.job_number : 'null');
+    assertH_(results, counters, 'Hours unaffected by normalization (2.5)',
+      logEvent && Number(logEvent.hours) === 2.5,
+      logEvent ? String(logEvent.hours) : 'null');
+
+    // ── No row written under the raw, un-normalized job_number ──
+    var rawLogs = DAL.readWhere(
+      Config.TABLES.FACT_WORK_LOGS,
+      { job_number: rawJobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'WorkLogHandlerTest' }
+    );
+    assertH_(results, counters, 'No FACT_WORK_LOGS row written under raw un-normalized job_number',
+      rawLogs.length === 0, 'rows found: ' + rawLogs.length);
+
+    // ── A normalization warning must have been logged to _SYS_LOGS ──
+    var warnRows = DAL.readWhere(
+      Config.TABLES.SYS_LOGS,
+      { action: 'WORK_LOG_JOB_NUMBER_NORMALIZED' },
+      { callerModule: 'WorkLogHandlerTest' }
+    );
+    var matchedWarn = null;
+    for (var w = 0; w < warnRows.length; w++) {
+      var detail = {};
+      try { detail = JSON.parse(warnRows[w].detail_json || '{}'); } catch (parseErr) { /* skip malformed */ }
+      if (detail.original === rawJobNumber && detail.normalized === jobNumber) {
+        matchedWarn = warnRows[w];
+        break;
+      }
+    }
+    assertH_(results, counters, 'WORK_LOG_JOB_NUMBER_NORMALIZED warning logged for this submission',
+      !!matchedWarn, matchedWarn ? 'found' : 'no matching _SYS_LOGS row');
+    assertH_(results, counters, 'Logged warning has level WARN',
+      matchedWarn && matchedWarn.level === 'WARN',
+      matchedWarn ? matchedWarn.level : 'null');
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+
+  printResultsH_('testWorkLogHandler_jobNumberNormalization', results, counters);
+  return counters;
+}
+
+// ============================================================
 // TEST 9 — RBAC Fires Before Parse/Validate (R3 compliance)
 // A CLIENT actor (WORK_LOG_SUBMIT=false) submits payload_json that
 // is malformed JSON — it would fail JSON.parse AND (if parsed)
@@ -852,7 +982,7 @@ function testWorkLogHandler_rbacFirst() {
 function runWorkLogTests() {
   console.log('');
   console.log('═══════════════════════════════════════════════════════');
-  console.log('  WORK LOG HANDLER TEST SUITE (8 tests)');
+  console.log('  WORK LOG HANDLER TEST SUITE (9 tests)');
   console.log('═══════════════════════════════════════════════════════');
 
   seedTestStaff();
@@ -866,6 +996,7 @@ function runWorkLogTests() {
     testWorkLogHandler_duplicate,
     testWorkLogHandler_contentDuplicate,
     testWorkLogHandler_dailyCap,
+    testWorkLogHandler_jobNumberNormalization,
     testWorkLogHandler_rbacFirst
   ];
 
