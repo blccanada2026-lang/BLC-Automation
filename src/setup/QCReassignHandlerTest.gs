@@ -367,6 +367,9 @@ function testQCReassignHandler_missingReviewerCode() {
  * @returns {{ passed: number, failed: number }}
  */
 function runQCReassignTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   console.log('');
   console.log('═══════════════════════════════════════════════════════');
   console.log('  QC REASSIGN HANDLER TEST SUITE');
@@ -400,5 +403,6 @@ function runQCReassignTests() {
   }
   console.log('═══════════════════════════════════════════════════════');
 
+  thCleanupTestArtifacts_();
   return suiteCounters;
 }

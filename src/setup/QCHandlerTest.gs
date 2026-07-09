@@ -478,6 +478,9 @@ function testQCHandler_duplicate() {
  * @returns {{ passed: number, failed: number }}
  */
 function runQCHandlerTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   console.log('');
   console.log('═══════════════════════════════════════════════════════');
   console.log('  QC HANDLER TEST SUITE');
@@ -512,6 +515,7 @@ function runQCHandlerTests() {
   }
   console.log('═══════════════════════════════════════════════════════');
 
+  thCleanupTestArtifacts_();
   return suiteCounters;
 }
 
@@ -896,6 +900,9 @@ function testQCHandler_flowC_clientSent() {
  * @returns {{ passed: number, failed: number }}
  */
 function runQCHandlerFlowTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   console.log('');
   console.log('═══════════════════════════════════════════════════════');
   console.log('  QC HANDLER FLOW B/C TEST SUITE');
@@ -929,5 +936,6 @@ function runQCHandlerFlowTests() {
   }
   console.log('═══════════════════════════════════════════════════════');
 
+  thCleanupTestArtifacts_();
   return suiteCounters;
 }

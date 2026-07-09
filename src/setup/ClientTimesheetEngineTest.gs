@@ -67,6 +67,9 @@ function testClientTimesheetEngine_columnCount() {
  * Runs all ClientTimesheetEngine tests. Returns pass/fail summary.
  */
 function runClientTimesheetTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var tests = [
     testClientTimesheetEngine_noNegativeHours,
     testClientTimesheetEngine_noZeroHourRows,

@@ -18,15 +18,25 @@
 // ============================================================
 
 // ── Suite-wide constants ──────────────────────────────────────
+//
+// TH_*_EMAIL are synthetic — resolved only via getDevTestActors_()
+// in RBAC.gs (gated on Config.isDev()), never a real DIM_STAFF_ROSTER
+// row. This closes two problems found 2026-07-08: (1) these constants
+// previously used sarthakaespl@gmail.com / designer@blclotus.com —
+// real PROD identities not gated by Config.isDev() — so any test run
+// against PROD created real jobs under Sarty's real PM identity; and
+// (2) TH_CLIENT_CODE='NORSPAN' collided with the real NORSPAN-MB
+// client, producing the 66-job client_code pollution (see
+// NorspanClientCodeFixer.gs, NorspanClientDuplicateAudit.gs).
 var TH_PERIOD_ID      = Identifiers.generateCurrentPeriodId();
-var TH_CEO_EMAIL      = 'sarthakaespl@gmail.com';  // SGO (PM) — highest PROD role available
-var TH_PM_EMAIL       = 'sarthakaespl@gmail.com';
-var TH_DESIGNER_EMAIL = 'designer@blclotus.com';
-var TH_QC_EMAIL       = 'qc@blclotus.com';
+var TH_CEO_EMAIL      = 'test-ceo@test.blc.internal';
+var TH_PM_EMAIL       = 'test-pm@test.blc.internal';
+var TH_DESIGNER_EMAIL = 'test-designer@test.blc.internal';
+var TH_QC_EMAIL       = 'test-qc@test.blc.internal';
 var TH_UNKNOWN_EMAIL  = 'nobody@notinrbac.com';
-var TH_DESIGNER_CODE  = 'DS1';
-var TH_QC_CODE        = 'QC1';
-var TH_CLIENT_CODE    = 'NORSPAN';
+var TH_DESIGNER_CODE  = 'DS1';  // unchanged — matches getDevTestActors_() mapping for TH_DESIGNER_EMAIL
+var TH_QC_CODE        = 'QC1';  // unchanged — matches getDevTestActors_() mapping for TH_QC_EMAIL
+var TH_CLIENT_CODE    = 'TEST-CLIENT';
 var TH_PRODUCT_CODE   = 'Alpine-iCommand';
 
 // ── Assertion helper ──────────────────────────────────────────
@@ -85,6 +95,9 @@ function printResultsH_(testName, results, counters) {
  * @returns {string|null}
  */
 function thSetupIntakeReceivedJob_(tag) {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   clearStalePendingItems_();
   var r = IntakeService.processSubmission({
     formType:       Config.FORM_TYPES.JOB_CREATE,
@@ -122,6 +135,9 @@ function thSetupIntakeReceivedJob_(tag) {
  * @returns {string|null}
  */
 function thSetupAllocatedJob_(tag) {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   clearStalePendingItems_();
   var r = IntakeService.processSubmission({
     formType:       Config.FORM_TYPES.JOB_CREATE,
@@ -315,6 +331,9 @@ function runV3Tests_4to5() {
  * @param {Array}   suites  Array of { name, fn }
  */
 function runSuiteGroup_(label, suites) {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   console.log('');
   console.log('╔══════════════════════════════════════════════════════╗');
   console.log('║  BLC NEXUS — V3 HANDLER TESTS (suites ' + label + ')' +
@@ -368,6 +387,8 @@ function runSuiteGroup_(label, suites) {
     console.log('  ❌  ' + totalFailed + ' failure(s) — fix before commit');
   }
   console.log('╚══════════════════════════════════════════════════════╝');
+
+  thCleanupTestArtifacts_();
 }
 
 /**
@@ -391,4 +412,64 @@ function runV3HandlerTests() {
     { name: '10 — QCReassignHandler',    fn: runQCReassignTests      },
     { name: '11 — WorkLogCorrectionHandler', fn: runWorkLogCorrectionTests }
   ]);
+}
+
+// ── Test artifact cleanup ──────────────────────────────────────
+//
+// FACT_JOB_EVENTS/FACT_WORK_LOGS rows created during a test run are
+// NOT deleted here — Rule A5 (append-only facts) hard-blocks
+// DAL.updateWhere/deleteWhere on FACT tables, and appending void
+// events would add MORE test-tagged rows, not fewer. Once every
+// runner above is Config.isDev()-gated, residual FACT test rows are
+// harmless DEV-only history — the same append-only trail every other
+// FACT row carries. Ask before adding a DEV-only bulk-delete escape
+// hatch if this history genuinely needs a hard purge.
+//
+// VW_JOB_CURRENT_STATE is a projection, not a FACT table (Rule A4),
+// so voiding it here is safe. Self-healing: scans for TH_CLIENT_CODE
+// rather than tracking job_numbers from this run, so it also cleans
+// up leftovers from a crashed/interrupted prior run.
+
+/**
+ * Voids every VW_JOB_CURRENT_STATE row with client_code = TH_CLIENT_CODE
+ * ('TEST-CLIENT') that isn't already VOIDED. DEV-only — no-ops in PROD
+ * (belt-and-suspenders; every caller is itself isDev()-gated already).
+ */
+function thCleanupTestArtifacts_() {
+  if (!Config.isDev()) return;
+
+  var MODULE = 'TestHarness';
+  var rows;
+  try {
+    rows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+  } catch (e) {
+    console.log('  [th-cleanup] Could not read VW_JOB_CURRENT_STATE: ' + e.message);
+    return;
+  }
+
+  var targets = (rows || []).filter(function(r) {
+    return String(r.client_code || '').trim() === TH_CLIENT_CODE &&
+           String(r.current_state || '') !== 'VOIDED';
+  });
+
+  if (targets.length === 0) return;
+
+  var voided = 0, failed = 0;
+  for (var i = 0; i < targets.length; i++) {
+    var jobNumber = String(targets[i].job_number || '');
+    if (!jobNumber) continue;
+    try {
+      DAL.updateWhere(
+        Config.TABLES.VW_JOB_CURRENT_STATE,
+        { job_number: jobNumber, client_code: TH_CLIENT_CODE },
+        { current_state: 'VOIDED', updated_at: new Date().toISOString() },
+        { callerModule: MODULE }
+      );
+      voided++;
+    } catch (e) {
+      failed++;
+    }
+  }
+  console.log('  [th-cleanup] Voided ' + voided + ' test job(s)' +
+              (failed ? ', ' + failed + ' failed' : '') + ' (client_code=' + TH_CLIENT_CODE + ')');
 }

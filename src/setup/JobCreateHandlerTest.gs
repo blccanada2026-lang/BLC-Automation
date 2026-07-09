@@ -586,6 +586,9 @@ function testJobCreateHandler_blankProductCode() {
  * @returns {{ passed: number, failed: number }}
  */
 function runJobCreateTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   console.log('');
   console.log('═══════════════════════════════════════════════════════');
   console.log('  JOB CREATE HANDLER TEST SUITE');
@@ -622,5 +625,6 @@ function runJobCreateTests() {
   }
   console.log('═══════════════════════════════════════════════════════');
 
+  thCleanupTestArtifacts_();
   return suiteCounters;
 }

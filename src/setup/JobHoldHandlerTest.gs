@@ -391,6 +391,9 @@ function testJobHoldHandler_duplicate() {
  * @returns {{ passed: number, failed: number }}
  */
 function runJobHoldTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   console.log('');
   console.log('═══════════════════════════════════════════════════════');
   console.log('  JOB HOLD HANDLER TEST SUITE');
@@ -425,5 +428,6 @@ function runJobHoldTests() {
   }
   console.log('═══════════════════════════════════════════════════════');
 
+  thCleanupTestArtifacts_();
   return suiteCounters;
 }

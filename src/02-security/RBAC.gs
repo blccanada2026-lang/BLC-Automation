@@ -524,7 +524,15 @@ var RBAC = (function () {
     return {
       'rajeshnair34@gmail.com':  { personCode: 'RPM', role: ROLES.PM,        displayName: 'Raj (PM)' },
       'rajnaircanada@gmail.com': { personCode: 'RND', role: ROLES.DESIGNER,  displayName: 'Raj (Designer)' },
-      'nairscanada@gmail.com':   { personCode: 'NTL', role: ROLES.TEAM_LEAD, displayName: 'Raj (TL)' }
+      'nairscanada@gmail.com':   { personCode: 'NTL', role: ROLES.TEAM_LEAD, displayName: 'Raj (TL)' },
+      // Synthetic V3 test-harness actors (TestHarness.gs TH_*_EMAIL / TestRunner.gs
+      // TEST_ACTOR_EMAIL) — personCode kept identical to the pre-existing
+      // DS1/QC1 values so assertions comparing actor_code against
+      // TH_DESIGNER_CODE/TH_QC_CODE are unaffected by this email change.
+      'test-ceo@test.blc.internal':      { personCode: 'TCEO', role: ROLES.CEO,      displayName: 'Test CEO' },
+      'test-pm@test.blc.internal':       { personCode: 'TPM',  role: ROLES.PM,       displayName: 'Test PM' },
+      'test-designer@test.blc.internal': { personCode: 'DS1',  role: ROLES.DESIGNER, displayName: 'Test Designer' },
+      'test-qc@test.blc.internal':       { personCode: 'QC1',  role: ROLES.QC,       displayName: 'Test QC' }
     };
   }
 

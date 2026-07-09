@@ -28,6 +28,9 @@
  * @returns {{ passed: number, failed: number }}
  */
 function runQcFindingTypesTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var totalPassed = 0;
   var totalFailed = 0;
 

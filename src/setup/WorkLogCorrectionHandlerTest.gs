@@ -569,6 +569,9 @@ function testWLC_negativeHoursGuard_reject() {
  * @returns {{ passed: number, failed: number }}
  */
 function runWorkLogCorrectionTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   console.log('');
   console.log('═══════════════════════════════════════════════════════');
   console.log('  WORK LOG CORRECTION HANDLER TEST SUITE (10 tests)');
@@ -610,5 +613,6 @@ function runWorkLogCorrectionTests() {
   }
   console.log('═══════════════════════════════════════════════════════');
 
+  thCleanupTestArtifacts_();
   return suiteCounters;
 }

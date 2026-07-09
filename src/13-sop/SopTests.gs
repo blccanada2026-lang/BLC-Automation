@@ -14,6 +14,9 @@
 // Test runner
 // ──────────────────────────────────────────────────────────
 function testSopAll() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var results = [];
   var tests   = [
     testSopDAL_getActiveTemplate_found,

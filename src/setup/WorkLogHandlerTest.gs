@@ -980,6 +980,9 @@ function testWorkLogHandler_rbacFirst() {
  * @returns {{ passed: number, failed: number }}
  */
 function runWorkLogTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   console.log('');
   console.log('═══════════════════════════════════════════════════════');
   console.log('  WORK LOG HANDLER TEST SUITE (9 tests)');
@@ -1018,5 +1021,6 @@ function runWorkLogTests() {
   }
   console.log('═══════════════════════════════════════════════════════');
 
+  thCleanupTestArtifacts_();
   return suiteCounters;
 }

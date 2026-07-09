@@ -413,6 +413,9 @@ function testJobResumeHandler_duplicate() {
  * @returns {{ passed: number, failed: number }}
  */
 function runJobResumeTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   console.log('');
   console.log('═══════════════════════════════════════════════════════');
   console.log('  JOB RESUME HANDLER TEST SUITE');
@@ -447,5 +450,6 @@ function runJobResumeTests() {
   }
   console.log('═══════════════════════════════════════════════════════');
 
+  thCleanupTestArtifacts_();
   return suiteCounters;
 }

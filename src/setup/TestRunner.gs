@@ -225,24 +225,28 @@ function runDiagnostic() {
   line_();
 }
 
-// ── Test actor — must exist in DIM_STAFF_ROSTER ───────────────
-// sarthakaespl@gmail.com = SGO (PM) — has JOB_CREATE + ADMIN_CONFIG
-var TEST_ACTOR_EMAIL = 'sarthakaespl@gmail.com';
+// ── Test actor — synthetic, resolved only via getDevTestActors_() ──
+// (RBAC.gs, gated on Config.isDev()) — never a real DIM_STAFF_ROSTER row.
+// Was sarthakaespl@gmail.com (Sarty's real PROD PM identity) until
+// 2026-07-08 — a second, parallel copy of the same real-identity/
+// real-client-code pollution problem found in TestHarness.gs's TH_*
+// constants (see NorspanClientCodeFixer.gs history).
+var TEST_ACTOR_EMAIL = 'test-pm@test.blc.internal';
 
 // ── Test payloads ─────────────────────────────────────────────
 // JOB_CREATE — includes allocated_to so VW initial state = ALLOCATED
 // This allows runTestJobStartE2E() to immediately start the job.
 var TEST_JOB_PAYLOAD = {
-  client_code:  'NORSPAN',
+  client_code:  'TEST-CLIENT',
   job_type:     'DESIGN',
   product_code: 'Alpine-iCommand',
   quantity:     3,
-  allocated_to: 'designer@blclotus.com',   // pre-allocate to DS1
+  allocated_to: 'test-designer@test.blc.internal',   // pre-allocate to DS1
   notes:        'E2E test — ' + new Date().toISOString()
 };
 
 // JOB_START — job_number filled in dynamically by runTestJobStartE2E()
-var TEST_JOB_START_ACTOR = 'designer@blclotus.com';  // DS1 — DESIGNER role, JOB_START allowed
+var TEST_JOB_START_ACTOR = 'test-designer@test.blc.internal';  // DS1 — DESIGNER role, JOB_START allowed
 
 // ============================================================
 // HELPERS
@@ -303,11 +307,14 @@ function processQueueFresh_() {
  * Idempotent — StaffOnboarding.onboardStaff() skips existing person_codes.
  */
 function seedTestStaff() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var testStaff = [
     {
       person_code:     'DS1',
       name:            'Test Designer',
-      email:           'designer@blclotus.com',
+      email:           'test-designer@test.blc.internal',
       role:            'DESIGNER',
       pay_currency:    'INR',
       pay_design:      500,
@@ -320,7 +327,7 @@ function seedTestStaff() {
     {
       person_code:     'QC1',
       name:            'Test QC Reviewer',
-      email:           'qc@blclotus.com',
+      email:           'test-qc@test.blc.internal',
       role:            'QC',
       pay_currency:    'INR',
       pay_design:      0,
@@ -380,6 +387,9 @@ function seedTestStaff() {
  * Used by WorkLog, HoldResume, and QC tests to skip repeated setup.
  */
 function setupTestJobInProgress_() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   // Snapshot VW row count before creating — used to confirm a new row was added
   var prevVwCount = getVwRowCount_();
 
@@ -873,7 +883,7 @@ function runTestQCE2E() {
   info_('Flow B: QC reviewer approving the job…');
   var approveResult = IntakeService.processSubmission({
     formType:       'QC_SUBMIT',
-    submitterEmail: 'qc@blclotus.com',    // QC reviewer
+    submitterEmail: 'test-qc@test.blc.internal',    // QC reviewer (QC1)
     payload:        {
       job_number: jobNumber,
       qc_result:  'APPROVED',
@@ -1302,19 +1312,31 @@ function setupPortalUrl() {
 // ============================================================
 
 // ── Shared test constants ───────────────────────────────────
+// Synthetic — resolved only via getDevTestActors_() in RBAC.gs (gated
+// on Config.isDev()). Was sarthakaespl@gmail.com / designer@blclotus.com /
+// qc@blclotus.com (real PROD identities) + client_code 'NORSPAN' (a
+// real client) until 2026-07-08 — a third, independent copy of the
+// same pollution problem found in TestHarness.gs's TH_* and this
+// file's own TEST_ACTOR_EMAIL/TEST_JOB_PAYLOAD. SUITE_CEO_EMAIL is
+// kept equal to SUITE_PM_EMAIL (both map to the synthetic PM actor)
+// to preserve this suite's pre-existing behavior exactly — it was
+// never actually a distinct CEO identity (same real email as PM
+// before this change), and promoting it to true CEO role now would
+// be a behavior change to ~15 payroll/RBAC assertions this suite
+// cannot be re-run here to verify.
 var SUITE_PERIOD_ID  = '2026-04';
-var SUITE_CEO_EMAIL  = 'sarthakaespl@gmail.com';  // SGO (PM) — highest PROD role available
-var SUITE_PM_EMAIL   = 'sarthakaespl@gmail.com';
-var SUITE_DESIGNER   = 'designer@blclotus.com';
-var SUITE_QC_EMAIL   = 'qc@blclotus.com';
+var SUITE_CEO_EMAIL  = 'test-pm@test.blc.internal';
+var SUITE_PM_EMAIL   = 'test-pm@test.blc.internal';
+var SUITE_DESIGNER   = 'test-designer@test.blc.internal';
+var SUITE_QC_EMAIL   = 'test-qc@test.blc.internal';
 var SUITE_UNKNOWN    = 'unknown@notinrbac.com';
 
 var SUITE_JOB_PAYLOAD = {
-  client_code:  'NORSPAN',
+  client_code:  'TEST-CLIENT',
   job_type:     'DESIGN',
   product_code: 'Alpine-iCommand',
   quantity:     1,
-  allocated_to: 'designer@blclotus.com',
+  allocated_to: 'test-designer@test.blc.internal',
   notes:        'Automated test suite — ' + new Date().toISOString()
 };
 
@@ -2392,7 +2414,7 @@ function testValidationRejection() {
     IntakeService.processSubmission({
       formType:       Config.FORM_TYPES.JOB_CREATE,
       submitterEmail: SUITE_PM_EMAIL,
-      payload:        { client_code: 'NORSPAN', job_type: 'DESIGN', quantity: 0 },
+      payload:        { client_code: 'TEST-CLIENT', job_type: 'DESIGN', quantity: 0 },
       source:         'TEST'
     });
     processQueueFresh_();
@@ -2627,6 +2649,9 @@ function testPayrollRBACGuard() {
  *   L - Payroll RBAC guard
  */
 function runAllTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var totalPassed = 0;
   var totalFailed = 0;
   var suiteResults = [];
@@ -2703,6 +2728,9 @@ function runAllTests() {
  * Run runAllTestsPart2() separately for G–L.
  */
 function runAllTestsPart1() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var totalPassed = 0;
   var totalFailed = 0;
   var suiteResults = [];
@@ -2766,6 +2794,9 @@ function runAllTestsPart1() {
  * Run runAllTestsPart1() first.
  */
 function runAllTestsPart2() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var totalPassed = 0;
   var totalFailed = 0;
   var suiteResults = [];
@@ -2829,6 +2860,9 @@ function runAllTestsPart2() {
  * Run before runAllTestsPart1B().
  */
 function runAllTestsPart1A() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var totalPassed = 0;
   var totalFailed = 0;
   var suiteResults = [];
@@ -2890,6 +2924,9 @@ function runAllTestsPart1A() {
  * Run after runAllTestsPart1A().
  */
 function runAllTestsPart1B() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var totalPassed = 0;
   var totalFailed = 0;
   var suiteResults = [];

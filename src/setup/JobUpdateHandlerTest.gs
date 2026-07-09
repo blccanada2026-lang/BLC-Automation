@@ -316,6 +316,9 @@ function testJobUpdateHandler_unknownJob() {
  * @returns {{ passed: number, failed: number }}
  */
 function runJobUpdateTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   console.log('');
   console.log('═══════════════════════════════════════════════════════');
   console.log('  JOB UPDATE HANDLER TEST SUITE');
@@ -350,5 +353,6 @@ function runJobUpdateTests() {
   }
   console.log('═══════════════════════════════════════════════════════');
 
+  thCleanupTestArtifacts_();
   return suiteCounters;
 }

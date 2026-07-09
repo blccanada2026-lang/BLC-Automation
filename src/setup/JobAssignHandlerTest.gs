@@ -30,15 +30,20 @@
 
 // ── Constants ─────────────────────────────────────────────
 var T_PERIOD_ID     = '2026-06';
-var T_PM_EMAIL      = 'sarthakaespl@gmail.com';  // SGO (PM) — JOB_ALLOCATE allowed
-var T_DESIGNER_EMAIL = 'designer@blclotus.com';  // DS1 — no JOB_ALLOCATE
-var T_CEO_EMAIL      = 'sarthakaespl@gmail.com'; // SGO — highest PROD role available
+// Synthetic — resolved only via getDevTestActors_() in RBAC.gs. Was
+// sarthakaespl@gmail.com / designer@blclotus.com (real PROD identities)
+// until 2026-07-08 — a fourth independent copy of the same pollution
+// problem found in TestHarness.gs's TH_* constants. T_CEO_EMAIL kept
+// equal to T_PM_EMAIL (see SUITE_CEO_EMAIL in TestRunner.gs for why).
+var T_PM_EMAIL      = 'test-pm@test.blc.internal';       // PM — JOB_ALLOCATE allowed
+var T_DESIGNER_EMAIL = 'test-designer@test.blc.internal'; // DS1 — no JOB_ALLOCATE
+var T_CEO_EMAIL      = 'test-pm@test.blc.internal';
 var T_DESIGNER_CODE  = 'DS1';                    // valid active designer
 var T_BAD_DESIGNER   = 'TEST-GHOST-99';          // does not exist in DIM_STAFF_ROSTER
 
 // Base payload for creating an INTAKE_RECEIVED job (no allocated_to)
 var T_CREATE_UNALLOCATED = {
-  client_code:  'NORSPAN',
+  client_code:  'TEST-CLIENT',
   job_type:     'DESIGN',
   product_code: 'Alpine-iCommand',
   quantity:     1,
@@ -302,11 +307,11 @@ function testJobAssignHandler_wrongState() {
 
     // Create a job WITH allocated_to — VW will be ALLOCATED
     var allocPayload = {
-      client_code:  'NORSPAN',
+      client_code:  'TEST-CLIENT',
       job_type:     'DESIGN',
       product_code: 'Alpine-iCommand',
       quantity:     1,
-      allocated_to: 'designer@blclotus.com',
+      allocated_to: 'test-designer@test.blc.internal',
       notes:        'JobAssignHandlerTest wrongState — ' + new Date().toISOString()
     };
     var createResult = IntakeService.processSubmission({
@@ -500,11 +505,11 @@ function testJobStartHandler_happyPath() {
 
     // Create job pre-allocated to DS1
     var allocPayload = {
-      client_code:  'NORSPAN',
+      client_code:  'TEST-CLIENT',
       job_type:     'DESIGN',
       product_code: 'Alpine-iCommand',
       quantity:     1,
-      allocated_to: 'designer@blclotus.com',
+      allocated_to: 'test-designer@test.blc.internal',
       notes:        'JobStartHandler regression — ' + new Date().toISOString()
     };
     var createResult = IntakeService.processSubmission({
@@ -635,6 +640,9 @@ function testPortalData_getActiveDesigners() {
  * Entry point: run this from the Apps Script editor.
  */
 function runJobAssignTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   console.log('');
   console.log('═══════════════════════════════════════════════════════');
   console.log('  JOB ASSIGN + START TEST SUITE');
@@ -671,6 +679,8 @@ function runJobAssignTests() {
     console.log('  ❌  ' + suiteCounters.failed + ' test(s) failed — fix before commit');
   }
   console.log('═══════════════════════════════════════════════════════');
+
+  thCleanupTestArtifacts_();
   return suiteCounters;
 }
 

@@ -132,7 +132,8 @@ var DAL = (function () {
                               'QCReassignHandler', 'BillingEngine', 'JobUpdateHandler', 'StaceyJobImporter',
                               'JuneWorkLogImporter', 'MigratedQCApprovalFixer', 'StaleJobVoidEngine',
                               'Job260337DuplicateFixer', 'V2JobBackfill', 'V2BackfillStateReset', 'V2StateCorrection',
-                              'JobCreateHandlerTest', 'WorkLogCorrectionHandlerTest', 'NorspanClientCodeFixer'],
+                              'JobCreateHandlerTest', 'WorkLogCorrectionHandlerTest', 'NorspanClientCodeFixer',
+                              'TestHarness'],
     'VW_DESIGNER_WORKLOAD':  ['EventReplayEngine', 'ReportingEngine'],
 
     // ── Mart tables (reporting aggregates) ──────────────────

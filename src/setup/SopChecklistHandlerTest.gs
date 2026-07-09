@@ -113,6 +113,9 @@ function schSeedActiveSopTemplate_(clientCode, jobType, suffix) {
  * @returns {{ passed: number, failed: number }}
  */
 function runSchBatch_(batchName, tests) {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var totalPassed = 0;
   var totalFailed = 0;
 
@@ -129,6 +132,8 @@ function runSchBatch_(batchName, tests) {
 
   console.log('');
   console.log('SOP CHECKLIST HANDLER TESTS [' + batchName + '] — ' + totalPassed + ' passed, ' + totalFailed + ' failed');
+
+  thCleanupTestArtifacts_();
   return { passed: totalPassed, failed: totalFailed };
 }
 

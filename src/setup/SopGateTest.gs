@@ -117,6 +117,9 @@ var SG_DESIGNER_ACTOR = {
  * @returns {{ passed: number, failed: number }}
  */
 function runSopGateBatch_(batchName, tests) {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var totalPassed = 0;
   var totalFailed = 0;
 
@@ -133,6 +136,8 @@ function runSopGateBatch_(batchName, tests) {
 
   console.log('');
   console.log('SOP GATE TESTS [' + batchName + '] — ' + totalPassed + ' passed, ' + totalFailed + ' failed');
+
+  thCleanupTestArtifacts_();
   return { passed: totalPassed, failed: totalFailed };
 }
 
