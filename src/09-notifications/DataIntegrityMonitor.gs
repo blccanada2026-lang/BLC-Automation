@@ -25,7 +25,10 @@
 //     unmodified, then filters to the current month.
 //   Check 5 calls checkRosterContamination_() / checkVwContamination_() /
 //     checkWorkLogContamination_() / checkQueueContamination_() from
-//     ExecutionHealthMonitor.gs unmodified.
+//     ExecutionHealthMonitor.gs. Those functions' underlying fixture
+//     lists (HM_TEST_CLIENT_CODES_, HM_TEST_PERSON_CODES_) were edited
+//     2026-07-09 to drop NORSPAN and add TLM/WLD/designer@blclotus.com —
+//     this file calls them, it does not duplicate their logic.
 //   Check 1 reuses normWd_() (date normalization) from
 //     WorkLogDedupAudit.gs, but does NOT reuse that file's grouping
 //     function — the spec's detection is strictly narrower (event_type
@@ -380,12 +383,13 @@ function checkDeadLetterGrowth_() {
 // unifying it into this monitor (removing the standalone trigger) is
 // commit 7 per the build plan.
 //
-// Known open item (do not resolve here): HM_TEST_CLIENT_CODES_ in
-// ExecutionHealthMonitor.gs flags bare 'NORSPAN' as a test fixture,
-// but SESSION_LOG.md records NORSPAN as also a real client with 55
-// jobs, under open investigation (see untracked NorspanJobOriginAudit.gs
-// in the working tree). Check 3 and Check 5 may both fire on NORSPAN
-// with conflicting assumptions until that investigation resolves it.
+// 2026-07-09 update: NORSPAN removed from HM_TEST_CLIENT_CODES_ in
+// ExecutionHealthMonitor.gs (CTO correction — the 88 NORSPAN jobs were
+// a client_code mismatch, already voided, not a test fixture; see that
+// file's HM_TEST_CLIENT_CODES_ comment). Check 5 no longer fires on
+// NORSPAN. Check 3 may still fire on it if 'NORSPAN' itself lacks a
+// DIM_CLIENT_MASTER row — that is a legitimate Check 3 finding, not a
+// contamination false-positive, and is unaffected by this note.
 // ─────────────────────────────────────────────────────────────
 
 function checkTestContamination_() {

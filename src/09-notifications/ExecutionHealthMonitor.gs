@@ -251,13 +251,21 @@ function runRemoveHealthMonitorTrigger() {
 // RBAC.gs getDevTestActors_()). Read-only — no writes.
 // ─────────────────────────────────────────────────────────────
 
-var HM_TEST_PERSON_CODES_ = { DS1: true, QC1: true, RND: true, NTL: true };
+var HM_TEST_PERSON_CODES_ = { DS1: true, QC1: true, RND: true, NTL: true, TLM: true, WLD: true };
 var HM_TEST_EMAIL_DOMAIN_ = '@test.blc.internal';
-var HM_TEST_CLIENT_CODES_ = { 'TEST-CLIENT': true, 'NORSPAN': true };
+// Real-domain addresses hardcoded into test fixtures pre-2026-07-08 (see
+// .claude/rules/testing-policy.md background) — not @test.blc.internal,
+// so they need an explicit exact-match check in isTestFixtureEmail_.
+var HM_TEST_FIXED_EMAILS_ = { 'designer@blclotus.com': true };
+var HM_TEST_CLIENT_CODES_ = { 'TEST-CLIENT': true };
+// NORSPAN removed 2026-07-09 (CTO correction): the 88 NORSPAN jobs were a
+// client_code mismatch/typo, already voided — a real client code variant,
+// not a test fixture. Do not re-add without CTO confirmation.
 
-/** True if email belongs to the synthetic test-identity domain. */
+/** True if email belongs to the synthetic test-identity domain or a known hardcoded test fixture. */
 function isTestFixtureEmail_(email) {
-  return String(email || '').toLowerCase().trim().indexOf(HM_TEST_EMAIL_DOMAIN_) !== -1;
+  var e = String(email || '').toLowerCase().trim();
+  return e.indexOf(HM_TEST_EMAIL_DOMAIN_) !== -1 || !!HM_TEST_FIXED_EMAILS_[e];
 }
 
 /**
@@ -288,8 +296,8 @@ function checkRosterContamination_() {
 
 /**
  * VW_JOB_CURRENT_STATE should never contain client_code = 'TEST-CLIENT'
- * (the current test fixture value) or 'NORSPAN' (the pre-2026-07-08
- * fixture value, being cleaned up via TestArtifactVoidFixer.gs).
+ * (the current test fixture value). NORSPAN is intentionally excluded —
+ * see HM_TEST_CLIENT_CODES_ note above.
  */
 function checkVwContamination_() {
   var issues = [];
@@ -301,7 +309,7 @@ function checkVwContamination_() {
     issues.push({
       severity: 'ERROR',
       category: 'PROD_CONTAMINATION_VW',
-      message:  hits.length + ' VW_JOB_CURRENT_STATE row(s) with client_code TEST-CLIENT or NORSPAN: ' +
+      message:  hits.length + ' VW_JOB_CURRENT_STATE row(s) with client_code TEST-CLIENT: ' +
                 hits.slice(0, 10).map(function(r) { return r.job_number; }).join(', ') +
                 (hits.length > 10 ? ' (+' + (hits.length - 10) + ' more)' : '')
     });
