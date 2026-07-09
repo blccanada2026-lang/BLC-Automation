@@ -92,7 +92,7 @@ var DAL = (function () {
 
     // ── Staging tables (Intake + Queue only) ────────────────
     'STG_RAW_INTAKE':        ['IntakeService'],
-    'STG_PROCESSING_QUEUE':  ['IntakeService', 'QueueProcessor', 'RetryManager', 'PortalData'],
+    'STG_PROCESSING_QUEUE':  ['IntakeService', 'QueueProcessor', 'RetryManager', 'PortalData', 'DataSelfHealing'],
     'DEAD_LETTER_QUEUE':     ['DeadLetterHandler', 'QueueProcessor'],
 
     // ── FACT tables (handlers + migration only) ─────────────
