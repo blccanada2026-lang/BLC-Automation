@@ -435,11 +435,14 @@ var PortalData = (function () {
     } catch (e) { /* table may not exist yet */ }
 
     // ── 2. Aggregate hours from FACT_WORK_LOGS ────────────────
-    // Only track ACTIVE roster codes — filters out stray codes.
+    // Only track ACTIVE roster codes (staffNameMap, built in Section 1
+    // above from DIM_STAFF_ROSTER active=true) — this is the single
+    // source of truth for who appears here. No hardcoded per-code
+    // exclusion list (removed 2026-07-09, R10 follow-up) — deactivate
+    // a person_code in the roster to hide them, not by adding a name
+    // to a list in this file.
     // BTD/SNA: legacy V2 codes still in roster with active jobs — MIGRATED events skipped.
-    // DS1/UNKNOWN: retired placeholder codes with no V3 successor — excluded unconditionally.
     var SUPERSEDED_CODES  = { 'BTD': true, 'SNA': true };
-    var EXCLUDED_CODES    = { 'DS1': true, 'UNKNOWN': true };
     var hoursMap = {};
     try {
       var workLogs = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
@@ -450,7 +453,6 @@ var PortalData = (function () {
         var wrow  = workLogs[w];
         var wcode = String(wrow.actor_code || '').trim();
         if (!wcode || !staffNameMap[wcode]) continue; // not on active roster
-        if (EXCLUDED_CODES[wcode]) continue;          // DS1/UNKNOWN: fully retired, no V3 successor
         if (SUPERSEDED_CODES[wcode] && wrow.event_type === 'WORK_LOG_MIGRATED') continue;
         var wrole = String(wrow.actor_role || '').toUpperCase();
         var whrs  = parseFloat(wrow.hours) || 0;
@@ -478,10 +480,6 @@ var PortalData = (function () {
       });
     }
     teamHours.sort(function(a, b) { return b.total_hours - a.total_hours; });
-
-    // Absolute exclusion — retired V2 codes removed regardless of how they entered
-    var HOURS_ABSOLUTE_EXCLUDE = { 'DS1': true, 'UNKNOWN': true, 'BTD': true, 'SNA': true };
-    teamHours = teamHours.filter(function(e) { return !HOURS_ABSOLUTE_EXCLUDE[e.person_code]; });
 
     // ── Scope team_hours by role ──────────────────────────────
     if (role === 'ADMIN') {
@@ -1161,17 +1159,19 @@ var PortalData = (function () {
       totalActive++;
     }
 
-    // Retired placeholder codes with no V3 successor — excluded from all CEO panels.
-    var CEO_EXCLUDED_CODES = { 'DS1': true, 'UNKNOWN': true };
-
     // ── 4. Active jobs per designer ────────────────────────────
+    // No hardcoded per-code exclusion (removed 2026-07-09, R10
+    // follow-up) — designerCodes below already gates every entry
+    // through staffNameMap (active=true roster). Deactivate a
+    // person_code in the roster to hide them, not by adding a name
+    // to a list in this file.
     var activeJobsMap = {};
     for (var j = 0; j < allJobs.length; j++) {
       var jrow  = allJobs[j];
       var jst   = String(jrow.current_state || '').trim();
       if (!ACTIVE_ST[jst]) continue;
       var jcode = String(jrow.allocated_to || '').trim();
-      if (!jcode || CEO_EXCLUDED_CODES[jcode]) continue;
+      if (!jcode) continue;
       activeJobsMap[jcode] = (activeJobsMap[jcode] || 0) + 1;
     }
 
@@ -1188,20 +1188,17 @@ var PortalData = (function () {
         var whrs  = parseFloat(wrow.hours) || 0;
         if (!wcode || whrs <= 0) continue;
         if (!staffNameMap[wcode]) continue; // skip codes not in active roster
-        if (CEO_EXCLUDED_CODES[wcode]) continue; // skip retired placeholder codes
         hoursMap[wcode] = (hoursMap[wcode] || 0) + whrs;
       }
     } catch (e) { /* no work logs yet */ }
 
     // ── 6. Load balance ───────────────────────────────────────
+    // Single rule: a person_code appears only if active=true in
+    // DIM_STAFF_ROSTER (staffNameMap, Section 1 above). No separate
+    // absolute-exclusion list.
     var designerCodes = {};
-    // Guard both sources against codes not in the active roster
     Object.keys(activeJobsMap).forEach(function(c) { if (staffNameMap[c]) designerCodes[c] = true; });
     Object.keys(hoursMap).forEach(function(c)      { if (staffNameMap[c]) designerCodes[c] = true; });
-
-    // Absolute exclusion — retired V2 codes removed regardless of how they entered
-    var CEO_ABSOLUTE_EXCLUDE = { 'DS1': true, 'UNKNOWN': true, 'BTD': true, 'SNA': true };
-    Object.keys(CEO_ABSOLUTE_EXCLUDE).forEach(function(c) { delete designerCodes[c]; });
 
     var loadBalance = [];
     Object.keys(designerCodes).forEach(function(code) {
@@ -1219,11 +1216,16 @@ var PortalData = (function () {
     loadBalance.sort(function(a, b) { return b.active_jobs - a.active_jobs; });
 
     // ── 7. Quality rates ──────────────────────────────────────
+    // Same single rule as Load Balance — only active=true roster
+    // codes appear. Added 2026-07-09: this panel previously had no
+    // roster gate at all (the widest contamination-exposure gap of
+    // the three CEO panels — any allocated_to code with rework
+    // counts appeared here regardless of roster status).
     var qMap = {};
     for (var q = 0; q < allJobs.length; q++) {
       var qrow  = allJobs[q];
       var qcode = String(qrow.allocated_to || '').trim();
-      if (!qcode) continue;
+      if (!qcode || !staffNameMap[qcode]) continue;
       if (!qMap[qcode]) qMap[qcode] = { total_jobs: 0, minor_reworks: 0, major_reworks: 0 };
       qMap[qcode].total_jobs++;
       qMap[qcode].minor_reworks += parseInt(qrow.minor_rework_count, 10) || 0;

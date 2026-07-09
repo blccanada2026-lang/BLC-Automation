@@ -76,7 +76,7 @@ var DAL = (function () {
     '_SYS_VERSION':          ['VersionRecorder', 'AdminEngine'],
 
     // ── Dimension tables (Admin + Migration only) ───────────
-    'DIM_STAFF_ROSTER':         ['AdminEngine', 'MigrationEngine', 'MigrationReplayEngine', 'StaffOnboarding'],
+    'DIM_STAFF_ROSTER':         ['AdminEngine', 'MigrationEngine', 'MigrationReplayEngine', 'StaffOnboarding', 'TestStaffDeactivator'],
     'DIM_CLIENT_MASTER':        ['AdminEngine', 'MigrationEngine', 'MigrationReplayEngine', 'ClientOnboarding'],
     'DIM_CLIENT_RATES':         ['AdminEngine', 'MigrationEngine', 'ClientOnboarding'],
     'DIM_FX_RATES':             ['AdminEngine', 'MigrationEngine'],
@@ -109,7 +109,7 @@ var DAL = (function () {
                               'SbsReconFiller_Apr2026', 'MatixReconFiller',
                               'NelsonReconFiller', 'AlbertaReconFiller',
                               'JuneWorkLogImporter', 'WorkLogDedupFixer', 'WorkLogPeriodFixer',
-                              'OrphanJobNumberFixer'],
+                              'OrphanJobNumberFixer', 'TestWorkLogVoidFixer'],
     'FACT_QC_EVENTS':        ['QCHandler', 'QCReassignHandler', 'MigrationEngine', 'MigratedQCApprovalFixer'],
     'FACT_BILLING_LEDGER':   ['BillingEngine', 'MigrationEngine', 'MigrationReplayEngine'],
     'FACT_PAYROLL_LEDGER':   ['PayrollEngine', 'MigrationEngine', 'MigrationReplayEngine'],
