@@ -5,11 +5,11 @@
 // Automated data integrity monitoring with severity levels.
 // Read-only — no FACT or VW writes, no queue writes.
 //
-// COMMIT 1 OF 7 — Checks 1–5 + severity framework only.
-//   Checks 6–10, self-healing actions, the pre-billing gate, trigger
-//   wiring, and full alert-email formatting land in later commits.
-//   Until then, runDataIntegrityChecks() is a manual/console runner —
-//   it does not install a trigger and does not send email.
+// COMMITS 1–2 OF 7 — Checks 1–10 + severity framework.
+//   Self-healing actions, the pre-billing gate, trigger wiring, and
+//   full alert-email formatting land in later commits. Until then,
+//   runDataIntegrityChecks() is a manual/console runner — it does not
+//   install a trigger and does not send email.
 //
 // File location note: the original build spec named this file for
 // src/03-infrastructure/. It lives in src/09-notifications/ instead,
@@ -36,6 +36,16 @@
 //     manual audit's intentionally-broad key, so lifting it as-is would
 //     either under-implement the spec or change the manual audit's
 //     live behavior. WorkLogDedupAudit.gs is untouched in this commit.
+//   Check 7 calls normalizeJobNumber_() / isAdminOverheadJobNumber_()
+//     from WorkLogOrphanAudit.gs unmodified.
+//   Check 6's malformed-period_id predicate mirrors (does not call —
+//     the original is a private closure var inside the WorkLogPeriodFixer
+//     IIFE, not exposed) WorkLogPeriodFixer.gs's isMalformed_(): a Date
+//     object or anything not matching /^\d{4}-\d{2}$/. Rows already
+//     covered by a WORK_LOG_PERIOD_FIXED amendment are excluded, same
+//     as that fixer's alreadyFixed set, so this doesn't re-alert on the
+//     9,873 rows already fixed 2026-07-06.
+//   Checks 8, 9, 10 have no prior audit script to reuse — new logic.
 //
 // Severity:
 //   CRITICAL — data actively wrong, stop-work candidate. Alert immediately (commit 5).
@@ -84,6 +94,21 @@ function runDataIntegrityChecks() {
 
   try { issues = issues.concat(checkTestContamination_()); }
   catch (e) { console.log('[DataIntegrityMonitor] Check 5 (test contamination) failed: ' + e.message); }
+
+  try { issues = issues.concat(checkPeriodIdFormat_()); }
+  catch (e) { console.log('[DataIntegrityMonitor] Check 6 (period_id format) failed: ' + e.message); }
+
+  try { issues = issues.concat(checkJobNumberNormalization_()); }
+  catch (e) { console.log('[DataIntegrityMonitor] Check 7 (job number normalization) failed: ' + e.message); }
+
+  try { issues = issues.concat(checkAllocatedToValidity_()); }
+  catch (e) { console.log('[DataIntegrityMonitor] Check 8 (allocated_to validation) failed: ' + e.message); }
+
+  try { issues = issues.concat(checkRateConfigurationCompleteness_()); }
+  catch (e) { console.log('[DataIntegrityMonitor] Check 9 (rate configuration) failed: ' + e.message); }
+
+  try { issues = issues.concat(checkVwStateIntegrity_()); }
+  catch (e) { console.log('[DataIntegrityMonitor] Check 10 (VW state integrity) failed: ' + e.message); }
 
   var bySeverity = { CRITICAL: [], HIGH: [], MEDIUM: [], INFO: [] };
   issues.forEach(function(i) {
@@ -410,4 +435,394 @@ function checkTestContamination_() {
                           'reach PROD before any other development continues.'
     };
   });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Check 6 — Period_id format integrity (MEDIUM)
+//
+// Current + previous month FACT_WORK_LOGS partitions: every row's
+// period_id must be a bare 'YYYY-MM' string, not a Date object or
+// blank. We fixed 9,873 malformed rows on 2026-07-06
+// (WorkLogPeriodFixer.gs) — this catches recurrence going forward.
+// Rows that already have a matching WORK_LOG_PERIOD_FIXED amendment
+// (amendment_of === event_id) are excluded, same as that fixer's own
+// idempotency set — the original malformed row is never edited
+// (FACT tables are append-only, RULE A5), only amended, so without
+// this exclusion every already-fixed row would re-alert forever.
+// ─────────────────────────────────────────────────────────────
+
+/** Mirrors WorkLogPeriodFixer.gs's private isMalformed_(). */
+function dimIsMalformedPeriodId_(val) {
+  if (val instanceof Date) return true;
+  return !/^\d{4}-\d{2}$/.test(String(val || '').trim());
+}
+
+/** 'YYYY-MM' → 'YYYY-MM' of the previous month, via string arithmetic
+ *  (no Date round-trip — new Date('YYYY-MM-01') parses as UTC midnight
+ *  while getMonth()/getFullYear() read local time, which shifts the
+ *  result by a month under a script timezone behind UTC). */
+function dimPreviousMonthPartition_(periodId) {
+  var y = parseInt(periodId.substring(0, 4), 10);
+  var m = parseInt(periodId.substring(5, 7), 10); // 1-12
+  m -= 1;
+  if (m < 1) { m = 12; y -= 1; }
+  return y + '-' + (m < 10 ? '0' : '') + m;
+}
+
+function checkPeriodIdFormat_() {
+  var MODULE  = 'DataIntegrityMonitor';
+  var current = dimCurrentMonthPartition_();
+  var prev    = dimPreviousMonthPartition_(current);
+  var partitions = [prev, current];
+
+  var malformedByPartition = {};
+  var totalMalformed = 0;
+
+  partitions.forEach(function(periodId) {
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: MODULE, periodId: periodId });
+    } catch (e) {
+      return; // partition doesn't exist — nothing to check
+    }
+
+    // amendment_of is NOT in the FACT_WORK_LOGS header (PROJECT_MEMORY §11,
+    // WorkLogCorrectionHandler.gs:56-57) — DAL silently drops it on write,
+    // so it can't be used to find already-fixed rows. idempotency_key IS
+    // in the header and WorkLogPeriodFixer.gs writes it as
+    // 'WL_PERIOD_FIX_' + originalEventId — strip the prefix to recover it.
+    var FIX_PREFIX = 'WL_PERIOD_FIX_';
+    var alreadyFixed = {};
+    rows.forEach(function(r) {
+      if (String(r.event_type || '') !== Constants.EVENT_TYPES.WORK_LOG_PERIOD_FIXED) return;
+      var key = String(r.idempotency_key || '');
+      if (key.indexOf(FIX_PREFIX) === 0) alreadyFixed[key.substring(FIX_PREFIX.length)] = true;
+    });
+
+    var hits = rows.filter(function(r) {
+      if (!dimIsMalformedPeriodId_(r.period_id)) return false;
+      var eventId = String(r.event_id || '');
+      return !alreadyFixed[eventId];
+    });
+
+    if (hits.length > 0) {
+      malformedByPartition[periodId] = hits.length;
+      totalMalformed += hits.length;
+    }
+  });
+
+  if (totalMalformed === 0) return [];
+
+  return [{
+    check:    'CHECK_6_PERIOD_ID_FORMAT',
+    severity: DIM_SEVERITY_.MEDIUM,
+    category: 'PERIOD_ID_MALFORMED',
+    message:  totalMalformed + ' row(s) with malformed period_id across partition(s): ' +
+              Object.keys(malformedByPartition).map(function(p) { return p + ' (' + malformedByPartition[p] + ')'; }).join(', '),
+    data: { partitions: malformedByPartition, total: totalMalformed },
+    recommendedAction: 'Run WorkLogPeriodFixer.run(true) (dry run) to confirm, then runWorkLogPeriodFixer_LIVE() ' +
+                        'to write WORK_LOG_PERIOD_FIXED amendment events.'
+  }];
+}
+
+// ─────────────────────────────────────────────────────────────
+// Check 7 — Job number normalization (MEDIUM)
+//
+// Current month's FACT_WORK_LOGS: any job_number carrying a
+// space/underscore-appended description (e.g. "2605-6039-A Mary's
+// Landing Lot 9-16 OWF") creates a VW orphan (Check 2) because VW
+// never had the description suffix. Admin overhead ("job assign &
+// help") is excluded — it isn't a real job_number.
+// ─────────────────────────────────────────────────────────────
+
+function checkJobNumberNormalization_() {
+  var MODULE   = 'DataIntegrityMonitor';
+  var periodId = dimCurrentMonthPartition_();
+
+  var rows;
+  try {
+    rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: MODULE, periodId: periodId });
+  } catch (e) {
+    return []; // partition doesn't exist yet
+  }
+
+  var seen = {};
+  var samples = [];
+  rows.forEach(function(r) {
+    var jn = String(r.job_number || '').trim();
+    if (!jn || isAdminOverheadJobNumber_(jn)) return;
+    if (normalizeJobNumber_(jn) === jn) return; // no space/underscore — already normalized
+    if (seen[jn]) return;
+    seen[jn] = true;
+    if (samples.length < 10) samples.push(jn);
+  });
+
+  var total = Object.keys(seen).length;
+  if (total === 0) return [];
+
+  return [{
+    check:    'CHECK_7_JOB_NUMBER_NORMALIZATION',
+    severity: DIM_SEVERITY_.MEDIUM,
+    category: 'JOB_NUMBER_UNNORMALIZED',
+    message:  total + ' distinct unnormalized job_number(s) in ' + periodId + ' work log entries: ' +
+              samples.join(', ') + (total > samples.length ? ', ...' : ''),
+    data: { period_id: periodId, distinct_count: total, samples: samples },
+    recommendedAction: 'Confirm WorkLogHandler\'s job_number normalization guard (ADR-WL-001) is firing on ' +
+                        'the portal submission path these entries came through.'
+  }];
+}
+
+// ─────────────────────────────────────────────────────────────
+// Check 8 — allocated_to validation (HIGH)
+//
+// Every distinct allocated_to in VW_JOB_CURRENT_STATE, restricted to
+// the active pipeline (excludes terminal states INVOICED/VOIDED/
+// CANCELLED — a departed staff member's name on already-settled
+// history isn't an actionable finding, just noise) and blank
+// allocated_to, must match a person_code in DIM_STAFF_ROSTER with
+// active=TRUE. Catches blanks, email addresses, and inactive/departed
+// staff still assigned to active jobs.
+// ─────────────────────────────────────────────────────────────
+
+var DIM_TERMINAL_STATES_ = { INVOICED: true, VOIDED: true, CANCELLED: true };
+
+function checkAllocatedToValidity_() {
+  var MODULE = 'DataIntegrityMonitor';
+
+  var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE });
+  var activeStaff = {};
+  staffRows.forEach(function(s) {
+    var isActive = s.active === true || String(s.active || '').toUpperCase().trim() === 'TRUE';
+    if (!isActive) return;
+    var code = String(s.person_code || '').trim().toUpperCase();
+    if (code) activeStaff[code] = true;
+  });
+
+  var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+
+  var byInvalidCode = {}; // allocated_to (as stored) -> { count, jobs: [] }
+  vwRows.forEach(function(r) {
+    if (DIM_TERMINAL_STATES_[String(r.current_state || '').toUpperCase()]) return;
+    var allocatedTo = String(r.allocated_to || '').trim();
+    if (!allocatedTo) return;
+    if (activeStaff[allocatedTo.toUpperCase()]) return;
+
+    if (!byInvalidCode[allocatedTo]) byInvalidCode[allocatedTo] = { count: 0, jobs: [] };
+    byInvalidCode[allocatedTo].count++;
+    if (byInvalidCode[allocatedTo].jobs.length < 10) byInvalidCode[allocatedTo].jobs.push(r.job_number);
+  });
+
+  var invalidCodes = Object.keys(byInvalidCode);
+  if (invalidCodes.length === 0) return [];
+
+  var totalJobs = invalidCodes.reduce(function(sum, c) { return sum + byInvalidCode[c].count; }, 0);
+
+  return [{
+    check:    'CHECK_8_ALLOCATED_TO_VALIDATION',
+    severity: DIM_SEVERITY_.HIGH,
+    category: 'ALLOCATED_TO_INVALID',
+    message:  invalidCodes.length + ' invalid allocated_to value(s) across ' + totalJobs + ' job(s): ' +
+              invalidCodes.slice(0, 10).map(function(c) { return c + ' (' + byInvalidCode[c].count + ')'; }).join(', '),
+    data: { invalid_count: invalidCodes.length, job_count: totalJobs, samples: byInvalidCode },
+    recommendedAction: 'Each value must be a valid, active DIM_STAFF_ROSTER person_code. Reassign jobs with ' +
+                        'blank/email/inactive allocated_to to a real active staff member.'
+  }];
+}
+
+// ─────────────────────────────────────────────────────────────
+// Check 9 — Rate configuration completeness (CRITICAL)
+//
+// (a) Every active DIM_CLIENT_MASTER client_code must have at least
+//     one DIM_CLIENT_RATES row.
+// (b) Every distinct client_code + product_code combination among VW
+//     jobs still in the active pipeline (excludes terminal states
+//     INVOICED/VOIDED/CANCELLED — those are already billed or dead,
+//     not a forward-looking billing risk) must resolve to a rate —
+//     either a client+product-specific row, or a client-only fallback
+//     row (product_code blank), matching BillingEngine's documented
+//     lookup order exactly (BillingEngine.gs "RATE LOOKUP" comment:
+//     client+product first, then client-only fallback, else skip).
+// Missing rates mean zero-dollar invoices. Reported as one CRITICAL
+// issue listing every missing combo, not one per combo — a client
+// with several missing product rates is one root cause, not several,
+// and per-combo CRITICALs would flood commit 5's alert email.
+// ─────────────────────────────────────────────────────────────
+
+function checkRateConfigurationCompleteness_() {
+  var MODULE = 'DataIntegrityMonitor';
+  var issues = [];
+
+  var clientRows = DAL.readAll(Config.TABLES.DIM_CLIENT_MASTER, { callerModule: MODULE });
+  var rateRows   = DAL.readAll(Config.TABLES.DIM_CLIENT_RATES, { callerModule: MODULE });
+
+  function isActiveRow_(r) {
+    return r.active === true || String(r.active || '').toUpperCase().trim() === 'TRUE';
+  }
+
+  // ── (a) active clients with zero rate rows at all ──────────────
+  var ratesByClient = {}; // client_code -> [rate rows]
+  rateRows.forEach(function(r) {
+    if (!isActiveRow_(r)) return;
+    var code = String(r.client_code || '').trim();
+    if (!code) return;
+    (ratesByClient[code] || (ratesByClient[code] = [])).push(r);
+  });
+
+  var clientsWithNoRates = [];
+  clientRows.forEach(function(c) {
+    if (!isActiveRow_(c)) return;
+    var code = String(c.client_code || '').trim();
+    if (!code) return;
+    if (!ratesByClient[code] || ratesByClient[code].length === 0) clientsWithNoRates.push(code);
+  });
+
+  if (clientsWithNoRates.length > 0) {
+    issues.push({
+      check:    'CHECK_9_RATE_CONFIGURATION',
+      severity: DIM_SEVERITY_.CRITICAL,
+      category: 'CLIENT_NO_RATES',
+      message:  clientsWithNoRates.length + ' active client(s) have no DIM_CLIENT_RATES entry at all: ' +
+                clientsWithNoRates.sort().join(', '),
+      data: { clients: clientsWithNoRates.sort() },
+      recommendedAction: 'Add at least a client-level fallback rate (blank product_code) to DIM_CLIENT_RATES ' +
+                          'for each listed client before the next billing run.'
+    });
+  }
+
+  // ── (b) active client+product combos in VW with no matching rate ──
+  var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+  var byMissingCombo = {}; // "client|product" -> { client_code, product_code, count, jobs }
+
+  vwRows.forEach(function(r) {
+    if (DIM_TERMINAL_STATES_[String(r.current_state || '').toUpperCase()]) return;
+    var clientCode  = String(r.client_code || '').trim();
+    var productCode = String(r.product_code || '').trim();
+    if (!clientCode) return;
+
+    var clientRates = ratesByClient[clientCode] || [];
+    var hasMatch = clientRates.some(function(rate) {
+      var rateProduct = String(rate.product_code || '').trim();
+      return rateProduct === '' || rateProduct === productCode;
+    });
+    if (hasMatch) return;
+
+    var comboKey = clientCode + '|' + productCode;
+    if (!byMissingCombo[comboKey]) {
+      byMissingCombo[comboKey] = { client_code: clientCode, product_code: productCode, count: 0, jobs: [] };
+    }
+    byMissingCombo[comboKey].count++;
+    if (byMissingCombo[comboKey].jobs.length < 10) byMissingCombo[comboKey].jobs.push(r.job_number);
+  });
+
+  var missingCombos = Object.keys(byMissingCombo).sort();
+  if (missingCombos.length > 0) {
+    var totalAffectedJobs = missingCombos.reduce(function(sum, k) { return sum + byMissingCombo[k].count; }, 0);
+    var comboSummaries = missingCombos.map(function(comboKey) {
+      var d = byMissingCombo[comboKey];
+      return d.client_code + '/' + (d.product_code || '(blank)') + ' (' + d.count + ' job(s))';
+    });
+
+    issues.push({
+      check:    'CHECK_9_RATE_CONFIGURATION',
+      severity: DIM_SEVERITY_.CRITICAL,
+      category: 'CLIENT_PRODUCT_NO_RATE',
+      message:  missingCombos.length + ' client/product combination(s) in the active pipeline have no rate — ' +
+                totalAffectedJobs + ' job(s) affected: ' + comboSummaries.join('; '),
+      data: { combo_count: missingCombos.length, job_count: totalAffectedJobs, combos: byMissingCombo },
+      recommendedAction: 'Add a DIM_CLIENT_RATES row (client+product, or a client-only fallback with blank ' +
+                          'product_code) for each combination listed before those jobs reach billing.'
+    });
+  }
+
+  return issues;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Check 10 — VW state integrity (MEDIUM)
+//
+// Scans VW_JOB_CURRENT_STATE for: blank current_state; current_state
+// outside the valid enum (Config.STATES, plus VOIDED/CANCELLED which
+// are legitimate terminal/administrative states outside the forward
+// TRANSITIONS machine — see Config.gs); and jobs sitting in
+// IN_PROGRESS for more than 90 days since updated_at (possibly stuck).
+// ─────────────────────────────────────────────────────────────
+
+function checkVwStateIntegrity_() {
+  var MODULE = 'DataIntegrityMonitor';
+  var issues = [];
+
+  var validStates = {};
+  Object.keys(Config.STATES).forEach(function(k) { validStates[Config.STATES[k]] = true; });
+  validStates.VOIDED = true;
+  validStates.CANCELLED = true;
+
+  var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+
+  var blankStateJobs   = [];
+  var invalidStateJobs = []; // { job_number, current_state }
+  var stuckJobs        = []; // { job_number, updated_at, days }
+  var ninetyDaysAgo     = Date.now() - 90 * 24 * 60 * 60 * 1000;
+
+  vwRows.forEach(function(r) {
+    var state = String(r.current_state || '').trim();
+    var jobNumber = r.job_number;
+
+    if (!state) {
+      blankStateJobs.push(jobNumber);
+      return;
+    }
+    if (!validStates[state]) {
+      invalidStateJobs.push({ job_number: jobNumber, current_state: state });
+      return;
+    }
+    if (state === Config.STATES.IN_PROGRESS) {
+      var updated = new Date(r.updated_at);
+      if (!isNaN(updated.getTime()) && updated.getTime() < ninetyDaysAgo) {
+        var days = Math.floor((Date.now() - updated.getTime()) / (24 * 60 * 60 * 1000));
+        stuckJobs.push({ job_number: jobNumber, updated_at: r.updated_at, days: days });
+      }
+    }
+  });
+
+  if (blankStateJobs.length > 0) {
+    issues.push({
+      check:    'CHECK_10_VW_STATE_INTEGRITY',
+      severity: DIM_SEVERITY_.MEDIUM,
+      category: 'VW_BLANK_STATE',
+      message:  blankStateJobs.length + ' VW_JOB_CURRENT_STATE row(s) have a blank current_state: ' +
+                blankStateJobs.slice(0, 10).join(', ') + (blankStateJobs.length > 10 ? ', ...' : ''),
+      data: { count: blankStateJobs.length, samples: blankStateJobs.slice(0, 10) },
+      recommendedAction: 'Every VW row must have a current_state from Config.STATES. Investigate how these rows were written.'
+    });
+  }
+
+  if (invalidStateJobs.length > 0) {
+    issues.push({
+      check:    'CHECK_10_VW_STATE_INTEGRITY',
+      severity: DIM_SEVERITY_.MEDIUM,
+      category: 'VW_INVALID_STATE',
+      message:  invalidStateJobs.length + ' VW_JOB_CURRENT_STATE row(s) have a current_state outside the valid enum: ' +
+                invalidStateJobs.slice(0, 10).map(function(j) { return j.job_number + '=' + j.current_state; }).join(', ') +
+                (invalidStateJobs.length > 10 ? ', ...' : ''),
+      data: { count: invalidStateJobs.length, samples: invalidStateJobs.slice(0, 10) },
+      recommendedAction: 'Confirm whether this is a typo/legacy state value or a genuinely new state that ' +
+                          'needs to be added to Config.STATES/TRANSITIONS.'
+    });
+  }
+
+  if (stuckJobs.length > 0) {
+    stuckJobs.sort(function(a, b) { return b.days - a.days; });
+    issues.push({
+      check:    'CHECK_10_VW_STATE_INTEGRITY',
+      severity: DIM_SEVERITY_.MEDIUM,
+      category: 'VW_STUCK_IN_PROGRESS',
+      message:  stuckJobs.length + ' job(s) have been IN_PROGRESS for more than 90 days. Oldest: ' +
+                stuckJobs[0].job_number + ' (' + stuckJobs[0].days + ' days).',
+      data: { count: stuckJobs.length, samples: stuckJobs.slice(0, 10) },
+      recommendedAction: 'Review with the assigned team lead — likely stalled work, a migration artifact ' +
+                          'that never got a real state transition, or a job that should have been voided.'
+    });
+  }
+
+  return issues;
 }
