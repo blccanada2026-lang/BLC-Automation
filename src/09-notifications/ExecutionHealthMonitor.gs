@@ -15,6 +15,15 @@
 // INSTALL:  runInstallHealthMonitorTrigger()
 // REMOVE:   runRemoveHealthMonitorTrigger()
 // MANUAL:   runHealthCheck()
+//
+// ── PROD contamination check (R10) ─────────────────────────
+// Separate daily job — scans for test-fixture identities/client
+// codes that should never legitimately exist in PROD (see R10 in
+// CLAUDE.md and .claude/rules/testing-policy.md). Read-only.
+//
+// INSTALL:  runInstallProdContaminationTrigger()
+// REMOVE:   runRemoveProdContaminationTrigger()
+// MANUAL:   runProdContaminationCheck()
 // ============================================================
 
 var HM_ALERT_RECIPIENT_PROP_ = 'CEO_BRIEFING_RECIPIENT';
@@ -231,4 +240,200 @@ function runRemoveHealthMonitorTrigger() {
     if (t.getHandlerFunction() === FN) { ScriptApp.deleteTrigger(t); removed++; }
   });
   console.log(removed ? '✅ Removed health monitor trigger.' : '⚠️ No trigger found — already removed.');
+}
+
+// ─────────────────────────────────────────────────────────────
+// PROD contamination check (R10) — daily, separate cadence from
+// the 15-minute operational health check above. Scans for
+// test-fixture identities/client codes that should never
+// legitimately exist in PROD once every test runner is
+// Config.isDev()-gated (see TestHarness.gs, TestRunner.gs,
+// RBAC.gs getDevTestActors_()). Read-only — no writes.
+// ─────────────────────────────────────────────────────────────
+
+var HM_TEST_PERSON_CODES_ = { DS1: true, QC1: true, RND: true, NTL: true };
+var HM_TEST_EMAIL_DOMAIN_ = '@test.blc.internal';
+var HM_TEST_CLIENT_CODES_ = { 'TEST-CLIENT': true, 'NORSPAN': true };
+
+/** True if email belongs to the synthetic test-identity domain. */
+function isTestFixtureEmail_(email) {
+  return String(email || '').toLowerCase().trim().indexOf(HM_TEST_EMAIL_DOMAIN_) !== -1;
+}
+
+/**
+ * DIM_STAFF_ROSTER should never contain a test person_code or a
+ * @test.blc.internal email once seedTestStaff()/StaffOnboarding
+ * paths are Config.isDev()-gated. Any hit means a test run wrote
+ * into the real roster.
+ */
+function checkRosterContamination_() {
+  var issues = [];
+  var rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'ExecutionHealthMonitor' });
+  var hits = (rows || []).filter(function(r) {
+    return HM_TEST_PERSON_CODES_[String(r.person_code || '').toUpperCase()] ||
+           isTestFixtureEmail_(r.email);
+  });
+  if (hits.length > 0) {
+    issues.push({
+      severity: 'ERROR',
+      category: 'PROD_CONTAMINATION_ROSTER',
+      message:  hits.length + ' DIM_STAFF_ROSTER row(s) match test identities (person_code DS1/QC1/RND/NTL ' +
+                'or @test.blc.internal email): ' +
+                hits.slice(0, 10).map(function(r) { return (r.person_code || '?') + '/' + (r.email || '?'); }).join(', ') +
+                (hits.length > 10 ? ' (+' + (hits.length - 10) + ' more)' : '')
+    });
+  }
+  return issues;
+}
+
+/**
+ * VW_JOB_CURRENT_STATE should never contain client_code = 'TEST-CLIENT'
+ * (the current test fixture value) or 'NORSPAN' (the pre-2026-07-08
+ * fixture value, being cleaned up via TestArtifactVoidFixer.gs).
+ */
+function checkVwContamination_() {
+  var issues = [];
+  var rows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: 'ExecutionHealthMonitor' });
+  var hits = (rows || []).filter(function(r) {
+    return HM_TEST_CLIENT_CODES_[String(r.client_code || '').trim()];
+  });
+  if (hits.length > 0) {
+    issues.push({
+      severity: 'ERROR',
+      category: 'PROD_CONTAMINATION_VW',
+      message:  hits.length + ' VW_JOB_CURRENT_STATE row(s) with client_code TEST-CLIENT or NORSPAN: ' +
+                hits.slice(0, 10).map(function(r) { return r.job_number; }).join(', ') +
+                (hits.length > 10 ? ' (+' + (hits.length - 10) + ' more)' : '')
+    });
+  }
+  return issues;
+}
+
+/**
+ * Discovers FACT_WORK_LOGS|YYYY-MM partition tab names. Same pattern
+ * as WorkLogOrphanAudit.gs's discoverWorkLogPartitions_() — kept as
+ * a separate copy (not shared) to avoid a cross-module dependency
+ * from this always-on monitor onto a one-off migration audit file.
+ */
+function discoverHmWorkLogPartitions_() {
+  var sheets  = DAL.listSheets();
+  var prefix  = Config.TABLES.FACT_WORK_LOGS + '|';
+  var periods = [];
+  for (var i = 0; i < sheets.length; i++) {
+    var name = sheets[i];
+    if (name.indexOf(prefix) === 0) {
+      var period = name.substring(prefix.length);
+      if (/^\d{4}-\d{2}$/.test(period)) periods.push(period);
+    }
+  }
+  periods.sort();
+  return periods;
+}
+
+/**
+ * FACT_WORK_LOGS should never contain a test actor_code. Scans only
+ * the most recent 2 partitions (this month + last month) — a daily
+ * check does not need to re-scan the full historical archive, and
+ * new contamination surfaces in the current period first.
+ */
+function checkWorkLogContamination_() {
+  var issues  = [];
+  var periods = discoverHmWorkLogPartitions_().slice(-2);
+  var hits    = [];
+
+  periods.forEach(function(periodId) {
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: 'ExecutionHealthMonitor', periodId: periodId });
+    } catch (e) {
+      return; // SHEET_NOT_FOUND or similar — skip this partition
+    }
+    (rows || []).forEach(function(r) {
+      if (HM_TEST_PERSON_CODES_[String(r.actor_code || '').toUpperCase()]) hits.push(r);
+    });
+  });
+
+  if (hits.length > 0) {
+    issues.push({
+      severity: 'ERROR',
+      category: 'PROD_CONTAMINATION_WORKLOG',
+      message:  hits.length + ' FACT_WORK_LOGS row(s) in partition(s) [' + periods.join(', ') +
+                '] with a test actor_code (DS1/QC1/RND/NTL).'
+    });
+  }
+  return issues;
+}
+
+/**
+ * STG_PROCESSING_QUEUE should never contain a @test.blc.internal
+ * submitter_email — that domain only resolves via RBAC's
+ * Config.isDev()-gated getDevTestActors_(), so its presence in the
+ * live queue means a test submission reached PROD's intake path.
+ */
+function checkQueueContamination_() {
+  var issues = [];
+  var rows = DAL.readAll(Config.TABLES.STG_PROCESSING_QUEUE, { callerModule: 'ExecutionHealthMonitor' });
+  var hits = (rows || []).filter(function(r) { return isTestFixtureEmail_(r.submitter_email); });
+  if (hits.length > 0) {
+    issues.push({
+      severity: 'ERROR',
+      category: 'PROD_CONTAMINATION_QUEUE',
+      message:  hits.length + ' STG_PROCESSING_QUEUE row(s) with a @test.blc.internal submitter_email.'
+    });
+  }
+  return issues;
+}
+
+/**
+ * R10 — daily PROD contamination check. Read-only. Any hit is a
+ * stop-work condition (R10 point 8), so this always alerts on a
+ * hit — no cooldown suppression like the routine 15-minute monitor.
+ * @returns {{ contaminated: boolean, issues: Array }}
+ */
+function runProdContaminationCheck() {
+  var issues = [];
+  try { issues = issues.concat(checkRosterContamination_());  } catch(e) { console.log('[ProdContaminationCheck] roster check failed: ' + e.message); }
+  try { issues = issues.concat(checkVwContamination_());      } catch(e) { console.log('[ProdContaminationCheck] VW check failed: ' + e.message); }
+  try { issues = issues.concat(checkWorkLogContamination_()); } catch(e) { console.log('[ProdContaminationCheck] work log check failed: ' + e.message); }
+  try { issues = issues.concat(checkQueueContamination_());   } catch(e) { console.log('[ProdContaminationCheck] queue check failed: ' + e.message); }
+
+  if (issues.length === 0) {
+    console.log('[ProdContaminationCheck] ✅ Clean — no test artifacts found in PROD.');
+    return { contaminated: false, issues: [] };
+  }
+
+  console.log('[ProdContaminationCheck] 🔴 CONTAMINATION FOUND — ' + issues.length + ' issue(s):');
+  issues.forEach(function(i) { console.log('  • [' + i.severity + '] ' + i.message); });
+
+  var recipient = PropertiesService.getScriptProperties()
+                    .getProperty(HM_ALERT_RECIPIENT_PROP_) || 'raj.nair@bluelotuscanada.ca';
+  sendHealthAlert_(recipient, issues);
+
+  return { contaminated: true, issues: issues };
+}
+
+/**
+ * Installs the daily PROD contamination check trigger (03:00 script
+ * time — off-hours, after any overnight batch/migration work).
+ * Idempotent.
+ */
+function runInstallProdContaminationTrigger() {
+  var FN = 'runProdContaminationCheck';
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === FN) ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger(FN).timeBased().everyDays(1).atHour(3).create();
+  console.log('✅ PROD contamination check installed: ' + FN + ' daily at 03:00.');
+}
+
+/**
+ * Removes the daily PROD contamination check trigger.
+ */
+function runRemoveProdContaminationTrigger() {
+  var FN      = 'runProdContaminationCheck';
+  var removed = 0;
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === FN) { ScriptApp.deleteTrigger(t); removed++; }
+  });
+  console.log(removed ? '✅ Removed PROD contamination trigger.' : '⚠️ No trigger found — already removed.');
 }

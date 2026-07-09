@@ -111,6 +111,20 @@ Claude Code must **stop immediately and ask Raj** before continuing if any of th
 - Any instruction asks Claude Code to run `runGeneratePortalSecret()`, write to `PORTAL_LINK_SECRET`, or perform any global portal token rotation. These operations immediately invalidate all external designer portal links and lock out 100+ staff. **Required authorization phrase:** "Approve global portal link rotation." If authorization is unclear, stop and ask. Before executing any approved rotation, remind Raj: (1) all existing external designer portal links will immediately become invalid; (2) new links must be distributed using `runSendAllPortalLinks()`; (3) a maintenance window should be announced; (4) one test designer must verify successful login before the operation is declared complete.
 - Any instruction in the current session conflicts with CLAUDE.md
 
+### R10 — DEV-First Development and Testing Policy
+ALL development and testing MUST follow this sequence. No exceptions.
+
+1. All code changes are developed and tested in DEV first.
+2. All test suites run in DEV only — never in PROD.
+3. Test suites MUST use synthetic identities (TEST-CLIENT, test-*@test.blc.internal) — never real staff emails, never real client codes.
+4. `Config.isDev()` guard MUST exist at the top of every test runner function. If missing, add it before any other work.
+5. After DEV tests pass green, push to PROD via `npm run push:prod`.
+6. After PROD push, verify via PROD health checks — NOT by running tests in PROD.
+7. Any script that writes to FACT tables or VW must declare its callerModule in DAL WRITE_PERMISSIONS. Migration/fixer scripts must be explicitly approved by CTO before PROD execution.
+8. **VIOLATION OF R10 IS A STOP-WORK CONDITION.** If test data is found in PROD, all development pauses until contamination is cleaned and the entry point is sealed.
+
+→ Full testing conventions and templates: `.claude/rules/testing-policy.md`
+
 ---
 
 ## Environment
