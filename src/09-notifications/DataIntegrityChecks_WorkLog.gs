@@ -54,9 +54,19 @@ function dimCurrentMonthPartition_() {
 // WorkLogCorrectionHandler/WorkLogDedupFixer.
 // ─────────────────────────────────────────────────────────────
 
-function checkDuplicateWorkLogs_() {
+/**
+ * @param {string} [monthPartitionOverride] 'YYYY-MM'. Defaults to the
+ *   current month. Passed by PreBillingGate.gs to scope this check to
+ *   a specific billing period's monthly partition instead of "now".
+ * @param {Object} [jobFilter] Set of job_number -> true. When provided
+ *   (by PreBillingGate.gs), duplicates on jobs outside the filter are
+ *   ignored — a duplicate on a job with no hours in this billing
+ *   period can't affect this period's billing. Omitted = whole
+ *   partition (daily monitor).
+ */
+function checkDuplicateWorkLogs_(monthPartitionOverride, jobFilter) {
   var MODULE     = 'DataIntegrityMonitor';
-  var periodId   = dimCurrentMonthPartition_();
+  var periodId   = monthPartitionOverride || dimCurrentMonthPartition_();
   var COUNTABLE  = {};
   COUNTABLE[Constants.EVENT_TYPES.WORK_LOG_SUBMITTED] = true;
   COUNTABLE[Constants.EVENT_TYPES.WORK_LOG_MIGRATED]  = true;
@@ -80,6 +90,7 @@ function checkDuplicateWorkLogs_() {
     var wd   = normWd_(row.work_date, year);
     var hrs  = parseFloat(row.hours);
     if (!ac || !jn || !wd || isNaN(hrs)) continue;
+    if (jobFilter && !jobFilter[jn]) continue;
 
     var eventType = String(row.event_type || '');
 
@@ -148,11 +159,24 @@ function checkDuplicateWorkLogs_() {
 // current-month orphans only, and admin overhead excluded, per spec.
 // ─────────────────────────────────────────────────────────────
 
-function checkOrphanedWorkLogs_() {
-  var periodId = dimCurrentMonthPartition_();
+/**
+ * @param {string} [monthPartitionOverride] 'YYYY-MM'. Defaults to the
+ *   current month. Passed by PreBillingGate.gs to scope this check to
+ *   a specific billing period's monthly partition instead of "now".
+ * @param {Object} [jobFilter] Set of job_number -> true. When provided
+ *   (by PreBillingGate.gs), only orphans with hours in this exact
+ *   billing period's date range are flagged — an orphan whose hours
+ *   fall in the other half of the month can't affect this period's
+ *   billing. Note: an orphan by definition has no VW row, so it can
+ *   still appear in jobFilter (built purely from FACT_WORK_LOGS).
+ *   Omitted = whole partition (daily monitor).
+ */
+function checkOrphanedWorkLogs_(monthPartitionOverride, jobFilter) {
+  var periodId = monthPartitionOverride || dimCurrentMonthPartition_();
   var result   = computeWorkLogOrphans_('DataIntegrityMonitor');
 
   var currentMonthOrphans = result.orphans.filter(function(o) {
+    if (jobFilter && !jobFilter[o.job_number]) return false;
     return o.most_recent_partition === periodId && !isAdminOverheadJobNumber_(o.job_number);
   });
 

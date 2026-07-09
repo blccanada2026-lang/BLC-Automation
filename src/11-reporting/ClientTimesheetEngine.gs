@@ -321,6 +321,21 @@ var ClientTimesheetEngine = (function () {
     var period = parsePeriod_(periodId);
     var label  = periodLabel_(period);
 
+    // ── Pre-billing gate (commit 4, PreBillingGate.gs) ──────────
+    // Checks 1/2/3/8/9 scoped to this period. A gate error (vs. a
+    // cleared:false data finding) is a pre-billing-gate bug — see
+    // that file's header comment — and propagates unmodified here.
+    var gateResult = runPreBillingChecks(periodId);
+    if (!gateResult.cleared) {
+      Logger.error('TIMESHEET_BLOCKED_PRE_BILLING_GATE', {
+        module: MODULE, period_id: periodId, blocker_count: gateResult.blockers.length,
+        blockers: JSON.stringify(gateResult.blockers.map(function(b) { return b.check + ': ' + b.message; }))
+      });
+      throw new Error('Billing blocked — ' + gateResult.blockers.length +
+        ' data integrity issue(s) must be resolved first. Run runPreBillingReport(\'' + periodId +
+        '\') for details.');
+    }
+
     Logger.info('TIMESHEET_GEN_START', { module: MODULE, period_id: periodId, label: label });
 
     var staffMap    = loadStaffMap_();

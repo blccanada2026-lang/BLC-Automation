@@ -36,7 +36,13 @@
 // near-miss of a real code) at detection time instead of at billing.
 // ─────────────────────────────────────────────────────────────
 
-function checkClientCodeConsistency_() {
+/**
+ * @param {Object} [jobFilter] Set of job_number -> true. When provided
+ *   (by PreBillingGate.gs), only VW rows for jobs in this set are
+ *   checked — scopes the check to jobs actually in a billing period
+ *   instead of the whole table. Omitted = full-table scan (daily monitor).
+ */
+function checkClientCodeConsistency_(jobFilter) {
   var MODULE = 'DataIntegrityMonitor';
 
   var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
@@ -51,6 +57,7 @@ function checkClientCodeConsistency_() {
   // byMissingCode[client_code] = { count, sample job_numbers }
   var byMissingCode = {};
   vwRows.forEach(function(r) {
+    if (jobFilter && !jobFilter[r.job_number]) return;
     if (String(r.current_state || '').toUpperCase() === 'VOIDED') return;
     var code = String(r.client_code || '').trim();
     if (!code || knownClients[code]) return;
@@ -139,7 +146,12 @@ function checkTestContamination_() {
 
 var DIM_TERMINAL_STATES_ = { INVOICED: true, VOIDED: true, CANCELLED: true };
 
-function checkAllocatedToValidity_() {
+/**
+ * @param {Object} [jobFilter] Set of job_number -> true. When provided
+ *   (by PreBillingGate.gs), only VW rows for jobs in this set are
+ *   checked. Omitted = full active-pipeline scan (daily monitor).
+ */
+function checkAllocatedToValidity_(jobFilter) {
   var MODULE = 'DataIntegrityMonitor';
 
   var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE });
@@ -155,6 +167,7 @@ function checkAllocatedToValidity_() {
 
   var byInvalidCode = {}; // allocated_to (as stored) -> { count, jobs: [] }
   vwRows.forEach(function(r) {
+    if (jobFilter && !jobFilter[r.job_number]) return;
     if (DIM_TERMINAL_STATES_[String(r.current_state || '').toUpperCase()]) return;
     var allocatedTo = String(r.allocated_to || '').trim();
     if (!allocatedTo) return;
@@ -201,7 +214,14 @@ function checkAllocatedToValidity_() {
 // and per-combo CRITICALs would flood commit 5's alert email.
 // ─────────────────────────────────────────────────────────────
 
-function checkRateConfigurationCompleteness_() {
+/**
+ * @param {Object} [jobFilter] Set of job_number -> true. When provided
+ *   (by PreBillingGate.gs): part (a) only checks clients that have at
+ *   least one job in the filter (unrelated clients aren't this
+ *   billing run's problem); part (b) only checks VW rows for jobs in
+ *   the filter. Omitted = full-table scan (daily monitor).
+ */
+function checkRateConfigurationCompleteness_(jobFilter) {
   var MODULE = 'DataIntegrityMonitor';
   var issues = [];
 
@@ -221,11 +241,24 @@ function checkRateConfigurationCompleteness_() {
     (ratesByClient[code] || (ratesByClient[code] = [])).push(r);
   });
 
+  // When scoped to a billing period, only clients with a job actually
+  // in that period are relevant — pull their client_codes from VW.
+  var relevantClients = null;
+  if (jobFilter) {
+    relevantClients = {};
+    DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE }).forEach(function(r) {
+      if (!jobFilter[r.job_number]) return;
+      var code = String(r.client_code || '').trim();
+      if (code) relevantClients[code] = true;
+    });
+  }
+
   var clientsWithNoRates = [];
   clientRows.forEach(function(c) {
     if (!isActiveRow_(c)) return;
     var code = String(c.client_code || '').trim();
     if (!code) return;
+    if (relevantClients && !relevantClients[code]) return;
     if (!ratesByClient[code] || ratesByClient[code].length === 0) clientsWithNoRates.push(code);
   });
 
@@ -247,6 +280,7 @@ function checkRateConfigurationCompleteness_() {
   var byMissingCombo = {}; // "client|product" -> { client_code, product_code, count, jobs }
 
   vwRows.forEach(function(r) {
+    if (jobFilter && !jobFilter[r.job_number]) return;
     if (DIM_TERMINAL_STATES_[String(r.current_state || '').toUpperCase()]) return;
     var clientCode  = String(r.client_code || '').trim();
     var productCode = String(r.product_code || '').trim();

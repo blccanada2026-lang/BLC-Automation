@@ -554,6 +554,24 @@ var BillingEngine = (function () {
       var dryRun   = options.dryRun === true;
       var periodId = options.periodId || generateCurrentBillingPeriodId();
 
+      // ── 1b. Pre-billing gate (commit 4, PreBillingGate.gs) ──
+      // Checks 1/2/3/8/9 scoped to this period. Aborts BEFORE any
+      // rate/hours computation or FACT write — including on a dry
+      // run, since the gate is exactly what a dry run should catch.
+      // A thrown gate error (vs. a cleared:false data finding) is a
+      // pre-billing-gate bug, not a billing bug — see that file's
+      // header comment — and is allowed to propagate unmodified here.
+      var gateResult = runPreBillingChecks(periodId);
+      if (!gateResult.cleared) {
+        Logger.error('BILLING_BLOCKED_PRE_BILLING_GATE', {
+          module: MODULE, period_id: periodId, blocker_count: gateResult.blockers.length,
+          blockers: JSON.stringify(gateResult.blockers.map(function(b) { return b.check + ': ' + b.message; }))
+        });
+        throw new Error('Billing blocked — ' + gateResult.blockers.length +
+          ' data integrity issue(s) must be resolved first. Run runPreBillingReport(\'' + periodId +
+          '\') for details.');
+      }
+
       // Validate and parse the semi-monthly period
       var periodParts  = parseSemiMonthlyPeriod_(periodId);
       var fromDate     = periodParts.fromDate;
