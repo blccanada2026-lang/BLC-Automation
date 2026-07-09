@@ -1593,16 +1593,21 @@ var PortalData = (function () {
    * string used by the SBS ReconFiller scripts (Feb/Mar/Apr 2026). Both
    * represent real historical hours, not internal maintenance noise.
    */
-  var MY_HOURS_VISIBLE_EVENT_TYPES_ = {};
-  MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_SUBMITTED] = true;
-  MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_MIGRATED]  = true;
-  MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_MIGRATION] = true;
-  MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_AMENDED]   = true;
-  MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_VOIDED]    = true;
-
   function getMyHours(email) {
     var actor = RBAC.resolveActor(email);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_SUBMIT);
+
+    // Built at call time, not module-load time — GAS load order does not
+    // guarantee Constants.gs has executed before this file's top-level
+    // code runs, so referencing Constants.EVENT_TYPES.* in a top-level
+    // var (as this was until the 2026-07-09 hotfix) can evaluate against
+    // an undefined Constants.EVENT_TYPES and crash every call.
+    var MY_HOURS_VISIBLE_EVENT_TYPES_ = {};
+    MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_SUBMITTED] = true;
+    MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_MIGRATED]  = true;
+    MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_MIGRATION] = true;
+    MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_AMENDED]   = true;
+    MY_HOURS_VISIBLE_EVENT_TYPES_[Constants.EVENT_TYPES.WORK_LOG_VOIDED]    = true;
 
     var periodId   = Identifiers.generateCurrentPeriodId();
     var personCode = String(actor.personCode || '').trim().toUpperCase();
