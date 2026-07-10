@@ -77,9 +77,9 @@ var DAL = (function () {
     '_SYS_INTEGRITY_DIGEST': ['DataIntegrityMonitor'],
 
     // ── Dimension tables (Admin + Migration only) ───────────
-    'DIM_STAFF_ROSTER':         ['AdminEngine', 'MigrationEngine', 'MigrationReplayEngine', 'StaffOnboarding', 'TestStaffDeactivator'],
+    'DIM_STAFF_ROSTER':         ['AdminEngine', 'MigrationEngine', 'MigrationReplayEngine', 'StaffOnboarding', 'TestStaffDeactivator', 'DataIntegrityMonitorTest'],
     'DIM_CLIENT_MASTER':        ['AdminEngine', 'MigrationEngine', 'MigrationReplayEngine', 'ClientOnboarding'],
-    'DIM_CLIENT_RATES':         ['AdminEngine', 'MigrationEngine', 'ClientOnboarding'],
+    'DIM_CLIENT_RATES':         ['AdminEngine', 'MigrationEngine', 'ClientOnboarding', 'DataIntegrityMonitorTest'],
     'DIM_FX_RATES':             ['AdminEngine', 'MigrationEngine'],
     'DIM_STAFF_BANKING':        ['AdminEngine', 'MigrationEngine', 'StaffOnboarding'],
     'DIM_STAFF_CONTRACTS':      ['AdminEngine', 'MigrationEngine', 'StaffOnboarding'],
@@ -94,7 +94,7 @@ var DAL = (function () {
     // ── Staging tables (Intake + Queue only) ────────────────
     'STG_RAW_INTAKE':        ['IntakeService'],
     'STG_PROCESSING_QUEUE':  ['IntakeService', 'QueueProcessor', 'RetryManager', 'PortalData', 'DataSelfHealing'],
-    'DEAD_LETTER_QUEUE':     ['DeadLetterHandler', 'QueueProcessor'],
+    'DEAD_LETTER_QUEUE':     ['DeadLetterHandler', 'QueueProcessor', 'DataIntegrityMonitorTest'],
 
     // ── FACT tables (handlers + migration only) ─────────────
     // These tables are append-only (Rule A5). updateWhere() is
@@ -110,7 +110,7 @@ var DAL = (function () {
                               'SbsReconFiller_Apr2026', 'MatixReconFiller',
                               'NelsonReconFiller', 'AlbertaReconFiller',
                               'JuneWorkLogImporter', 'WorkLogDedupFixer', 'WorkLogPeriodFixer',
-                              'OrphanJobNumberFixer', 'TestWorkLogVoidFixer'],
+                              'OrphanJobNumberFixer', 'TestWorkLogVoidFixer', 'DataIntegrityMonitorTest'],
     'FACT_QC_EVENTS':        ['QCHandler', 'QCReassignHandler', 'MigrationEngine', 'MigratedQCApprovalFixer'],
     'FACT_BILLING_LEDGER':   ['BillingEngine', 'MigrationEngine', 'MigrationReplayEngine'],
     'FACT_PAYROLL_LEDGER':   ['PayrollEngine', 'MigrationEngine', 'MigrationReplayEngine'],
@@ -134,7 +134,7 @@ var DAL = (function () {
                               'JuneWorkLogImporter', 'MigratedQCApprovalFixer', 'StaleJobVoidEngine',
                               'Job260337DuplicateFixer', 'V2JobBackfill', 'V2BackfillStateReset', 'V2StateCorrection',
                               'JobCreateHandlerTest', 'WorkLogCorrectionHandlerTest', 'NorspanClientCodeFixer',
-                              'TestHarness', 'TestArtifactVoidFixer'],
+                              'TestHarness', 'TestArtifactVoidFixer', 'DataIntegrityMonitorTest'],
     'VW_DESIGNER_WORKLOAD':  ['EventReplayEngine', 'ReportingEngine'],
 
     // ── Mart tables (reporting aggregates) ──────────────────
