@@ -16,14 +16,29 @@
 // REMOVE:   runRemoveHealthMonitorTrigger()
 // MANUAL:   runHealthCheck()
 //
-// ── PROD contamination check (R10) ─────────────────────────
-// Separate daily job — scans for test-fixture identities/client
-// codes that should never legitimately exist in PROD (see R10 in
-// CLAUDE.md and .claude/rules/testing-policy.md). Read-only.
+// As of commit 5 (DataIntegrityMonitor.gs), runHealthMonitorJob() also
+// calls DataSelfHealing.gs's runQueueStallRecovery() on every 15-min
+// cycle (self-contained: its own Config.isDev() gate + cooldown, so
+// no changes needed here beyond the one call).
 //
-// INSTALL:  runInstallProdContaminationTrigger()
-// REMOVE:   runRemoveProdContaminationTrigger()
-// MANUAL:   runProdContaminationCheck()
+// ── PROD contamination check (R10) ─────────────────────────
+// checkRosterContamination_() / checkVwContamination_() /
+// checkWorkLogContamination_() / checkQueueContamination_() below are
+// still live — DataIntegrityChecks_Entity.gs's Check 5 calls them
+// directly as part of the 05:00 daily data integrity run. What's
+// removed as of commit 5 is only the STANDALONE 03:00 trigger + its
+// install/remove functions — that cadence is superseded by the 05:00
+// run, which now covers this same scan daily. runProdContaminationCheck()
+// itself is untouched and still callable manually for an on-demand check.
+//
+// MANUAL: runProdContaminationCheck()
+//
+// ⚠️  If runInstallProdContaminationTrigger() was ever run in PROD, the
+// 03:00 trigger it created is NOT removed by deploying this commit —
+// GAS triggers are project state, not code. Remove it manually via
+// Apps Script editor → Triggers, or run the now-deleted
+// runRemoveProdContaminationTrigger() one last time from a version
+// before this commit before deploying.
 // ============================================================
 
 var HM_ALERT_RECIPIENT_PROP_ = 'CEO_BRIEFING_RECIPIENT';
@@ -32,11 +47,27 @@ var HM_ALERT_COOLDOWN_MS_    = 2 * 60 * 60 * 1000;   // 2 hours between alerts
 var HM_LOOK_BACK_MS_         = 30 * 60 * 1000;        // scan last 30 minutes of logs
 var HM_STUCK_THRESHOLD_MS_   = 2 * 60 * 60 * 1000;   // queue items stuck > 2 hours
 
+// SOP module is WIP — remove this suppression when DIM_SOP_TEMPLATES
+// is built. See PROJECT_MEMORY.md §7. Until then, SopDAL.gs/Portal.gs
+// log these two action codes as ERROR on every SOP-template read
+// attempt (there's nothing to read yet), which would otherwise alert
+// on expected, known noise every 15-min cycle.
+var HM_SUPPRESSED_ERROR_ACTIONS_ = {
+  SOP_DAL_READ_FAILED:             true,
+  PORTAL_SOP_TEMPLATE_READ_FAILED: true
+};
+
 /**
  * Clock trigger entry point — runs every 15 minutes.
  * Do not rename: trigger is keyed to this exact function name.
  */
 function runHealthMonitorJob() {
+  // Self-healing action, not an "issue" — DataSelfHealing.gs's own
+  // Config.isDev() gate and 15-min cooldown make this safe to call
+  // unconditionally on every cycle. Isolated in its own try/catch so
+  // a failure here never blocks the issue-collection/alerting below.
+  try { runQueueStallRecovery(); } catch (e) { console.log('[HealthMonitor] runQueueStallRecovery failed: ' + e.message); }
+
   try {
     var issues = collectIssues_();
     if (issues.length === 0) return;
@@ -93,10 +124,25 @@ function checkSysLogs_() {
   var issues  = [];
   var cutoff  = new Date(Date.now() - HM_LOOK_BACK_MS_).toISOString();
   var rows    = DAL.readAll(Config.TABLES.SYS_LOGS, { callerModule: 'ExecutionHealthMonitor' });
-  var errors  = rows.filter(function(r) {
+  var allErrors = rows.filter(function(r) {
     return String(r.level || '').toUpperCase() === 'ERROR' &&
            String(r.timestamp || '') >= cutoff;
   });
+
+  // SOP suppression (see HM_SUPPRESSED_ERROR_ACTIONS_ above) — these
+  // don't count toward alerting. Logged once as INFO here rather than
+  // per-row, so the suppression itself doesn't add ERROR-scan noise.
+  var suppressedCount = 0;
+  var errors = allErrors.filter(function(r) {
+    if (HM_SUPPRESSED_ERROR_ACTIONS_[String(r.action || '')]) { suppressedCount++; return false; }
+    return true;
+  });
+  if (suppressedCount > 0) {
+    Logger.info('SOP_ERRORS_SUPPRESSED', {
+      module: 'ExecutionHealthMonitor', count: suppressedCount,
+      message: suppressedCount + ' SOP-module error(s) suppressed from health-monitor alerting (WIP module, PROJECT_MEMORY.md §7).'
+    });
+  }
 
   if (errors.length === 0) return issues;
 
@@ -420,28 +466,9 @@ function runProdContaminationCheck() {
   return { contaminated: true, issues: issues };
 }
 
-/**
- * Installs the daily PROD contamination check trigger (03:00 script
- * time — off-hours, after any overnight batch/migration work).
- * Idempotent.
- */
-function runInstallProdContaminationTrigger() {
-  var FN = 'runProdContaminationCheck';
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction() === FN) ScriptApp.deleteTrigger(t);
-  });
-  ScriptApp.newTrigger(FN).timeBased().everyDays(1).atHour(3).create();
-  console.log('✅ PROD contamination check installed: ' + FN + ' daily at 03:00.');
-}
-
-/**
- * Removes the daily PROD contamination check trigger.
- */
-function runRemoveProdContaminationTrigger() {
-  var FN      = 'runProdContaminationCheck';
-  var removed = 0;
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction() === FN) { ScriptApp.deleteTrigger(t); removed++; }
-  });
-  console.log(removed ? '✅ Removed PROD contamination trigger.' : '⚠️ No trigger found — already removed.');
-}
+// runInstallProdContaminationTrigger() / runRemoveProdContaminationTrigger()
+// removed 2026-07-10 (commit 5) — superseded by the 05:00 daily data
+// integrity run (runDataIntegrityMonitorJob(), DataIntegrityMonitor.gs),
+// which now covers this same scan via Check 5. runProdContaminationCheck()
+// itself is untouched above and still callable manually. See this
+// file's header comment for the PROD manual-trigger-removal note.

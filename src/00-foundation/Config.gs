@@ -160,6 +160,7 @@ var Config = (function () {
     SYS_EXCEPTIONS:    '_SYS_EXCEPTIONS',
     SYS_IDEMPOTENCY:   '_SYS_IDEMPOTENCY',
     SYS_VERSION:       '_SYS_VERSION',
+    SYS_INTEGRITY_DIGEST: '_SYS_INTEGRITY_DIGEST',
 
     // Dimension tables — reference data, effective-dated
     DIM_STAFF_ROSTER:        'DIM_STAFF_ROSTER',

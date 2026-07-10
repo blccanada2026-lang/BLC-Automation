@@ -74,6 +74,7 @@ var DAL = (function () {
     '_SYS_EXCEPTIONS':       ['ErrorHandler'],
     '_SYS_IDEMPOTENCY':      ['IdempotencyEngine'],
     '_SYS_VERSION':          ['VersionRecorder', 'AdminEngine'],
+    '_SYS_INTEGRITY_DIGEST': ['DataIntegrityMonitor'],
 
     // ── Dimension tables (Admin + Migration only) ───────────
     'DIM_STAFF_ROSTER':         ['AdminEngine', 'MigrationEngine', 'MigrationReplayEngine', 'StaffOnboarding', 'TestStaffDeactivator'],

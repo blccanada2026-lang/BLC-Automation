@@ -72,6 +72,16 @@ var SCHEMAS = {
     'idempotency_key', 'processed_at', 'source_module', 'source_id'
   ],
 
+  // Non-CRITICAL data integrity findings (HIGH/MEDIUM), written by
+  // DataIntegrityMonitor.gs's daily 05:00 run, read back by the
+  // 06:00 daily digest (severity HIGH, last 24h) and Sunday 06:00
+  // weekly digest (severity MEDIUM, last 7 days). CRITICAL findings
+  // skip this table entirely — they email immediately instead.
+  '_SYS_INTEGRITY_DIGEST': [
+    'entry_id', 'timestamp', 'severity', 'check_name',
+    'category', 'message', 'recommended_action', 'data_json'
+  ],
+
   '_SYS_VERSION': [
     'version', 'deployed_at', 'deployed_by', 'notes'
   ],
