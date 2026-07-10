@@ -108,7 +108,20 @@
 //        row for the same job_number (closing the actual gap the
 //        check tests for), in addition to the FACT-side void (kept
 //        for audit-trail hygiene, matching the general FACT
-//        convention).
+//        convention). Because that backfill checks EXISTENCE, not
+//        current_state (unlike Checks 3/8/9/10, which key off
+//        current_state and are safe to reuse a fixed job_number
+//        against), a fixed job_number would only ever be a genuine
+//        orphan on its very first run — every run after that would
+//        find it pre-registered in VW from its own prior cleanup.
+//        Test 2 therefore generates a fresh job_number
+//        (DIMT_JOB_ORPHAN_ + '-' + Date.now()) every run, and its
+//        detection assertion uses a baseline-delta (orphan count
+//        before/after, not "any finding present") so pre-existing
+//        DEV orphans unrelated to this test — including permanent
+//        stale residue from any Test 6/7 run that predates their own
+//        VW-backfill fix, itself unrecoverable since FACT is
+//        append-only — don't produce a false pass or a false fail.
 //      - Check 5 (test contamination) and Check 7 (job number
 //        normalization) have NO exclusion mechanism of any kind —
 //        every sub-check in Check 5 (checkRosterContamination_,
@@ -327,17 +340,31 @@ function testDataIntegrityMonitor_check1_duplicateWorkLogs() {
 // TEST 2 — Orphaned work log (Check 2, HIGH)
 // ============================================================
 
-/** @returns {{ periodId:string, workDate:string, jobNumber:string }} */
+/**
+ * Job number includes a Date.now() suffix — NOT reused across runs.
+ * dimtCleanupCheck2_() permanently backfills a VW row for whatever
+ * job_number is seeded here (see that function's comment), and
+ * computeWorkLogOrphans_() treats mere VW-row EXISTENCE — not
+ * current_state — as "not an orphan" (unlike Checks 3/8/9/10, which
+ * key off current_state and are safe to reuse a fixed job_number
+ * against, since VOIDED is filtered by state, not by existence). A
+ * fixed job_number here would only be a genuine orphan on the very
+ * first run ever; every run after that would find it pre-registered
+ * in VW from its own prior cleanup and silently fail to seed a new
+ * orphan at all. A fresh job_number every run avoids that entirely.
+ * @returns {{ periodId:string, workDate:string, jobNumber:string }}
+ */
 function dimtSeedCheck2_() {
   dimtRequireDev_();
   var periodId = dimCurrentMonthPartition_();
   DAL.ensurePartition(Config.TABLES.FACT_WORK_LOGS, periodId, DIMT_MODULE_);
   var workDate = dimtToday_();
+  var jobNumber = DIMT_JOB_ORPHAN_ + '-' + Date.now();
   var eventId = Identifiers.generateId();
 
   DAL.appendRow(Config.TABLES.FACT_WORK_LOGS, {
     event_id:        eventId,
-    job_number:      DIMT_JOB_ORPHAN_,
+    job_number:      jobNumber,
     period_id:       periodId,
     event_type:      Constants.EVENT_TYPES.WORK_LOG_SUBMITTED,
     timestamp:       new Date().toISOString(),
@@ -350,14 +377,34 @@ function dimtSeedCheck2_() {
     payload_json:     ''
   }, { callerModule: DIMT_MODULE_, periodId: periodId });
 
-  return { periodId: periodId, workDate: workDate, jobNumber: DIMT_JOB_ORPHAN_ };
+  return { periodId: periodId, workDate: workDate, jobNumber: jobNumber };
 }
 
-function dimtAssertCheck2_(seed, results, counters) {
+/** data.orphan_count from checkOrphanedWorkLogs_()'s single aggregate finding, or 0. */
+function dimtCheck2Total_() {
   var findings = checkOrphanedWorkLogs_();
-  var hits = dimtFilterByMarker_(findings, seed.jobNumber);
-  assertH_(results, counters, 'Check 2 detects the seeded orphan', hits.length > 0,
-    'findings=' + findings.length);
+  return findings.length ? findings[0].data.orphan_count : 0;
+}
+
+/**
+ * Baseline-delta pattern — resilient to pre-existing DEV orphans
+ * (e.g. residual append-only FACT rows from historical Test 6/7 runs
+ * predating their own VW-backfill fix). checkOrphanedWorkLogs_()
+ * returns AT MOST ONE aggregate finding (data.orphan_count / data.samples
+ * for ALL current orphans, not one finding per orphan) — a bare
+ * "findings detected" check can't distinguish our seed from unrelated
+ * pre-existing noise, so this compares the count before/after and
+ * confirms our specific job_number is among the (now larger) sample set.
+ */
+function dimtAssertCheck2_(baseline, seed, results, counters) {
+  var afterSeedFindings = checkOrphanedWorkLogs_();
+  var afterSeedTotal    = dimtCheck2Total_();
+  assertH_(results, counters, 'Check 2 total increases by exactly 1 after seeding',
+    afterSeedTotal === baseline + 1, 'baseline=' + baseline + ' afterSeed=' + afterSeedTotal);
+
+  var hits = dimtFilterByMarker_(afterSeedFindings, seed.jobNumber);
+  assertH_(results, counters, 'New orphan finding includes the seeded job_number', hits.length > 0,
+    'findings=' + afterSeedFindings.length);
   assertH_(results, counters, 'Orphan finding severity is HIGH',
     hits.length > 0 && hits[0].severity === DIM_SEVERITY_.HIGH,
     hits.length ? hits[0].severity : 'no hit');
@@ -413,12 +460,14 @@ function testDataIntegrityMonitor_check2_orphanedWorkLogs() {
   var results = [], counters = { passed: 0, failed: 0 };
   var seed = null;
   try {
+    var baseline = dimtCheck2Total_();
     seed = dimtSeedCheck2_();
-    dimtAssertCheck2_(seed, results, counters);
+    dimtAssertCheck2_(baseline, seed, results, counters);
+
     dimtCleanupCheck2_(seed);
-    var after = checkOrphanedWorkLogs_();
-    assertH_(results, counters, 'Check 2 clean after cleanup (VW row backfilled + voided)',
-      !dimtHasMarker_(after, seed.jobNumber), 'still present after cleanup');
+    var afterCleanupTotal = dimtCheck2Total_();
+    assertH_(results, counters, 'Check 2 total returns to baseline after cleanup',
+      afterCleanupTotal === baseline, 'baseline=' + baseline + ' afterCleanup=' + afterCleanupTotal);
   } catch (e) {
     results.push('  FAIL: unexpected exception — ' + e.message);
     counters.failed++;
