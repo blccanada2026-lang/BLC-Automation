@@ -319,7 +319,8 @@ var HM_TEST_CLIENT_CODES_ = { 'TEST-CLIENT': true };
 // event types. If the current count drops below its baseline (e.g. a
 // manual purge), update the constant down — don't leave it stale high,
 // or genuine new contamination under the old ceiling would go silent.
-var HM_KNOWN_TEST_RESIDUE_FACT_WORK_LOGS_ = 134; // 42 voided SUBMITTED + 22 system events + 70 void/amendment events. All DS1. Append-only table, cannot be cleaned.
+// Baseline updated 2026-07-13 from 134 to 161 — delta is remediation events from cleanup sprint, not new test activity.
+var HM_KNOWN_TEST_RESIDUE_FACT_WORK_LOGS_ = 161; // 42 voided SUBMITTED + 22 system events + 70 void/amendment events (2026-07-10) + 27 remediation events (voids/period fixes/orphan fixes, 2026-07-13). All DS1. Append-only table, cannot be cleaned.
 var HM_KNOWN_TEST_RESIDUE_STG_QUEUE_      = 333;
 
 /** True if email belongs to the synthetic test-identity domain or a known hardcoded test fixture. */
