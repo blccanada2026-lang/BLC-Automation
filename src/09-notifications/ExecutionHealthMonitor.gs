@@ -362,21 +362,37 @@ function checkRosterContamination_() {
 }
 
 /**
- * VW_JOB_CURRENT_STATE should never contain client_code = 'TEST-CLIENT'
- * (the current test fixture value). NORSPAN is intentionally excluded —
- * see HM_TEST_CLIENT_CODES_ note above.
+ * VW_JOB_CURRENT_STATE should never contain a non-VOIDED row with
+ * client_code = 'TEST-CLIENT' (the current test fixture value). NORSPAN
+ * is intentionally excluded — see HM_TEST_CLIENT_CODES_ note above.
+ *
+ * 2026-07-10 baseline audit (4th sub-fix, added after DEV verification
+ * surfaced this as the one Check 5 sub-check the first 3 refinements
+ * missed): VOIDED TEST-CLIENT rows are permanent append-only-adjacent
+ * residue — thCleanupTestArtifacts_() (TestHarness.gs) and every
+ * DataIntegrityMonitorTest.gs cleanup void these rows but never delete
+ * them, so the count only grows over time regardless of how "clean"
+ * things are. Unlike FACT_WORK_LOGS/STG_PROCESSING_QUEUE (Refinement 1,
+ * no state field to exclude on, hence a numeric baseline there), this
+ * table has current_state — VOIDED is a real exclusion, not a guessed
+ * ceiling, and matches the same VOIDED-exclusion pattern already used
+ * by checkClientCodeConsistency_()/checkAllocatedToValidity_()/
+ * checkRateConfigurationCompleteness_()/checkVwStateIntegrity_() for
+ * terminal-state jobs. Only a non-VOIDED TEST-CLIENT row is live
+ * contamination.
  */
 function checkVwContamination_() {
   var issues = [];
   var rows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: 'ExecutionHealthMonitor' });
   var hits = (rows || []).filter(function(r) {
-    return HM_TEST_CLIENT_CODES_[String(r.client_code || '').trim()];
+    if (!HM_TEST_CLIENT_CODES_[String(r.client_code || '').trim()]) return false;
+    return String(r.current_state || '').toUpperCase().trim() !== 'VOIDED';
   });
   if (hits.length > 0) {
     issues.push({
       severity: 'ERROR',
       category: 'PROD_CONTAMINATION_VW',
-      message:  hits.length + ' VW_JOB_CURRENT_STATE row(s) with client_code TEST-CLIENT: ' +
+      message:  hits.length + ' VW_JOB_CURRENT_STATE row(s) with client_code TEST-CLIENT (non-VOIDED): ' +
                 hits.slice(0, 10).map(function(r) { return r.job_number; }).join(', ') +
                 (hits.length > 10 ? ' (+' + (hits.length - 10) + ' more)' : '')
     });
