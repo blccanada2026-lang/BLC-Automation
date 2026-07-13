@@ -713,7 +713,13 @@ function testDataIntegrityMonitor_check5_testContamination() {
 }
 
 // ============================================================
-// TEST 6 — Malformed period_id (Check 6, MEDIUM)
+// TEST 6 — Malformed period_id (Check 6, INFO — suppressed 2026-07-10,
+// see DataIntegrityChecks_WorkLog.gs's checkPeriodIdFormat_() header
+// comment for why: 20,128 malformed rows found in a PROD baseline
+// audit, dominated by the fixer's own WORK_LOG_PERIOD_FIXED output
+// getting Sheets-coerced back into a Date on write. Detection logic
+// is unchanged; only the returned severity was downgraded so this
+// stops routing to the digest.)
 // checkPeriodIdFormat_()'s issue payload reports only aggregate counts
 // (data.total, data.partitions), never per-row detail — see file
 // header note 2 — so this test verifies via count delta rather than
@@ -802,8 +808,8 @@ function testDataIntegrityMonitor_check6_periodIdFormat() {
     var afterSeedTotal    = dimtCheck6Total_();
     assertH_(results, counters, 'Check 6 total increases by exactly 1 after seeding',
       afterSeedTotal === baseline + 1, 'baseline=' + baseline + ' afterSeed=' + afterSeedTotal);
-    assertH_(results, counters, 'Period_id finding severity is MEDIUM',
-      afterSeedFindings.length > 0 && afterSeedFindings[0].severity === DIM_SEVERITY_.MEDIUM,
+    assertH_(results, counters, 'Period_id finding severity is INFO (suppressed 2026-07-10 — see file header note 2)',
+      afterSeedFindings.length > 0 && afterSeedFindings[0].severity === DIM_SEVERITY_.INFO,
       afterSeedFindings.length ? afterSeedFindings[0].severity : 'no finding');
     assertH_(results, counters, 'Period_id finding category is PERIOD_ID_MALFORMED',
       afterSeedFindings.length > 0 && afterSeedFindings[0].category === 'PERIOD_ID_MALFORMED',

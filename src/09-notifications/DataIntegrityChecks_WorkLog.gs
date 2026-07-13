@@ -204,15 +204,28 @@ function checkOrphanedWorkLogs_(monthPartitionOverride, jobFilter) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Check 6 — Period_id format integrity (MEDIUM)
+// Check 6 — Period_id format integrity (SUPPRESSED — see below)
 //
 // Current + previous month FACT_WORK_LOGS partitions: every row's
 // period_id must be a bare 'YYYY-MM' string, not a Date object or
-// blank. We fixed 9,873 malformed rows on 2026-07-06
-// (WorkLogPeriodFixer.gs) — this catches recurrence going forward.
-// Rows that already have a matching WORK_LOG_PERIOD_FIXED amendment
-// are excluded via idempotency_key prefix-stripping, so this doesn't
-// re-alert on the 9,873 rows already fixed.
+// blank. Detection logic is unchanged and still runs in full; only
+// the returned severity was downgraded (see checkPeriodIdFormat_()'s
+// return statement) so this stops routing to the daily/weekly digest.
+//
+// CHECK 6 SUPPRESSED — 2026-07-10 baseline audit
+// 20,128 malformed period_id rows across all partitions.
+// Root cause: Sheets formatting inheritance coerces YYYY-MM strings to Date objects
+// when appended adjacent to cells containing Date-typed period_id values.
+// The WorkLogPeriodFixer (9,873 amendment events) was itself affected by this bug.
+// Original migration rows (7,761) persist in the append-only FACT table.
+// Not fixable through append-only DAL — requires in-place cell update (DAL.patchFactRows).
+// Re-enable when DAL.patchFactRows is built and a proper in-place fix is applied.
+//
+// The WORK_LOG_PERIOD_FIXED exclusion below (idempotency_key prefix-
+// stripping) is left in place and still correct for whatever fraction
+// of malformed rows a FUTURE, non-coercion-affected fix event produces
+// — it just isn't what's suppressing today's 20,128, which predates
+// this severity change entirely.
 // ─────────────────────────────────────────────────────────────
 
 /** Mirrors WorkLogPeriodFixer.gs's private isMalformed_(). */
@@ -279,7 +292,7 @@ function checkPeriodIdFormat_() {
 
   return [{
     check:    'CHECK_6_PERIOD_ID_FORMAT',
-    severity: DIM_SEVERITY_.MEDIUM,
+    severity: DIM_SEVERITY_.INFO, // suppressed 2026-07-10 — see header comment above
     category: 'PERIOD_ID_MALFORMED',
     message:  totalMalformed + ' row(s) with malformed period_id across partition(s): ' +
               Object.keys(malformedByPartition).map(function(p) { return p + ' (' + malformedByPartition[p] + ')'; }).join(', '),

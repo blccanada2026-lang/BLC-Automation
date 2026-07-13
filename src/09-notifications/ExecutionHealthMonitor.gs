@@ -308,6 +308,20 @@ var HM_TEST_CLIENT_CODES_ = { 'TEST-CLIENT': true };
 // client_code mismatch/typo, already voided — a real client code variant,
 // not a test fixture. Do not re-add without CTO confirmation.
 
+// Known-residue baselines — 2026-07-10 PROD baseline audit
+// (IntegrityMonitorBaselineAudit.gs Investigation 2). Both tables are
+// append-only/never-deleted in practice, so historical test-fixture rows
+// from the 2026-07-08 incident (testing-policy.md background) can never
+// reach zero — only new contamination above these counts is actionable.
+// Investigation 2 confirmed all 42 countable (SUBMITTED/MIGRATED)
+// FACT_WORK_LOGS test-actor rows are voided (net-zero hours); the 134
+// total below also includes the VOIDED events themselves and other
+// event types. If the current count drops below its baseline (e.g. a
+// manual purge), update the constant down — don't leave it stale high,
+// or genuine new contamination under the old ceiling would go silent.
+var HM_KNOWN_TEST_RESIDUE_FACT_WORK_LOGS_ = 134; // 42 voided SUBMITTED + 22 system events + 70 void/amendment events. All DS1. Append-only table, cannot be cleaned.
+var HM_KNOWN_TEST_RESIDUE_STG_QUEUE_      = 333;
+
 /** True if email belongs to the synthetic test-identity domain or a known hardcoded test fixture. */
 function isTestFixtureEmail_(email) {
   var e = String(email || '').toLowerCase().trim();
@@ -315,17 +329,24 @@ function isTestFixtureEmail_(email) {
 }
 
 /**
- * DIM_STAFF_ROSTER should never contain a test person_code or a
- * @test.blc.internal email once seedTestStaff()/StaffOnboarding
- * paths are Config.isDev()-gated. Any hit means a test run wrote
- * into the real roster.
+ * DIM_STAFF_ROSTER should never contain an ACTIVE test person_code or
+ * @test.blc.internal email once seedTestStaff()/StaffOnboarding paths
+ * are Config.isDev()-gated. Any hit means a test run wrote into the
+ * real roster. 2026-07-10 baseline audit: the 6 PROD test-fixture rows
+ * are already deactivated (active=false, via TestStaffDeactivator.gs)
+ * — that's the remediated end state for this incident, not a new one,
+ * so deactivated rows are excluded here. An active test-identity row
+ * still means live contamination and still fires.
  */
 function checkRosterContamination_() {
   var issues = [];
   var rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'ExecutionHealthMonitor' });
   var hits = (rows || []).filter(function(r) {
-    return HM_TEST_PERSON_CODES_[String(r.person_code || '').toUpperCase()] ||
-           isTestFixtureEmail_(r.email);
+    var isTestIdentity = HM_TEST_PERSON_CODES_[String(r.person_code || '').toUpperCase()] ||
+                          isTestFixtureEmail_(r.email);
+    if (!isTestIdentity) return false;
+    var isDeactivated = r.active === false || String(r.active || '').toUpperCase().trim() === 'FALSE';
+    return !isDeactivated; // only flag rows where active is NOT false
   });
   if (hits.length > 0) {
     issues.push({
@@ -385,10 +406,15 @@ function discoverHmWorkLogPartitions_() {
 }
 
 /**
- * FACT_WORK_LOGS should never contain a test actor_code. Scans only
- * the most recent 2 partitions (this month + last month) — a daily
- * check does not need to re-scan the full historical archive, and
- * new contamination surfaces in the current period first.
+ * FACT_WORK_LOGS should never contain MORE THAN the known-residue
+ * baseline (HM_KNOWN_TEST_RESIDUE_FACT_WORK_LOGS_) of test actor_code
+ * rows. Scans only the most recent 2 partitions (this month + last
+ * month) — a daily check does not need to re-scan the full historical
+ * archive, and new contamination surfaces in the current period first.
+ * 2026-07-10 baseline audit (Investigation 2) confirmed the existing
+ * count is 100% voided/remediated residue in an append-only table that
+ * can never be cleaned to zero — only growth ABOVE that baseline is
+ * actionable new contamination.
  */
 function checkWorkLogContamination_() {
   var issues  = [];
@@ -407,34 +433,48 @@ function checkWorkLogContamination_() {
     });
   });
 
-  if (hits.length > 0) {
-    issues.push({
-      severity: 'ERROR',
-      category: 'PROD_CONTAMINATION_WORKLOG',
-      message:  hits.length + ' FACT_WORK_LOGS row(s) in partition(s) [' + periods.join(', ') +
-                '] with a test actor_code (DS1/QC1/RND/NTL).'
-    });
+  if (hits.length <= HM_KNOWN_TEST_RESIDUE_FACT_WORK_LOGS_) {
+    console.log('[ExecutionHealthMonitor] FACT_WORK_LOGS test-actor rows: ' + hits.length +
+                ' — within known baseline of ' + HM_KNOWN_TEST_RESIDUE_FACT_WORK_LOGS_ + ', no alert.');
+    return issues;
   }
+
+  issues.push({
+    severity: 'ERROR',
+    category: 'PROD_CONTAMINATION_WORKLOG',
+    message:  hits.length + ' FACT_WORK_LOGS row(s) in partition(s) [' + periods.join(', ') +
+              '] with a test actor_code (DS1/QC1/RND/NTL) — exceeds known baseline of ' +
+              HM_KNOWN_TEST_RESIDUE_FACT_WORK_LOGS_ + '. Possible NEW contamination.'
+  });
   return issues;
 }
 
 /**
- * STG_PROCESSING_QUEUE should never contain a @test.blc.internal
- * submitter_email — that domain only resolves via RBAC's
- * Config.isDev()-gated getDevTestActors_(), so its presence in the
- * live queue means a test submission reached PROD's intake path.
+ * STG_PROCESSING_QUEUE should never contain MORE THAN the known-residue
+ * baseline (HM_KNOWN_TEST_RESIDUE_STG_QUEUE_) of @test.blc.internal
+ * submitter_email rows — that domain only resolves via RBAC's
+ * Config.isDev()-gated getDevTestActors_(), so its presence in the live
+ * queue means a test submission reached PROD's intake path. 2026-07-10
+ * baseline audit set this to the confirmed existing count; only growth
+ * above it is actionable new contamination.
  */
 function checkQueueContamination_() {
   var issues = [];
   var rows = DAL.readAll(Config.TABLES.STG_PROCESSING_QUEUE, { callerModule: 'ExecutionHealthMonitor' });
   var hits = (rows || []).filter(function(r) { return isTestFixtureEmail_(r.submitter_email); });
-  if (hits.length > 0) {
-    issues.push({
-      severity: 'ERROR',
-      category: 'PROD_CONTAMINATION_QUEUE',
-      message:  hits.length + ' STG_PROCESSING_QUEUE row(s) with a @test.blc.internal submitter_email.'
-    });
+
+  if (hits.length <= HM_KNOWN_TEST_RESIDUE_STG_QUEUE_) {
+    console.log('[ExecutionHealthMonitor] STG_PROCESSING_QUEUE test-fixture rows: ' + hits.length +
+                ' — within known baseline of ' + HM_KNOWN_TEST_RESIDUE_STG_QUEUE_ + ', no alert.');
+    return issues;
   }
+
+  issues.push({
+    severity: 'ERROR',
+    category: 'PROD_CONTAMINATION_QUEUE',
+    message:  hits.length + ' STG_PROCESSING_QUEUE row(s) with a @test.blc.internal submitter_email — ' +
+              'exceeds known baseline of ' + HM_KNOWN_TEST_RESIDUE_STG_QUEUE_ + '. Possible NEW contamination.'
+  });
   return issues;
 }
 

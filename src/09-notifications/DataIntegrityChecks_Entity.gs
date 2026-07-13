@@ -342,6 +342,11 @@ function checkVwStateIntegrity_() {
   Object.keys(Config.STATES).forEach(function(k) { validStates[Config.STATES[k]] = true; });
   validStates.VOIDED = true;
   validStates.CANCELLED = true;
+  // COMPLETED — added 2026-07-10 (baseline audit Investigation 1, 212 rows).
+  // V2 migration state: pre-cutover jobs that finished before the V3 state
+  // machine was active. Equivalent to COMPLETED_BILLABLE. Not normalized to
+  // avoid unnecessary VW writes on historical data.
+  validStates.COMPLETED = true;
 
   var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
 
