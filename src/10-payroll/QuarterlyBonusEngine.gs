@@ -2702,3 +2702,153 @@ function runQ2ReworkCycleBackfill(dryRun) {
 
   return { dryRun: dryRun, affected: affectedJobs.length, updated: updated, notFound: notFound };
 }
+
+/**
+ * Read-only forensics on BLC-00099, BLC-00103, BLC-00159, BLC-00163 —
+ * the 4 jobs with a real QC_MAJOR_REWORK event that runQ2MajorReworkJobCheck()
+ * / the backfill dry run found missing from VW_JOB_CURRENT_STATE. For
+ * each: every FACT_JOB_EVENTS and FACT_QC_EVENTS row (event_type,
+ * actor_code, timestamp, client_code, notes — FACT_QC_EVENTS has no
+ * client_code column, so that field is only populated from
+ * FACT_JOB_EVENTS rows), a real-vs-test-fixture classification of the
+ * client_code(s)/actor_code(s) seen, and whether any FACT_WORK_LOGS
+ * entries exist for the job. No writes.
+ */
+function runQ2MissingJobsForensics() {
+  var CALLER = 'QuarterlyBonusEngine:Diag';
+  var targetJobs = ['BLC-00099', 'BLC-00103', 'BLC-00159', 'BLC-00163'];
+  var targetSet = {};
+  targetJobs.forEach(function(j) { targetSet[j] = true; });
+
+  // Known real clients — SetupScript.gs's seedClientMaster_() CLIENTS list.
+  var REAL_CLIENT_CODES = {
+    'SBS': true, 'TITAN': true, 'MATIX-SK': true,
+    'NORSPAN-MB': true, 'NELSON': true, 'ALBERTA TRUSS': true
+  };
+  var TEST_CLIENT_CODES = { 'TEST-CLIENT': true };
+  var TEST_PERSON_CODES = { DS1: true, QC1: true, RND: true, NTL: true, TLM: true, WLD: true };
+
+  function discoverFactPartitions_(tableName) {
+    var sheets = DAL.listSheets();
+    var prefix = tableName + '|';
+    var periods = [];
+    sheets.forEach(function(name) {
+      if (name.indexOf(prefix) !== 0) return;
+      var period = name.substring(prefix.length);
+      if (/^\d{4}-\d{2}$/.test(period)) periods.push(period);
+    });
+    periods.sort();
+    return periods;
+  }
+
+  var eventsByJob = {};
+  targetJobs.forEach(function(j) { eventsByJob[j] = []; });
+
+  discoverFactPartitions_(Config.TABLES.FACT_JOB_EVENTS).forEach(function(pid) {
+    var rows;
+    try { rows = DAL.readAll(Config.TABLES.FACT_JOB_EVENTS, { callerModule: CALLER, periodId: pid }); }
+    catch (e) { return; }
+    rows.forEach(function(r) {
+      var jn = String(r.job_number || '').trim();
+      if (!targetSet[jn]) return;
+      eventsByJob[jn].push({
+        source: 'FACT_JOB_EVENTS', partition: pid,
+        event_type: r.event_type, actor_code: r.actor_code,
+        timestamp: r.timestamp, client_code: r.client_code, notes: r.notes
+      });
+    });
+  });
+
+  discoverFactPartitions_(Config.TABLES.FACT_QC_EVENTS).forEach(function(pid) {
+    var rows;
+    try { rows = DAL.readAll(Config.TABLES.FACT_QC_EVENTS, { callerModule: CALLER, periodId: pid }); }
+    catch (e) { return; }
+    rows.forEach(function(r) {
+      var jn = String(r.job_number || '').trim();
+      if (!targetSet[jn]) return;
+      eventsByJob[jn].push({
+        source: 'FACT_QC_EVENTS', partition: pid,
+        event_type: r.event_type, actor_code: r.actor_code,
+        timestamp: r.timestamp, client_code: undefined, notes: r.notes
+      });
+    });
+  });
+
+  var workLogsByJob = {};
+  targetJobs.forEach(function(j) { workLogsByJob[j] = []; });
+  discoverFactPartitions_(Config.TABLES.FACT_WORK_LOGS).forEach(function(pid) {
+    var rows;
+    try { rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: CALLER, periodId: pid }); }
+    catch (e) { return; }
+    rows.forEach(function(r) {
+      var jn = String(r.job_number || '').trim();
+      if (!targetSet[jn]) return;
+      workLogsByJob[jn].push({
+        partition: pid, event_type: r.event_type, actor_code: r.actor_code,
+        work_date: r.work_date, hours: r.hours
+      });
+    });
+  });
+
+  console.log('\n══════ Forensics: 4 jobs missing from VW_JOB_CURRENT_STATE ══════');
+  console.log('(FACT_QC_EVENTS has no client_code column — client_code below only comes from FACT_JOB_EVENTS rows)');
+
+  targetJobs.forEach(function(jn) {
+    console.log('\n──── ' + jn + ' ────');
+    var events = eventsByJob[jn].slice().sort(function(a, b) {
+      var ta = QuarterlyBonusEngine.parseFlexibleDate_(a.timestamp);
+      var tb = QuarterlyBonusEngine.parseFlexibleDate_(b.timestamp);
+      return (ta ? ta.getTime() : 0) - (tb ? tb.getTime() : 0);
+    });
+
+    if (events.length === 0) {
+      console.log('  ⚠️  NO events found in FACT_JOB_EVENTS or FACT_QC_EVENTS for this job_number at all.');
+    } else {
+      events.forEach(function(e) {
+        console.log('  [' + e.source + '/' + e.partition + '] event_type=' + (e.event_type || '?') +
+                    ' | actor_code=' + (e.actor_code || '?') +
+                    ' | timestamp=' + (e.timestamp || '?') +
+                    ' | client_code=' + (e.client_code === undefined ? '(n/a)' : (e.client_code || '(blank)')) +
+                    ' | notes=' + (e.notes || ''));
+      });
+    }
+
+    var clientCodesSeen = {}, actorCodesSeen = {};
+    events.forEach(function(e) {
+      if (e.client_code) clientCodesSeen[e.client_code] = true;
+      if (e.actor_code) actorCodesSeen[e.actor_code] = true;
+    });
+
+    var clientList = Object.keys(clientCodesSeen);
+    var clientVerdict = clientList.length === 0 ? 'no client_code found in any event' :
+      clientList.map(function(c) {
+        if (TEST_CLIENT_CODES[c]) return c + ' (TEST FIXTURE)';
+        if (REAL_CLIENT_CODES[c]) return c + ' (real client)';
+        return c + ' (unrecognized — not in known real or test lists)';
+      }).join(', ');
+
+    var actorList = Object.keys(actorCodesSeen);
+    var actorVerdict = actorList.length === 0 ? 'no actor_code found' :
+      actorList.map(function(a) {
+        return TEST_PERSON_CODES[a.toUpperCase()] ? a + ' (TEST FIXTURE)' : a + ' (real person_code)';
+      }).join(', ');
+
+    console.log('  Client code(s) seen: ' + clientVerdict);
+    console.log('  Actor code(s) seen: ' + actorVerdict);
+
+    var workLogs = workLogsByJob[jn];
+    if (workLogs.length === 0) {
+      console.log('  FACT_WORK_LOGS: ⚠️  NO entries found for this job_number in any partition.');
+    } else {
+      console.log('  FACT_WORK_LOGS: ' + workLogs.length + ' entrie(s):');
+      workLogs.forEach(function(w) {
+        console.log('    [' + w.partition + '] event_type=' + (w.event_type || '?') +
+                    ' | actor_code=' + (w.actor_code || '?') +
+                    ' | work_date=' + (w.work_date || '?') +
+                    ' | hours=' + (w.hours || '?'));
+      });
+    }
+  });
+
+  console.log('\n══════ End forensics ══════\n');
+}
