@@ -1079,3 +1079,58 @@ function runQ2FeedbackRequestPreview() {
 
   return results;
 }
+
+/**
+ * NO FIXES — raw data dump only. Follow-up to 4 issues found in
+ * runQ2FeedbackRequestPreview()'s output:
+ *   1. MATIX-SK's contact_email looked wrong (miles@norspantruss.com —
+ *      a norspantruss.com-domain address, not MATIX's own).
+ *   2. SBS's greeting was malformed ("Dear AL, Roger, Ray,Beckette,") —
+ *      inconsistent capitalization and comma spacing. Confirming here
+ *      whether that's literally what's stored in contact_name, or an
+ *      artifact of how the preview builds the greeting (it isn't —
+ *      the preview uses contact_name verbatim, no transformation).
+ *   3. BSG (Banik Sagar) / NMM (Nitesh Mishra) — DIM_STAFF_ROSTER
+ *      active status looked blank. buildDesignerClientPairs_() does
+ *      NOT currently filter on active status — its Step 3 cross-check
+ *      (DIM_STAFF_ROSTER) only warns on a designer whose effective_to
+ *      predates the quarter; it doesn't exclude anyone for any reason,
+ *      blank active status included.
+ * Every column dumped exactly as DAL.readAll() returns it — no
+ * reformatting, no interpretation, no writes.
+ */
+function runQ2FeedbackDataQualityReport() {
+  var CALLER = 'ClientFeedback:Diag';
+
+  function dumpRow_(label, row) {
+    if (!row) { console.log('  ⚠️  ' + label + ' — NOT FOUND.'); return; }
+    console.log('  ' + label + ':');
+    Object.keys(row).forEach(function(k) {
+      console.log('    ' + k + ' = ' + JSON.stringify(row[k]));
+    });
+  }
+
+  console.log('\n══════ DIM_CLIENT_MASTER — raw rows for MATIX-SK and SBS ══════');
+  var clientRows = DAL.readAll(Config.TABLES.DIM_CLIENT_MASTER, { callerModule: CALLER });
+  var matix = clientRows.filter(function(r) { return String(r.client_code || '').trim() === 'MATIX-SK'; });
+  var sbs   = clientRows.filter(function(r) { return String(r.client_code || '').trim() === 'SBS'; });
+
+  console.log('\nMATIX-SK — ' + matix.length + ' row(s) found:');
+  matix.forEach(function(r, i) { dumpRow_('MATIX-SK [' + i + ']', r); });
+
+  console.log('\nSBS — ' + sbs.length + ' row(s) found:');
+  sbs.forEach(function(r, i) { dumpRow_('SBS [' + i + ']', r); });
+
+  console.log('\n══════ DIM_STAFF_ROSTER — raw rows for BSG and NMM ══════');
+  var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: CALLER });
+  var bsg = staffRows.filter(function(r) { return String(r.person_code || '').trim() === 'BSG'; });
+  var nmm = staffRows.filter(function(r) { return String(r.person_code || '').trim() === 'NMM'; });
+
+  console.log('\nBSG (Banik Sagar) — ' + bsg.length + ' row(s) found:');
+  bsg.forEach(function(r, i) { dumpRow_('BSG [' + i + ']', r); });
+
+  console.log('\nNMM (Nitesh Mishra) — ' + nmm.length + ' row(s) found:');
+  nmm.forEach(function(r, i) { dumpRow_('NMM [' + i + ']', r); });
+
+  console.log('\n══════ End report — nothing was changed ══════\n');
+}
