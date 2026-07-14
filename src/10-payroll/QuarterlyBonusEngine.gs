@@ -80,6 +80,40 @@ var QuarterlyBonusEngine = (function () {
   }
 
   /**
+   * Returns { start: Date, end: Date } for a quarter — start inclusive,
+   * end exclusive. 2026-07-14: added to replace period_id string-matching
+   * for row-level date filters (see getQcErrorRates_() header comment for
+   * why period_id can't be used this way). new Date(year, month, 1) with
+   * month=12 correctly rolls Q4's end boundary into January of year+1 —
+   * no special-case needed for the year wraparound.
+   */
+  function quarterDateRange_(quarter, year) {
+    var months = QUARTER_MONTHS[quarter];
+    if (!months) throw new Error(MODULE + ': invalid quarter "' + quarter + '". Use Q1/Q2/Q3/Q4.');
+    var startMonth = parseInt(months[0], 10) - 1; // 0-indexed for the Date constructor
+    return {
+      start: new Date(year, startMonth, 1),
+      end:   new Date(year, startMonth + 3, 1)
+    };
+  }
+
+  /**
+   * Parses a Sheets cell value that may be a real Date object OR an ISO
+   * date string into a Date — both forms are observed in this codebase's
+   * data for the same column (confirmed 2026-07-14: VW_JOB_CURRENT_STATE.
+   * created_at is usually a clean ISO string but is sometimes ALSO coerced
+   * to a Date object by the same Sheets row-append format-inheritance
+   * mechanism that corrupts period_id — see getQcErrorRates_()). Returns
+   * null if val is empty or unparseable as either form.
+   */
+  function parseFlexibleDate_(val) {
+    if (!val) return null;
+    if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+    var d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  /**
    * Returns true if the staff member is eligible for a quarterly bonus.
    * Eligible when:
    *   a) start_date is >= 1 year before today, OR
@@ -111,6 +145,11 @@ var QuarterlyBonusEngine = (function () {
    * Returns: { person_code: design_hours_total }
    * Only design hours (actor_role !== 'QC') are included.
    */
+  // Not affected by the period_id corruption fixed in getQcErrorRates_()
+  // below — periodIds here select which FACT_WORK_LOGS|YYYY-MM PARTITION
+  // TAB to read (a sheet name, via DAL's options.periodId), not a row
+  // value being string-matched. Tab names aren't Sheets cells and can't
+  // be coerced by the number-format-inheritance mechanism. Left as-is.
   function aggregateQuarterHours_(quarter, year) {
     var periodIds = monthPeriodIds_(quarter, year);
     var hoursMap  = {};
@@ -148,9 +187,29 @@ var QuarterlyBonusEngine = (function () {
    * error_rate  = count(jobs where rework_cycle > 0) / total_jobs
    * error_score = 1 - error_rate  (higher is better)
    * Returns: { person_code: error_score 0.0–1.0 }
+   *
+   * FIXED 2026-07-14: was filtering on period_id (String(row.period_id).slice(0,7)
+   * === '2026-04' etc.), which never matched — VW_JOB_CURRENT_STATE.period_id is
+   * written as a clean 'YYYY-MM' string by JobCreateHandler.gs
+   * (Identifiers.generatePeriodId()) but comes back on read as a raw Date
+   * object (e.g. "Wed Jul 01 2026 00:00:00 GMT-0600..."). Confirmed via
+   * runQ1VwPeriodIdDriftCheck() (2026-07-14 PROD investigation): 928/928
+   * sampled rows showed this coercion — same root cause as the
+   * FACT_WORK_LOGS.period_id corruption documented in commit e640184
+   * (Sheets row-append format inheritance from an adjacent Date-typed
+   * cell), just in a different table. A string-prefix match against a
+   * Date's .toString() can never succeed, so this filter silently matched
+   * zero rows for most/all designers for as long as the corruption existed.
+   *
+   * Filters on created_at instead — the semantic equivalent of "period at
+   * job creation" that period_id was always meant to represent, just
+   * derived from the raw timestamp instead of a pre-formatted string that
+   * depends on a write path staying uncorrupted. created_at is USUALLY a
+   * clean ISO string but was also observed coerced to a Date object on a
+   * minority of rows (same mechanism) — parseFlexibleDate_() handles both.
    */
   function getQcErrorRates_(quarter, year) {
-    var periodIds = monthPeriodIds_(quarter, year);
+    var range = quarterDateRange_(quarter, year);
     var allRows;
     try {
       allRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
@@ -159,14 +218,11 @@ var QuarterlyBonusEngine = (function () {
       throw e;
     }
 
-    var pidSet = {};
-    for (var p = 0; p < periodIds.length; p++) { pidSet[periodIds[p]] = true; }
-
     var accum = {};
     for (var i = 0; i < allRows.length; i++) {
-      var row  = allRows[i];
-      var pid  = String(row.period_id || '').slice(0, 7);
-      if (!pidSet[pid]) continue;
+      var row     = allRows[i];
+      var created = parseFlexibleDate_(row.created_at);
+      if (!created || created < range.start || created >= range.end) continue;
 
       var code = String(row.allocated_to || '').trim();
       if (!code) continue;
@@ -191,6 +247,10 @@ var QuarterlyBonusEngine = (function () {
    * Response-count weighted average when a designer has scores in multiple months.
    * Returns: { person_code: score 0.0–1.0 }
    */
+  // periodIds here is only passed as a PARAMETER into ClientFeedback.gs — any
+  // period_id row-filtering happens inside that module, out of scope for
+  // this file. Not checked as part of the 2026-07-14 fix; flag separately
+  // if FACT_CLIENT_FEEDBACK.period_id is ever suspected of the same issue.
   function getClientScores_(quarter, year) {
     var periodIds = monthPeriodIds_(quarter, year);
     var accum = {};
@@ -235,6 +295,19 @@ var QuarterlyBonusEngine = (function () {
    * Returns: { person_code: score 0.0–1.0 | null }
    *   null = ratings incomplete — caller marks row PENDING
    */
+  // NOT FIXED 2026-07-14 — flagged, not confirmed broken. This filters
+  // FACT_PERFORMANCE_RATINGS.period_id by exact string equality against a
+  // quarter-format value ('2026-Q1'), not the 'YYYY-MM' format that was
+  // confirmed corrupted in VW_JOB_CURRENT_STATE and FACT_WORK_LOGS. The
+  // corruption mechanism (Sheets row-append format inheritance from an
+  // adjacent Date-typed cell — see getQcErrorRates_() above) doesn't care
+  // about a string's own shape, only the column's inherited cell format,
+  // so this COULD still be affected — it just hasn't been checked against
+  // live data. Also: this table has no created_at field to fall back on
+  // (schema is rating_id/period_id/ratee_code/rater_code/rater_role/
+  // score_quality/score_sop/score_communication/score_initiative/
+  // avg_score_normalized/submitted_at/idempotency_key) — submitted_at
+  // would be the equivalent field if this does need the same fix.
   function getInternalRatings_(qPid) {
     var rows;
     try {
@@ -471,6 +544,14 @@ var QuarterlyBonusEngine = (function () {
       else throw e;
     }
 
+    // NOT FIXED 2026-07-14 — flagged, not confirmed broken, same reasoning
+    // as getInternalRatings_() above: quarter_period_id is a '2026-Q1'-style
+    // string, not the 'YYYY-MM' format confirmed corrupted elsewhere, but
+    // the coercion mechanism is column-format-based, not string-shape-based,
+    // so it isn't provably safe either. Unlike getInternalRatings_(), this
+    // reads FACT_QUARTERLY_BONUS — a table this same module writes — so a
+    // created_at-based fallback would need to key off this table's own
+    // `timestamp` field instead if it turns out to need one.
     var validQPids = {};
     for (var q = 0; q < quarters.length; q++) {
       validQPids[quarterPeriodId_(quarters[q], year)] = true;
@@ -661,7 +742,16 @@ var QuarterlyBonusEngine = (function () {
   return {
     runQuarterlyBonus:     runQuarterlyBonus,
     previewQuarterlyBonus: previewQuarterlyBonus,
-    runAnnualBonus:        runAnnualBonus
+    runAnnualBonus:        runAnnualBonus,
+
+    // Exposed 2026-07-14 despite the trailing-underscore "private" naming
+    // convention (same precedent as BillingEngine.parseSemiMonthlyPeriod_)
+    // so runQ2ErrorScorePreview() can call the REAL functions the actual
+    // bonus run uses, rather than re-implementing the same date-filter
+    // logic a second time and risking the two silently drifting apart.
+    getQcErrorRates_:   getQcErrorRates_,
+    quarterDateRange_:  quarterDateRange_,
+    parseFlexibleDate_: parseFlexibleDate_
   };
 
 }());
@@ -2145,4 +2235,83 @@ function runQ1VwPeriodIdDriftCheck() {
     });
   }
   console.log('══════ End spot-check ══════\n');
+}
+
+/**
+ * Validates the 2026-07-14 created_at-based getQcErrorRates_() fix against
+ * real Q2 2026 data, for every active designer, BEFORE the actual Q2 bonus
+ * calculation runs. Read-only — no writes.
+ *
+ * Calls QuarterlyBonusEngine.getQcErrorRates_('Q2', 2026) directly — the
+ * exact function runQuarterlyBonus() will use — rather than re-implementing
+ * the filter a second time, so this genuinely validates the real code path
+ * instead of a parallel copy of it. The per-designer raw job/rework counts
+ * shown alongside it are recomputed here using the same exposed
+ * quarterDateRange_()/parseFlexibleDate_() helpers, since getQcErrorRates_()
+ * only returns the final { person_code: error_score } map, not the raw
+ * counts behind it — but "recomputed with the same shared helpers" is not
+ * "reimplemented differently," so there's no risk of the display drifting
+ * from what was actually scored.
+ */
+function runQ2ErrorScorePreview() {
+  var CALLER = 'QuarterlyBonusEngine:Q2Preview';
+
+  var errorRates = QuarterlyBonusEngine.getQcErrorRates_('Q2', 2026);
+  var range       = QuarterlyBonusEngine.quarterDateRange_('Q2', 2026);
+
+  var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: CALLER });
+  var designers = staffRows.filter(function(s) {
+    var role   = String(s.role   || '').toUpperCase().trim();
+    var active = String(s.active || '').toUpperCase().trim();
+    return role === 'DESIGNER' && (active === 'TRUE' || active === 'YES' || active === '1');
+  });
+
+  var vwRows;
+  try {
+    vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: CALLER });
+  } catch (e) {
+    console.log('⚠️  Could not read VW_JOB_CURRENT_STATE: ' + e.message);
+    vwRows = [];
+  }
+
+  var accum = {};
+  vwRows.forEach(function(r) {
+    var created = QuarterlyBonusEngine.parseFlexibleDate_(r.created_at);
+    if (!created || created < range.start || created >= range.end) return;
+    var code = String(r.allocated_to || '').trim();
+    if (!code) return;
+    if (!accum[code]) accum[code] = { total: 0, reworkCount: 0 };
+    accum[code].total++;
+    if (parseInt(r.rework_cycle || 0, 10) > 0) accum[code].reworkCount++;
+  });
+
+  console.log('\n══════ Q2 2026 ERROR_SCORE PREVIEW (created_at filter, ' +
+              range.start.toDateString() + ' – ' + range.end.toDateString() + ' exclusive) ══════');
+  console.log('Active designers checked: ' + designers.length);
+  console.log('CODE   NAME                  TOTAL JOBS  REWORKED  ERROR_RATE  ERROR_SCORE');
+  console.log('────── ───────────────────── ─────────── ───────── ─────────── ───────────');
+
+  designers
+    .slice()
+    .sort(function(a, b) { return String(a.person_code || '').localeCompare(String(b.person_code || '')); })
+    .forEach(function(s) {
+      var code  = String(s.person_code || '').trim();
+      var a     = accum[code];
+      var rate  = a && a.total > 0 ? a.reworkCount / a.total : null;
+      var score = errorRates[code]; // undefined = getQcErrorRates_ found no jobs for this code (computeBonuses_'s fallback would apply: 1.0)
+
+      console.log(
+        pad_(code, 7) + pad_(s.name || code, 22) +
+        pad_(a ? a.total : 0, 12) +
+        pad_(a ? a.reworkCount : 0, 10) +
+        pad_(rate === null ? '—' : (Math.round(rate * 10000) / 100) + '%', 12) +
+        (score === undefined
+          ? '(no jobs — bonus engine fallback = 100%)'
+          : (Math.round(score * 10000) / 100) + '%')
+      );
+    });
+
+  console.log('\nDesigners with 0 jobs got no entry from getQcErrorRates_() — computeBonuses_() treats that as a');
+  console.log('fallback error_score of 1.0 (100%), same as before this fix (see computeBonuses_(), line ~352).');
+  console.log('══════ End Q2 error_score preview ══════\n');
 }
