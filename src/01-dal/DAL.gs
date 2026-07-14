@@ -134,7 +134,7 @@ var DAL = (function () {
                               'JuneWorkLogImporter', 'MigratedQCApprovalFixer', 'StaleJobVoidEngine',
                               'Job260337DuplicateFixer', 'V2JobBackfill', 'V2BackfillStateReset', 'V2StateCorrection',
                               'JobCreateHandlerTest', 'WorkLogCorrectionHandlerTest', 'NorspanClientCodeFixer',
-                              'TestHarness', 'TestArtifactVoidFixer', 'DataIntegrityMonitorTest'],
+                              'TestHarness', 'TestArtifactVoidFixer', 'DataIntegrityMonitorTest', 'QuarterlyBonusEngine'],
     'VW_DESIGNER_WORKLOAD':  ['EventReplayEngine', 'ReportingEngine'],
 
     // ── Mart tables (reporting aggregates) ──────────────────

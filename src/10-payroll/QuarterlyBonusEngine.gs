@@ -2563,3 +2563,142 @@ function runQ2MajorReworkJobCheck() {
   });
   console.log('══════ End check ══════\n');
 }
+
+/**
+ * ONE-TIME Q2 2026 rework_cycle backfill — reads QC_MAJOR_REWORK /
+ * QC_REWORK_REQUESTED (legacy) events directly from FACT_QC_EVENTS (the
+ * authoritative event log) and writes the correct count to
+ * VW_JOB_CURRENT_STATE.rework_cycle for every affected job_number.
+ *
+ * Root cause this works around (does NOT fix): EventReplayEngine.gs's
+ * rebuildJobView_() never reads FACT_QC_EVENTS at all — see commit
+ * d8c640c for the full trace. QCHandler.gs's LIVE write path is correct;
+ * this backfill exists because historical events predate that being
+ * understood, and a full EventReplayEngine.gs fix was deliberately
+ * deferred (proposed but not implemented, per the fix-proposal writeup).
+ * This is a targeted patch scoped to Q2 2026 only, for the Q2 bonus
+ * calculation — not a general-purpose repair tool.
+ *
+ * SAFE BY DEFAULT: dryRun defaults to true, the OPPOSITE of this
+ * codebase's other dry-run functions (e.g. DataSelfHealing.gs's
+ * runDeadLetterRecovery(dryRun), which defaults to live). Deliberate
+ * deviation — VW_JOB_CURRENT_STATE feeds a real bonus payout calculation,
+ * so an accidental no-argument call must never write. Pass EXACTLY
+ * `false` to actually write; any other value (including omitted) previews.
+ *
+ * Idempotent by construction: SETS rework_cycle to a freshly-computed
+ * count every run (not an increment), so re-running is always safe and
+ * always converges to the same value regardless of current state — no
+ * idempotency-key bookkeeping needed, unlike the Q1 amendment-event
+ * scripts (which had to track keys because they append to an
+ * append-only FACT table; this updates a mutable VW row instead).
+ *
+ * Requires QuarterlyBonusEngine to be authorized in DAL.gs's
+ * WRITE_PERMISSIONS for VW_JOB_CURRENT_STATE — added in this same commit.
+ *
+ * @param {boolean} [dryRun]  Pass exactly `false` to write. Anything else
+ *   (including omitted) previews without writing.
+ * @returns {{dryRun:boolean, affected:number, updated:number, notFound:number}}
+ */
+function runQ2ReworkCycleBackfill(dryRun) {
+  dryRun = (dryRun === false) ? false : true;
+  var CALLER = 'QuarterlyBonusEngine';
+
+  var range = QuarterlyBonusEngine.quarterDateRange_('Q2', 2026);
+  var MAJOR_TYPES = { QC_MAJOR_REWORK: true, QC_REWORK_REQUESTED: true };
+
+  console.log('\n══════ Q2 2026 rework_cycle backfill — ' +
+              (dryRun ? 'DRY RUN (preview only, nothing written)' : 'LIVE — WRITING') + ' ══════');
+  console.log('Q2 range: ' + range.start.toDateString() + ' – ' + range.end.toDateString() + ' (exclusive)');
+
+  // ── Step 1: count major rework events per job_number, from FACT_QC_EVENTS ──
+  var sheets = DAL.listSheets();
+  var prefix = Config.TABLES.FACT_QC_EVENTS + '|';
+  var partitions = [];
+  sheets.forEach(function(name) {
+    if (name.indexOf(prefix) !== 0) return;
+    var period = name.substring(prefix.length);
+    if (/^\d{4}-\d{2}$/.test(period)) partitions.push(period);
+  });
+  partitions.sort();
+
+  var countsByJob = {};
+  var totalEvents = 0;
+  partitions.forEach(function(pid) {
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_QC_EVENTS, { callerModule: CALLER, periodId: pid });
+    } catch (e) {
+      console.log('  [' + pid + '] read failed — skipped (' + e.message + ')');
+      return;
+    }
+    rows.forEach(function(r) {
+      if (!MAJOR_TYPES[String(r.event_type || '')]) return;
+      var ts = QuarterlyBonusEngine.parseFlexibleDate_(r.timestamp);
+      if (!ts || ts < range.start || ts >= range.end) return;
+      var jn = String(r.job_number || '').trim();
+      if (!jn) return;
+      countsByJob[jn] = (countsByJob[jn] || 0) + 1;
+      totalEvents++;
+    });
+  });
+
+  var affectedJobs = Object.keys(countsByJob).sort();
+  console.log('Major rework events in Q2 2026: ' + totalEvents);
+  console.log('Affected job_numbers: ' + affectedJobs.length);
+
+  if (affectedJobs.length === 0) {
+    console.log('  Nothing to backfill.');
+    console.log('══════ End backfill ══════\n');
+    return { dryRun: dryRun, affected: 0, updated: 0, notFound: 0 };
+  }
+
+  // ── Step 2: look up current VW rows (for old-value logging), then update ──
+  var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: CALLER });
+  var vwByJob = {};
+  vwRows.forEach(function(r) {
+    var jn = String(r.job_number || '').trim();
+    if (jn) vwByJob[jn] = r;
+  });
+
+  console.log('');
+  var updated = 0, notFound = 0;
+  affectedJobs.forEach(function(jn) {
+    var newCount = countsByJob[jn];
+    var vwRow    = vwByJob[jn];
+
+    if (!vwRow) {
+      console.log('  ⚠️  ' + jn + ' — ' + newCount + ' major rework event(s), but job NOT found in VW_JOB_CURRENT_STATE. Skipped.');
+      notFound++;
+      return;
+    }
+
+    var oldValue = (vwRow.rework_cycle === '' || vwRow.rework_cycle === undefined || vwRow.rework_cycle === null)
+      ? '(blank)' : vwRow.rework_cycle;
+
+    console.log('  ' + jn + ' | allocated_to=' + (vwRow.allocated_to || '?') +
+                ' | old rework_cycle=' + oldValue + ' | new rework_cycle=' + newCount +
+                (dryRun ? '  (dry run — not written)' : '  ✓ written'));
+
+    if (!dryRun) {
+      DAL.updateWhere(
+        Config.TABLES.VW_JOB_CURRENT_STATE,
+        { job_number: jn },
+        { rework_cycle: newCount },
+        { callerModule: CALLER }
+      );
+    }
+    updated++;
+  });
+
+  console.log('\n' + (dryRun ? 'DRY RUN complete' : 'LIVE run complete') + ' — ' + updated + ' job(s) ' +
+              (dryRun ? 'would be updated' : 'updated') + ', ' + notFound + ' not found in VW.');
+  if (dryRun) {
+    console.log('Nothing was written. Review the output above, then run runQ2ReworkCycleBackfill(false) to write.');
+  } else {
+    console.log('Run runQ2ErrorScorePreview() now to confirm affected designers show reduced error_scores.');
+  }
+  console.log('══════ End backfill ══════\n');
+
+  return { dryRun: dryRun, affected: affectedJobs.length, updated: updated, notFound: notFound };
+}
