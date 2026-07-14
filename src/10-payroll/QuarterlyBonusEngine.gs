@@ -2372,3 +2372,61 @@ function runQ2BonusLedgerPeriodIdCheck() {
   });
   console.log('══════ End check ══════\n');
 }
+
+/**
+ * Read-only diagnostic — is rework_cycle EVER non-zero anywhere in
+ * VW_JOB_CURRENT_STATE (all designers, all time)? Follow-up to
+ * runQ2ErrorScorePreview() showing 0 reworked jobs across all 9 active
+ * designers and 262 total Q2 jobs — a notably uniform result worth
+ * distinguishing "genuinely clean quarter" from "rework_cycle isn't being
+ * populated/read correctly." Separate concern from the created_at fix,
+ * which only changed which rows get SELECTED, not how rework_cycle on
+ * those rows gets READ. Shows the full distinct-value distribution across
+ * the whole table, plus up to 10 sample rows where it's actually non-zero
+ * (if any exist). No writes.
+ */
+function runReworkCycleDistributionCheck() {
+  var CALLER = 'QuarterlyBonusEngine:Diag';
+  var rows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: CALLER });
+
+  console.log('\n══════ VW_JOB_CURRENT_STATE.rework_cycle — full distribution (ALL rows, ALL time) ══════');
+  console.log('Total rows: ' + rows.length);
+
+  var byValue = {};
+  var nonZeroSamples = [];
+  rows.forEach(function(r) {
+    var raw = r.rework_cycle;
+    var key = (raw === '' || raw === null || raw === undefined) ? '(blank)' : String(raw);
+    byValue[key] = (byValue[key] || 0) + 1;
+    var n = parseInt(raw || 0, 10);
+    if (n > 0 && nonZeroSamples.length < 10) {
+      nonZeroSamples.push({
+        job_number:    r.job_number,
+        allocated_to:  r.allocated_to,
+        rework_cycle:  raw,
+        current_state: r.current_state
+      });
+    }
+  });
+
+  console.log('\nDistinct rework_cycle values (raw, across the whole table):');
+  Object.keys(byValue).sort().forEach(function(k) {
+    console.log('  "' + k + '": ' + byValue[k] + ' row(s)');
+  });
+
+  console.log('\nSample rows with rework_cycle > 0 (up to 10):');
+  if (nonZeroSamples.length === 0) {
+    console.log('  ⚠️  NONE FOUND — rework_cycle is 0/blank across all ' + rows.length + ' rows in the entire table.');
+    console.log('  Either genuinely zero rework has happened across this table\'s whole history (unlikely), or');
+    console.log('  rework_cycle is not being populated/incremented correctly somewhere upstream — a distinct');
+    console.log('  issue from the created_at/period_id fix, which only changed row SELECTION, not this field.');
+  } else {
+    nonZeroSamples.forEach(function(s) {
+      console.log('  job_number=' + (s.job_number || '?') +
+                  ' | allocated_to=' + (s.allocated_to || '?') +
+                  ' | rework_cycle=' + s.rework_cycle +
+                  ' | current_state=' + (s.current_state || '?'));
+    });
+  }
+  console.log('══════ End distribution ══════\n');
+}
