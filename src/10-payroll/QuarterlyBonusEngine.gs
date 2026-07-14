@@ -2088,3 +2088,61 @@ function runQ1CompositeScoreTrace() {
   console.log('QC event) since the original Q1 run — the stored error_score in the ledger is a snapshot, not live.');
   console.log('══════ End error_score trace ══════\n');
 }
+
+/**
+ * Follow-up to runQ1CompositeScoreTrace()'s error_score anomaly: every one
+ * of the 16 Q1_MANUAL_HRS_ designers showed 0 current VW_JOB_CURRENT_STATE
+ * rows for Q1 2026 months, despite 11 of them having a stored error_score
+ * that requires real historical data to have existed. Two read-only checks:
+ *   1. Every distinct period_id value currently in VW_JOB_CURRENT_STATE,
+ *      with row counts — reveals whether period_id tracks creation date
+ *      (would still show Q1 months with real counts) or most-recent-event
+ *      date (would show mass drift toward later months), and whether Q2
+ *      months have jobs to score against yet.
+ *   2. Every VW_JOB_CURRENT_STATE row with allocated_to='BCH' (Bharath
+ *      Charles — S1 error_score=0%, meaning real Q1 reworked-job data
+ *      definitely existed at the time), regardless of period_id — shows
+ *      whether those jobs still exist under a rolled-forward period_id,
+ *      or are genuinely gone from this designer's allocation.
+ * No writes. Safe to run anytime.
+ */
+function runQ1VwPeriodIdDriftCheck() {
+  var CALLER = 'QuarterlyBonusEngine:Trace';
+  var vwRows;
+  try {
+    vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: CALLER });
+  } catch (e) {
+    console.log('⚠️  Could not read VW_JOB_CURRENT_STATE: ' + e.message);
+    return;
+  }
+
+  console.log('\n══════ VW_JOB_CURRENT_STATE — period_id distribution (ALL rows) ══════');
+  console.log('Total rows: ' + vwRows.length);
+
+  var byPeriod = {};
+  vwRows.forEach(function(r) {
+    var pid = String(r.period_id || '').slice(0, 7) || '(blank)';
+    byPeriod[pid] = (byPeriod[pid] || 0) + 1;
+  });
+  Object.keys(byPeriod).sort().forEach(function(pid) {
+    console.log('  ' + pid + ': ' + byPeriod[pid] + ' row(s)');
+  });
+  console.log('══════ End distribution ══════\n');
+
+  console.log('══════ Spot-check: ALL VW_JOB_CURRENT_STATE rows with allocated_to="BCH" ══════');
+  var bchRows = vwRows.filter(function(r) { return String(r.allocated_to || '').trim() === 'BCH'; });
+  console.log('Total rows found (any period_id): ' + bchRows.length);
+  if (bchRows.length === 0) {
+    console.log('  ⚠️  ZERO rows anywhere for BCH — not just Q1. Either allocated_to was reassigned/renamed away');
+    console.log('  from this exact code string, or BCH never appears in VW_JOB_CURRENT_STATE under this value.');
+  } else {
+    bchRows.forEach(function(r) {
+      console.log('  job_number=' + (r.job_number || '?') +
+                  ' | period_id="' + (r.period_id || '') + '"' +
+                  ' | current_state=' + (r.current_state || '') +
+                  ' | rework_cycle=' + (r.rework_cycle || '0') +
+                  ' | created_at=' + (r.created_at || ''));
+    });
+  }
+  console.log('══════ End spot-check ══════\n');
+}
