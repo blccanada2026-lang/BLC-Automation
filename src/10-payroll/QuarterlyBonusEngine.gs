@@ -2430,3 +2430,100 @@ function runReworkCycleDistributionCheck() {
   }
   console.log('══════ End distribution ══════\n');
 }
+
+/**
+ * Read-only diagnostic — has QC_MAJOR_REWORK (or the legacy
+ * QC_REWORK_REQUESTED equivalent — see EventReplayEngine.gs's
+ * 'legacy event — treat as major rework' comment) EVER actually been
+ * recorded in FACT_QC_EVENTS, across all partitions/all time? Direct
+ * follow-up to runReworkCycleDistributionCheck() finding rework_cycle
+ * uniformly 0/blank everywhere in VW_JOB_CURRENT_STATE — both write paths
+ * (QCHandler.gs live updates, EventReplayEngine.gs full rebuilds) only
+ * increment rework_cycle on major rework specifically, so this settles
+ * whether that's because major rework has never happened (error_score's
+ * 40% weight has had nothing to work with from day one) or because it
+ * has happened but isn't reaching the projection (a real gap). Shows
+ * major-equivalent count, minor-equivalent count, every other distinct
+ * event_type with its count, and — if any major rework events exist — 5
+ * sample rows (job_number, actor_code, timestamp). No writes.
+ */
+function runQcEventLandscapeCheck() {
+  var CALLER = 'QuarterlyBonusEngine:Diag';
+
+  var sheets  = DAL.listSheets();
+  var prefix  = Config.TABLES.FACT_QC_EVENTS + '|';
+  var partitions = [];
+  sheets.forEach(function(name) {
+    if (name.indexOf(prefix) !== 0) return;
+    var period = name.substring(prefix.length);
+    if (/^\d{4}-\d{2}$/.test(period)) partitions.push(period);
+  });
+  partitions.sort();
+
+  console.log('\n══════ FACT_QC_EVENTS — event_type landscape (all partitions) ══════');
+  console.log('Partitions found: ' + partitions.join(', ') + ' (' + partitions.length + ' total)');
+
+  var MAJOR_TYPES = { QC_MAJOR_REWORK: true, QC_REWORK_REQUESTED: true };
+  var MINOR_TYPES = { QC_MINOR_REWORK: true };
+
+  var byEventType = {};
+  var majorSamples = [];
+  var totalRows = 0;
+
+  partitions.forEach(function(pid) {
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_QC_EVENTS, { callerModule: CALLER, periodId: pid });
+    } catch (e) {
+      console.log('  [' + pid + '] read failed — skipped (' + e.message + ')');
+      return;
+    }
+    totalRows += rows.length;
+    rows.forEach(function(r) {
+      var et = String(r.event_type || '(blank)');
+      byEventType[et] = (byEventType[et] || 0) + 1;
+      if (MAJOR_TYPES[et] && majorSamples.length < 5) {
+        majorSamples.push({
+          job_number: r.job_number,
+          actor_code: r.actor_code,
+          timestamp:  r.timestamp,
+          period_id:  pid
+        });
+      }
+    });
+  });
+
+  var majorCount = 0, minorCount = 0;
+  Object.keys(byEventType).forEach(function(et) {
+    if (MAJOR_TYPES[et]) majorCount += byEventType[et];
+    if (MINOR_TYPES[et]) minorCount += byEventType[et];
+  });
+
+  console.log('\nTotal FACT_QC_EVENTS rows (all partitions): ' + totalRows);
+  console.log('MAJOR rework events (QC_MAJOR_REWORK + legacy QC_REWORK_REQUESTED): ' + majorCount);
+  console.log('MINOR rework events (QC_MINOR_REWORK): ' + minorCount);
+
+  console.log('\nAll distinct event_type values, with counts:');
+  Object.keys(byEventType).sort(function(a, b) { return byEventType[b] - byEventType[a]; }).forEach(function(et) {
+    var flag = MAJOR_TYPES[et] ? '  <- MAJOR' : (MINOR_TYPES[et] ? '  <- MINOR' : '');
+    console.log('  ' + et + ': ' + byEventType[et] + flag);
+  });
+
+  console.log('\nSample MAJOR rework rows (up to 5):');
+  if (majorSamples.length === 0) {
+    console.log('  ⚠️  NONE FOUND — no QC_MAJOR_REWORK or QC_REWORK_REQUESTED event exists anywhere in');
+    console.log('  FACT_QC_EVENTS. This fully explains rework_cycle=0 everywhere: error_score\'s 40% weight');
+    console.log('  has had nothing to differentiate on since this event type has never occurred — not a bug');
+    console.log('  in either write path, just an event that has never fired.');
+  } else {
+    majorSamples.forEach(function(s) {
+      console.log('  job_number=' + (s.job_number || '?') +
+                  ' | actor_code=' + (s.actor_code || '?') +
+                  ' | timestamp=' + (s.timestamp || '?') +
+                  ' | partition=' + s.period_id);
+    });
+    console.log('  ⚠️  Major rework events DO exist but rework_cycle is 0/blank everywhere in');
+    console.log('  VW_JOB_CURRENT_STATE — that IS a real gap between the event log and the projection.');
+  }
+  console.log('══════ End landscape check ══════\n');
+}
