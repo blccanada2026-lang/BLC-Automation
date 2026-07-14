@@ -2527,3 +2527,39 @@ function runQcEventLandscapeCheck() {
   }
   console.log('══════ End landscape check ══════\n');
 }
+
+/**
+ * Read-only diagnostic — for the 4 specific jobs runQcEventLandscapeCheck()
+ * found with a real QC_MAJOR_REWORK event (BLC-00099, BLC-00103,
+ * BLC-00159, BLC-00163), queries VW_JOB_CURRENT_STATE directly and shows
+ * job_number, allocated_to, rework_cycle, current_state, updated_at.
+ * Confirms whether rework_cycle is genuinely 0/blank for these specific
+ * jobs (matching runReworkCycleDistributionCheck()'s table-wide finding)
+ * or whether something more specific is going on. No writes.
+ */
+function runQ2MajorReworkJobCheck() {
+  var CALLER = 'QuarterlyBonusEngine:Diag';
+  var targetJobs = { 'BLC-00099': true, 'BLC-00103': true, 'BLC-00159': true, 'BLC-00163': true };
+
+  var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: CALLER });
+  var found = {};
+  vwRows.forEach(function(r) {
+    var jn = String(r.job_number || '').trim();
+    if (targetJobs[jn]) found[jn] = r;
+  });
+
+  console.log('\n══════ VW_JOB_CURRENT_STATE — the 4 known QC_MAJOR_REWORK jobs ══════');
+  Object.keys(targetJobs).sort().forEach(function(jn) {
+    var r = found[jn];
+    if (!r) {
+      console.log('  ' + jn + ': ⚠️  NOT FOUND in VW_JOB_CURRENT_STATE at all.');
+      return;
+    }
+    console.log('  ' + jn +
+                ' | allocated_to=' + (r.allocated_to || '?') +
+                ' | rework_cycle=' + (r.rework_cycle === '' || r.rework_cycle === undefined ? '(blank)' : r.rework_cycle) +
+                ' | current_state=' + (r.current_state || '?') +
+                ' | updated_at=' + (r.updated_at || '?'));
+  });
+  console.log('══════ End check ══════\n');
+}
