@@ -1958,3 +1958,133 @@ function runDiagnoseQ1BonusLedger() {
                 ' | bonus=' + (r.bonus_inr||''));
   });
 }
+
+/**
+ * Read-only trace of the full Q1 2026 composite-score override chain, per
+ * designer, for every code in Q1_MANUAL_HRS_ (the 16 manually-corrected
+ * designers). Three stages, identified by event_type / idempotency_key
+ * prefix — exactly the same identification logic runQ1ApplyManualCorrections()
+ * and runQ1ForceHRComposites() use themselves:
+ *   Stage 1 — event_type='QUARTERLY_BONUS'        the original automated
+ *             run's output: composite = computeCompositeScore_(client, error, rating)
+ *             with real client_score/error_score/rating_score as computed then.
+ *   Stage 2 — idempotency_key 'QB_MANUAL_CORR|...' runQ1ApplyManualCorrections():
+ *             design_hours replaced with HR/Stacey-V2 hours; composite
+ *             RE-COMPUTED via the same formula but with client_score replaced
+ *             by a team-average-rating proxy (Q1 client feedback was not
+ *             collected) — error_score/rating_score carried over unchanged
+ *             from Stage 1.
+ *   Stage 3 — idempotency_key 'QB_HR_FINAL|...'    runQ1ForceHRComposites():
+ *             composite_score set DIRECTLY to Q1_MANUAL_HRS_[code].comp —
+ *             the engine formula is not used at all for this stage; it's a
+ *             flat, externally-supplied number. This is the value actually
+ *             used for bonus_inr in the letters that were sent.
+ * No writes. Safe to run anytime.
+ */
+function runQ1CompositeScoreTrace() {
+  var qPid = '2026-Q1';
+  var CALLER = 'QuarterlyBonusEngine:Trace';
+
+  var ledgerRows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: CALLER });
+  var stage1 = {}, stage2 = {}, stage3 = {};
+  ledgerRows.forEach(function(r) {
+    if (String(r.quarter_period_id || '').trim() !== qPid) return;
+    var code = String(r.person_code || '').trim();
+    if (!code) return;
+    var key = String(r.idempotency_key || '').trim();
+    var type = String(r.event_type || '').trim();
+    if (type === 'QUARTERLY_BONUS') stage1[code] = r;
+    else if (key.indexOf('QB_MANUAL_CORR|') === 0) stage2[code] = r;
+    else if (key.indexOf('QB_HR_FINAL|') === 0) stage3[code] = r;
+  });
+
+  console.log('\n══════ Q1 2026 COMPOSITE SCORE OVERRIDE CHAIN ══════');
+  console.log('CODE   NAME                  S1 CLIENT S1 ERROR  S1 RATING S1 COMPOSITE  S2 COMPOSITE  S3(HR) COMPOSITE  DELTA(S3-S1)  REASON (from S3 pending_reason)');
+  console.log('────── ───────────────────── ───────── ───────── ───────── ────────────  ────────────  ─────────────────  ────────────  ─────────────────────────────────');
+
+  var codes = Object.keys(Q1_MANUAL_HRS_).sort();
+  codes.forEach(function(code) {
+    var m  = Q1_MANUAL_HRS_[code];
+    var s1 = stage1[code], s2 = stage2[code], s3 = stage3[code];
+
+    var s1Client = s1 ? (Math.round((parseFloat(s1.client_score) || 0) * 10000) / 100) : null;
+    var s1Error  = s1 ? (Math.round((parseFloat(s1.error_score)  || 0) * 10000) / 100) : null;
+    var s1Rating = s1 ? (Math.round((parseFloat(s1.rating_score) || 0) * 10000) / 100) : null;
+    var s1Comp   = s1 ? (Math.round((parseFloat(s1.composite_score) || 0) * 10000) / 100) : null;
+    var s2Comp   = s2 ? (Math.round((parseFloat(s2.composite_score) || 0) * 10000) / 100) : null;
+    var s3Comp   = s3 ? (Math.round((parseFloat(s3.composite_score) || 0) * 10000) / 100) : null;
+    var delta    = (s1Comp !== null && s3Comp !== null) ? Math.round((s3Comp - s1Comp) * 100) / 100 : null;
+
+    console.log(
+      pad_(code, 7) + pad_(m.name, 22) +
+      pad_(s1Client === null ? 'NO S1' : s1Client + '%', 10) +
+      pad_(s1Error  === null ? '—'     : s1Error  + '%', 10) +
+      pad_(s1Rating === null ? '—'     : s1Rating + '%', 10) +
+      pad_(s1Comp   === null ? '—'     : s1Comp   + '%', 14) +
+      pad_(s2Comp   === null ? 'NO S2' : s2Comp   + '%', 15) +
+      pad_(s3Comp   === null ? 'NO S3' : s3Comp   + '%', 19) +
+      pad_(delta    === null ? '—'     : (delta >= 0 ? '+' : '') + delta + 'pp', 14) +
+      (s3 ? (s3.pending_reason || '') : '(stage 3 not yet applied)')
+    );
+  });
+  console.log('\nNote: S1 CLIENT for these 16 is real Q1 client feedback (if any existed) or 0 if none —');
+  console.log('Stage 2 replaces it with a team-average-rating proxy (see runQ1ApplyManualCorrections() header comment).');
+  console.log('S1 ERROR/S1 RATING carry through unchanged to Stage 2; Stage 3 ignores the formula entirely.');
+  console.log('══════ End override chain ══════\n');
+
+  // ── error_score trace: fresh-computed from VW_JOB_CURRENT_STATE right now,
+  //    vs. what is actually stored in the Stage 1 ledger row (the value that
+  //    Stage 2/3 both carried forward unchanged). Same algorithm as the
+  //    private getQcErrorRates_() inside the QuarterlyBonusEngine IIFE —
+  //    reproduced here read-only since that function isn't on the public API.
+  console.log('══════ ERROR_SCORE TRACE — source: VW_JOB_CURRENT_STATE, column: rework_cycle ══════');
+  console.log('Calculation: for jobs where allocated_to = designer, in this quarter\'s period_id months —');
+  console.log('  error_rate  = count(rework_cycle > 0) / count(all jobs allocated to designer)');
+  console.log('  error_score = 1 - error_rate   (rounded to 4 decimals in the engine; shown as % here)\n');
+
+  var q1Months = { '2026-01': true, '2026-02': true, '2026-03': true };
+  var vwRows;
+  try {
+    vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: CALLER });
+  } catch (e) {
+    console.log('  ⚠️  Could not read VW_JOB_CURRENT_STATE: ' + e.message);
+    vwRows = [];
+  }
+
+  var accum = {};
+  vwRows.forEach(function(r) {
+    var pid = String(r.period_id || '').slice(0, 7);
+    if (!q1Months[pid]) return;
+    var code = String(r.allocated_to || '').trim();
+    if (!code) return;
+    if (!accum[code]) accum[code] = { total: 0, reworkCount: 0 };
+    accum[code].total++;
+    if (parseInt(r.rework_cycle || 0, 10) > 0) accum[code].reworkCount++;
+  });
+
+  console.log('CODE   NAME                  JOBS  REWORKED  FRESH ERROR_SCORE  LEDGER (S1) ERROR_SCORE  MATCH?');
+  console.log('────── ───────────────────── ───── ───────── ────────────────  ─────────────────────────  ──────');
+  codes.forEach(function(code) {
+    var m = Q1_MANUAL_HRS_[code];
+    var a = accum[code];
+    var freshRate  = a && a.total > 0 ? a.reworkCount / a.total : null;
+    var freshScore = freshRate === null ? null : Math.round((1 - freshRate) * 10000) / 100;
+    var s1 = stage1[code];
+    var ledgerScore = s1 ? Math.round((parseFloat(s1.error_score) || 0) * 10000) / 100 : null;
+    var match = (freshScore !== null && ledgerScore !== null)
+      ? (Math.abs(freshScore - ledgerScore) < 0.01 ? '✓' : '✗ DRIFT')
+      : (a ? 'no S1 row' : 'no VW jobs found');
+
+    console.log(
+      pad_(code, 7) + pad_(m.name, 22) +
+      pad_(a ? a.total : 0, 6) +
+      pad_(a ? a.reworkCount : 0, 10) +
+      pad_(freshScore === null ? '—' : freshScore + '%', 19) +
+      pad_(ledgerScore === null ? '—' : ledgerScore + '%', 28) +
+      match
+    );
+  });
+  console.log('\nA MISMATCH here would mean VW_JOB_CURRENT_STATE has changed (e.g. rework_cycle updated by a later');
+  console.log('QC event) since the original Q1 run — the stored error_score in the ledger is a snapshot, not live.');
+  console.log('══════ End error_score trace ══════\n');
+}
