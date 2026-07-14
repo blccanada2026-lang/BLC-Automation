@@ -886,6 +886,16 @@ var ClientFeedback = (function () {
     getFeedbackSummary:      getFeedbackSummary,
     getFeedbackStatus:       getFeedbackStatus,
     buildQuarterLabel:       buildQuarterLabel_,
+
+    // Exposed 2026-07-14 despite the trailing-underscore "private" naming
+    // convention (same precedent as BillingEngine.parseSemiMonthlyPeriod_,
+    // QuarterlyBonusEngine.getQcErrorRates_) so a read-only preview script
+    // can reuse the REAL pair-building/lookup logic instead of
+    // reimplementing it and risking drift. None of these three have any
+    // side effects — no FormApp, no MailApp, no DAL writes.
+    buildDesignerClientPairs_: buildDesignerClientPairs_,
+    buildClientMap_:           buildClientMap_,
+    buildDesignerNameMap_:     buildDesignerNameMap_,
     // Question title constants — trigger parser uses these for namedValues lookups.
     // Changing any constant here requires recreating active forms and updating the trigger.
     GRID_QUESTION_TITLE: GRID_QUESTION_TITLE,
@@ -916,4 +926,156 @@ function runSendFeedbackRequestsLive() {
     periodId: '2026-01'
   });
   console.log('emails_sent=' + r.emails_sent + '  pairs=' + r.designer_client_pairs);
+}
+
+/**
+ * TRUE PREVIEW — no writes, no FormApp.create(), no MailApp.sendEmail().
+ * ClientFeedback.sendFeedbackRequests() has a testEmail redirect built in
+ * (see runSendFeedbackRequestsTest() above), but even "test" mode creates
+ * a real Google Form and sends a real email — there's no non-sending
+ * preview path in the original flow. This reproduces sendClientEmail_()'s
+ * exact subject/plain/html content (copied, not called — that private
+ * function's final line is the live MailApp.sendEmail() call) so you can
+ * review real content before anything is actually created or sent.
+ *
+ * Scope: "active clients with Q2 billable work" — starts from
+ * ClientFeedback.buildDesignerClientPairs_() (the real REF_ACCOUNT_DESIGNER_MAP-
+ * based pairs the live send would use), then narrows to only clients with
+ * at least 1 hour actually logged against them in FACT_WORK_LOGS across
+ * Q2's 3 months (April/May/June 2026), via VW_JOB_CURRENT_STATE's
+ * job_number -> client_code map. A client with an active account
+ * assignment but zero Q2 hours is excluded from this preview even though
+ * the real send would still include them (it only warns, doesn't
+ * exclude) — this preview is deliberately narrower, matching what was
+ * asked for specifically.
+ *
+ * No form URL is shown — a real one only exists once FormApp.create() is
+ * actually called, which this does not do.
+ *
+ * @returns {Array}  One entry per previewed client: { clientCode,
+ *   clientName, realContactEmail, wouldSendTo, cc, subject, plainBody,
+ *   htmlBody, designerList, q2Hours }
+ */
+function runQ2FeedbackRequestPreview() {
+  var REDIRECT_TO = 'hr@bluelotuscanada.ca';
+  var periodId    = '2026-06'; // last month of Q2 2026 — matches buildDesignerClientPairs_'s expected input
+  var quarter     = ClientFeedback.buildQuarterLabel(periodId);
+  var Q2_MONTHS   = ['2026-04', '2026-05', '2026-06'];
+
+  var pairs = ClientFeedback.buildDesignerClientPairs_(periodId);
+  console.log('\n══════ Q2 2026 Feedback Request PREVIEW — no writes, nothing created or sent ══════');
+  console.log('Raw designer-client pairs from REF_ACCOUNT_DESIGNER_MAP: ' + pairs.length);
+
+  if (pairs.length === 0) {
+    console.log('  Nothing to preview — buildDesignerClientPairs_() returned zero pairs. Check the');
+    console.log('  Logger warnings this call just emitted (REF_ACCOUNT_DESIGNER_MAP missing/empty/no overlap).');
+    console.log('══════ End preview ══════\n');
+    return [];
+  }
+
+  var byClient = {};
+  pairs.forEach(function(p) {
+    (byClient[p.client_code] || (byClient[p.client_code] = [])).push(p.designer_code);
+  });
+
+  // ── Q2 billable-hours-per-client, independent of buildDesignerClientPairs_'s
+  //    internal (warning-only) cross-check — used here to actually FILTER. ──
+  var jobClientMap = {};
+  try {
+    DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: 'ClientFeedback:Preview' }).forEach(function(r) {
+      var jn = String(r.job_number || '').trim();
+      var cc = String(r.client_code || '').trim().toUpperCase();
+      if (jn && cc) jobClientMap[jn] = cc;
+    });
+  } catch (e) { /* leave empty — hoursByClient stays 0 for everyone */ }
+
+  var hoursByClient = {};
+  Q2_MONTHS.forEach(function(pid) {
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: 'ClientFeedback:Preview', periodId: pid });
+    } catch (e) { return; }
+    rows.forEach(function(r) {
+      var jn  = String(r.job_number || '').trim();
+      var hrs = parseFloat(r.hours) || 0;
+      var cc  = jobClientMap[jn];
+      if (!cc || hrs <= 0) return;
+      hoursByClient[cc] = (hoursByClient[cc] || 0) + hrs;
+    });
+  });
+
+  var clientMap     = ClientFeedback.buildClientMap_();
+  var designerNames = ClientFeedback.buildDesignerNameMap_();
+  var results = [];
+
+  Object.keys(byClient).sort().forEach(function(clientCode) {
+    var q2Hours = Math.round((hoursByClient[clientCode] || 0) * 100) / 100;
+    if (q2Hours <= 0) {
+      console.log('\n  SKIPPED ' + clientCode + ' — active account assignment but 0 Q2 billable hours.');
+      return;
+    }
+
+    var client = clientMap[clientCode];
+    if (!client) {
+      console.log('\n  SKIPPED ' + clientCode + ' — ' + q2Hours + 'h Q2 hours, but not found (or inactive) in DIM_CLIENT_MASTER.');
+      return;
+    }
+
+    var designerCodes = byClient[clientCode];
+    var designerList  = designerCodes.map(function(c) { return designerNames[c] || c; }).join(', ');
+    var greeting      = client.contact_name || client.client_name;
+
+    // ── Reproduced verbatim from ClientFeedback.gs's private sendClientEmail_() ──
+    var subject = 'BLC — ' + quarter + ' Designer Performance Feedback';
+    var plain = [
+      'Dear ' + greeting + ',',
+      '',
+      'Blue Lotus Consulting is collecting quarterly performance feedback for our designers.',
+      'You are receiving this because the following designer(s) worked on your projects this quarter:',
+      '',
+      '  ' + designerList,
+      '',
+      'The form takes less than 2 minutes and lets you rate each designer on a single page:',
+      '',
+      '  [FORM_URL — only exists once actually sent; FormApp.create() was not called by this preview]',
+      '',
+      'Please complete by the end of this month. Your feedback is confidential.',
+      '',
+      'Thank you,',
+      'Blue Lotus Consulting Corporation'
+    ].join('\n');
+    var html = [
+      '<p>Dear ' + greeting + ',</p>',
+      '<p>Blue Lotus Consulting is collecting quarterly performance feedback for our designers. ' +
+      'The following designer(s) worked on your projects this quarter: <strong>' + designerList + '</strong>.</p>',
+      '<p>The form takes less than 2 minutes and lets you rate everyone on a single page:</p>',
+      '<p style="margin:20px 0">[Rate My Designers &rarr; button — links to a form only created on actual send]</p>',
+      '<p style="font-size:12px;color:#64748b">Your feedback is confidential and used solely for internal compensation purposes. ' +
+      'Please complete by the end of this month.</p>',
+      '<p>Thank you,<br><strong>Blue Lotus Consulting Corporation</strong></p>'
+    ].join('\n');
+
+    console.log('\n──── ' + clientCode + ' — ' + client.client_name + ' (' + q2Hours + 'h Q2 billable) ────');
+    console.log('  Real client contact_email (would normally receive this): ' + (client.contact_email || '(none on file)'));
+    console.log('  ACTUALLY WOULD SEND TO (per your instruction): ' + REDIRECT_TO);
+    console.log('  cc (unconditional in the real send, unrelated to the redirect): hr@bluelotuscanada.ca');
+    console.log('  Designers rated: ' + designerList);
+    console.log('  Subject: ' + subject);
+    console.log('  --- plain body ---');
+    console.log(plain);
+
+    results.push({
+      clientCode: clientCode, clientName: client.client_name,
+      realContactEmail: client.contact_email || '', wouldSendTo: REDIRECT_TO, cc: 'hr@bluelotuscanada.ca',
+      subject: subject, plainBody: plain, htmlBody: html,
+      designerList: designerList, q2Hours: q2Hours
+    });
+  });
+
+  console.log('\n══════ ' + results.length + ' client email(s) previewed. Nothing was created or sent. ══════');
+  console.log('To actually send (redirected to ' + REDIRECT_TO + ', per your instruction), that is a');
+  console.log('separate, explicit next step — not run automatically by this preview.');
+  console.log('══════ End preview ══════\n');
+
+  return results;
 }
