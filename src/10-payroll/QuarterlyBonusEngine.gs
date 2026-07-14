@@ -2315,3 +2315,60 @@ function runQ2ErrorScorePreview() {
   console.log('fallback error_score of 1.0 (100%), same as before this fix (see computeBonuses_(), line ~352).');
   console.log('══════ End Q2 error_score preview ══════\n');
 }
+
+/**
+ * Read-only diagnostic — is FACT_PERFORMANCE_RATINGS.period_id a clean
+ * '2026-Q1'-style string, or Date-coerced the same way
+ * VW_JOB_CURRENT_STATE.period_id was confirmed to be (see
+ * runQ1VwPeriodIdDriftCheck())? Flagged, not confirmed, when
+ * getInternalRatings_() was audited in the 2026-07-14 created_at fix
+ * commit. Shows 5 sample rows' raw period_id value, its JS typeof, and
+ * whether it's a Date instance. No writes.
+ */
+function runQ2RatingsPeriodIdCheck() {
+  var rows = DAL.readAll(Config.TABLES.FACT_PERFORMANCE_RATINGS, { callerModule: 'QuarterlyBonusEngine:Diag' });
+  console.log('\n══════ FACT_PERFORMANCE_RATINGS.period_id coercion check ══════');
+  console.log('Total rows: ' + rows.length);
+  if (rows.length === 0) { console.log('  ⚠️  Empty table.'); return; }
+
+  rows.slice(0, 5).forEach(function(r, i) {
+    var val    = r.period_id;
+    var isDate = val instanceof Date;
+    console.log('  [' + (i + 1) + '] rating_id=' + (r.rating_id || '?') +
+                ' | ratee_code=' + (r.ratee_code || '?') +
+                ' | period_id RAW="' + val + '"' +
+                ' | typeof=' + (typeof val) +
+                ' | instanceof Date=' + isDate +
+                (isDate ? '  ⚠️  COERCED' : '  ✓ clean string'));
+  });
+  console.log('══════ End check ══════\n');
+}
+
+/**
+ * Read-only diagnostic — is FACT_QUARTERLY_BONUS.quarter_period_id a clean
+ * '2026-Q1'-style string, or Date-coerced the same way
+ * VW_JOB_CURRENT_STATE.period_id was confirmed to be (see
+ * runQ1VwPeriodIdDriftCheck())? Flagged, not confirmed, when
+ * runAnnualBonus_()'s validQPids check was audited in the 2026-07-14
+ * created_at fix commit. Shows 5 sample rows' raw quarter_period_id
+ * value, its JS typeof, and whether it's a Date instance. No writes.
+ */
+function runQ2BonusLedgerPeriodIdCheck() {
+  var rows = DAL.readAll(Config.TABLES.FACT_QUARTERLY_BONUS, { callerModule: 'QuarterlyBonusEngine:Diag' });
+  console.log('\n══════ FACT_QUARTERLY_BONUS.quarter_period_id coercion check ══════');
+  console.log('Total rows: ' + rows.length);
+  if (rows.length === 0) { console.log('  ⚠️  Empty table.'); return; }
+
+  rows.slice(0, 5).forEach(function(r, i) {
+    var val    = r.quarter_period_id;
+    var isDate = val instanceof Date;
+    console.log('  [' + (i + 1) + '] bonus_id=' + (r.bonus_id || '?') +
+                ' | person_code=' + (r.person_code || '?') +
+                ' | event_type=' + (r.event_type || '?') +
+                ' | quarter_period_id RAW="' + val + '"' +
+                ' | typeof=' + (typeof val) +
+                ' | instanceof Date=' + isDate +
+                (isDate ? '  ⚠️  COERCED' : '  ✓ clean string'));
+  });
+  console.log('══════ End check ══════\n');
+}
