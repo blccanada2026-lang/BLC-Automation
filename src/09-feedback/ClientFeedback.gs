@@ -728,9 +728,26 @@ var ClientFeedback = (function () {
       return [];
     }
 
-    // ── Step 3: DIM_STAFF_ROSTER cross-check (warning only) ─────────────────
-    // Warn if a designer's record is terminated before the quarter starts.
-    // Still include them — the map entry may need closing, not the form.
+    // ── Step 3: DIM_STAFF_ROSTER cross-check — ACTIVE STATUS FILTER ─────────
+    // 2026-07-15 fix: only include designers with active=true in
+    // DIM_STAFF_ROSTER. Previously this section only warned (never
+    // excluded) — a designer's effective_to predating the quarter start
+    // was the only condition even checked, and even that never removed
+    // anyone from the result. That warn-only check has real, confirmed
+    // gaps: BSG (Banik Sagar) was terminated MID-quarter (effective_to
+    // 2026-05-07, inside Q2's Apr-Jun range) so the "before quarter start"
+    // comparison never fired for him at all; NMM (Nitesh Mishra) has
+    // active=false but a blank effective_to, so the date-based check has
+    // nothing to compare against even in principle. Both would have been
+    // silently included with zero warning under the old logic despite
+    // being explicitly inactive. See the 2026-07-14 data-quality
+    // investigation (runQ2FeedbackDataQualityReport()) for the raw rows.
+    // A designer not found in DIM_STAFF_ROSTER at all is also excluded —
+    // active=true can't be confirmed for someone who isn't in the roster.
+    // The effective_to-before-quarter-start check is preserved as a
+    // separate, still warn-only signal — this fix only adds the
+    // active-status filter that was explicitly asked for, not a second
+    // exclusion rule beyond that.
     var staffMap = {};
     try {
       var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE });
@@ -742,19 +759,37 @@ var ClientFeedback = (function () {
       if (e.code !== 'SHEET_NOT_FOUND') throw e;
     }
 
+    var rosterFilteredPairs = [];
     for (var a = 0; a < activePairs.length; a++) {
-      var dCode  = activePairs[a].designer_code;
-      var staff  = staffMap[dCode];
+      var dCode = activePairs[a].designer_code;
+      var staff = staffMap[dCode];
+
       if (!staff) {
         Logger.warn('FEEDBACK_DESIGNER_NOT_IN_ROSTER', {
           module:        MODULE,
-          message:       'Designer in REF_ACCOUNT_DESIGNER_MAP not found in DIM_STAFF_ROSTER — included anyway',
+          message:       'Designer in REF_ACCOUNT_DESIGNER_MAP not found in DIM_STAFF_ROSTER — excluded (cannot confirm active=true)',
           designer_code: dCode,
           client_code:   activePairs[a].client_code,
           period_id:     periodId
         });
-        continue;
+        continue; // excluded
       }
+
+      // Same active-check pattern already used by buildClientMap_() in
+      // this same file, for internal consistency — DAL returns Sheets
+      // checkbox-type cells as real JS booleans, not just 'TRUE' strings.
+      var isActive = (staff.active === true || String(staff.active).toUpperCase() === 'TRUE');
+      if (!isActive) {
+        Logger.warn('FEEDBACK_DESIGNER_INACTIVE', {
+          module:        MODULE,
+          message:       'Designer active=false/blank in DIM_STAFF_ROSTER — excluded from feedback request',
+          designer_code: dCode,
+          client_code:   activePairs[a].client_code,
+          period_id:     periodId
+        });
+        continue; // excluded
+      }
+
       var effectiveTo = String(staff.effective_to || '').trim();
       if (effectiveTo !== '' && effectiveTo < quarterStart) {
         Logger.warn('FEEDBACK_DESIGNER_TERMINATED', {
@@ -766,7 +801,10 @@ var ClientFeedback = (function () {
           quarter_start: quarterStart
         });
       }
+
+      rosterFilteredPairs.push(activePairs[a]);
     }
+    activePairs = rosterFilteredPairs;
 
     // ── Step 4: FACT_WORK_LOGS cross-check (warning only) ───────────────────
     // Warn if a designer logged zero hours for this client's jobs this quarter.
