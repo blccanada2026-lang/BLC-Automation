@@ -939,13 +939,22 @@ var PortalData = (function () {
     if (dryRun) {
       result.dry_run = true;
       result.would_send = [];
-      // CEO
+      // 2026-07-15: url (and personCode for TL/PM) added — purely additive,
+      // does not change any existing field or touch the !dryRun send path.
+      // Computes the SAME real, valid ratingToken_() the live send would
+      // use, so a preview built on this can show the actual clickable URL
+      // rather than a placeholder.
       if (ceoRateeNames.length > 0) {
-        result.would_send.push({ to: testEmail || actorEmail, label: 'CEO', rates: ceoRateeNames });
+        result.would_send.push({ to: testEmail || actorEmail, label: 'CEO', rates: ceoRateeNames, url: ceoRatingUrl });
       }
       for (var rc in raterRatees) {
         if (staffMap[rc] && raterRatees[rc].length > 0) {
-          result.would_send.push({ to: testEmail || staffMap[rc].email, label: staffMap[rc].name + ' (' + staffMap[rc].role + ')', rates: raterRatees[rc] });
+          var previewUrl = baseRatingUrl + '&rater=' + encodeURIComponent(rc) +
+                            '&rtoken=' + encodeURIComponent(ratingToken_(rc, periodId));
+          result.would_send.push({
+            to: testEmail || staffMap[rc].email, label: staffMap[rc].name + ' (' + staffMap[rc].role + ')',
+            rates: raterRatees[rc], url: previewUrl, personCode: rc
+          });
         }
       }
     }
