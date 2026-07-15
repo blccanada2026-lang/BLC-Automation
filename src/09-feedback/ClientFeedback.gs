@@ -967,6 +967,32 @@ function runSendFeedbackRequestsLive() {
 }
 
 /**
+ * SENDS REAL EMAILS — creates a real Google Form per client (FormApp.create())
+ * and calls MailApp.sendEmail() for real, via ClientFeedback.sendFeedbackRequests()'s
+ * existing testEmail redirect (options.testEmail) — NOT a preview.
+ * Routed to hr@bluelotuscanada.ca instead of directly to clients, per
+ * explicit instruction; HR reviews and forwards manually. Does NOT email
+ * real clients.
+ *
+ * Content approved 2026-07-15 via runQ2FeedbackRequestPreview(), after
+ * the active-designer-status fix (commit 2e73002) confirmed BSG/NMM
+ * excluded. Uses buildDesignerClientPairs_() internally (no options.pairs
+ * override), so it reflects that same fix — same real pairs the approved
+ * preview showed.
+ *
+ * period_id '2026-06' = last month of Q2 2026, matching
+ * buildDesignerClientPairs_()'s expected input and
+ * runQ2FeedbackRequestPreview()'s periodId.
+ */
+function runSendQ2FeedbackRequestsToHR() {
+  var r = ClientFeedback.sendFeedbackRequests('raj.nair@bluelotuscanada.ca', {
+    periodId:  '2026-06',
+    testEmail: 'hr@bluelotuscanada.ca'
+  });
+  console.log('emails_sent=' + r.emails_sent + '  pairs=' + r.designer_client_pairs);
+}
+
+/**
  * TRUE PREVIEW — no writes, no FormApp.create(), no MailApp.sendEmail().
  * ClientFeedback.sendFeedbackRequests() has a testEmail redirect built in
  * (see runSendFeedbackRequestsTest() above), but even "test" mode creates
