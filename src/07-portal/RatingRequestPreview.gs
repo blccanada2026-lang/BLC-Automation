@@ -58,6 +58,7 @@ function runQ2RatingRequestPreview() {
 
     console.log('\n──── ' + entry.label + (entry.personCode ? ' [' + entry.personCode + ']' : '') + ' ────');
     console.log('  Actually would send to (redirected): ' + entry.to);
+    if (entry.realEmail) console.log('  Rater\'s real email (embedded in subject tag below, not used as recipient): ' + entry.realEmail);
     console.log('  Rates: ' + entry.rates.join(', '));
     console.log('  Real portal URL (signed token computed by the real function — this is the actual live link): ' + entry.url);
 
@@ -65,10 +66,14 @@ function runQ2RatingRequestPreview() {
     // template — not called, no send. Matches ClientFeedback.gs's
     // runQ2FeedbackRequestPreview() approach for the same reason: no
     // side-effect-free way to get rendered content out of the real
-    // function without calling MailApp.sendEmail() for real.
+    // function without calling MailApp.sendEmail() for real. The [TEST —
+    // for X] tag uses the rater's REAL email (entry.realEmail), not the
+    // redirected recipient — matches the live code exactly (rater.email,
+    // not recipient), so HR can see who each redirected email was really
+    // meant for.
     var subject = isCeo
       ? 'BLC Nexus — Please submit your ' + periodId + ' performance ratings [TEST]'
-      : 'BLC Nexus — Please submit your ' + periodId + ' performance ratings [TEST — for ' + entry.to + ']';
+      : 'BLC Nexus — Please submit your ' + periodId + ' performance ratings [TEST — for ' + entry.realEmail + ']';
 
     var body = isCeo ? [
       'Hi,',

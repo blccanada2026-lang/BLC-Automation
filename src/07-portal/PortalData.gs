@@ -953,7 +953,14 @@ var PortalData = (function () {
                             '&rtoken=' + encodeURIComponent(ratingToken_(rc, periodId));
           result.would_send.push({
             to: testEmail || staffMap[rc].email, label: staffMap[rc].name + ' (' + staffMap[rc].role + ')',
-            rates: raterRatees[rc], url: previewUrl, personCode: rc
+            rates: raterRatees[rc], url: previewUrl, personCode: rc,
+            // realEmail added alongside url/personCode — the live send's subject
+            // tag embeds rater.email (the rater's OWN real address), NOT the
+            // redirected recipient, so HR can see who each email was really
+            // meant for. would_send's "to" is already testEmail-substituted;
+            // this is the one place that substitution needs to be bypassed for
+            // an accurate preview.
+            realEmail: staffMap[rc].email
           });
         }
       }
