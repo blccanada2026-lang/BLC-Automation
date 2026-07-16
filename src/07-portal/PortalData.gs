@@ -852,9 +852,15 @@ var PortalData = (function () {
     }
 
     // ── Build rater → ratee name list ────────────────────────
-    // CEO ratees: all TLs + PMs
-    // TL ratees:  anyone where supervisor_code = TL (any role)
-    // PM ratees:  DESIGNERs where pm_code = PM
+    // CEO ratees:        all TLs + PMs
+    // Supervisor ratees: anyone where supervisor_code = this person.
+    //   2026-07-16 fix: no longer gated on the supervisor's own role.
+    //   Previously required staffMap[supervisorCode].role === 'TEAM_LEAD',
+    //   which meant a PM-role supervisor's direct reports were invisible
+    //   (e.g. SGO supervises DBS, but SGO.role='PM' so DBS never appeared
+    //   anywhere). The roster assignment (supervisor_code) is authoritative
+    //   regardless of the supervisor's role title.
+    // PM ratees:          DESIGNERs where pm_code = PM
     var raterRatees = {}; // person_code → [name, ...]
     var ceoRateeNames = [];
 
@@ -866,16 +872,22 @@ var PortalData = (function () {
         ceoRateeNames.push(m.name);
       }
 
-      // TL ratees
-      if (m.supervisorCode && staffMap[m.supervisorCode] && staffMap[m.supervisorCode].role === 'TEAM_LEAD') {
+      // Supervisor ratees — role-ungated (see comment above).
+      var addedViaSupervisor = false;
+      if (m.supervisorCode && staffMap[m.supervisorCode]) {
         if (!raterRatees[m.supervisorCode]) raterRatees[m.supervisorCode] = [];
         raterRatees[m.supervisorCode].push(m.name);
+        addedViaSupervisor = true;
       }
 
-      // PM ratees (designers only)
+      // PM ratees (designers only). Skip if supervisor_code === pm_code
+      // (same rater already got this ratee added above) — otherwise the
+      // same person would be listed twice under one rater's email.
       if (m.pmCode && staffMap[m.pmCode] && staffMap[m.pmCode].role === 'PM' && m.role === 'DESIGNER') {
-        if (!raterRatees[m.pmCode]) raterRatees[m.pmCode] = [];
-        raterRatees[m.pmCode].push(m.name);
+        if (!(addedViaSupervisor && m.pmCode === m.supervisorCode)) {
+          if (!raterRatees[m.pmCode]) raterRatees[m.pmCode] = [];
+          raterRatees[m.pmCode].push(m.name);
+        }
       }
     }
 
