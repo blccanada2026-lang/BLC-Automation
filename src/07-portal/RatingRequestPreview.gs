@@ -113,3 +113,86 @@ function runQ2RatingRequestPreview() {
 
   return result;
 }
+
+/**
+ * READ-ONLY, no writes — raw dump of every DIM_STAFF_ROSTER row's
+ * rating-relevant columns. Run this BEFORE implementing the 2026-07-13
+ * "roster-driven rating assignment" directive: that directive assumes (a)
+ * bonus_eligible=TRUE actually holds for real raters/ratees on PROD — but
+ * SeedStaffImport.gs sets bonus_eligible='FALSE' for every seeded row
+ * ("eligibility is determined elsewhere"), so this must be confirmed
+ * against live data, not assumed, or an active+bonus_eligible filter could
+ * silently empty the entire rating flow — and (b) that Deb Sen ("DBS")
+ * exists in the roster with supervisor_code/pm_code set correctly. This
+ * dump answers both, plus shows who (if anyone) has supervisor_code or
+ * pm_code pointing at the CEO's own person_code, which the current
+ * sendRatingRequests() role-based CEO logic doesn't need to know but a
+ * roster-driven rewrite would.
+ *
+ * @returns {Array} raw roster rows (rating-relevant columns only)
+ */
+function runRatingRosterDataQualityReport() {
+  var allStaff = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'RatingRequestPreview' });
+
+  console.log('\n══════ DIM_STAFF_ROSTER — rating-relevant columns, ALL rows, no filtering ══════');
+  console.log('Total rows: ' + allStaff.length);
+
+  var passActiveAndBonus = 0;
+  var rows = [];
+
+  allStaff.forEach(function(s) {
+    var isActive        = (s.active === true || String(s.active).toUpperCase().trim() === 'TRUE');
+    var isBonusEligible  = (s.bonus_eligible === true || String(s.bonus_eligible).toUpperCase().trim() === 'TRUE');
+    if (isActive && isBonusEligible) passActiveAndBonus++;
+
+    var row = {
+      person_code:     s.person_code,
+      name:            s.name,
+      email:           s.email,
+      role:            s.role,
+      supervisor_code: s.supervisor_code,
+      pm_code:         s.pm_code,
+      bonus_eligible:  s.bonus_eligible,
+      active:          s.active,
+      effective_to:    s.effective_to
+    };
+    rows.push(row);
+    console.log('  ' + JSON.stringify(row));
+  });
+
+  console.log('\nRows passing active=TRUE AND bonus_eligible=TRUE: ' + passActiveAndBonus + ' / ' + allStaff.length);
+
+  console.log('\n── Looking for "Deb Sen" / person_code containing DBS ──');
+  var debSenMatches = rows.filter(function(r) {
+    return String(r.name || '').toLowerCase().indexOf('deb sen') !== -1 ||
+           String(r.person_code || '').toUpperCase().indexOf('DBS') !== -1;
+  });
+  if (debSenMatches.length === 0) {
+    console.log('  No match for "Deb Sen" / person_code containing "DBS" found in DIM_STAFF_ROSTER.');
+  } else {
+    debSenMatches.forEach(function(r) { console.log('  MATCH: ' + JSON.stringify(r)); });
+  }
+
+  console.log('\n── CEO person_code / who points at it ──');
+  var ceoRows = rows.filter(function(r) { return String(r.role || '').toUpperCase().trim() === 'CEO'; });
+  if (ceoRows.length === 0) {
+    console.log('  No row with role=CEO found.');
+  } else {
+    ceoRows.forEach(function(ceo) {
+      console.log('  CEO person_code: ' + ceo.person_code + ' (' + ceo.name + ')');
+      var pointers = rows.filter(function(r) {
+        return r.supervisor_code === ceo.person_code || r.pm_code === ceo.person_code;
+      });
+      if (pointers.length === 0) {
+        console.log('    No row has supervisor_code or pm_code === ' + ceo.person_code + '.');
+      } else {
+        pointers.forEach(function(p) {
+          console.log('    ' + p.person_code + ' (' + p.name + ') → supervisor_code=' + p.supervisor_code + ' pm_code=' + p.pm_code);
+        });
+      }
+    });
+  }
+
+  console.log('══════ End report ══════\n');
+  return rows;
+}
