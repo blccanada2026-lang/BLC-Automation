@@ -4,7 +4,8 @@
 //
 // LOAD ORDER: T10. Loads after all T0–T9 files.
 // DEPENDENCIES: Config (T0), Identifiers (T0), DAL (T1),
-//               RBAC (T2), Logger (T3), ClientFeedback (T9)
+//               RBAC (T2), Logger (T3), ClientFeedback (T9),
+//               WorkLogExclusion (T6), WorkLogAggregation (T6)
 //
 // ╔══════════════════════════════════════════════════════════╗
 // ║  Quarterly performance bonus for designers, TLs, PMs.   ║
@@ -152,7 +153,7 @@ var QuarterlyBonusEngine = (function () {
   // be coerced by the number-format-inheritance mechanism. Left as-is.
   function aggregateQuarterHours_(quarter, year) {
     var periodIds = monthPeriodIds_(quarter, year);
-    var hoursMap  = {};
+    var allRows   = [];
 
     for (var p = 0; p < periodIds.length; p++) {
       var rows;
@@ -165,21 +166,28 @@ var QuarterlyBonusEngine = (function () {
         if (e.code === 'SHEET_NOT_FOUND') continue;
         throw e;
       }
-
-      for (var i = 0; i < rows.length; i++) {
-        var row   = rows[i];
-        var code  = String(row.actor_code || row.person_code || '').trim();
-        var role  = String(row.actor_role || '').toUpperCase();
-        var hours = parseFloat(row.hours) || 0;
-        if (!code || hours <= 0 || role === 'QC') continue;
-        hoursMap[code] = (hoursMap[code] || 0) + hours;
-      }
+      allRows = allRows.concat(rows);
     }
 
-    var codes = Object.keys(hoursMap);
-    for (var j = 0; j < codes.length; j++) {
-      hoursMap[codes[j]] = Math.round(hoursMap[codes[j]] * 100) / 100;
-    }
+    // Shared NET-hours aggregation — see WorkLogAggregation.gs. Excludes
+    // migrated historical rows (event_type-based — RESTORED here after
+    // this guard was deleted 2026-04-17→2026-05-28, commit 9f7222f, an
+    // unstated side effect of an unrelated actor_code fix) and correctly
+    // nets void/amendment corrections instead of double-counting them
+    // (ADR-WL-004 follow-up fix). Combining all three months' rows into
+    // one array before aggregating (rather than accumulating per-month)
+    // means a correction split across two of the quarter's three months
+    // still nets correctly — see WorkLogAggregation.gs's "KNOWN
+    // LIMITATION" note for the case this does NOT cover (a correction
+    // spanning a quarter boundary).
+    var netHours = aggregateNetWorkLogHours(allRows);
+
+    // QuarterlyBonusEngine's external contract is a FLAT { code: hours }
+    // map of design hours only — QC hours contribute nothing to bonus.
+    var hoursMap = {};
+    Object.keys(netHours).forEach(function (code) {
+      hoursMap[code] = netHours[code].design_hours;
+    });
     return hoursMap;
   }
   /**
@@ -751,7 +759,13 @@ var QuarterlyBonusEngine = (function () {
     // logic a second time and risking the two silently drifting apart.
     getQcErrorRates_:   getQcErrorRates_,
     quarterDateRange_:  quarterDateRange_,
-    parseFlexibleDate_: parseFlexibleDate_
+    parseFlexibleDate_: parseFlexibleDate_,
+
+    // Exposed 2026-07-22 (payroll-hardening effort, ADR-WL-004) — same
+    // precedent as above — so the DEV regression runner
+    // (PayrollHardeningRecompute.gs) calls the REAL hours-aggregation
+    // function the actual bonus run uses, not a reimplementation.
+    aggregateQuarterHours_: aggregateQuarterHours_
   };
 
 }());

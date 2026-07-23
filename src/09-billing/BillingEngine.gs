@@ -4,7 +4,8 @@
 //
 // LOAD ORDER: T9. Loads after all T0–T7 files.
 // DEPENDENCIES: Config (T0), Identifiers (T0), DAL (T1),
-//               RBAC (T2), Logger (T3), HealthMonitor (T3)
+//               RBAC (T2), Logger (T3), HealthMonitor (T3),
+//               WorkLogExclusion (T6)
 //
 // ╔══════════════════════════════════════════════════════════╗
 // ║  Batch billing engine — NOT queue-driven.               ║
@@ -292,9 +293,13 @@ var BillingEngine = (function () {
   // Reads FACT_WORK_LOGS for the monthly partition but filters
   // rows to the semi-monthly date range [fromDate, toDate].
   //
-  // Migration rows (migration_batch set) are excluded from
-  // billing — they represent historical data already captured
-  // in Stacey V2.
+  // Migration/historical rows are excluded from billing — they
+  // represent historical data already captured in Stacey V2.
+  // Excluded via isMigratedWorkLog() (WorkLogExclusion.gs), keyed on
+  // event_type — NOT row.migration_batch, which is never a real
+  // FACT_WORK_LOGS column (this comment previously claimed otherwise;
+  // the exclusion was documented but never actually implemented until
+  // this fix).
   //
   // Returns: { 'BLC-00001': 8.5, 'NL-01': 3.25, ... }
   // ============================================================
@@ -322,17 +327,20 @@ var BillingEngine = (function () {
     var toYMD   = dateToYMD_(toDate);
 
     // BTD and SNA are legacy wrong actor codes whose WORK_LOG_MIGRATED rows were
-    // superseded by WORK_LOG_AMENDED rows (runFixBTDtoBIT, runFixSNAtoSVN).
-    // Skip those originals to avoid double-counting. Same pattern as ClientTimesheetEngine.
-    // FACT_WORK_LOGS schema drops migration_batch so it cannot be used as a filter.
-    var SUPERSEDED_MIGRATED = { 'BTD': true, 'SNA': true };
+    // superseded by WORK_LOG_AMENDED rows (runFixBTDtoBIT, runFixSNAtoSVN). Those
+    // WORK_LOG_MIGRATED originals are now caught by the general isMigratedWorkLog()
+    // exclusion below (they carry that event_type), so no BTD/SNA-specific carve-out
+    // is needed here — the WORK_LOG_AMENDED replacement rows are not migrated rows
+    // and are counted normally, which is what we want.
 
     var hoursMap = {};
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
-      var evType  = String(row.event_type  || '');
-      var actCode = String(row.actor_code  || '').trim().toUpperCase();
-      if (evType === 'WORK_LOG_MIGRATED' && SUPERSEDED_MIGRATED[actCode]) continue;
+
+      // Exclude migrated historical rows from billing — see WorkLogExclusion.gs.
+      // row.migration_batch is never a real FACT_WORK_LOGS column (DAL drops it
+      // on write); event_type is the field that actually survives.
+      if (isMigratedWorkLog(row)) continue;
 
       var parsedDate = parseWorkDate_(row.work_date, year);
       if (!parsedDate) {
@@ -1227,14 +1235,14 @@ function runBillingRateCheck() {
 
   var fromYMD = ymd_(period.fromDate), toYMD = ymd_(period.toDate);
 
-  // Sum hours per job (exclude migration_batch rows)
+  // Sum hours per job (exclude migrated historical rows — see WorkLogExclusion.gs)
   var hoursMap = {}, jobClients = {};
   var allVw = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
   for (var j = 0; j < allVw.length; j++) jobClients[allVw[j].job_number] = allVw[j];
 
   for (var w = 0; w < wlRows.length; w++) {
     var row = wlRows[w];
-    if (row.migration_batch) continue;
+    if (isMigratedWorkLog(row)) continue;
     var d = parseDate_(row.work_date, period.year);
     if (!d) continue;
     var wy = ymd_(d);

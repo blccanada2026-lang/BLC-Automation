@@ -51,6 +51,23 @@ Portal Submit → STG_PROCESSING_QUEUE → Handler → FACT Table → View Proje
 
 ---
 
+## 3.1 Standing Rule — Verification Depth for Money/Aggregation Code
+
+**Origin:** this rule exists because Jest/mock-level tests passed while three real bugs shipped or nearly shipped — the `FACT_WORK_LOGS` migration-exclusion bug (dead `migration_batch` field), the void-netting double-count bug (`hours <= 0` skip), and the cross-partition correction timing gap. Each was only found by reading real engine source and/or running against real DEV data instead of trusting a green mocked test suite.
+
+**Applies to:** any code that reads, aggregates, or writes `FACT_WORK_LOGS`, `FACT_PAYROLL_LEDGER`, or feeds payroll/bonus/billing calculations.
+
+Before marking such work "done" or "tested," explicitly satisfy — or explicitly decline with stated reasoning — each of the following:
+
+1. Have you read the actual current engine source for every consumer of the changed logic (grep for all call sites), not just the ones named in the task?
+2. Does test coverage include a run against real DAL read/write behavior (in-GAS DEV runner) in addition to any mocked/Jest tests — not as a substitute for mocks, but as a required addition?
+3. Have you checked for other code paths that produce the same kind of row or event (e.g. other fixers/handlers writing `WORK_LOG_VOIDED`, `JOB_MIGRATED`, etc.) that might share the same latent bug?
+4. If numbers are being reconciled against a real, known PROD figure, and the working data is DEV/synthetic — has that gap been stated explicitly rather than the numbers being presented as authoritative?
+
+If time pressure means skipping any of these, that must be stated explicitly ("skipping DEV verification because X") rather than silently omitted — a stated shortcut is reviewable, a silent one isn't.
+
+---
+
 ## 4. Database / Sheet / Table Structure
 
 Key tables only. Full list in `.claude/context/architecture.md §Key Tables`.
