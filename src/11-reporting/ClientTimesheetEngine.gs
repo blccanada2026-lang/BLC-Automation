@@ -3,7 +3,8 @@
 // src/11-reporting/ClientTimesheetEngine.gs
 //
 // LOAD ORDER: T11. Loads after T0–T9.
-// DEPENDENCIES: Config (T0), Identifiers (T0), DAL (T1), Logger (T3)
+// DEPENDENCIES: Config (T0), Identifiers (T0), DAL (T1), Logger (T3),
+//               WorkLogExclusion (T6)
 //
 // Generates a client-facing timesheet for a semi-monthly billing
 // period. Output written to TIMESHEET|{periodId} sheet tab.
@@ -190,17 +191,15 @@ var ClientTimesheetEngine = (function () {
       });
     } catch (e) { return byJobDesigner; }
 
-    // Actor codes whose WORK_LOG_MIGRATED rows were corrected by WORK_LOG_AMENDED rows
-    // (runFixBTDtoBIT and runFixSNAtoSVN in JuneWorkLogImporter). The amendment_of
-    // field is not in the FACT_WORK_LOGS schema so we use the same pattern as
-    // runJuneReconciliation(): skip MIGRATED rows for these known-superseded codes.
-    var SUPERSEDED_MIGRATED = { 'BTD': true, 'SNA': true };
-
     var fromYMD = ymd_(fromDate), toYMD = ymd_(toDate);
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
-      if (row.migration_batch) continue;
-      if (row.event_type === 'WORK_LOG_MIGRATED' && SUPERSEDED_MIGRATED[String(row.actor_code || '').trim().toUpperCase()]) continue;
+      // Exclude migrated historical rows — see WorkLogExclusion.gs.
+      // (Also catches the BTD/SNA WORK_LOG_MIGRATED originals superseded by
+      // WORK_LOG_AMENDED rows from runFixBTDtoBIT/runFixSNAtoSVN — no
+      // separate carve-out needed, the replacement WORK_LOG_AMENDED rows
+      // are not migrated rows and are counted normally.)
+      if (isMigratedWorkLog(row)) continue;
       var d   = parseWorkDate_(row.work_date, year);
       if (!d) continue;
       var wd  = ymd_(d);
@@ -240,7 +239,6 @@ var ClientTimesheetEngine = (function () {
       });
     } catch (e) { return []; }
 
-    var SUPERSEDED_MIGRATED = { 'BTD': true, 'SNA': true };
     var fromYMD = ymd_(fromDate), toYMD = ymd_(toDate);
     var cc      = (clientCode || '').toUpperCase().trim();
 
@@ -249,9 +247,8 @@ var ClientTimesheetEngine = (function () {
 
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
-      if (row.migration_batch) continue;
-      if (row.event_type === 'WORK_LOG_MIGRATED' &&
-          SUPERSEDED_MIGRATED[String(row.actor_code || '').trim().toUpperCase()]) continue;
+      // Exclude migrated historical rows — see WorkLogExclusion.gs.
+      if (isMigratedWorkLog(row)) continue;
       var d = parseWorkDate_(row.work_date, year);
       if (!d) continue;
       var wd = ymd_(d);
@@ -722,8 +719,8 @@ function runGenerateNelsonTimesheet(periodId) {
 
 /**
  * Diagnostic: shows raw FACT_WORK_LOGS totals for June 1–15 broken down by:
- * - rows with migration_batch (excluded by generate())
- * - rows without migration_batch but job not in VW (excluded by generate())
+ * - migrated rows per isMigratedWorkLog() (excluded by generate())
+ * - non-migrated rows whose job isn't in VW (excluded by generate())
  * - rows that would be counted by generate()
  *
  * Run in PROD editor to find the root cause of timesheet discrepancies.
@@ -794,9 +791,9 @@ function runWorkLogDiagnostic() {
     if (hrs <= 0) continue;
     countTotal++; hrsTotal += hrs;
 
-    var batch = String(row.migration_batch || '').trim();
-    if (batch) {
-      batchTotals[batch] = (batchTotals[batch] || 0) + hrs;
+    if (isMigratedWorkLog(row)) {
+      var evt = String(row.event_type || 'UNKNOWN');
+      batchTotals[evt] = (batchTotals[evt] || 0) + hrs;
       countMigrated++; hrsMigrated += hrs;
       continue;
     }
@@ -830,18 +827,17 @@ function runWorkLogDiagnostic() {
     var job2 = jobMap[jn2];
     var cc2  = job2 ? String(job2.client_code || 'UNKNOWN').toUpperCase().trim() : 'UNKNOWN';
     if (!clientTotals[cc2]) clientTotals[cc2] = { counted: 0, excluded_mig: 0, excluded_novw: 0 };
-    var batch2 = String(r2.migration_batch || '').trim();
-    if (batch2) { clientTotals[cc2].excluded_mig += hrs2; }
+    if (isMigratedWorkLog(r2)) { clientTotals[cc2].excluded_mig += hrs2; }
     else if (!job2) { clientTotals[cc2].excluded_novw += hrs2; }
   }
 
   console.log('\n=== SUMMARY ===');
   console.log('In-period rows (June 1-15): ' + countTotal + ' rows, ' + Math.round(hrsTotal * 100)/100 + 'h total');
-  console.log('  Excluded (migration_batch): ' + countMigrated + ' rows, ' + Math.round(hrsMigrated * 100)/100 + 'h');
+  console.log('  Excluded (migrated, via isMigratedWorkLog()): ' + countMigrated + ' rows, ' + Math.round(hrsMigrated * 100)/100 + 'h');
   console.log('  No-VW-match (job not in VW): ' + countNoJob + ' rows, ' + Math.round(hrsNoJob * 100)/100 + 'h');
   console.log('  COUNTED by generate(): ' + countCounted + ' rows, ' + Math.round(hrsCounted * 100)/100 + 'h');
 
-  console.log('\n=== MIGRATION BATCH BREAKDOWN ===');
+  console.log('\n=== MIGRATED-ROW BREAKDOWN (by event_type) ===');
   var batches = Object.keys(batchTotals).sort();
   for (var b = 0; b < batches.length; b++) {
     console.log('  ' + batches[b] + ': ' + Math.round(batchTotals[batches[b]] * 100)/100 + 'h');

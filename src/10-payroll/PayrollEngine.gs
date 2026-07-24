@@ -4,7 +4,8 @@
 //
 // LOAD ORDER: T10. Loads after all T0–T9 files.
 // DEPENDENCIES: Config (T0), Identifiers (T0), DAL (T1),
-//               RBAC (T2), Logger (T3), HealthMonitor (T3)
+//               RBAC (T2), Logger (T3), HealthMonitor (T3),
+//               WorkLogExclusion (T6), WorkLogAggregation (T6)
 //
 // ╔══════════════════════════════════════════════════════════╗
 // ║  Two separate entry points — run independently:         ║
@@ -186,31 +187,12 @@ var PayrollEngine = (function () {
       throw e;
     }
 
-    var hoursMap = {};
-    for (var i = 0; i < rows.length; i++) {
-      var row   = rows[i];
-      // Exclude migrated historical rows from live payroll calculation.
-      if (row.migration_batch) continue;
-      var code  = String(row.actor_code || '').trim();
-      var role  = String(row.actor_role || '').toUpperCase();
-      var hours = parseFloat(row.hours) || 0;
-      if (!code || hours <= 0) continue;
-
-      if (!hoursMap[code]) hoursMap[code] = { design_hours: 0, qc_hours: 0 };
-      if (role === 'QC') {
-        hoursMap[code].qc_hours += hours;
-      } else {
-        hoursMap[code].design_hours += hours;
-      }
-    }
-
-    var codes = Object.keys(hoursMap);
-    for (var j = 0; j < codes.length; j++) {
-      var h = hoursMap[codes[j]];
-      h.design_hours = Math.round(h.design_hours * 100) / 100;
-      h.qc_hours     = Math.round(h.qc_hours     * 100) / 100;
-    }
-    return hoursMap;
+    // Shared NET-hours aggregation — see WorkLogAggregation.gs. Excludes
+    // migrated historical rows (event_type-based, not the dead
+    // row.migration_batch field — see WorkLogExclusion.gs) and correctly
+    // nets void/amendment corrections instead of double-counting them
+    // (ADR-WL-004 follow-up fix).
+    return aggregateNetWorkLogHours(rows);
   }
 
   // ============================================================
@@ -989,7 +971,16 @@ var PayrollEngine = (function () {
      * CEO final approval — marks all CONFIRMED records as PROCESSED.
      * Only processes staff who have confirmed their paystub.
      */
-    approveAllPayroll: approveAllPayroll
+    approveAllPayroll: approveAllPayroll,
+
+    // Exposed 2026-07-23 (payroll-hardening effort, Phase 4 promotion
+    // dry-run) — same precedent as QuarterlyBonusEngine.aggregateQuarterHours_
+    // (see that file's public return object) — so a read-only dry-run tool
+    // (AggregationFixDryRun.gs) can call the REAL hours-aggregation function
+    // runPayrollRun() actually uses, not a reimplementation. Read-only by
+    // construction: only calls DAL.readAll() (never appendRow/appendRows/
+    // ensurePartition) — see this function's own body above.
+    aggregateHours_: aggregateHours_
   };
 
 }());

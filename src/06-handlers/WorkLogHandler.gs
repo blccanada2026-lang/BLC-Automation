@@ -6,7 +6,7 @@
 // DEPENDENCIES: Config (T0), Constants (T0), Identifiers (T0),
 //               DAL (T1), RBAC (T2), Logger (T3),
 //               ValidationEngine (T4), QueueProcessor (T5),
-//               StateMachine (T6)
+//               StateMachine (T6), WorkLogExclusion (T6)
 //
 // ╔══════════════════════════════════════════════════════════╗
 // ║  Handles FORM_TYPE = 'WORK_LOG'                         ║
@@ -186,8 +186,7 @@ var WorkLogHandler = (function () {
     var total = 0;
     for (var i = 0; i < actorLogs.length; i++) {
       var r = actorLogs[i];
-      if (r.migration_batch) continue;
-      if (String(r.event_type || '') === 'WORK_LOG_MIGRATED') continue;
+      if (isMigratedWorkLog(r)) continue;
       if (normWorkDate_(r.work_date) !== workDate) continue;
       total += parseFloat(r.hours) || 0;
     }
