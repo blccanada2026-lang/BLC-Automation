@@ -80,7 +80,14 @@ Before adding or reviewing a lookup like this, ask:
 2. Is this instead a *real-time* check — "can this actor act right now" (e.g. `RBAC.buildTeamCodes()`, used for live work-log-correction permission)? If yes, current-value-only is correct and should stay that way — don't retrofit date-awareness onto something that's supposed to reflect the present. State explicitly which of the two a given function is, don't leave it ambiguous.
 3. If a function already takes a period identifier (like `getMyRatees`'s `quarterPeriodId`) but doesn't use it for a specific field's lookup, that's the exact shape of this bug — a parameter that looks like it should confer date-awareness but silently doesn't.
 
-**Known applied instance, recorded for consistency:** `DIM_QC_ASSIGNMENTS` (Task 3, not yet built) will be designed with this pattern from the start, not retrofitted — QC ratings already feed the quarterly bonus composite score, so QC assignment has the same retroactive-reattribution risk `supervisor_code` had.
+**A single point-in-time `asOfDate` is not automatically the right fix — a real DEV run caught this for `getMyRatees()` specifically.** "Period-scoped" doesn't mean "pick any one date inside the period and check the range against it" — which single date matters, and a wrong choice can trade one bug for its mirror image:
+
+- Using the period's **start** date wrongly favors whoever was in the role *before* a change — a change effective on day 2 of a 90-day quarter would still attribute the whole quarter to the OLD supervisor, since day 1 (the check date) predates the change.
+- Using the period's **end** date wrongly favors whoever took over *right before* the period closed — a change effective 2 days before quarter-end attributes the whole quarter to the NEW supervisor, who covered almost none of it. It also breaks for an **in-progress** period: the end date is in the future, so a change scheduled for later in the period would show as already in effect today, before it's actually happened.
+
+**`getMyRatees()`'s resolution, as an example of the actual tradeoff decision:** `ratingAsOfDate_() = min(period_end, today)` — never look into the future (fixes the in-progress-period problem completely) and accept, as a **documented, known limitation** rather than a silently-wrong result, that a change late in an already-closed period still attributes that whole period to the new party. The more correct alternative — attribute to whichever party covered the *most days* of the period — was named and explicitly deferred as more complexity than this decision currently warrants; build it if the late-period case turns out to matter in practice. Test coverage for exactly this tradeoff (`tests/portal-data-get-my-ratees-effective-dating.test.js`) asserts the late-change behavior explicitly, so a future edit can't silently make it worse without a test failing.
+
+**When applying this pattern elsewhere** (Task 3's `DIM_QC_ASSIGNMENTS` and any future case): don't assume period-start, period-end, or "today" is obviously correct — name the specific business tradeoff each choice makes, the way this one does, before picking one.
 
 ---
 
