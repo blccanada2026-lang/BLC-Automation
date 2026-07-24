@@ -1,5 +1,16 @@
 # PROMOTION_CHECKLIST.md — Aggregation Fix-Set Only (Phase 4)
 
+**STATUS (2026-07-24): CLOSED — promoted, deployed to PROD (`d9c876e`),
+and independently verified correct against real PROD data.** PR #2
+merged. The PROD dry-run (§3) was run and its "zero actors for Jan/Feb/
+Mar/May" result was investigated to a confirmed root cause — not a bug:
+every row in those four months is one of three event types
+(`WORK_LOG_MIGRATED`/`WORK_LOG_MIGRATION`/`WORK_LOG_PERIOD_FIXED`), all
+correctly excluded by design. Full investigation chain and evidence in
+`TEST_EVIDENCE.md`'s "Task 1 CLOSED" section. Everything below this line
+is the historical planning record — left as-is, not rewritten, since it
+documents the actual decisions made along the way.
+
 **Scope of this promotion: bug fixes only, revised 2026-07-23.**
 `WorkLogExclusion.gs`, `WorkLogAggregation.gs`, the engine wiring
 (`WorkLogHandler.gs`, `BillingEngine.gs`, `PayrollEngine.gs`,

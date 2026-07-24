@@ -13,18 +13,27 @@ these threads.**
 
 ## Active
 
-- [ ] **Payroll aggregation fix** — PROD dry-run pending (PR #2 merged,
-      deployed `d9c876e`). Next: confirm PROD Apps Script sharing settings,
-      then run `runAggregationFixDryRun()` + `runListTriggers()` manually
-      in the PROD editor.
 - [ ] **Supervisor_code update** (Maruthi onboarding + reporting-line
-      changes) — not started. Blocked on: Task 1 completing first
-      (sequencing choice, not a technical dependency).
+      changes) — not started. No longer blocked — Task 1 is done. Open
+      ambiguities from the initial investigation still need resolving
+      before any write: which "Bharath" and which "Kumar" (see the
+      2026-07-23/24 user/team-structure investigation, unrelated to
+      payroll — separate worktree/branch).
 - [ ] **QC assignment mapping** (`DIM_QC_ASSIGNMENTS` + `QCHandler.gs` CC
-      logic) — not started. Blocked on: Tasks 1 and 2 completing first.
+      logic) — not started. Blocked on: Task 2 completing first.
 
 ---
 
 ## Completed
 
-(none yet — move items here with a completion date when done)
+- [x] **Payroll aggregation fix (Task 1)** — 2026-07-24. PR #2 merged into
+      `main`, deployed to PROD (`d9c876e`). PROD dry-run run and its
+      "zero actors for Jan/Feb/Mar/May" result independently verified
+      correct (not a bug) via direct `event_type` distribution checks
+      against real PROD data — see `TEST_EVIDENCE.md`'s "Task 1 CLOSED"
+      section for the full chain. **Open follow-on, not yet a scheduled
+      task:** all of Q1 2026 (Jan/Feb/Mar) contains zero rows that would
+      count toward payroll under the correct exclusion logic — what this
+      means for the already-committed ₹72,231.13 Q1 bonus is held as an
+      open hypothesis pending a deliberate discussion, not decided or
+      scheduled here.

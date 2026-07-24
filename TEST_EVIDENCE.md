@@ -1069,13 +1069,117 @@ checks either engine's public-API object shape by full equality, so
 exposing a new key on each was confirmed safe by inspection, not just by
 the suite staying green).
 
-### What's still open for your review
+### What's still open for your review (superseded — see closing section below)
 
-1. **The PROD dry-run go-ahead** — separate from approval of everything
-   else in this document, per your explicit instruction. The DEV run above
-   is a precondition, not a substitute — nothing has run against PROD yet.
-2. **The fresh promotion branch and its PR** — not yet opened. Diff against
-   `main` to be confirmed exactly matches the revised 8-file scope above
-   before any PR is created, per your explicit instruction.
-3. This latest update (scope correction + folding the real DEV execution
-   log in) has **not** been committed yet.
+The three items originally listed here (PROD dry-run go-ahead, PR not yet
+opened, this update not yet committed) are all resolved — see "Task 1
+CLOSED" below for the full chain from here through PROD verification.
+
+---
+
+## Task 1 CLOSED (2026-07-24) — promoted, deployed, and independently verified correct against real PROD data
+
+**Status: done.** PR #2 (`payroll-hardening/promote-aggregation-fix` →
+`main`) reviewed on GitHub and merged (`d9c876e`). Deployed to PROD via
+`npm run push:prod` from a `main` checkout at that exact commit —
+confirmed before and after (directory, branch, HEAD, `.clasp.json`
+target all logged at each step). `push:dev` run immediately after to
+restore the primary checkout's clasp target. 143 files pushed; all 8
+promotion-scoped files present in the push manifest, none of the
+excluded files (`DanglingCorrectionGuard.gs`, the bonus-run layer, the
+DEV-only diagnostics) anywhere in it.
+
+### The PROD dry-run — run, and it immediately surfaced a real anomaly worth chasing down properly
+
+You ran `runAggregationFixDryRun()` in the PROD editor. Result: June
+showed real actor data; **Jan, Feb, Mar, and May all showed "no rows / no
+actors found."** Rather than accept that as a clean result, you correctly
+treated a known-real period (Q1's ₹72,231.13 bonus, committed 2026-06-01)
+showing zero rows as a signal the tool might be silently failing — not
+evidence of nothing being wrong. What followed was a multi-step,
+entirely read-only investigation chain:
+
+1. **Confirmed via source**: `DAL.readAll()` throws `SHEET_NOT_FOUND` on a
+   genuinely missing tab; `PayrollEngine.aggregateHours_()` and
+   `QuarterlyBonusEngine.aggregateQuarterHours_()` both catch that
+   specific error and silently return empty, with zero logging — a
+   pre-existing pattern, verified against pre-fix `main` (`9605d9d`), not
+   introduced by this promotion.
+2. **A tab-existence contradiction surfaced and was resolved.** An initial
+   manual read of the PROD spreadsheet's tab list reported
+   `FACT_WORK_LOGS|2026-04` as missing. Built a small, purpose-built,
+   read-only diagnostic (`src/12-migration/WorkLogPartitionDiagnostic.gs`,
+   `DAL.listSheets()` + `DAL.readAll()` only, no writes) specifically to
+   get a programmatic, authoritative answer instead of relying on another
+   manual read. Result: **all seven `FACT_WORK_LOGS|2026-01` through
+   `|2026-07` partitions exist.** The earlier "2026-04 doesn't exist"
+   report was simply incorrect (an eyeballed miss on a long tab list, not
+   a bug anywhere in the code) — noted for the record, not glossed over.
+3. **The real mechanism, confirmed via direct `event_type` distribution
+   checks against real PROD data — not the missing-partition theory at
+   all** for Jan/Feb/Mar/May, since those tabs are real and populated:
+
+   | Period | Total rows | Event types present | Sum check |
+   |---|---|---|---|
+   | 2026-01 | 967 | `WORK_LOG_MIGRATED`, `WORK_LOG_PERIOD_FIXED` only (manual spot-check; exact per-type split not captured) | only these two types present, nothing else |
+   | 2026-02 | 1490 | `WORK_LOG_MIGRATED`: 257, `WORK_LOG_MIGRATION`: 488, `WORK_LOG_PERIOD_FIXED`: 745 | 257+488+745 = 1490 ✓ |
+   | 2026-03 | 6378 | `WORK_LOG_MIGRATED`: 2415, `WORK_LOG_MIGRATION`: 774, `WORK_LOG_PERIOD_FIXED`: 3189 | 2415+774+3189 = 6378 ✓ |
+   | 2026-05 | 3994 | `WORK_LOG_MIGRATED`: 1997, `WORK_LOG_PERIOD_FIXED`: 1997 | 1997+1997 = 3994 ✓ |
+
+   Every row in every one of these four months is one of exactly three
+   event types, and all three are **correctly, intentionally excluded**
+   from bonus/payroll aggregation: `WORK_LOG_MIGRATED`/`WORK_LOG_MIGRATION`
+   via `isMigratedWorkLog()` (historical, already-compensated hours — the
+   whole point of `ADR-WL-004`'s fix), and `WORK_LOG_PERIOD_FIXED` via the
+   ordinary, pre-existing zero-hours guard in `aggregateNetWorkLogHours()`
+   — traced to its writer, `WorkLogPeriodFixer.gs`, which hardcodes
+   `hours: 0` on every row it creates (a period-relabeling audit marker,
+   never a real hours entry — matching `PROJECT_MEMORY.md`'s own prior
+   description of these rows as "0-hour system-maintenance rows... not
+   real work entries").
+4. **Verdict: Candidate A (correct exclusion) confirmed. Candidate B
+   (a header/read bug) ruled out entirely**, for every month checked. The
+   sums above match row totals exactly — no organic `WORK_LOG_SUBMITTED`
+   (or any other type) is hiding anywhere in Jan/Feb/Mar/May's data.
+   "Zero actors" for these months is the mathematically correct output of
+   the promoted fix running against real PROD data, not a defect.
+
+### Why this matters as evidence, beyond closing the anomaly
+
+This is the strongest evidence in the whole project that the promoted fix
+behaves correctly against real data, not just DEV synthetic data — every
+prior verification (Phase 0's DEV recompute, the Jest suite, the DEV run
+of the dry-run tool) was against either mocks or seeded synthetic actors.
+This is the first and only check against real PROD rows, and it not only
+didn't find a bug — it found the fix correctly excluding four full months
+of real historical data across two independent, differently-shaped
+exclusion mechanisms, with the row math confirming completeness (nothing
+left unaccounted for) in each case.
+
+### The June cutover date lines up exactly with the data
+
+June is the only one of the seven months with real, "organic" actor
+hours in the dry-run's output. This is fully consistent with the
+documented migration timeline, not a coincidence: per `PROJECT_MEMORY.md`
+§11, PROD portal cutover (live designer submissions replacing the old
+Stacey system) happened **2026-06-16**. Jan–May 2026 work logs were
+migrated from the pre-V3 system (event_type `WORK_LOG_MIGRATED`/
+`WORK_LOG_MIGRATION`), never submitted live — so their complete absence
+of organic hours entries is exactly what the cutover date predicts, not
+an anomaly needing a separate explanation.
+
+### Held open, explicitly, not decided here
+
+**What this means for the already-committed ₹72,231.13 Q1 bonus** is a
+separate question from "is the promoted fix correct" — held as an open
+hypothesis, not a conclusion, pending a deliberate discussion, per your
+explicit instruction not to move on it until you'd thought it through
+carefully. The evidence gathered here (all of Q1 — Jan, Feb, Mar —
+confirmed to contain zero rows of any type that would count toward
+payroll under the correct, now-live exclusion logic) is what that
+discussion would start from, not a decision made in this document.
+
+April's `event_type` composition (as distinct from its now-confirmed tab
+*existence*) has not been checked — out of scope for this closure, since
+April sits in Q2, not Q1, and wasn't part of what you asked verified
+before closing Task 1.
