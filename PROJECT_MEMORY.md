@@ -68,6 +68,22 @@ If time pressure means skipping any of these, that must be stated explicitly ("s
 
 ---
 
+## 3.2 Standing Rule — Date-Sensitive Lookups Must Take an Explicit `asOfDate`, Never Implicitly Use "Today"
+
+**Origin:** found twice now in code that determines who a designer reports to. `PayrollEngine.buildStaffCache_()`/`QuarterlyBonusEngine.buildStaffCache_()` resolved `supervisor_code` from whatever `DIM_STAFF_ROSTER` row currently exists, with no date filter at all — meaning a supervisor change made today would retroactively reattribute a re-run of a past month's supervisor bonus to the new TL, not whoever actually supervised that month. `PortalData.getMyRatees(raterEmail, quarterPeriodId, ...)` had the identical gap: it already took `quarterPeriodId` as a parameter, but never used it for the supervisor/PM match — only for an unrelated termination check against `today`. Both fixed 2026-07-24 (Task 2, `payroll/supervisor-effective-dating` branch) by adding an `asOfDate` parameter and SCD-2-style effective-dating (`DIM_STAFF_ROSTER` already has `effective_from`/`effective_to` columns per Rule D4 below — the columns existed, nothing read or wrote them that way).
+
+**Applies to:** any lookup against a dimension table with `effective_from`/`effective_to` (or equivalent) columns, where the result feeds a **period-scoped** calculation (bonus, payroll, rating routing, billing) rather than a real-time action-authorization check.
+
+Before adding or reviewing a lookup like this, ask:
+
+1. Does this function compute something *for a specific period* (a month, a quarter, a date range)? If yes, it must accept that period's date explicitly and filter the dimension table's `effective_from`/`effective_to` against it — never fall through to "whatever's currently true."
+2. Is this instead a *real-time* check — "can this actor act right now" (e.g. `RBAC.buildTeamCodes()`, used for live work-log-correction permission)? If yes, current-value-only is correct and should stay that way — don't retrofit date-awareness onto something that's supposed to reflect the present. State explicitly which of the two a given function is, don't leave it ambiguous.
+3. If a function already takes a period identifier (like `getMyRatees`'s `quarterPeriodId`) but doesn't use it for a specific field's lookup, that's the exact shape of this bug — a parameter that looks like it should confer date-awareness but silently doesn't.
+
+**Known applied instance, recorded for consistency:** `DIM_QC_ASSIGNMENTS` (Task 3, not yet built) will be designed with this pattern from the start, not retrofitted — QC ratings already feed the quarterly bonus composite score, so QC assignment has the same retroactive-reattribution risk `supervisor_code` had.
+
+---
+
 ## 4. Database / Sheet / Table Structure
 
 Key tables only. Full list in `.claude/context/architecture.md §Key Tables`.

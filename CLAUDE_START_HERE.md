@@ -40,6 +40,7 @@ Do not start coding until this is done.
 - **DAL only** — never call SpreadsheetApp directly.
 - **No Google Forms** — ever.
 - **Verification depth for money/aggregation code** (PROJECT_MEMORY.md §3.1) — apply this actively to every FACT/DIM or payroll/bonus/billing-adjacent change you make this session, not just once at read-time. It gates whether work can be called "done," not just "tested."
+- **Date-sensitive lookups need an explicit `asOfDate`** (PROJECT_MEMORY.md §3.2) — before adding or trusting any lookup against a dimension table with `effective_from`/`effective_to`, check whether it's period-scoped (needs `asOfDate`) or real-time (correctly current-only) — don't assume either way.
 
 ---
 
