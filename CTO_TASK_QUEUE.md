@@ -70,3 +70,42 @@ these threads.**
       to confirm the exact person list and DEV-vs-PROD sequencing before
       any `changeSupervisor()` calls run, since the instruction to
       proceed didn't have an attached work list to execute against.
+
+      **CRITICAL CORRECTION, 2026-07-25:** the original step 6 change
+      list conflated a QC-review relationship (Sarty's original chart:
+      "Sandy does internal QC for Bharath") with the actual reporting
+      line, and would have set `SDA.supervisor_code = BCH` — giving
+      Bharath supervisor bonus on Sandy's own hours. Caught before any
+      write. Authoritative TL-vs-QC business rule now recorded verbatim
+      in `PROJECT_MEMORY.md` §3.3.
+
+      **PREFLIGHT RESULTS (PROD, run 2026-07-25, read-only):**
+      - `FACT_PAYROLL_LEDGER|2026-07`: exists, 0 rows.
+      - `FACT_QUARTERLY_BONUS`: 76 rows total, 0 touching `2026-Q3`.
+        => Backdating `supervisor_code` to `2026-07-01` is **not**
+        retroactive over any already-computed period.
+      - `DIM_STAFF_ROSTER` (one clean row each, `effective_from
+        2024-01-01`, `active=true`): `RKU->BCH`, `SDA->SGO`, `BCH->SGO`,
+        `PBG->SDA`, `SVN->SDA`, `SYR->BCH`, `JYS->SVN`, `BIT->SVN`,
+        `ABB->SVN`, `MARV->BCH` (Maruthi Vadla, DESIGNER,
+        `effective_from 2026-07-22`).
+      - DEV's roster had duplicate rows for every target code; PROD did
+        not. Root cause: `SetupScript.seedDimStaffRoster_()` (raw
+        `sheet.appendRow`, bypasses DAL, `2025-01-01` dates) and
+        `SeedStaffImport.gs` → `StaffOnboarding.bulkOnboardStaff()`
+        (DAL-based, `2024-01-01` dates) are two uncoordinated seed
+        paths, neither aware of the other. DEV cleaned via
+        `SupervisorEffectiveDatingDevCleanup.gs`. All four `asOfDate`
+        resolution paths (`PayrollEngine.buildStaffCache_`,
+        `QuarterlyBonusEngine.buildStaffCache_`,
+        `PortalData.resolveRosterAsOf_`, `StaffOnboarding.changeSupervisor`)
+        now throw loudly on duplicate rows instead of silently picking
+        one — since the raw-`appendRow` seed path still exists and could
+        reintroduce duplicates to PROD at any time.
+
+      **STEP 6 SCOPE (confirmed):** exactly **ONE** change —
+      `SYR` (Roy): `BCH -> SDA`, effective `2026-07-01`. All others
+      already correct in PROD; no rows written for no-ops. `SDA` stays
+      on `SGO` (Bharath QCs Sandy, does not supervise her). `SVN`
+      staying under `SDA` is pending confirmation from Sarty — do not
+      change.
