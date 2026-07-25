@@ -33,6 +33,30 @@ these threads.**
       intermediate fixes, both caught by real DEV runs) before deciding
       which point-in-time convention `DIM_QC_ASSIGNMENTS` should use.
 
+- [ ] **Task 4 — Staff lifecycle management** — **not started, do not
+      begin** (explicit instruction, 2026-07-25). Promotions/role
+      changes, pay-rate changes, account allocation `[SCOPE TBD]`,
+      surfaced in portal or as script functions.
+      **Depends on:** Task 2's effective-dating foundation —
+      `StaffOnboarding.scd2FieldChange_()` (generalized 2026-07-25 from
+      `changeSupervisor()`'s SCD-2 mechanism specifically so this task
+      can reuse it for role/pay changes instead of duplicating the
+      close-old-row/open-new-row write path a third time).
+      **Open question:** what "account allocation" means — client-account
+      assignment vs portal access provisioning vs something else. Not
+      resolved, not guessed at.
+      **Also open, surfaced during Task 2's read-only investigation
+      (2026-07-25) and directly relevant to this task's scope:** no
+      code path currently exists that changes `role` or pay rates
+      (`pay_design`/`pay_qc`) on an existing active staff member — the
+      only current writes to those fields are at initial onboarding.
+      Confirmed via full-repo grep, read-only, not fixed. If/when this
+      task adds such a path, it must go through `scd2FieldChange_()`
+      (proper SCD-2 row) — a raw `DAL.updateWhere()` on the existing
+      open-ended row would silently make the change retroactive to
+      every prior period, the exact class of bug Task 2 fixed for
+      `supervisor_code`. See `PROJECT_MEMORY.md` §3.2.
+
 ---
 
 ## Completed
