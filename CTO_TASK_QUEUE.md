@@ -62,18 +62,11 @@ these threads.**
       full writeup in `TEST_EVIDENCE.md`'s "Task 2" section and
       `PROJECT_MEMORY.md` §3.2. `RBAC.buildTeamCodes()` confirmed correct
       as current-value-only, left untouched.
-      **Step 6 (applying the real business hierarchy change) is
-      EXPLICITLY NOT STARTED — blocked on two business confirmations from
-      Sarty, neither resolved:**
-      1. **Which "Kumar"?** — ambiguous between `RKU` (Raj Kumar) and
-         `SDA` (Samar Kumar Das, whose established nickname is "Sandy" —
-         separately also in the requested hierarchy). Not assumed either
-         way; see the 2026-07-23/24 user/team-structure investigation
-         (separate worktree/branch) for the full reasoning.
-      2. **What effective date should the real changes carry?** — not
-         specified in the original request. `changeSupervisor()`
-         requires an explicit `effectiveDate` with no default, given
-         everything Task 2 found about why a wrong date choice is a real
-         risk, not a formality.
-      Do not apply the real Kumar/Sandy/Bharath/Pabby/Savvy/Roy/Joy/
-      Bittu/Abby hierarchy until both are answered.
+      **Step 6 (applying the real business hierarchy change) — no longer
+      blocked as of 2026-07-25.** Both business confirmations came back
+      from Sarty: **Kumar = `RKU`** (Raj Kumar, not `SDA`/Samar Kumar
+      Das), **effective date = `2026-07-01`** (start of the current
+      quarter). Step 6 itself has **not been executed yet** — resuming
+      to confirm the exact person list and DEV-vs-PROD sequencing before
+      any `changeSupervisor()` calls run, since the instruction to
+      proceed didn't have an attached work list to execute against.
