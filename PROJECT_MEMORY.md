@@ -91,6 +91,33 @@ Before adding or reviewing a lookup like this, ask:
 
 ---
 
+## 3.3 Business Rule — TL Reporting (`supervisor_code`) and QC Review Are Independent Structures
+
+**Origin:** 2026-07-25. Task 2 step 6's original change list conflated a QC-review relationship from Sarty's original org chart ("Sandy does internal QC for Bharath") with the actual reporting-line business rule, and would have set `SDA.supervisor_code = BCH`. Caught before any write — by the user, not by Claude. The specific failure mode this would have caused: **writing a QC relationship into `supervisor_code` causes incorrect supervisor-bonus payment** — `PayrollEngine.buildSupervisorBonusMap_()` sums a TL's direct reports' `design_hours` by exact `supervisor_code` match (confirmed via code re-read, `src/10-payroll/PayrollEngine.gs`), so setting `SDA.supervisor_code = BCH` would have paid Bharath supervisor bonus on Sandy's own logged design hours — money Bharath was never meant to receive, since he QCs Sandy's work, he does not supervise her.
+
+**The authoritative structure, verbatim as given by the user (Sarty-confirmed, 2026-07-25):**
+
+```
+TEAM LEAD (supervisor_code) structure — this is the ONLY thing
+supervisor_code encodes:
+  BCH (Bharath) -> RKU, MARV        [ONLY these two]
+  SDA (Sandy)   -> PBG, SYR
+  SVN (Savvy)   -> JYS, BIT, ABB
+
+QC REVIEW relationships — these are NOT supervisor_code, they belong in
+Task 3's DIM_QC_ASSIGNMENTS and must never be written to supervisor_code:
+  BCH does QC for SDA
+  SDA does QC for BCH and SVN
+  RKU does QC for EVERYONE, scoped to OPEN_WOOD_FLOOR only
+  RKU is NOT a team lead — QC reviewer only
+```
+
+**Rule:** `supervisor_code` encodes reporting-line (who a person's supervisor is, for payroll/bonus attribution and rating routing) and nothing else. QC review assignment is a separate, independent relationship that does not yet have a dedicated field/table (Task 3's `DIM_QC_ASSIGNMENTS`, not started as of this writing). The two relationships are not mirror images of each other and must never be inferred one from the other — notably, the QC network is intentionally cyclic (BCH QCs SDA, SDA QCs BCH), while the reporting tree (`supervisor_code`) must always be acyclic (`StaffOnboarding.changeSupervisor()` enforces this — see `wouldCreateCycle_()`, `src/08-staff/StaffOnboarding.gs`).
+
+**Known pre-existing gap — `QCHandler.gs` currently violates this independence and is not yet fixed:** `sendReworkNotification_()` (`src/06-handlers/QCHandler.gs`, lines ~369 and ~448) derives who gets CC'd on rework notifications from `designer.supervisor_code` (`var supervisor = designer.supervisor_code ? roster[designer.supervisor_code] : null;`). This predates Task 2 and Task 2 does not touch it. Concretely: today, a rework notification for RKU's work would route based on RKU's `supervisor_code` (BCH) rather than the actual QC-review rule (RKU reviews everyone else's OWF work — he is not himself reviewed by a fixed reporting-based reviewer under this rule). **Until Task 3 (`DIM_QC_ASSIGNMENTS`) ships and replaces this derivation, QC/rework routing will NOT match the business rule above** — this is a known, accepted, temporary gap, not a regression to fix under Task 2.
+
+---
+
 ## 4. Database / Sheet / Table Structure
 
 Key tables only. Full list in `.claude/context/architecture.md §Key Tables`.
