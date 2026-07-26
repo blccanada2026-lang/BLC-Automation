@@ -177,9 +177,79 @@ these threads.**
         one — since the raw-`appendRow` seed path still exists and could
         reintroduce duplicates to PROD at any time.
 
-      **STEP 6 SCOPE (confirmed):** exactly **ONE** change —
-      `SYR` (Roy): `BCH -> SDA`, effective `2026-07-01`. All others
-      already correct in PROD; no rows written for no-ops. `SDA` stays
-      on `SGO` (Bharath QCs Sandy, does not supervise her). `SVN`
-      staying under `SDA` is pending confirmation from Sarty — do not
-      change.
+      **RESOLVED, 2026-07-26** — confirmed directly by the business
+      owner in conversation: `SVN` (Savvy) reports to `SGO` (the PM),
+      not `SDA`. Savvy is a TL in his own right; Sandy only performs
+      his QC (same pattern as Bharath/Sandy) — same TL-vs-QC
+      distinction as §3.3, not a new exception to it.
+
+      **FINAL TL STRUCTURE, authoritative:**
+      ```
+      SGO (PM) -> BCH, SDA, SVN     [three TLs, peers]
+      BCH -> RKU, MARV
+      SDA -> PBG, SYR
+      SVN -> JYS, BIT, ABB
+      ```
+
+      **STEP 6 SCOPE (final):** **TWO** changes, both effective
+      `2026-07-01`:
+      - `SYR` (Roy): `BCH -> SDA` — **proven in DEV, 2026-07-26** (see
+        rehearsal below).
+      - `SVN` (Savvy): `SDA -> SGO` — **not yet rehearsed.**
+      All others already correct in PROD; no rows written for no-ops.
+      `SDA` stays on `SGO` (Bharath QCs Sandy, does not supervise her).
+
+      **Process note (2026-07-26):** the `SVN` change above was
+      initially introduced in a later conversation turn without any
+      statement that Sarty's confirmation had arrived, directly
+      contradicting this file's own then-current "pending — do not
+      change" text. Treated as a live discrepancy and surfaced before
+      acting on it (correct call — confirmed by the user afterward),
+      rather than silently proceeding either way. Root cause: the
+      confirmation had actually landed in an earlier conversation turn,
+      but this file wasn't updated in that same turn, so it went stale
+      relative to the live conversation. Standing practice going
+      forward: write confirmed scope/status changes into this file in
+      the turn they're confirmed, not later.
+
+      **Two bugs found and fixed during the SYR DEV rehearsal
+      (2026-07-25/26)** — concrete instances of `PROJECT_MEMORY.md`
+      §3.1's verification-depth rule, not just aggregation-code cases:
+      1. **Silent close-row failure.** `scd2FieldChange_()`'s close-row
+         `DAL.updateWhere()` matched on `effective_from`, a
+         date-formatted `DIM_STAFF_ROSTER` column. `DAL.gs`'s
+         `matchesConditions_()` uses loose `!=`, which is
+         reference-identity for two `Date` objects — Sheets returns a
+         fresh `Date` instance on every `getValues()` read, so matching
+         a date-typed value captured in an earlier read always fails.
+         The close silently updated 0 rows in a real DEV run. 335 green
+         Jest tests never caught it because the mock compares
+         plain-string fixtures with `===` (works regardless of read
+         timing) — a fidelity gap, not a missing assertion. Fixed by
+         matching on `effective_to: ''` instead (a genuinely blank cell
+         always reads back as primitive `''`). Full writeup:
+         `PROJECT_MEMORY.md` §3.1.
+      2. **Hardcoded return value.** `scd2FieldChange_()` returned
+         `closedRow: true` unconditionally, never checking
+         `DAL.updateWhere()`'s actual `{ updated: N }` result — so it
+         reported success even while bug (1) silently did nothing.
+         Fixed: `closedRow`/`newRowCreated` now derived from DAL's real
+         result, and the function throws (naming the person_code and
+         actual count) if the close affects zero or more than one row,
+         rather than proceeding either way.
+      Both caught only by a real DEV rehearsal against actual DAL/Sheets
+      behavior — Jest alone reported all-green throughout. Related, not
+      fixed here: the "DAL date-column matching audit" task above.
+
+      **DEV rehearsal, SYR only (2026-07-26) — CORRECT:**
+      ```
+      BEFORE: BCH, effective_from=2024-01-01, effective_to=(empty)
+      AFTER:  BCH, effective_from=2024-01-01, effective_to=2026-06-30  [closed]
+              SDA, effective_from=2026-07-01, effective_to=(empty)     [open]
+      ```
+      Exactly one open row after the change — fix confirmed against
+      real DAL behavior. **Still needed before PROD:** reset SYR's
+      baseline via `SupervisorEffectiveDatingDevCleanup.gs` and rehearse
+      BOTH `SYR` and `SVN` changes in a single DEV run, showing
+      before/after rows for each — only `SYR` has been proven so far;
+      DEV must validate exactly what PROD will receive, not half of it.
