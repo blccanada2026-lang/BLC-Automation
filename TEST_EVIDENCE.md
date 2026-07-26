@@ -1186,12 +1186,13 @@ before closing Task 1.
 
 ---
 
-## Task 2 — Effective-dated supervisor_code: COMPLETE (implementation + DEV verification)
+## Task 2 — Effective-dated supervisor_code: COMPLETE (implementation, DEV verification, promotion, deploy, and PROD write all done)
 
-**Status: implementation and DEV verification both done.** Real business
-hierarchy change (step 6) is explicitly blocked — see "Blocked on
-business confirmation" below. Branch `payroll/supervisor-effective-dating`,
-own worktree, off `main` @ `5def76a`.
+**Status: fully closed, 2026-07-26.** Implementation, DEV verification,
+promotion (PR #3), PROD deploy, and the real step 6 PROD write are all
+complete — see "Step 6 — PROD apply, COMPLETE" below. Branch
+`payroll/supervisor-effective-dating`, own worktree, off `main` @ `5def76a`;
+promoted to `main` via PR #3 (`e900887`, off `main` @ `9b74e3a`).
 
 ### Scope
 
@@ -1285,22 +1286,99 @@ after the `min(quarter_end, today)` fix:
 (implementation), `e6d7818` (DEV tooling), `e07b356` (start→end date
 fix), `8300937` (end→min(end,today) fix).
 
-### Blocked on business confirmation — do not apply the real hierarchy change without both
+### Business confirmations — both resolved (2026-07-25)
 
-Step 6 (Kumar/Sandy/Bharath/Pabby/Savvy/Roy/Joy/Bittu/Abby, per the
-original request) is **explicitly not started**. Two open questions,
-both from Sarty, neither resolved yet:
+1. **Which "Kumar"?** Confirmed: `RKU` (Raj Kumar), not `SDA` (Samar Kumar
+   Das/"Sandy").
+2. **Effective date:** `2026-07-01` (start of the then-current quarter).
 
-1. **Which "Kumar"?** The original investigation found this ambiguous
-   between `RKU` (Raj Kumar) and `SDA` (Samar Kumar Das, whose
-   established nickname is "Sandy," separately also in the requested
-   hierarchy) — see the 2026-07-23/24 user/team-structure investigation
-   for the full reasoning. Not assumed either way.
-2. **What effective date should the real changes carry?** Not specified
-   in the original request. `changeSupervisor()` requires an explicit
-   `effectiveDate` — there is no default to fall back on, deliberately,
-   given everything above about why a wrong date choice is a real risk,
-   not a formality.
+### Critical correction (2026-07-25) — the original step 6 change list was wrong
 
-Recording both explicitly here so a future session doesn't have to
-rediscover them from scratch.
+The originally-planned 9-person change list conflated a QC-review
+relationship (Sarty's original chart: "Sandy does internal QC for
+Bharath") with the actual reporting line, and would have set
+`SDA.supervisor_code = BCH` — giving Bharath supervisor bonus on Sandy's
+own hours. Caught before any write. Authoritative TL-vs-QC business rule
+recorded verbatim in `PROJECT_MEMORY.md` §3.3. Corrected scope: exactly
+two real changes (below); all other codes already matched PROD.
+
+### Two bugs found and fixed during DEV rehearsal (2026-07-25/26)
+
+1. **Silent close-row failure** — `scd2FieldChange_()`'s close-row
+   `DAL.updateWhere()` matched on `effective_from`, a date-formatted
+   column; `DAL.gs`'s `matchesConditions_()` uses loose `!=`, which is
+   reference-identity for two `Date` objects, and Sheets returns a fresh
+   `Date` instance on every read — so the match silently updated 0 rows
+   against real DAL behavior. Never caught by Jest (335 green tests
+   throughout) because the mock compares plain-string fixtures with
+   `===` — a fidelity gap, not a missing assertion. Fixed by matching on
+   `effective_to: ''` instead.
+2. **Hardcoded return value** — `closedRow: true` was unconditional,
+   never checked against `DAL.updateWhere()`'s actual `{ updated: N }`
+   result, so it reported success while bug (1) silently did nothing.
+   Fixed: `closedRow`/`newRowCreated` now derived from DAL's real result;
+   the function throws (naming the person_code and actual count) if the
+   close affects zero or more than one row.
+
+Full writeups: `PROJECT_MEMORY.md` §3.1 (second concrete instance of the
+verification-depth rule) and `CTO_TASK_QUEUE.md`.
+
+### DEV rehearsal, both changes (2026-07-26) — CORRECT
+
+```
+SYR: BEFORE: BCH, effective_from=2024-01-01, effective_to=(empty)
+     AFTER:   BCH, effective_from=2024-01-01, effective_to=2026-06-30  [closed]
+              SDA, effective_from=2026-07-01, effective_to=(empty)     [open]
+
+SVN: BEFORE: SDA, effective_from=2024-01-01, effective_to=(empty)
+     AFTER:   SDA, effective_from=2024-01-01, effective_to=2026-06-30  [closed]
+              SGO, effective_from=2026-07-01, effective_to=(empty)     [open]
+```
+
+### Promotion (PR #3) and PROD deploy (2026-07-26)
+
+10 files promoted off `main` (product code + direct tests + `TEST_EVIDENCE.md`
+only — all DEV-only scripts excluded). Drift-checked clean against PROD's
+live source before opening the PR. Merged (`e900887`). Deployed via
+`npm run push:prod` from the primary checkout on `main`; DEV restored
+immediately after. Post-deploy drift check confirmed the fix-set
+byte-identical to `main` in PROD's live source, and confirmed zero
+DEV-only scripts landed there.
+
+### Step 6 — PROD apply, COMPLETE (2026-07-26)
+
+`Task2Step6Apply.gs` — a minimal, PROD-executable script — deployed
+directly to `main` (`6779016`) and to PROD, then run by the business
+owner from the PROD Apps Script editor (not executed by Claude, per
+instruction). Hard-asserted the running script ID was PROD; re-verified
+SYR's and SVN's current roster state against the confirmed pre-state
+(`runTask2Step6PreflightCheck()`, PROD, 2026-07-26 11:24) before any
+write, with an unconditional abort on any mismatch.
+
+**Confirmed outcome, as reported by the business owner after running it:**
+- Pre-write verification passed for both `SYR` and `SVN`.
+- `SYR`: old row (`BCH`) closed `effective_to=2026-06-30`; new row
+  (`SDA`) opened `effective_from=2026-07-01`.
+- `SVN`: old row (`SDA`) closed `effective_to=2026-06-30`; new row
+  (`SGO`) opened `effective_from=2026-07-01`.
+- Exactly one open row per person after the change. No other
+  `person_code` touched.
+
+**Final TL structure, now live in PROD:**
+```
+SGO (PM) -> BCH, SDA, SVN     [three TLs, peers]
+BCH -> RKU, MARV
+SDA -> PBG, SYR
+SVN -> JYS, BIT, ABB
+```
+
+### Full suite status
+
+335 tests, 17 suites, 0 failures (corrected count — see
+`CTO_TASK_QUEUE.md` for the earlier miscount and its cause). Key
+commits: `e7e1451` (implementation), `e6d7818` (DEV tooling), `e07b356`
+(start→end date fix), `8300937` (end→min(end,today) fix), `5416139`
+(cycle-detection guard), `59fd2d7` (SCD-2 generalization,
+`scd2FieldChange_`), `a0a3368` (close-row Date-matching fix),
+`86e12bc`/`e900887` (promotion PR #3, merged), `6779016`
+(`Task2Step6Apply.gs`).

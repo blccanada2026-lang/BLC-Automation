@@ -9,29 +9,61 @@ active thread without re-deriving where it left off.
 **Update this file at the start and end of every session touching any of
 these threads.**
 
+**Standing practice, added 2026-07-26:** also update the "Session State"
+block immediately below at the end of **every turn**, not just at
+session/task boundaries — this is what kept getting lost across a long
+session otherwise. Keep it terse (2-4 lines) and overwrite it each turn;
+it's a same-turn breadcrumb, not a log. The durable narrative belongs in
+each task's own entry below.
+
+---
+
+## Session State (last updated: end of turn, 2026-07-26)
+
+**Just completed:** Task 2 fully closed — implementation, DEV
+verification, promotion (PR #3), PROD deploy, and the step 6 PROD write
+(`SYR`, `SVN`) all done and confirmed. `TEST_EVIDENCE.md` and this file
+updated with the completion record.
+**Next action:** none pending — awaiting explicit go-ahead to start
+Task 3 (QC assignment mapping). Do not begin Task 3 without it.
+
 ---
 
 ## Active
 
-- [ ] **QC assignment mapping** (`DIM_QC_ASSIGNMENTS` + `QCHandler.gs` CC
-      logic) — **not started, and do not start yet** (explicit
-      instruction, 2026-07-24) — even though Task 2's engineering is
-      done, only step 6 of it (below) remains, and that's a business-side
-      block, not a technical one blocking Task 3's own start. Wait for
-      explicit go-ahead regardless.
-      **Design decision recorded (2026-07-24), before design starts:**
-      `DIM_QC_ASSIGNMENTS` will be date-ranged from day one — same
-      `effective_from`/`effective_to` pattern and the same
-      `asOfDate`-parameter approach Task 2 built, not bolted on later.
-      Reasoning: QC ratings already feed the quarterly bonus composite
-      score, so QC assignment has the identical retroactive-reattribution
-      risk `supervisor_code` had. This table doesn't exist yet —
-      confirmed via full-repo grep — so this is a greenfield design
-      constraint, not a retrofit. **Also recorded:** picking a single
-      `asOfDate` isn't automatically correct just for being explicit —
-      see `PROJECT_MEMORY.md` §3.2's `getMyRatees()` writeup (two wrong
-      intermediate fixes, both caught by real DEV runs) before deciding
-      which point-in-time convention `DIM_QC_ASSIGNMENTS` should use.
+- [ ] **Task 3 — QC assignment mapping** (`DIM_QC_ASSIGNMENTS` +
+      `QCHandler.gs` CC logic) — **unblocked as of 2026-07-26** (Task 2,
+      including step 6's PROD write, is now fully complete — see
+      Completed section). **Still requires explicit go-ahead before any
+      code is written** — do not start on the strength of this file
+      alone.
+
+      **Two design decisions already settled — do not re-litigate:**
+      1. **Date-ranged from day one** (recorded 2026-07-24): same
+         `effective_from`/`effective_to` pattern and the same
+         `asOfDate`-parameter approach Task 2 built, not bolted on
+         later. Reasoning: QC ratings already feed the quarterly bonus
+         composite score, so QC assignment has the identical
+         retroactive-reattribution risk `supervisor_code` had. This
+         table doesn't exist yet — confirmed via full-repo grep — so
+         this is a greenfield design constraint, not a retrofit.
+         **Also recorded:** picking a single `asOfDate` isn't
+         automatically correct just for being explicit — see
+         `PROJECT_MEMORY.md` §3.2's `getMyRatees()` writeup (two wrong
+         intermediate fixes, both caught by real DEV runs) before
+         deciding which point-in-time convention `DIM_QC_ASSIGNMENTS`
+         should use.
+      2. **Must replace `QCHandler.gs`'s current `supervisor_code`
+         derivation** (recorded 2026-07-25, `PROJECT_MEMORY.md` §3.3):
+         `sendReworkNotification_()` (`src/06-handlers/QCHandler.gs`,
+         lines ~369/~448) currently CCs rework notifications based on
+         `designer.supervisor_code` — the reporting line, not the QC
+         review relationship. This is the known, pre-existing gap Task
+         3 exists to close: QC review assignment (e.g. "`RKU` QCs
+         everyone's `OPEN_WOOD_FLOOR` work," "`SDA` QCs `BCH` and
+         `SVN`") is a wholly independent structure from `supervisor_code`
+         and must never be inferred from or written to it — see §3.3's
+         full TL-vs-QC business rule and its stated failure mode.
 
 - [ ] **Task 4 — Staff lifecycle management** — **not started, do not
       begin** (explicit instruction, 2026-07-25). Promotions/role
@@ -122,8 +154,9 @@ these threads.**
       means for the already-committed ₹72,231.13 Q1 bonus is held as an
       open hypothesis pending a deliberate discussion, not decided or
       scheduled here.
-- [x] **Supervisor_code update, effective-dated (Task 2) — implementation
-      + DEV verification COMPLETE** — 2026-07-24. Branch
+- [x] **Supervisor_code update, effective-dated (Task 2) — FULLY COMPLETE**
+      (implementation, DEV verification, promotion, PROD deploy, and the
+      real step 6 PROD write all done) — 2026-07-26. Branch
       `payroll/supervisor-effective-dating` (own worktree). Built,
       Jest-tested (324 tests, 17 suites, 0 failures), and confirmed
       against real DAL behavior in DEV: `StaffOnboarding.changeSupervisor()`
@@ -254,11 +287,32 @@ these threads.**
       Exactly one open row per person after each change — both fixes
       confirmed against real DAL behavior in a single DEV run, using the
       same `changeSupervisor()` write path that would run in PROD.
-      **Remaining before PROD:** promotion PR #3 merged into `main`
-      (`e900887`, 2026-07-26) — the code fix-set is now on `main`. Next:
-      `npm run push:prod` (separate go-ahead), then the actual two
-      `changeSupervisor()` PROD calls for `SYR`/`SVN` (separate go-ahead
-      again, after deploy).
+
+      **PROMOTED AND DEPLOYED, 2026-07-26.** PR #3 merged into `main`
+      (`e900887`) — 10 files (product code + direct tests +
+      `TEST_EVIDENCE.md` only, DEV-only scripts excluded), drift-checked
+      clean against PROD before opening. `npm run push:prod` run from
+      the primary checkout on `main`; DEV restored immediately after;
+      post-deploy drift check confirmed the fix-set live in PROD
+      byte-identical to `main`, zero DEV-only scripts landed.
+
+      **STEP 6 PROD WRITE — COMPLETE, 2026-07-26.** `Task2Step6Apply.gs`
+      deployed to PROD (`6779016`) and run by the business owner from
+      the PROD Apps Script editor. Pre-write verification passed for
+      both `SYR` and `SVN` against the confirmed pre-state; both writes
+      confirmed correct: `SYR` (`BCH` closed `2026-06-30`, `SDA` opened
+      `2026-07-01`), `SVN` (`SDA` closed `2026-06-30`, `SGO` opened
+      `2026-07-01`). Exactly one open row per person, no other
+      `person_code` touched. Full record: `TEST_EVIDENCE.md`'s "Step 6
+      — PROD apply, COMPLETE" section.
+
+      **Final TL structure, now live in PROD:**
+      ```
+      SGO (PM) -> BCH, SDA, SVN     [three TLs, peers]
+      BCH -> RKU, MARV
+      SDA -> PBG, SYR
+      SVN -> JYS, BIT, ABB
+      ```
 
       **PROD rollback reference — CORRECTED 2026-07-26.** Apps Script's
       version history (`clasp versions`) is **not a usable rollback
