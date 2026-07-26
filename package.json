@@ -24,5 +24,8 @@
   "homepage": "https://github.com/blccanada2026-lang/BLC-Automation#readme",
   "devDependencies": {
     "jest": "^30.3.0"
+  },
+  "jest": {
+    "testPathIgnorePatterns": ["/node_modules/", "/\\.worktrees/"]
   }
 }
