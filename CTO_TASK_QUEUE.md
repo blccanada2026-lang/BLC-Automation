@@ -193,9 +193,8 @@ these threads.**
 
       **STEP 6 SCOPE (final):** **TWO** changes, both effective
       `2026-07-01`:
-      - `SYR` (Roy): `BCH -> SDA` — **proven in DEV, 2026-07-26** (see
-        rehearsal below).
-      - `SVN` (Savvy): `SDA -> SGO` — **not yet rehearsed.**
+      - `SYR` (Roy): `BCH -> SDA` — **proven in DEV, 2026-07-26.**
+      - `SVN` (Savvy): `SDA -> SGO` — **proven in DEV, 2026-07-26.**
       All others already correct in PROD; no rows written for no-ops.
       `SDA` stays on `SGO` (Bharath QCs Sandy, does not supervise her).
 
@@ -241,15 +240,22 @@ these threads.**
       behavior — Jest alone reported all-green throughout. Related, not
       fixed here: the "DAL date-column matching audit" task above.
 
-      **DEV rehearsal, SYR only (2026-07-26) — CORRECT:**
+      **DEV rehearsal, BOTH changes (2026-07-26) — CORRECT, step 6's DEV
+      verification is COMPLETE:**
       ```
-      BEFORE: BCH, effective_from=2024-01-01, effective_to=(empty)
-      AFTER:  BCH, effective_from=2024-01-01, effective_to=2026-06-30  [closed]
-              SDA, effective_from=2026-07-01, effective_to=(empty)     [open]
+      SYR: BEFORE: BCH, effective_from=2024-01-01, effective_to=(empty)
+           AFTER:   BCH, effective_from=2024-01-01, effective_to=2026-06-30  [closed]
+                    SDA, effective_from=2026-07-01, effective_to=(empty)     [open]
+
+      SVN: BEFORE: SDA, effective_from=2024-01-01, effective_to=(empty)
+           AFTER:   SDA, effective_from=2024-01-01, effective_to=2026-06-30  [closed]
+                    SGO, effective_from=2026-07-01, effective_to=(empty)     [open]
       ```
-      Exactly one open row after the change — fix confirmed against
-      real DAL behavior. **Still needed before PROD:** reset SYR's
-      baseline via `SupervisorEffectiveDatingDevCleanup.gs` and rehearse
-      BOTH `SYR` and `SVN` changes in a single DEV run, showing
-      before/after rows for each — only `SYR` has been proven so far;
-      DEV must validate exactly what PROD will receive, not half of it.
+      Exactly one open row per person after each change — both fixes
+      confirmed against real DAL behavior in a single DEV run, using the
+      same `changeSupervisor()` write path that would run in PROD.
+      **Remaining before PROD:** promotion PR #3 merged into `main`
+      (`e900887`, 2026-07-26) — the code fix-set is now on `main`. Next:
+      `npm run push:prod` (separate go-ahead), then the actual two
+      `changeSupervisor()` PROD calls for `SYR`/`SVN` (separate go-ahead
+      again, after deploy).
