@@ -967,6 +967,235 @@ var StaffOnboarding = (function () {
   }
 
   // ============================================================
+  // SECTION: EFFECTIVE-DATED SUPERVISOR CHANGE (Task 2)
+  //
+  // DIM_STAFF_ROSTER already has effective_from/effective_to columns
+  // (per data-integrity.md Rule D4 — "all reference data has
+  // effective_from/effective_to for point-in-time queries") but
+  // onboardStaff() only ever writes one open-ended row per person_code
+  // and never inserts a second historical row. changeSupervisor() is the
+  // write path that actually uses the SCD-2 shape: closes the currently
+  // open-ended row and inserts a new one, so a period-scoped lookup
+  // (buildStaffCache_(asOfDate) in PayrollEngine.gs/QuarterlyBonusEngine.gs,
+  // getMyRatees() in PortalData.gs) can resolve "who was this person's
+  // supervisor as of date X" instead of only ever seeing the current
+  // value. RBAC.buildTeamCodes() is deliberately NOT changed to be
+  // date-aware — it answers "who can act on this today," which should
+  // always reflect the current supervisor, not a historical one.
+  //
+  // Convention: the closed-out row's effective_to = the day BEFORE the
+  // new effective date; the new row's effective_from = the change date
+  // itself, effective_to = ''. Range lookups elsewhere are inclusive on
+  // both ends against a single target date.
+  // ============================================================
+
+  /** 'YYYY-MM-DD' -> 'YYYY-MM-DD' for the previous calendar day, UTC-based to avoid timezone drift. */
+  function dayBefore_(isoDateStr) {
+    var parts = String(isoDateStr).split('-');
+    var d = new Date(Date.UTC(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10)));
+    d.setUTCDate(d.getUTCDate() - 1);
+    var mm = String(d.getUTCMonth() + 1); if (mm.length < 2) mm = '0' + mm;
+    var dd = String(d.getUTCDate());      if (dd.length < 2) dd = '0' + dd;
+    return d.getUTCFullYear() + '-' + mm + '-' + dd;
+  }
+
+  /**
+   * True if setting personCode's supervisor to newSupervisorCode would
+   * create a cycle in the reporting tree — i.e. newSupervisorCode already
+   * (directly or transitively) reports up to personCode. Walks UP from
+   * newSupervisorCode along each person's CURRENT (open-ended) row only;
+   * the reporting tree must always be acyclic, independent of any
+   * historical row shape.
+   *
+   * The QC network (Task 3, DIM_QC_ASSIGNMENTS) is intentionally cyclic
+   * (e.g. BCH QCs SDA, SDA QCs BCH) — that is a wholly separate structure
+   * and this check has nothing to do with it. This function only ever
+   * reads supervisor_code.
+   *
+   * @param {string} personCode         already normalized (trimmed/upper)
+   * @param {string} newSupervisorCode  already normalized (trimmed/upper)
+   * @returns {boolean}
+   */
+  function wouldCreateCycle_(personCode, newSupervisorCode) {
+    var current = newSupervisorCode;
+    var visited = {};
+    var maxDepth = 50; // defensive cap only — not expected to ever bind on real org depth
+
+    for (var i = 0; i < maxDepth; i++) {
+      if (current === personCode) return true;
+      if (visited[current]) return false; // pre-existing cycle unrelated to this change — not this function's job to fix
+      visited[current] = true;
+
+      var rows;
+      try {
+        rows = DAL.readWhere(Config.TABLES.DIM_STAFF_ROSTER, { person_code: current }, { callerModule: MODULE });
+      } catch (e) {
+        return false;
+      }
+      var openRow = (rows || []).filter(function (r) { return !String(r.effective_to || '').trim(); })[0];
+      var nextSupervisor = openRow ? String(openRow.supervisor_code || '').trim().toUpperCase() : '';
+      if (!nextSupervisor) return false; // reached the top of the chain
+
+      current = nextSupervisor;
+    }
+    return false;
+  }
+
+  /**
+   * Generic SCD-2 field change for a DIM_STAFF_ROSTER row: closes the
+   * currently open-ended row for personCode (effective_to = day before
+   * effectiveDate) and inserts a new row with fieldChanges applied
+   * (effective_from = effectiveDate, effective_to = ''). Every field NOT
+   * named in fieldChanges is copied forward unchanged from the closed
+   * row. Field-agnostic — callers decide WHAT changes (supervisor_code,
+   * pay_design, role, ...); this only knows HOW to SCD-2 it. Any
+   * field-specific validation (e.g. changeSupervisor's cycle check)
+   * belongs in the caller, before this runs.
+   *
+   * Idempotent: if a row already exists with this exact effectiveDate as
+   * its effective_from AND every fieldChanges key already holding its
+   * target value, this is a no-op — no duplicate row is written.
+   *
+   * @param {string} personCode
+   * @param {Object} fieldChanges   e.g. { supervisor_code: 'SDA' } or
+   *                                { pay_design: 400, pay_qc: 400 }
+   * @param {string} effectiveDate  'YYYY-MM-DD'
+   * @returns {{ personCode: string, closedRow: boolean, newRowCreated: boolean }}
+   */
+  function scd2FieldChange_(personCode, fieldChanges, effectiveDate) {
+    personCode    = String(personCode || '').trim().toUpperCase();
+    effectiveDate = String(effectiveDate || '').trim();
+
+    if (!personCode) {
+      throw new Error('StaffOnboarding.scd2FieldChange_: personCode is required');
+    }
+    if (!effectiveDate) {
+      throw new Error('StaffOnboarding.scd2FieldChange_: effectiveDate is required (YYYY-MM-DD)');
+    }
+    var changedFields = fieldChanges ? Object.keys(fieldChanges) : [];
+    if (changedFields.length === 0) {
+      throw new Error('StaffOnboarding.scd2FieldChange_: fieldChanges must have at least one field');
+    }
+
+    var existing;
+    try {
+      existing = DAL.readWhere(Config.TABLES.DIM_STAFF_ROSTER, { person_code: personCode }, { callerModule: MODULE });
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') existing = [];
+      else throw e;
+    }
+
+    if (!existing || existing.length === 0) {
+      throw new Error('StaffOnboarding.scd2FieldChange_: no DIM_STAFF_ROSTER row found for person_code "' + personCode + '"');
+    }
+
+    // Idempotency: a row already representing this exact change means nothing to do.
+    var alreadyDone = existing.some(function (r) {
+      if (String(r.effective_from || '').trim() !== effectiveDate) return false;
+      return changedFields.every(function (k) {
+        return String(r[k] == null ? '' : r[k]).trim().toUpperCase() ===
+               String(fieldChanges[k] == null ? '' : fieldChanges[k]).trim().toUpperCase();
+      });
+    });
+    if (alreadyDone) {
+      Logger.info('SCD2_CHANGE_ALREADY_DONE', {
+        module: MODULE, person_code: personCode,
+        field_changes: fieldChanges, effective_date: effectiveDate
+      });
+      return { personCode: personCode, closedRow: false, newRowCreated: false };
+    }
+
+    // The row to close is whichever one is currently open-ended (effective_to blank).
+    var openRows = existing.filter(function (r) { return !String(r.effective_to || '').trim(); });
+    if (openRows.length === 0) {
+      throw new Error('StaffOnboarding.scd2FieldChange_: no active (open-ended, current) DIM_STAFF_ROSTER row ' +
+                       'found for person_code "' + personCode + '" — nothing to close');
+    }
+    if (openRows.length > 1) {
+      throw new Error('StaffOnboarding.scd2FieldChange_: found ' + openRows.length + ' open-ended DIM_STAFF_ROSTER ' +
+                       'rows for person_code "' + personCode + '" — refusing to guess which one to close ' +
+                       '(supervisor_code values: ' + openRows.map(function (r) { return r.supervisor_code; }).join(', ') +
+                       '). Clean up the duplicate rows before retrying.');
+    }
+    var currentRow = openRows[0];
+
+    var closedTo = dayBefore_(effectiveDate);
+
+    // Match on effective_to = '' rather than effective_from: effective_from
+    // is a date-formatted DIM_STAFF_ROSTER column, and the real DAL's
+    // matchesConditions_() uses loose `!=`, which is reference-identity for
+    // two Date objects — Sheets returns a FRESH Date instance on every
+    // getValues() read, so matching on a date-typed value captured earlier
+    // (currentRow.effective_from) silently matched zero rows in production
+    // (2026-07-25 SYR rehearsal). effective_to for the open row is a
+    // genuinely blank cell, which Sheets reads back as a primitive '' on
+    // every read regardless of formatting — safe to match on. openRows
+    // above already confirmed exactly one such row exists for this person,
+    // so the update below MUST affect exactly one row; anything else means
+    // DIM_STAFF_ROSTER changed between reads and the write is aborted
+    // rather than proceeding on a stale assumption either way.
+    var updateResult = DAL.updateWhere(
+      Config.TABLES.DIM_STAFF_ROSTER,
+      { person_code: personCode, effective_to: '' },
+      { effective_to: closedTo },
+      { callerModule: MODULE }
+    );
+    var closedCount = (updateResult && typeof updateResult.updated === 'number') ? updateResult.updated : 0;
+    if (closedCount !== 1) {
+      throw new Error('StaffOnboarding.scd2FieldChange_: expected the close-row write to affect exactly 1 ' +
+                       'row for person_code "' + personCode + '" but it reported ' + closedCount + '. ' +
+                       'Aborting before appending the new row — DIM_STAFF_ROSTER is in an unexpected state ' +
+                       'and needs investigation, not a retry.');
+    }
+
+    var newRow = Object.assign({}, currentRow, fieldChanges, {
+      effective_from: effectiveDate,
+      effective_to:   ''
+    });
+    // DAL.appendRow has no match-based silent-no-op mode like updateWhere —
+    // it either completes (an unconditional sheet.appendRow(row) call) or
+    // throws. Reaching the line after it without an exception means the
+    // row was appended; there is no partial-success count to check here.
+    DAL.appendRow(Config.TABLES.DIM_STAFF_ROSTER, newRow, { callerModule: MODULE });
+
+    Logger.info('SCD2_FIELD_CHANGED', {
+      module: MODULE, person_code: personCode, field_changes: fieldChanges,
+      effective_date: effectiveDate, closed_effective_to: closedTo
+    });
+
+    return { personCode: personCode, closedRow: closedCount === 1, newRowCreated: true };
+  }
+
+  /**
+   * Effective-dated supervisor change. Thin wrapper over
+   * scd2FieldChange_() — adds the one piece of validation specific to
+   * supervisor_code (the reporting tree must stay acyclic; other fields
+   * like pay_design/role have no equivalent constraint) and delegates
+   * the actual SCD-2 row mechanics to the shared helper.
+   *
+   * @param {string} actorEmail
+   * @param {string} personCode
+   * @param {string} newSupervisorCode
+   * @param {string} effectiveDate  'YYYY-MM-DD'
+   * @returns {{ personCode: string, closedRow: boolean, newRowCreated: boolean }}
+   */
+  function changeSupervisor(actorEmail, personCode, newSupervisorCode, effectiveDate) {
+    var actor = RBAC.resolveActor(actorEmail);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
+
+    personCode        = String(personCode || '').trim().toUpperCase();
+    newSupervisorCode = String(newSupervisorCode || '').trim().toUpperCase();
+
+    if (wouldCreateCycle_(personCode, newSupervisorCode)) {
+      throw new Error('StaffOnboarding.changeSupervisor: setting "' + personCode + '"\'s supervisor to "' +
+                       newSupervisorCode + '" would create a cycle in the reporting tree (' +
+                       newSupervisorCode + ' already reports up to ' + personCode + ', directly or transitively)');
+    }
+
+    return scd2FieldChange_(personCode, { supervisor_code: newSupervisorCode }, effectiveDate);
+  }
+
+  // ============================================================
   // PUBLIC API
   // ============================================================
   return {
@@ -1002,7 +1231,15 @@ var StaffOnboarding = (function () {
      * CEO + Admin only. Safe to re-run — already-IMPORTED rows are skipped.
      * Returns { total, created, skipped, errors, results[] }.
      */
-    bulkOnboardStaff: bulkOnboardStaff
+    bulkOnboardStaff: bulkOnboardStaff,
+
+    /**
+     * Effective-dated supervisor change (Task 2). Closes the current
+     * DIM_STAFF_ROSTER row and inserts a new one, SCD-2 style — see the
+     * section comment above for the full convention. CEO + Admin only.
+     * Idempotent on (person_code, newSupervisorCode, effectiveDate).
+     */
+    changeSupervisor: changeSupervisor
   };
 
 }());

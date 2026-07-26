@@ -61,7 +61,34 @@ var PayrollEngine = (function () {
   //                         bonus_eligible } }
   // ============================================================
 
-  function buildStaffCache_() {
+  /** 'YYYY-MM-DDTHH:mm:ss...' or Date -> 'YYYY-MM-DD'. Mirrors QuarterlyBonusEngine's toIsoDate_ — separate module, can't share it. */
+  function toIsoDate_(val) {
+    if (!val) return '';
+    if (val instanceof Date) {
+      return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    }
+    return String(val).slice(0, 10);
+  }
+
+  /**
+   * Builds the staff lookup cache, resolving each person_code to the ONE
+   * DIM_STAFF_ROSTER row whose effective_from/effective_to range covers
+   * asOfDate (Task 2 — effective-dated supervisor_code, per
+   * data-integrity.md Rule D4). Inclusive on both ends:
+   * effective_from <= asOfDate <= effective_to, or effective_to blank
+   * for the current/open-ended row. Defaults to today if asOfDate is
+   * omitted, as a backward-compatible safety net for any caller not
+   * updated to pass one explicitly — every caller in THIS file passes
+   * one explicitly (see runPayrollRun/runBonusRun).
+   *
+   * @param {string} [asOfDate]  'YYYY-MM-DD'. Defaults to today.
+   * @returns {Object}  { person_code: { name, email, role, pay_design,
+   *                       pay_qc, pay_currency, supervisor_code, pm_code,
+   *                       bonus_eligible } }
+   */
+  function buildStaffCache_(asOfDate) {
+    asOfDate = asOfDate || toIsoDate_(new Date());
+
     var rows;
     try {
       rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE });
@@ -82,6 +109,19 @@ var PayrollEngine = (function () {
 
       var code = String(row.person_code || '').trim();
       if (!code) continue;
+
+      var effFrom = toIsoDate_(row.effective_from);
+      var effTo   = toIsoDate_(row.effective_to);
+      if (effFrom && effFrom > asOfDate) continue; // not yet effective as of asOfDate
+      if (effTo   && effTo   < asOfDate) continue; // already closed out as of asOfDate
+
+      if (cache[code]) {
+        throw new Error('PayrollEngine.buildStaffCache_: more than one DIM_STAFF_ROSTER row resolves as ' +
+                         'valid for person_code "' + code + '" as of ' + asOfDate + ' — refusing to silently ' +
+                         'pick one (would silently corrupt payroll/bonus attribution). Conflicting rows: ' +
+                         'supervisor_code="' + cache[code].supervisor_code + '" vs "' + String(row.supervisor_code || '').trim() +
+                         '". Clean up DIM_STAFF_ROSTER for this person_code before re-running.');
+      }
 
       cache[code] = {
         name:            String(row.name            || code),
@@ -493,7 +533,12 @@ var PayrollEngine = (function () {
       });
 
       // ── 2. Load caches ────────────────────────────────────
-      var staffCache = buildStaffCache_();
+      // asOfDate = first day of the period being run — Task 2 effective-dating.
+      // periodId is 'YYYY-MM'; a run for a given month resolves supervisor_code
+      // (and every other roster field) as of that month's start, not "today" —
+      // so re-running a past month's payroll after a later roster change still
+      // reflects who was actually supervising during that month.
+      var staffCache = buildStaffCache_(periodId + '-01');
       var fxCache    = buildFxRateCache_();
 
       if (Object.keys(staffCache).length === 0) {
@@ -664,7 +709,11 @@ var PayrollEngine = (function () {
       });
 
       // ── 2. Load staff + hours ─────────────────────────────
-      var staffCache = buildStaffCache_();
+      // asOfDate = first day of the period — Task 2 effective-dating. This is
+      // the supervisor-bonus attribution path itself: a re-run of a past
+      // month's bonus after a later supervisor_code change must still credit
+      // whoever actually supervised that month, not today's supervisor.
+      var staffCache = buildStaffCache_(periodId + '-01');
       var hoursMap   = aggregateHours_(periodId);
       var bonusMap   = buildSupervisorBonusMap_(staffCache, hoursMap);
 
@@ -980,7 +1029,14 @@ var PayrollEngine = (function () {
     // runPayrollRun() actually uses, not a reimplementation. Read-only by
     // construction: only calls DAL.readAll() (never appendRow/appendRows/
     // ensurePartition) — see this function's own body above.
-    aggregateHours_: aggregateHours_
+    aggregateHours_: aggregateHours_,
+
+    // Exposed 2026-07-24 (Task 2, supervisor_code effective-dating) — same
+    // precedent as aggregateHours_ above — so the Jest suite can test the
+    // real date-filtering and supervisor-attribution logic runPayrollRun()/
+    // runBonusRun() actually use, not a reimplementation. Both read-only.
+    buildStaffCache_:         buildStaffCache_,
+    buildSupervisorBonusMap_: buildSupervisorBonusMap_
   };
 
 }());

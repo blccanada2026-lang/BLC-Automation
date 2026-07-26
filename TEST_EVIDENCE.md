@@ -1183,3 +1183,124 @@ April's `event_type` composition (as distinct from its now-confirmed tab
 *existence*) has not been checked — out of scope for this closure, since
 April sits in Q2, not Q1, and wasn't part of what you asked verified
 before closing Task 1.
+
+---
+
+## Task 2 — Effective-dated supervisor_code: COMPLETE (implementation + DEV verification)
+
+**Status: implementation and DEV verification both done.** Real business
+hierarchy change (step 6) is explicitly blocked — see "Blocked on
+business confirmation" below. Branch `payroll/supervisor-effective-dating`,
+own worktree, off `main` @ `5def76a`.
+
+### Scope
+
+Supervisor changes must not retroactively reattribute past periods'
+bonus/RBAC. Investigation (prior turn) found `DIM_STAFF_ROSTER` had the
+right-shaped columns (`effective_from`/`effective_to`, data-integrity.md
+Rule D4) but neither the write path (`onboardStaff`) nor any consumer
+(`PayrollEngine`/`QuarterlyBonusEngine`'s `buildStaffCache_`,
+`PortalData.getMyRatees`) actually used them that way — every lookup
+read whatever's currently in the roster, unconditionally.
+
+### What was built
+
+- **`StaffOnboarding.changeSupervisor(actorEmail, personCode, newSupervisorCode, effectiveDate)`**
+  — SCD-2-style write. Closes the current open-ended row
+  (`effective_to` = day before `effectiveDate`), inserts a new one
+  (`effective_from` = `effectiveDate`, `effective_to` = `''`).
+  `ADMIN_CONFIG`-gated, idempotent, uses `StaffOnboarding`'s existing
+  `DAL.WRITE_PERMISSIONS` entry.
+- **`PayrollEngine.buildStaffCache_(asOfDate)`** and
+  **`QuarterlyBonusEngine.buildStaffCache_(asOfDate)`** (independent
+  implementations, separate IIFE modules) — resolve each `person_code`
+  to the one roster row whose date range covers `asOfDate`. All 5 known
+  call sites updated to pass the relevant period's date
+  (`runPayrollRun`/`runBonusRun` → `periodId + '-01'`;
+  `runQuarterlyBonus`/`previewQuarterlyBonus`/`getInternalRatings_` →
+  the quarter's start date via `quarterDateRange_`).
+- **`PortalData.getMyRatees()`** — resolves the roster as of
+  `ratingAsOfDate_(quarterPeriodId) = min(quarter_end, today)`. This
+  went through two revisions before landing correctly — see "The two
+  wrong fixes" below.
+- **`RBAC.buildTeamCodes()`** — confirmed correct as current-value-only
+  (real-time action authorization, not historical attribution) and left
+  untouched, exactly as scoped.
+
+### The two wrong fixes — both caught by real DEV runs, not Jest
+
+Jest passed at every stage; a real DEV run caught what the mocks missed
+twice in a row. Recorded here in full because it's the clearest
+demonstration this session has produced of *why* the DEV-verification
+standing rule (§3.1) exists, applied to a brand-new kind of bug (date
+convention, not aggregation logic):
+
+1. **First fix — quarter START date.** Correctly computed
+   (`quarterStartDate_('2026-Q2') = '2026-04-01'`), but wrong choice: a
+   change effective April 15 still falls inside the OLD row's valid
+   range on April 1, so a rating request for Q2 (the quarter containing
+   the change) asked the OLD TL. The two Jest tests that existed at the
+   time (Q1 entirely before the change, Q3 entirely after) both passed
+   anyway, because neither quarter straddles the change date — the gap
+   was in test *design*, not test execution. Real DEV output:
+   `sedtl1/Q2: true, sedtl2/Q2: false` (wrong).
+2. **Second fix — quarter END date alone.** Fixed the boundary case
+   above, but introduced two new problems, precisely traced before
+   touching code again: (a) a change effective *late* in a quarter would
+   attribute the *entire* quarter to the new supervisor — the mirror
+   image of bug 1, just flipped to the other boundary; (b) for an
+   in-progress quarter, the end date is in the *future*, so a change
+   scheduled for later in the quarter would show as already in effect
+   today. This one was caught by review before ever reaching a DEV run.
+3. **Current, correct fix — `min(quarter_end, today)`.** Never looks
+   into the future (fixes 2b completely). 2a is accepted as a
+   **documented, known limitation**, not silently absorbed — see
+   `PROJECT_MEMORY.md` §3.2 for the full writeup and the explicitly
+   deferred "most days of coverage" alternative. Verified the fix's own
+   test suite actually discriminates (not just trivially passes):
+   temporarily reverted to quarter-end-only, confirmed the new
+   future-date test fails for the right reason, restored, confirmed
+   green again.
+
+### Real DEV verification — confirmed correct
+
+Ran via `SupervisorEffectiveDatingDevSeed.gs`/`...Recompute.gs` (synthetic
+identities: `SEDTL1`/`SEDTL2`/`SEDDS1`, change effective 2026-04-15,
+real `FACT_WORK_LOGS` hours seeded before/after). Real DEV output,
+after the `min(quarter_end, today)` fix:
+
+- **Supervisor-bonus attribution (items 2-4 — correct on the first DEV
+  run, no fix needed):** 2026-03 (before the change) → `SEDTL1`
+  (20h/500 basis); 2026-05 (after) → `SEDTL2` (15h/375 basis). Both
+  `PayrollEngine.buildStaffCache_`/`QuarterlyBonusEngine.buildStaffCache_`
+  agree independently.
+- **`getMyRatees()` (item 5 — required two fix iterations, see above):**
+  final confirmed output — `sedtl1/Q1: true, sedtl1/Q2: false,
+  sedtl2/Q1: false, sedtl2/Q2: true` — exactly the expected crossover at
+  the quarter containing the change.
+
+### Full suite status
+
+324 tests, 17 suites, 0 failures. Commits this task: `e7e1451`
+(implementation), `e6d7818` (DEV tooling), `e07b356` (start→end date
+fix), `8300937` (end→min(end,today) fix).
+
+### Blocked on business confirmation — do not apply the real hierarchy change without both
+
+Step 6 (Kumar/Sandy/Bharath/Pabby/Savvy/Roy/Joy/Bittu/Abby, per the
+original request) is **explicitly not started**. Two open questions,
+both from Sarty, neither resolved yet:
+
+1. **Which "Kumar"?** The original investigation found this ambiguous
+   between `RKU` (Raj Kumar) and `SDA` (Samar Kumar Das, whose
+   established nickname is "Sandy," separately also in the requested
+   hierarchy) — see the 2026-07-23/24 user/team-structure investigation
+   for the full reasoning. Not assumed either way.
+2. **What effective date should the real changes carry?** Not specified
+   in the original request. `changeSupervisor()` requires an explicit
+   `effectiveDate` — there is no default to fall back on, deliberately,
+   given everything above about why a wrong date choice is a real risk,
+   not a formality.
+
+Recording both explicitly here so a future session doesn't have to
+rediscover them from scratch.
