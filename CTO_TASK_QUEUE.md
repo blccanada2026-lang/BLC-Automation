@@ -259,3 +259,19 @@ these threads.**
       `npm run push:prod` (separate go-ahead), then the actual two
       `changeSupervisor()` PROD calls for `SYR`/`SVN` (separate go-ahead
       again, after deploy).
+
+      **PROD rollback reference, recorded 2026-07-26 before `push:prod`
+      (go-ahead granted):** `clasp versions` against PROD's script ID
+      shows 81 saved versions; the latest is **#81, "Version 1July 9"**
+      (2026-07-09). **Caveat, stated explicitly per
+      `PROMOTION_CHECKLIST.md` §6.4:** `npm run push:prod` is
+      `clasp push --force` only — it does **not** create a new Apps
+      Script version snapshot. At least one `clasp push` has landed on
+      PROD since version #81 was saved (the `Task2Step6PreflightCheck.gs`
+      diagnostic, pushed directly from `main` earlier this session), so
+      **HEAD already differs from #81** — restoring version #81 via the
+      Apps Script editor's UI would undo that push too, not just this
+      Task 2 deploy. Per this repo's own established conclusion (§6.4),
+      the reliable rollback mechanism here is git-based (`CLAUDE.md` R7:
+      `git revert` the bad commit, push, re-run `push:prod` from the
+      reverted checkout) — not restoring a version snapshot.
