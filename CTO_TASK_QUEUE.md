@@ -57,6 +57,56 @@ these threads.**
       every prior period, the exact class of bug Task 2 fixed for
       `supervisor_code`. See `PROJECT_MEMORY.md` §3.2.
 
+- [ ] **DAL date-column matching audit** — `DAL.gs`'s `matchesConditions_()`
+      (~line 407) uses loose `!=` for all condition matching. For two
+      **object** operands this is reference-identity, not value equality —
+      and Google Sheets' `getValues()` returns a fresh `Date` object on
+      every read of a date-formatted cell, so matching `updateWhere`/
+      `readWhere` conditions on a date column using a value captured from
+      an earlier read silently matches **zero rows** (no throw — a
+      no-op for `updateWhere`, an empty result for `readWhere`). This is
+      the exact root cause of the 2026-07-25 `StaffOnboarding` SCD-2
+      close-row bug (fixed in Task 2 by matching on `effective_to: ''`
+      instead of the date-typed `effective_from`).
+      **Not started, not fixed here — deliberately out of Task 2's
+      scope.** Changing `matchesConditions_()`'s comparison semantics
+      would alter query behavior for every caller in the system and
+      needs its own scoped work, not a side effect of a supervisor_code
+      fix.
+      **Blast-radius sweep completed 2026-07-26** (read-only, all 243
+      `DAL.updateWhere`/`DAL.readWhere` call sites in `src/` reviewed):
+      - **242 of 243 sites are SAFE** — every condition matches on a
+        plain string/id/enum field (`job_number`, `person_code`,
+        `email`, `queue_id`, `event_id`, `client_code`, `status`, etc.).
+        Date-typed fields appear constantly but always in the *updates*
+        (write) argument, never as a match *condition*.
+      - **Zero other sites found matching Date-object-vs-Date-object**
+        (the confirmed-broken pattern) anywhere in `src/`.
+      - **One lower-confidence finding**: `src/12-migration/
+        Job260337DuplicateFixer.gs:184` matches on `created_at` (a
+        date-formatted column) using `String(dupeRow.created_at || '')`
+        — a **string**, not a raw Date object, unlike the confirmed
+        `StaffOnboarding` bug. Per the JS spec, string-vs-Date loose
+        comparison *does* coerce (via the Date's `toString()`), so if
+        the underlying cell hasn't changed between reads this
+        comparison likely still succeeds — this looks like a working
+        pattern by coincidence of `Date.toString()` symmetry, not a
+        confirmed break. Not verified against a real Sheet; flagged for
+        whoever picks up this audit to confirm, not assumed either way.
+        If it does fail silently, the consequence is narrow: this
+        one-off duplicate-job fixer's VOID would silently not apply
+        (and it already checks `result.updated`, so it wouldn't lie
+        about that — it just wouldn't fix the duplicate).
+      **Bottom line:** the bug class is real but **narrowly exploited**
+      — confirmed broken in exactly the one place Task 2 already fixed,
+      plus one unconfirmed, likely-harmless case. Not urgent beyond
+      that one spot-check; recorded so it isn't silently reintroduced
+      elsewhere and so `matchesConditions_()` itself gets fixed
+      properly (own scoped task) rather than patched around
+      case-by-case forever. See `PROJECT_MEMORY.md` §3.1's second
+      instance writeup for the underlying mock-fidelity gap that let
+      the original bug through Jest undetected.
+
 ---
 
 ## Completed
