@@ -344,7 +344,13 @@ var QuarterlyBonusEngine = (function () {
       byRatee[rateeCode][raterRole] = score;  // last write wins per role
     }
 
-    var staffCache = buildStaffCache_();
+    // asOfDate = this quarter's start date — Task 2 effective-dating. Only
+    // .role is actually used below, but the cache is built consistently
+    // date-aware everywhere in this file rather than leaving one call site
+    // on the old "whatever's current" behavior.
+    var qParts     = qPid.split('-');
+    var qStart     = quarterDateRange_(qParts[1], parseInt(qParts[0], 10)).start;
+    var staffCache = buildStaffCache_(toIsoDate_(qStart));
     var result     = {};
     var ratees     = Object.keys(byRatee);
 
@@ -642,7 +648,24 @@ var QuarterlyBonusEngine = (function () {
   // SECTION 7: STAFF CACHE
   // ============================================================
 
-  function buildStaffCache_() {
+  /**
+   * Builds the staff lookup cache, resolving each person_code to the ONE
+   * DIM_STAFF_ROSTER row whose effective_from/effective_to range covers
+   * asOfDate (Task 2 — effective-dated supervisor_code, per
+   * data-integrity.md Rule D4). Inclusive on both ends. Defaults to today
+   * if omitted — every caller in this file passes the relevant quarter's
+   * start date explicitly (see runQuarterlyBonus/previewQuarterlyBonus/
+   * getInternalRatings_).
+   *
+   * Independent implementation from PayrollEngine.gs's buildStaffCache_ —
+   * these are separate IIFE modules and cannot share private functions;
+   * both received the identical fix.
+   *
+   * @param {string} [asOfDate]  'YYYY-MM-DD'. Defaults to today.
+   */
+  function buildStaffCache_(asOfDate) {
+    asOfDate = asOfDate || toIsoDate_(new Date());
+
     var rows;
     try {
       rows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: MODULE });
@@ -658,6 +681,20 @@ var QuarterlyBonusEngine = (function () {
       var row  = rows[i];
       var code = String(row.person_code || '').trim();
       if (!code) continue;
+
+      var effFrom = toIsoDate_(row.effective_from);
+      var effTo   = toIsoDate_(row.effective_to);
+      if (effFrom && effFrom > asOfDate) continue; // not yet effective as of asOfDate
+      if (effTo   && effTo   < asOfDate) continue; // already closed out as of asOfDate
+
+      if (cache[code]) {
+        throw new Error('QuarterlyBonusEngine.buildStaffCache_: more than one DIM_STAFF_ROSTER row resolves as ' +
+                         'valid for person_code "' + code + '" as of ' + asOfDate + ' — refusing to silently ' +
+                         'pick one (would silently corrupt bonus/rating attribution). Conflicting rows: ' +
+                         'supervisor_code="' + cache[code].supervisor_code + '" vs "' + String(row.supervisor_code || '').trim() +
+                         '". Clean up DIM_STAFF_ROSTER for this person_code before re-running.');
+      }
+
       cache[code] = {
         name:            String(row.name            || code),
         email:           String(row.email           || '').trim().toLowerCase(),
@@ -693,7 +730,10 @@ var QuarterlyBonusEngine = (function () {
       message: 'Quarterly bonus run started', quarter: quarter, year: year });
 
     var qPid         = quarterPeriodId_(quarter, year);
-    var staffCache   = buildStaffCache_();
+    // asOfDate = this quarter's start date — Task 2 effective-dating, the
+    // supervisor-adjacent path (role/pm_code/supervisor_code resolved as of
+    // the quarter being run, not "today").
+    var staffCache   = buildStaffCache_(toIsoDate_(quarterDateRange_(quarter, year).start));
     var hoursMap     = aggregateQuarterHours_(quarter, year);
     var errorRates   = getQcErrorRates_(quarter, year);
     var clientScores = getClientScores_(quarter, year);
@@ -725,7 +765,7 @@ var QuarterlyBonusEngine = (function () {
     RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_VIEW);
 
     var qPid         = quarterPeriodId_(quarter, year);
-    var staffCache   = buildStaffCache_();
+    var staffCache   = buildStaffCache_(toIsoDate_(quarterDateRange_(quarter, year).start));
     var hoursMap     = aggregateQuarterHours_(quarter, year);
     var errorRates   = getQcErrorRates_(quarter, year);
     var clientScores = getClientScores_(quarter, year);
@@ -765,7 +805,12 @@ var QuarterlyBonusEngine = (function () {
     // precedent as above — so the DEV regression runner
     // (PayrollHardeningRecompute.gs) calls the REAL hours-aggregation
     // function the actual bonus run uses, not a reimplementation.
-    aggregateQuarterHours_: aggregateQuarterHours_
+    aggregateQuarterHours_: aggregateQuarterHours_,
+
+    // Exposed 2026-07-24 (Task 2, supervisor_code effective-dating) — same
+    // precedent as above — lets the Jest suite test the real date-filtering
+    // logic runQuarterlyBonus()/previewQuarterlyBonus() actually use.
+    buildStaffCache_: buildStaffCache_
   };
 
 }());

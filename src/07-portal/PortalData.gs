@@ -550,6 +550,120 @@ var PortalData = (function () {
   // CEO       -> all active TEAM_LEAD and PM staff
   // ============================================================
 
+  /** A Sheets date cell (Date object or string) -> 'YYYY-MM-DD'. */
+  function pdToIsoDate_(val) {
+    if (!val) return '';
+    if (val instanceof Date) {
+      var y = val.getFullYear();
+      var m = String(val.getMonth() + 1); if (m.length < 2) m = '0' + m;
+      var d = String(val.getDate());      if (d.length < 2) d = '0' + d;
+      return y + '-' + m + '-' + d;
+    }
+    return String(val).trim().substring(0, 10);
+  }
+
+  /**
+   * 'YYYY-Qn' -> 'YYYY-MM-DD', the LAST day of that quarter. Pure
+   * string/integer math — no Date object, no timezone concerns, and no
+   * leap-year handling needed since every quarter-ending month (Mar/Jun/
+   * Sep/Dec) has a fixed day count. Self-contained deliberately:
+   * QuarterlyBonusEngine.quarterDateRange_ does similar math and is
+   * public, but PortalData (T07) must not depend on QuarterlyBonusEngine
+   * (T10) — Rule A1.
+   */
+  function quarterEndDate_(quarterPeriodId) {
+    var parts = String(quarterPeriodId || '').split('-Q');
+    var year  = parseInt(parts[0], 10);
+    var q     = parseInt(parts[1], 10);
+    var endMonthDay = { 1: [3, 31], 2: [6, 30], 3: [9, 30], 4: [12, 31] }[q];
+    if (!year || !endMonthDay) throw new Error('PortalData: invalid quarterPeriodId "' + quarterPeriodId + '"');
+    var mm = String(endMonthDay[0]); if (mm.length < 2) mm = '0' + mm;
+    return year + '-' + mm + '-' + endMonthDay[1];
+  }
+
+  /**
+   * The date used to resolve "who supervised this person for rating
+   * purposes this quarter" — min(quarter's end date, today).
+   *
+   * Business rule, chosen deliberately over two rejected alternatives
+   * after a real DEV run caught both:
+   *   - Quarter START date: wrong — a mid-quarter change still falls
+   *     inside the OLD supervisor's range at the quarter's first day, so
+   *     the rating request went to whoever supervised on day one, not
+   *     whoever actually supervised the person for the rest of the
+   *     quarter.
+   *   - Quarter END date alone: wrong two ways — (1) a change effective
+   *     LATE in a quarter (e.g. 2 days before it ends) would route the
+   *     ENTIRE quarter to the new supervisor, the mirror image of the
+   *     start-date bug, just flipped to the other boundary; (2) for the
+   *     CURRENT, in-progress quarter, the end date is a FUTURE date — a
+   *     supervisor change scheduled to take effect later this quarter
+   *     would show the future supervisor as already responsible today,
+   *     before the change has actually happened.
+   *
+   * min(quarter_end, today) fixes (2) completely — this function never
+   * resolves a date later than today, so a not-yet-effective future
+   * change is correctly invisible until its effective date arrives.
+   *
+   * KNOWN, ACCEPTED LIMITATION (not fixed here — see PROJECT_MEMORY.md
+   * §3.2 for the recorded decision): a change effective late in a
+   * CLOSED quarter still attributes that whole quarter's rating request
+   * to the new supervisor, even if they only supervised the person for
+   * a few days of it. The more correct alternative — attribute to
+   * whichever supervisor covered the MOST days of the quarter — was
+   * considered and explicitly deferred as more complex than this
+   * decision warranted right now. If this limitation becomes a real
+   * problem in practice, that's the fix to build.
+   *
+   * @param {string} quarterPeriodId  'YYYY-Qn'
+   * @returns {string} 'YYYY-MM-DD'
+   */
+  function ratingAsOfDate_(quarterPeriodId) {
+    var qEnd  = quarterEndDate_(quarterPeriodId);
+    var today = pdToIsoDate_(new Date());
+    return qEnd < today ? qEnd : today;
+  }
+
+  /**
+   * Resolves a DIM_STAFF_ROSTER row set (which may contain more than one
+   * historical row per person_code, per Task 2's SCD-2-style
+   * changeSupervisor()) down to one row per person_code — whichever row's
+   * effective_from/effective_to range covers asOfDate, inclusive on both
+   * ends. Also requires active='TRUE' on that row, same as the prior
+   * behavior — the only change is WHICH row gets checked (as-of a date,
+   * not implicitly "whatever's there").
+   *
+   * @param {Object[]} rows
+   * @param {string}   asOfDate  'YYYY-MM-DD'
+   * @returns {Object}  { person_code: row }
+   */
+  function resolveRosterAsOf_(rows, asOfDate) {
+    var resolved = {};
+    for (var i = 0; i < rows.length; i++) {
+      var s = rows[i];
+      var isActive = s.active === true || String(s.active).toUpperCase().trim() === 'TRUE';
+      if (!isActive) continue;
+
+      var effFrom = pdToIsoDate_(s.effective_from);
+      var effTo   = pdToIsoDate_(s.effective_to);
+      if (effFrom && effFrom > asOfDate) continue;
+      if (effTo   && effTo   < asOfDate) continue;
+
+      var code = String(s.person_code || '').trim();
+      if (!code) continue;
+
+      if (resolved[code]) {
+        throw new Error('PortalData.resolveRosterAsOf_: more than one DIM_STAFF_ROSTER row resolves as ' +
+                         'valid for person_code "' + code + '" as of ' + asOfDate + ' — refusing to silently ' +
+                         'pick one (would silently corrupt rating routing). Conflicting rows: ' +
+                         'supervisor_code="' + resolved[code].supervisor_code + '" vs "' + String(s.supervisor_code || '').trim() +
+                         '". Clean up DIM_STAFF_ROSTER for this person_code before re-running.');
+      }
+      resolved[code] = s;
+    }
+    return resolved;
+  }
+
   /**
    * Returns the list of staff this rater should rate this quarter.
    * TEAM_LEAD -> designers where supervisor_code = rater's person_code
@@ -578,25 +692,18 @@ var PortalData = (function () {
       throw e;
     }
 
-    var today  = new Date().toISOString().substring(0, 10);
+    // Task 2 (effective-dating): resolve each person_code to the ONE
+    // DIM_STAFF_ROSTER row valid as of min(quarter end, today) — see
+    // ratingAsOfDate_()'s own comment for the full business-rule
+    // reasoning and its one documented, accepted limitation.
+    var asOfDate = ratingAsOfDate_(quarterPeriodId);
+    var resolved = resolveRosterAsOf_(allStaff, asOfDate);
+
     var ratees = [];
     var seen   = {};
-    for (var i = 0; i < allStaff.length; i++) {
-      var s = allStaff[i];
-
-      // Skip unless explicitly active (whitelist — blank active treated as inactive)
-      var isActive = s.active === true || String(s.active).toUpperCase().trim() === 'TRUE';
-      if (!isActive) continue;
-      var effectiveTo = s.effective_to;
-      if (effectiveTo instanceof Date) {
-        var ety = effectiveTo.getFullYear();
-        var etm = String(effectiveTo.getMonth() + 1); if (etm.length < 2) etm = '0' + etm;
-        var etd = String(effectiveTo.getDate());       if (etd.length < 2) etd = '0' + etd;
-        effectiveTo = ety + '-' + etm + '-' + etd;
-      } else {
-        effectiveTo = String(effectiveTo || '').trim().substring(0, 10);
-      }
-      if (effectiveTo && effectiveTo < today) continue;
+    var resolvedCodes = Object.keys(resolved);
+    for (var i = 0; i < resolvedCodes.length; i++) {
+      var s = resolved[resolvedCodes[i]];
 
       var role    = String(s.role || '').toUpperCase().trim();
       var include = false;
