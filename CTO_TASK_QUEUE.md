@@ -260,18 +260,38 @@ these threads.**
       `changeSupervisor()` PROD calls for `SYR`/`SVN` (separate go-ahead
       again, after deploy).
 
-      **PROD rollback reference, recorded 2026-07-26 before `push:prod`
-      (go-ahead granted):** `clasp versions` against PROD's script ID
-      shows 81 saved versions; the latest is **#81, "Version 1July 9"**
-      (2026-07-09). **Caveat, stated explicitly per
-      `PROMOTION_CHECKLIST.md` §6.4:** `npm run push:prod` is
-      `clasp push --force` only — it does **not** create a new Apps
-      Script version snapshot. At least one `clasp push` has landed on
-      PROD since version #81 was saved (the `Task2Step6PreflightCheck.gs`
-      diagnostic, pushed directly from `main` earlier this session), so
-      **HEAD already differs from #81** — restoring version #81 via the
-      Apps Script editor's UI would undo that push too, not just this
-      Task 2 deploy. Per this repo's own established conclusion (§6.4),
-      the reliable rollback mechanism here is git-based (`CLAUDE.md` R7:
-      `git revert` the bad commit, push, re-run `push:prod` from the
-      reverted checkout) — not restoring a version snapshot.
+      **PROD rollback reference — CORRECTED 2026-07-26.** Apps Script's
+      version history (`clasp versions`) is **not a usable rollback
+      path for this system, full stop** — its latest saved snapshot
+      (`#81, "Version 1July 9"`, 2026-07-09) predates Task 1's
+      aggregation-fix deploy (2026-07-25); restoring it would silently
+      undo Task 1 along with Task 2. Combined with the fact that
+      `npm run push:prod` (`clasp push --force`) never creates a new
+      version snapshot, there is no Apps Script version that reflects
+      "PROD immediately before this Task 2 deploy" — **git is the only
+      source of truth for what's actually deployed to PROD.** This is
+      exactly why the "always run `push:prod` from `main` in the
+      primary checkout, never from a worktree" rule (R6) is
+      **load-bearing, not stylistic** — a worktree-sourced push would
+      leave no version-history trail to distinguish it from a `main`
+      push after the fact.
+
+      **The real rollback target:** the commit on `main` immediately
+      before PR #3's merge commit (`e900887`) — its first parent,
+      **`bcb45a8`** ("feat: read-only preflight check for Task 2 step
+      6"). Confirmed: `bcb45a8` is a descendant of Task 1's merge
+      (`d9c876e`, so post-Task-1) and its `StaffOnboarding.gs` has no
+      `changeSupervisor`/`scd2FieldChange_` (so pre-Task-2) — exactly
+      the correct pre-Task-2, post-Task-1 baseline.
+
+      **Rollback procedure, if ever needed:**
+      1. In the primary checkout (`/Users/rajnair/blc-nexus`):
+         `git checkout bcb45a8` (detached HEAD is fine for this one-shot
+         push — do not commit anything while detached).
+      2. `npm run push:prod` from that checkout.
+      3. `git checkout main` to return, then `npm run push:dev` to
+         restore DEV in the primary checkout.
+      4. Prefer `CLAUDE.md` R7's proper mechanism when time allows
+         instead (`git revert` the bad commit on `main`, push, redeploy
+         from the reverted `main` — leaves a clean forward-only git
+         history rather than a detached-HEAD deploy).
