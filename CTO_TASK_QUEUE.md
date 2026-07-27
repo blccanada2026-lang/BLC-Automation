@@ -42,23 +42,23 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ## Session State (last updated: end of turn, 2026-07-27)
 
-**Just completed:** full PROD partition-header scan reviewed — 0 blank
-headers (the bonus/payroll partitions are all clean, does NOT block the
-bonus promotion), but confirmed the deeper structural issue via three
-real findings: `FACT_QC_EVENTS` missing `qc_session_id` in 4 partitions
-(latent, no live writer, no data lost), `FACT_BILLING_LEDGER` column
-reorder in 2 partitions (not a live risk — all real reads/writes go
-through DAL's name-based mapping), `FACT_SOP_SUBMISSIONS` orphaned by an
-uncleaned rename (harmless). Folded all three into the consolidated
-"partition headers silently diverge from canonical SCHEMAS" task below.
-Explicitly confirmed independent of the other two active threads — the
-user said so directly, both proceed without waiting on this.
-**Next action:** two independent threads now unblocked and ready to
-resume: (1) fix `changeSupervisor()`'s idempotency bug (TDD, own
-branch, four numbered items in that task entry), which the bonus
-promotion is paused on; (2) nothing further needed on the partition-
-header task right now — it's fully recorded, no fix scoped/requested
-yet.
+**Just completed:** `changeSupervisor()` idempotency fix implemented
+and TDD-verified (342/342), on `payroll-hardening/
+changesupervisor-idempotency-fix`. A false pass was caught and fixed
+mid-DEV-verification (weak "did it throw" assertion accepted a
+different guard catching a different person — see the task entry's
+"STATUS UPDATE" for the full incident). Whole-roster DEV scan found 10
+duplicated person_codes (not 9 — `SGO` was missed by the old hardcoded
+cleanup list); 9 auto-fixed as safe, `SEDDS1` resolved as a known-cause
+repair (`Sedds1StaleRowFix.gs`) rather than a guess, which also
+revealed Task 2's original DEV recompute passed one of its checks for
+the wrong reason (recorded in `TEST_EVIDENCE.md` and `PROJECT_MEMORY.md`
+§3.1's third instance).
+**Next action:** re-run the corrected DEV verification chain (roster
+cleanup already applied → `Sedds1StaleRowFix.gs` → corruption-proof →
+seed → resolution check → preview/commit) and confirm all pass for the
+right reason. Bonus-period-layer promotion stays paused until that's
+done.
 
 ---
 
@@ -120,6 +120,64 @@ yet.
       promote-bonus-period-layer`) stays paused until this is fixed and
       re-verified** — it was otherwise fully built and green (see
       Completed section for the promotion's own status).
+
+      **STATUS UPDATE, 2026-07-27 — fix implemented, DEV re-verification in progress.**
+      Items 1-4 all implemented on `payroll-hardening/
+      changesupervisor-idempotency-fix` (off `main`), TDD throughout —
+      7 new tests, RED verified before implementing, GREEN after. Full
+      suite 342/342.
+
+      **A false pass was caught mid-verification, worth recording
+      precisely.** The first version of the DEV "prove the new guard
+      works" script accepted ANY thrown error as proof — the same
+      weak-assertion shape as the original hardcoded `closedRow: true`
+      bug (checking "did it throw," not "did the *right* thing throw").
+      What actually fired was the **pre-existing** duplicate-open-row
+      guard catching `SGO`, not the **new** inverted-window guard
+      catching the intended `BPLDS1` corruption — a real throw, proof of
+      a different bug entirely. Fixed by asserting on the specific error
+      content (must name the expected person AND the expected reason),
+      and the same tightening applied to every other throw-assertion in
+      this test suite that only checked a person's name.
+
+      **`SGO`'s corruption itself was a second real finding, not just
+      what exposed the false pass:** the original hardcoded-list DEV
+      cleanup (`SupervisorEffectiveDatingDevCleanup.gs`, Task 2) only
+      ever covered the nine step-6 codes + `MARV` — never `SGO`, since
+      it wasn't in that list. A whole-roster scan
+      (`DevRosterDuplicateCleanup.gs`, new) found **10 person_codes**
+      with duplicate open-ended rows in DEV, not 9 — the original
+      double-seeding root cause (`SetupScript.seedDimStaffRoster_()` raw
+      `appendRow` + `SeedStaffImport.gs`/`bulkOnboardStaff()`, both
+      uncoordinated) was broader than the earlier hardcoded list
+      assumed. Another concrete argument for whole-roster scans over
+      hardcoded person-code lists, on top of the one that already
+      motivated this rewrite.
+
+      **`SEDDS1` (Task 2's own DEV fixture) was the one AMBIGUOUS case,
+      resolved as a known-cause repair, not a guess.** Its two open
+      rows (`SEDTL1`/`SEDTL2`, disagreeing supervisor_code) were
+      correctly left untouched by the generic safe/ambiguous
+      classifier. Root cause confirmed: residue of the pre-fix
+      close-row bug — `SEDTL1`'s row was never actually closed when
+      Task 2's original DEV rehearsal ran, despite reporting
+      `closedRow: true`. `Sedds1StaleRowFix.gs` closes it exactly as
+      `changeSupervisor()` should have at the time
+      (`effective_to=2026-04-14`), preserving the fixture as
+      re-runnable Task 2 test data rather than deleting it. **This also
+      revealed Task 2's original DEV recompute passed its 2026-05 check
+      for the wrong reason** (last-write-wins array ordering happened
+      to pick the correct row, before any duplicate-row guard existed)
+      — full writeup in `TEST_EVIDENCE.md`'s Task 2 section and
+      `PROJECT_MEMORY.md` §3.1's third instance. Does not invalidate
+      PROD — confirmed separately via `RosterIntegrityCheck.gs` (0
+      duplicate-open rows across all 35 PROD rows) and the real
+      post-fix `SYR`/`SVN` rehearsal and PROD apply.
+
+      **Remaining before promotion resumes:** re-run the corrected
+      verification chain in DEV (roster cleanup → corruption-proof →
+      seed → resolution check → preview/commit) and confirm all pass
+      for the right reason this time.
 
 - [ ] **Partition headers silently diverge from canonical `SCHEMAS`, two
       independent ways — confirmed with real findings, not just a

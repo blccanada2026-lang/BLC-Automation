@@ -1280,9 +1280,53 @@ after the `min(quarter_end, today)` fix:
   sedtl2/Q1: false, sedtl2/Q2: true` — exactly the expected crossover at
   the quarter containing the change.
 
+### Correction, 2026-07-27 — the original DEV recompute passed for 2026-05, but not for the reason claimed
+
+Discovered while cleaning up unrelated DEV roster corruption (see
+`CTO_TASK_QUEUE.md`'s duplicate-open-row cleanup task): `SEDDS1`'s two
+rows (`SEDTL1`, `SEDTL2`) were **both still open-ended** the whole time
+this recompute ran — the pre-fix `changeSupervisor()` close-row bug
+(matching on `effective_from`, a date-formatted column; fixed
+2026-07-27 on `payroll-hardening/changesupervisor-idempotency-fix`)
+meant `SEDTL1`'s row was never actually closed, despite
+`changeSupervisor()` reporting `closedRow: true` at the time.
+
+Re-examining the two 2026-03/2026-05 results above against that real
+state:
+- **2026-03: correct for the right reason.** `SEDTL2`'s row
+  (`effective_from=2026-04-15`) isn't yet in range for a March
+  `asOfDate` regardless of whether `SEDTL1`'s row was ever closed —
+  only `SEDTL1` could match. The duplicate-open-row problem simply
+  didn't apply at this specific `asOfDate`.
+- **2026-05: correct answer, wrong mechanism.** Both `SEDTL1` (still
+  open) and `SEDTL2` (`effective_from=2026-04-15`, also open) satisfied
+  the date-range filter simultaneously. At the time, `buildStaffCache_`
+  had no duplicate-row guard yet (added later this session) — it just
+  overwrote `cache[code]` on each match, so whichever row the array
+  happened to process **last** won. It returned `SEDTL2` — the correct
+  final answer — purely because of array ordering, not because the
+  resolution logic recognized `SEDTL1`'s period had ended. A
+  differently-ordered read would have silently returned the wrong
+  supervisor and this recompute would have reported it as confirmed
+  correct regardless.
+
+**Does not invalidate PROD**: the close-row bug was fixed afterward,
+the post-fix `SYR`/`SVN` rehearsal and the actual PROD `step 6` apply
+both showed correct row closure, and `RosterIntegrityCheck.gs` confirmed
+zero duplicate-open `person_codes` across all 35 PROD roster rows. But
+it's a concrete, second example (alongside the mock/real fidelity gap
+already recorded, `PROJECT_MEMORY.md` §3.1) of a verification passing
+for the wrong reason rather than failing loudly — worth treating as a
+standing caution, not a one-off curiosity. The fixture itself was kept,
+not deleted — `Sedds1StaleRowFix.gs` closes `SEDTL1`'s row exactly as
+`changeSupervisor()` should have (`effective_to=2026-04-14`), so it
+remains a valid, re-runnable Task 2 test scenario in DEV going forward.
+
 ### Full suite status
 
-324 tests, 17 suites, 0 failures. Commits this task: `e7e1451`
+324 tests, 17 suites, 0 failures at the time this task closed (grew to
+342 as of the 2026-07-27 idempotency fix — see that task's own commits).
+Commits this task: `e7e1451`
 (implementation), `e6d7818` (DEV tooling), `e07b356` (start→end date
 fix), `8300937` (end→min(end,today) fix).
 
