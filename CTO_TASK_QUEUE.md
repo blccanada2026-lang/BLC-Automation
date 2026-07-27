@@ -42,23 +42,24 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ## Session State (last updated: end of turn, 2026-07-27)
 
-**Just completed:** `changeSupervisor()` idempotency fix implemented
-and TDD-verified (342/342), on `payroll-hardening/
-changesupervisor-idempotency-fix`. A false pass was caught and fixed
-mid-DEV-verification (weak "did it throw" assertion accepted a
-different guard catching a different person — see the task entry's
-"STATUS UPDATE" for the full incident). Whole-roster DEV scan found 10
-duplicated person_codes (not 9 — `SGO` was missed by the old hardcoded
-cleanup list); 9 auto-fixed as safe, `SEDDS1` resolved as a known-cause
-repair (`Sedds1StaleRowFix.gs`) rather than a guess, which also
-revealed Task 2's original DEV recompute passed one of its checks for
-the wrong reason (recorded in `TEST_EVIDENCE.md` and `PROJECT_MEMORY.md`
-§3.1's third instance).
-**Next action:** re-run the corrected DEV verification chain (roster
-cleanup already applied → `Sedds1StaleRowFix.gs` → corruption-proof →
-seed → resolution check → preview/commit) and confirm all pass for the
-right reason. Bonus-period-layer promotion stays paused until that's
-done.
+**Just completed:** corrected DEV rehearsal chain re-run and assessed.
+Core result: **PROVEN** — Task 2's effective-dating works under the
+bonus path, `BonusPeriodCommit` drives `main`'s real
+`QuarterlyBonusEngine` end-to-end, both guards (duplicate-row,
+inverted-window) behave correctly, dangling-correction guard ran
+clean. **NOT PROVEN** — actual bonus arithmetic with real hours (DEV
+work-log seeding failed, a tooling gap not a product bug); assessed as
+non-blocking, since the real Q2 run exercises arithmetic against
+PROD's actual data anyway. Full incident detail (the false-pass catch,
+the `SGO`/10-vs-9 finding, `SEDDS1`'s resolution) in the
+`changeSupervisor()` task entry below.
+**Next action:** two parallel tracks now open — **Track A**: build and
+open PR #4 (bonus layer + the idempotency fix combined, since the fix
+gates the bonus layer's safety), same discipline as PR #3 (diff
+against `main`, drift check, full suite, stop for review before
+merge). **Track B**: confirm `Q2RatingsPreflightCheck.gs` is still
+live in PROD (already deployed earlier, `00c76b0`), then tell the user
+it's ready — they decide when to run it.
 
 ---
 
@@ -178,6 +179,47 @@ done.
       verification chain in DEV (roster cleanup → corruption-proof →
       seed → resolution check → preview/commit) and confirm all pass
       for the right reason this time.
+
+      **REHEARSAL RESULTS, 2026-07-27 — corrected chain re-run, assessed
+      by the user:**
+      **PROVEN:**
+      - Task 2's effective-dating works under the bonus path (`BPLTL1`
+        correctly resolved for `2025-10-01`, not `BPLTL2`).
+      - `BonusPeriodCommit` drives `main`'s real `QuarterlyBonusEngine`
+        end-to-end — the untested integration point from the original
+        investigation is now proven, not just structurally argued.
+      - Duplicate-row guard stayed silent on clean data (correct
+        negative — no false-positive).
+      - Inverted-window guard caught real corruption (`BPLDS1`),
+        proven this time with the tightened, specific assertion.
+      - Dangling-correction guard ran and found 0 (correct for this
+        scenario — no cross-partition corrections were seeded).
+      **NOT PROVEN (DEV-tooling gap, not a product-code bug):** actual
+      bonus arithmetic with non-zero hours — the commit computed ₹0/0h
+      because work-log seeding failed (`appendRow` empty-content error,
+      line 226 of `BonusPeriodLayerDevRehearsal.gs`, most likely the
+      same `ensurePartition()` headerless-tab issue tracked below).
+      **Assessed as not blocking the promotion** — the integration and
+      guard behavior were the actual open questions; the arithmetic
+      itself is exercised for real by the real Q2 run against PROD's
+      actual hours data (see Track B below), not by synthetic DEV
+      seeding.
+
+      **Two parallel tracks opened, 2026-07-27:**
+      - **Track A (promotion):** prepare PR #4 — the bonus layer
+        (`BonusPeriodEngine.gs`, `BonusPeriodCommit.gs`,
+        `DanglingCorrectionGuard.gs`, their tests, the one `DAL.gs`
+        `WRITE_PERMISSIONS` line) **combined with** the
+        `changeSupervisor()` idempotency fix (own branch, but gates the
+        bonus layer's safety — must ship together). Same discipline as
+        PR #3: diff against `main`, drift check, full suite, stop for
+        review before merge.
+      - **Track B (Q2 readiness):** `Q2RatingsPreflightCheck.gs` is
+        already built and was deployed to PROD earlier this session
+        (commit `00c76b0`) — re-confirming it's still live (every
+        subsequent `main` push has carried it forward) before telling
+        the user it's ready to run. Its output decides whether Q2 can
+        run this week or needs a ratings-collection round first.
 
 - [ ] **Partition headers silently diverge from canonical `SCHEMAS`, two
       independent ways — confirmed with real findings, not just a
