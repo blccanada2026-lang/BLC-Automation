@@ -42,32 +42,66 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ## Session State (last updated: end of turn, 2026-07-27)
 
-**Just completed:** PR #4 merged by the user (`b39f175`) and deployed
-to PROD from the primary checkout on `main`. `npm run push:prod` — 153
-files pushed. Post-deploy verification via a fresh isolated PROD pull
-confirmed the bonus-period layer (`BonusPeriodEngine.gs`,
-`BonusPeriodCommit.gs`, `DanglingCorrectionGuard.gs`) and the
-`changeSupervisor()` idempotency fix (`StaffOnboarding.gs`,
-`PayrollEngine.gs`, `QuarterlyBonusEngine.gs`, `PortalData.gs`) are all
-live and byte-identical to `main`; `DAL.gs` carries the
-`BonusPeriodEngine` `WRITE_PERMISSIONS` entry; DEV-only rehearsal
-tooling correctly did NOT land in PROD. `npm run push:dev` run
-immediately after to keep DEV in sync; `.clasp.json` confirmed correct
-across the primary checkout and all worktrees (no contamination).
-PROD's pre-deploy version (81, "Version 1July 9") recorded as rollback
-reference. Full detail in the `changeSupervisor()` task entry below
-(now marked complete).
-**Q2 status:** `Q2RatingsPreflightCheck.gs` run by the user — **0 of 13**
-active staff have a `2026-Q2` `FACT_PERFORMANCE_RATINGS` row yet. Q2's
-bonus is blocked on ratings collection, not on code — nothing further
-to build here until ratings start coming in.
-**Next action:** none pending from the assistant. The Q2 bonus dry-run
-is a separate, explicit go-ahead from the user once ratings are in
-(fully or partially) — not scheduled or assumed here.
+**Just completed:** all 4 payroll-automation investigations, read-only,
+on `payroll-automation/investigation` (own worktree). `PAYROLL_
+AUTOMATION_ARCHITECTURE.md` is the complete deliverable — existing-
+codebase audit, RBAC + PM bonus architecture (including the recorded
+Aarthi access decision — `aarthirajeshnair@gmail.com`, `HR_ACCOUNTING`,
+PREPARE+REVIEW only, no commit authority), the paystub-extension design,
+and a 4-phase build plan with 10 open questions and a 3-item risk
+register. No code/schema/config touched anywhere in this thread. Full
+detail in the new "Payroll automation build" task entry above.
+**Q2 status (unrelated thread, unchanged):** `Q2RatingsPreflightCheck.gs`
+still shows **0 of 13** active staff confirmed for `2026-Q2` — blocked
+on ratings collection, not code.
+**Next action:** none pending from the assistant. Payroll automation
+implementation is blocked on your review of the architecture doc and
+the 10 open questions in its §4.4 — do not start Phase B1 without that
+review. Q2 bonus dry-run remains a separate go-ahead, your call on
+timing.
 
 ---
 
 ## Active
+
+- [ ] **Payroll automation build — HR_ACCOUNTING role for Aarthi, combined
+      paystub, aggregate confirmation gate, PM bonus flat calc,
+      auto-reminder, collapsible My Hours UI.** Investigation phase
+      started and **fully complete** 2026-07-27, branch
+      `payroll-automation/investigation` (own worktree,
+      `.worktrees/payroll-automation-investigation`, off `main`@`58ed600`).
+      Full findings, proposals, phased build plan, open questions, and
+      risk register in **`PAYROLL_AUTOMATION_ARCHITECTURE.md`** at the
+      repo root (that branch) — four investigation sections (§1 existing
+      codebase audit, §2 RBAC + PM bonus architecture, §3 extending the
+      existing paystub system, §4 consolidated build plan/open questions/
+      risks), committed across 6 commits
+      (`0c0ab9e`, `903faf8`, `060e5cf`, `d35a98c`, `36348e2`).
+      **Business decision already recorded** (§2 of the doc): Aarthi's
+      email is `aarthirajeshnair@gmail.com`, role `HR_ACCOUNTING`, access
+      PREPARE + REVIEW only — dry-run previews, send paystub emails,
+      generate reports — no commit authority (payroll commit, bonus
+      commit stay CEO-exclusive). Read-only throughout — **no code,
+      schema, or config changes made in any of the 4 investigations.**
+      **Blocked on:** your review of the architecture document and
+      resolution of §4.4's open questions (10 items — payment advice
+      sheet format, the quarterly/annual bonus double-count marker
+      mechanism, `enforceFinancialAccess()`'s exact redesign shape,
+      whether the existing bonus button migrates to a new `BONUS_RUN`
+      action, whether Aarthi needs a distinct HR dashboard, and others —
+      full list in the doc). **Implementation has not started** — the doc
+      itself is the entire deliverable of this phase. Top 3 risks flagged
+      in §4.5: (1) the three RBAC gates (matrix, `enforceFinancialAccess()`,
+      hardcoded portal `role === 'CEO'` checks) shipping partially instead
+      of atomically, leaving Aarthi with buttons that fail confusingly;
+      (2) quarterly/annual bonus double-counting in the combined paystub
+      once merged in, since the annual-bonus lookup key is year- not
+      month-scoped; (3) the hardcoded-role-list duplication pattern found
+      independently in 3 places already (`onboardStaff`/`onboardStaffRow_`/
+      `buildPerms_`) — same failure shape as this session's own DEV-
+      clobbering and hardcoded-cleanup-list incidents in a different
+      domain, mitigated by one whole-`src/` grep sweep before Phase B1
+      ships.
 
 - [x] **`changeSupervisor()` is not truly idempotent — FIXED, MERGED, DEPLOYED TO PROD, 2026-07-27.**
       Shipped together with the bonus-period-layer promotion in PR #4
