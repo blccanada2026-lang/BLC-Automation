@@ -16,20 +16,141 @@ session otherwise. Keep it terse (2-4 lines) and overwrite it each turn;
 it's a same-turn breadcrumb, not a log. The durable narrative belongs in
 each task's own entry below.
 
+**Standing practice, added 2026-07-27 — `push:dev` discipline.** A
+memory note alone failed to prevent this twice in one session (see the
+"DEV-only rehearsal work" task below for the incident): `clasp push
+--force` (what `push:dev`/`push:prod` run) fully **replaces** a
+script's deployed content — it does not merge. When a DEV-only
+rehearsal/testing branch exists with content beyond `main` (extra
+files `main` doesn't have), **the rule, chosen and followed
+mechanically, not left to memory:**
+
+> **All `push:dev` calls must originate from the worktree/branch that
+> currently has the superset of everything that needs to be in DEV** —
+> rebase that branch onto current `main` first if `main` has advanced,
+> then push from there. Never run `push:dev` from the primary checkout
+> (`main`) while a separate DEV-only branch has content `main` lacks —
+> that silently deletes it from DEV. Only resume pushing `push:dev`
+> directly from `main` once the DEV-only branch's work is merged into
+> `main` or abandoned.
+
+(The alternative considered — "always re-push the DEV-only branch
+afterward as a manual follow-up step" — was rejected: it's the same
+"remember to do X" shape that already failed twice.)
+
 ---
 
-## Session State (last updated: end of turn, 2026-07-26)
+## Session State (last updated: end of turn, 2026-07-27)
 
-**Just completed:** Task 2 fully closed — implementation, DEV
-verification, promotion (PR #3), PROD deploy, and the step 6 PROD write
-(`SYR`, `SVN`) all done and confirmed. `TEST_EVIDENCE.md` and this file
-updated with the completion record.
-**Next action:** none pending — awaiting explicit go-ahead to start
-Task 3 (QC assignment mapping). Do not begin Task 3 without it.
+**Just completed:** bonus-period-layer promotion is PAUSED (explicit
+instruction) after a DEV rehearsal surfaced a real `changeSupervisor()`
+idempotency bug (see "changeSupervisor() is not truly idempotent"
+below) — fixed the immediate corrupted DEV test data question by
+confirming PROD is clean (`RosterIntegrityCheck`: 0 inverted rows, 0
+duplicate-open person_codes). Deployed a second read-only diagnostic,
+`PartitionHeaderIntegrityCheck.gs`, to check every partition tab in
+PROD for blank/mismatched headers (the `ensurePartition()`
+non-atomicity risk) — pushed to PROD, not yet run.
+**Next action:** waiting on the user to run
+`runPartitionHeaderIntegrityCheck()` in PROD and report back. After
+that: fix `changeSupervisor()`'s idempotency bug (TDD, own branch, not
+the bonus promotion branch) per the four numbered items in that task
+entry below. Bonus promotion stays paused until the roster bug is
+fixed and re-verified.
 
 ---
 
 ## Active
+
+- [ ] **`changeSupervisor()` is not truly idempotent — HIGHEST PRIORITY,
+      blocks the bonus-period-layer promotion.** Found 2026-07-27 via a
+      DEV rehearsal of the (now-paused) bonus promotion: re-running
+      `changeSupervisor()`/`scd2FieldChange_()` with identical arguments
+      produced 6 corrupted `DIM_STAFF_ROSTER` rows for a synthetic
+      designer, each with `effective_to` **before** its own
+      `effective_from` (an inverted/impossible validity window).
+      **Root cause:** the idempotency check
+      (`String(r.effective_from).trim() !== effectiveDate`) compares a
+      Sheets-returned `Date` object against a plain ISO string — never
+      matches on real data, only on the Jest mock's plain-string
+      fixtures. A third instance of the same mock/real fidelity gap
+      documented in `PROJECT_MEMORY.md` §3.1 (Date-object vs string),
+      this time inside `scd2FieldChange_`'s own idempotency logic, not
+      a `DAL.gs` matching call. Every repeat call closes whatever row
+      is currently open (even one a prior identical call just created)
+      and appends another — N calls produce N rows, all but the last
+      corrupted with the same stale `effective_to`.
+      **`PROD confirmed clean 2026-07-27`** (`RosterIntegrityCheck.gs`:
+      0 inverted-window rows, 0 person_codes with duplicate open rows,
+      across all 35 roster rows) — clean only because
+      `Task2Step6Apply.gs`'s pre-write verification aborts a second run
+      against a state that no longer matches its hardcoded expectation,
+      not because `changeSupervisor()` itself is safe. Any future
+      caller without that specific guard is exposed.
+      **Fix — TDD-first, on its own branch, NOT the bonus promotion
+      branch:**
+      1. True idempotency: if the person's current open row already has
+         the target `supervisor_code` (or field values, for the
+         generic `scd2FieldChange_` case) with the same
+         `effective_from`, return a no-op without writing. Normalize
+         both sides (Date object or string) to `'YYYY-MM-DD'` before
+         comparing — do not repeat the string-vs-Date mistake. Test:
+         calling `changeSupervisor()` twice with identical args must
+         leave exactly two rows, not three.
+      2. Invariant validation in `scd2FieldChange_()`: reject any write
+         that would produce `effective_to < effective_from`. Throw,
+         naming the person and both dates. Test it.
+      3. Extend the duplicate/integrity guard in all four `asOfDate`
+         resolution paths (`PayrollEngine.buildStaffCache_`,
+         `QuarterlyBonusEngine.buildStaffCache_`,
+         `PortalData.resolveRosterAsOf_`, `changeSupervisor`'s own
+         open-row check) to also flag `effective_to < effective_from`
+         rows — inert for date-range matching today (by coincidence of
+         the corrupted values, not by design), but real corruption
+         that should surface loudly, not sit silently in a payroll
+         table.
+      4. The DEV rehearsal seed script itself
+         (`BonusPeriodLayerDevRehearsal.gs`, DEV-only branch) is not
+         idempotent either — re-running it compounded this exact
+         corruption. Make it reset-then-seed, or detect prior seed
+         state and refuse, before it's used again.
+      **Bonus-period-layer promotion (`payroll-hardening/
+      promote-bonus-period-layer`) stays paused until this is fixed and
+      re-verified** — it was otherwise fully built and green (see
+      Completed section for the promotion's own status).
+
+- [ ] **`ensurePartition()` is not atomic — can silently discard every
+      write to a broken partition.** Found 2026-07-27, same DEV
+      rehearsal session (a real Sheets service timeout hit mid-call).
+      **Mechanism** (`DAL.gs`, `ensurePartition()`): creating a new
+      partition tab (`insertSheet()`) and populating its header row
+      (`getHeaders_()` + `setValues()`) are two separate Sheets API
+      calls, not one atomic operation. If execution is interrupted
+      between them — a timeout, a quota error, anything — the result
+      is a real tab that **exists but has no header row**. The
+      early-return "already exists" check
+      (`if (existingSheet) return`) only checks the tab *name*, never
+      verifies headers are present, so a broken partition never
+      self-heals on a later call.
+      **Consequence — this is why it's serious, not cosmetic:**
+      `objectToRow_()` (used by every `DAL.appendRow()`) maps field
+      values strictly against row 1. A blank row 1 means every field
+      of every row written to that partition is **silently discarded**
+      — the write reports success, the data is gone. Same failure
+      shape as the independently-found Jan–May "exists but empty"
+      partition confusion. Recurs monthly, per partitioned table,
+      forever — not a one-time risk.
+      **Read-only PROD scan deployed 2026-07-27**
+      (`PartitionHeaderIntegrityCheck.gs`, pushed to PROD) — scans every
+      `TABLE|YYYY-MM` tab's row 1 against `SetupScript.gs`'s canonical
+      `SCHEMAS` map, flags blank or mismatched headers. **Not yet run —
+      waiting on the user to run `runPartitionHeaderIntegrityCheck()`
+      and report findings.**
+      **Proposed fix, for when this is scoped (not implemented yet):**
+      the early-return path must verify headers actually exist, not
+      just that the tab does — and repair them (copy from another
+      partition of the same table) if missing, rather than trusting
+      tab existence alone.
 
 - [ ] **Task 3 — QC assignment mapping** (`DIM_QC_ASSIGNMENTS` +
       `QCHandler.gs` CC logic) — **unblocked as of 2026-07-26** (Task 2,
