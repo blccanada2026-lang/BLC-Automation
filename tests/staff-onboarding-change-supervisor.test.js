@@ -180,8 +180,14 @@ describe('StaffOnboarding.changeSupervisor()', () => {
         { person_code: 'KUM', supervisor_code: 'OTHER_TL', effective_from: '2025-01-01', effective_to: '' }
       ]);
 
+      // Tightened 2026-07-27: assert on the SPECIFIC guard (open-ended
+      // row count), not just any throw mentioning KUM — a different
+      // guard (e.g. inverted-window) throwing for the same person would
+      // otherwise pass this test for the wrong reason.
       expect(() => StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'NEW_TL', '2026-07-01'))
         .toThrow(/KUM/);
+      expect(() => StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'NEW_TL', '2026-07-01'))
+        .toThrow(/open-ended/i);
 
       // Rejected before any write — still exactly the 2 pre-existing rows.
       const rows = mocks.store['DIM_STAFF_ROSTER'].filter(r => r.person_code === 'KUM');
@@ -224,9 +230,13 @@ describe('StaffOnboarding.changeSupervisor()', () => {
       const originalUpdateWhere = mocks.DAL.updateWhere;
       mocks.DAL.updateWhere = jest.fn(() => ({ updated: 0 }));
 
+      // Tightened 2026-07-27: assert on the SPECIFIC write-result guard,
+      // not just any throw mentioning KUM.
       try {
         expect(() => StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'NEW_TL', '2026-07-01'))
           .toThrow(/KUM/);
+        expect(() => StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'NEW_TL', '2026-07-01'))
+          .toThrow(/close-row write/i);
       } finally {
         mocks.DAL.updateWhere = originalUpdateWhere;
       }
@@ -237,9 +247,13 @@ describe('StaffOnboarding.changeSupervisor()', () => {
       const originalUpdateWhere = mocks.DAL.updateWhere;
       mocks.DAL.updateWhere = jest.fn(() => ({ updated: 2 }));
 
+      // Tightened 2026-07-27: assert on the SPECIFIC write-result guard,
+      // not just any throw mentioning KUM.
       try {
         expect(() => StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'NEW_TL', '2026-07-01'))
           .toThrow(/KUM/);
+        expect(() => StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'NEW_TL', '2026-07-01'))
+          .toThrow(/close-row write/i);
       } finally {
         mocks.DAL.updateWhere = originalUpdateWhere;
       }
@@ -261,6 +275,89 @@ describe('StaffOnboarding.changeSupervisor()', () => {
       expect(closedRows).toHaveLength(1);
       expect(closedRows[0].effective_to).toBe('2026-06-30');
       expect(closedRows[0].supervisor_code).toBe('OLD_TL');
+    });
+  });
+
+  describe('true idempotency against REAL Sheets data types (2026-07-27 fix)', () => {
+    // Root cause of the DEV rehearsal corruption: the old idempotency
+    // check compared effective_from with plain String()-based equality
+    // against a literal date string. That only ever matched the Jest
+    // mock's plain-string fixtures — real Sheets returns a fresh Date
+    // object on every read for a date-formatted column, and
+    // String(dateObject) never equals 'YYYY-MM-DD'. So on real data the
+    // check never fired, and a repeat call with identical arguments kept
+    // closing whatever row was open (even one a prior identical call had
+    // just created) and appending another — N calls produced N rows.
+
+    test('two identical changeSupervisor() calls leave exactly two rows, even when effective_from reads back as a Date object (simulating real Sheets)', () => {
+      seedRoster([{ person_code: 'KUM', supervisor_code: 'OLD_TL' }]);
+
+      const first = StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'NEW_TL', '2026-02-01');
+      expect(first.changed).toBe(true);
+      expect(first.reason).toBe('applied');
+
+      // Simulate exactly what real Sheets returns for a date-formatted
+      // column: a Date object, not the string literal the mock normally
+      // stores. This is the precise condition that broke the old check.
+      const newRow = mocks.store['DIM_STAFF_ROSTER'].find(
+        r => r.person_code === 'KUM' && r.supervisor_code === 'NEW_TL'
+      );
+      newRow.effective_from = new Date('2026-02-01T00:00:00Z');
+
+      const second = StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'NEW_TL', '2026-02-01');
+
+      expect(second.changed).toBe(false);
+      expect(second.reason).toBe('already_current');
+      expect(second.closedRow).toBe(false);
+      expect(second.newRowCreated).toBe(false);
+
+      const rows = mocks.store['DIM_STAFF_ROSTER'].filter(r => r.person_code === 'KUM');
+      expect(rows).toHaveLength(2); // NOT three
+    });
+
+    test('still correctly proceeds (changed: true) when the effectiveDate genuinely differs from the current open row', () => {
+      seedRoster([{ person_code: 'KUM', supervisor_code: 'OLD_TL' }]);
+      StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'NEW_TL', '2026-02-01');
+
+      const result = StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'THIRD_TL', '2026-07-01');
+      expect(result.changed).toBe(true);
+      expect(result.reason).toBe('applied');
+
+      const rows = mocks.store['DIM_STAFF_ROSTER'].filter(r => r.person_code === 'KUM');
+      expect(rows).toHaveLength(3);
+    });
+  });
+
+  describe('inverted-window invariant (2026-07-27 fix)', () => {
+    // Tightened 2026-07-27: every assertion here checks BOTH the person
+    // code AND the word "inverted" — a real DEV run caught a false pass
+    // where a DIFFERENT guard (duplicate-open-row, firing on an
+    // unrelated person) satisfied a bare /KUM/ check without the
+    // inverted-window guard ever actually being exercised.
+
+    test('rejects a change whose effectiveDate is not after the current open row\'s own effective_from', () => {
+      seedRoster([{ person_code: 'KUM', supervisor_code: 'OLD_TL', effective_from: '2026-02-01', effective_to: '' }]);
+
+      expect(() => StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'NEW_TL', '2026-01-15'))
+        .toThrow(/KUM/);
+      expect(() => StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'NEW_TL', '2026-01-15'))
+        .toThrow(/inverted/i);
+
+      // Rejected before any write.
+      const rows = mocks.store['DIM_STAFF_ROSTER'].filter(r => r.person_code === 'KUM');
+      expect(rows).toHaveLength(1);
+    });
+
+    test('throws if ANY existing row for the person already has an inverted validity window, even one unrelated to the current change', () => {
+      seedRoster([
+        { person_code: 'KUM', supervisor_code: 'CORRUPT_TL', effective_from: '2025-06-01', effective_to: '2025-05-01' },
+        { person_code: 'KUM', supervisor_code: 'OLD_TL', effective_from: '2025-01-01', effective_to: '' }
+      ]);
+
+      expect(() => StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'NEW_TL', '2026-02-01'))
+        .toThrow(/KUM/);
+      expect(() => StaffOnboarding.changeSupervisor('ceo@test.blc.internal', 'KUM', 'NEW_TL', '2026-02-01'))
+        .toThrow(/inverted/i);
     });
   });
 });

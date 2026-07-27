@@ -170,7 +170,12 @@ describe('End-to-end: buildStaffCache_(asOfDate) + buildSupervisorBonusMap_ — 
         { person_code: 'KUM', supervisor_code: 'NEW_TL', effective_from: '2025-01-01', effective_to: '' }
       ]);
 
+      // Tightened 2026-07-27: assert on the SPECIFIC guard, not just any
+      // throw mentioning KUM — a real DEV run caught a different guard
+      // (inverted-window) satisfying a bare person-code check for the
+      // wrong reason.
       expect(() => PayrollEngine.buildStaffCache_('2026-01-01')).toThrow(/KUM/);
+      expect(() => PayrollEngine.buildStaffCache_('2026-01-01')).toThrow(/more than one/i);
     });
 
     test('does not throw when duplicate rows exist for a DIFFERENT person_code than the one being resolved twice', () => {
@@ -180,6 +185,18 @@ describe('End-to-end: buildStaffCache_(asOfDate) + buildSupervisorBonusMap_ — 
       ]);
 
       expect(() => PayrollEngine.buildStaffCache_('2026-01-01')).not.toThrow();
+    });
+
+    test('throws on an inverted validity window (effective_to before effective_from), even for an asOfDate that would otherwise skip the row entirely', () => {
+      seedRoster([
+        // effective_from is AFTER effective_to — an impossible window. asOfDate below
+        // is early enough that the normal effFrom > asOfDate check would silently
+        // "continue" past this row if the inverted-window check didn't fire first.
+        { person_code: 'KUM', supervisor_code: 'TL1', effective_from: '2026-05-01', effective_to: '2026-04-01' }
+      ]);
+
+      expect(() => PayrollEngine.buildStaffCache_('2024-01-01')).toThrow(/KUM/);
+      expect(() => PayrollEngine.buildStaffCache_('2024-01-01')).toThrow(/inverted/i);
     });
   });
 });

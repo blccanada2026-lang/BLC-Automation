@@ -644,13 +644,26 @@ var PortalData = (function () {
       var isActive = s.active === true || String(s.active).toUpperCase().trim() === 'TRUE';
       if (!isActive) continue;
 
-      var effFrom = pdToIsoDate_(s.effective_from);
-      var effTo   = pdToIsoDate_(s.effective_to);
-      if (effFrom && effFrom > asOfDate) continue;
-      if (effTo   && effTo   < asOfDate) continue;
-
       var code = String(s.person_code || '').trim();
       if (!code) continue;
+
+      var effFrom = pdToIsoDate_(s.effective_from);
+      var effTo   = pdToIsoDate_(s.effective_to);
+
+      // Integrity check, unconditional — fires regardless of whether this
+      // row would otherwise match asOfDate. An inverted window is data
+      // corruption, not something to silently skip past. Added 2026-07-27
+      // after a broken changeSupervisor() idempotency check produced
+      // exactly this shape in DEV.
+      if (effFrom && effTo && effTo < effFrom) {
+        throw new Error('PortalData.resolveRosterAsOf_: person_code "' + code + '" has a DIM_STAFF_ROSTER row ' +
+                         'with an inverted validity window (effective_from="' + effFrom + '" is AFTER ' +
+                         'effective_to="' + effTo + '") — this is data corruption, not a query issue. ' +
+                         'Clean up the row before re-running.');
+      }
+
+      if (effFrom && effFrom > asOfDate) continue;
+      if (effTo   && effTo   < asOfDate) continue;
 
       if (resolved[code]) {
         throw new Error('PortalData.resolveRosterAsOf_: more than one DIM_STAFF_ROSTER row resolves as ' +

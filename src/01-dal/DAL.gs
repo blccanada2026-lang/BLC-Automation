@@ -87,7 +87,7 @@ var DAL = (function () {
     'STG_INTAKE_SBS':           ['SheetAdapter'],       // SBS job intake staging — status written back per row
     'FACT_CLIENT_FEEDBACK':     ['ClientFeedback'],          // feedback scores — written by ClientFeedback handler
     'FACT_PERFORMANCE_RATINGS': ['PortalData'],              // TL/PM quarterly ratings — written via portal
-    'FACT_QUARTERLY_BONUS':     ['QuarterlyBonusEngine'],   // quarterly + annual bonus calculations
+    'FACT_QUARTERLY_BONUS':     ['QuarterlyBonusEngine', 'BonusPeriodEngine'],   // quarterly + annual bonus calculations; BonusPeriodEngine = BonusPeriodCommit.gs's callerModule identity
     'DIM_PRODUCT_RATES':        ['AdminEngine', 'MigrationEngine'],
     'DIM_SEQUENCE_COUNTERS':    ['JobCreateHandler', 'AdminEngine'],
 
