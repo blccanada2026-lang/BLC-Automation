@@ -26,6 +26,6 @@
     "jest": "^30.3.0"
   },
   "jest": {
-    "testPathIgnorePatterns": ["/node_modules/", "/\\.worktrees/"]
+    "testPathIgnorePatterns": ["/node_modules/", "<rootDir>/\\.worktrees/"]
   }
 }
