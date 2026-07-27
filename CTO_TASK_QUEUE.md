@@ -42,24 +42,26 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ## Session State (last updated: end of turn, 2026-07-27)
 
-**Just completed:** corrected DEV rehearsal chain re-run and assessed.
-Core result: **PROVEN** — Task 2's effective-dating works under the
-bonus path, `BonusPeriodCommit` drives `main`'s real
-`QuarterlyBonusEngine` end-to-end, both guards (duplicate-row,
-inverted-window) behave correctly, dangling-correction guard ran
-clean. **NOT PROVEN** — actual bonus arithmetic with real hours (DEV
-work-log seeding failed, a tooling gap not a product bug); assessed as
-non-blocking, since the real Q2 run exercises arithmetic against
-PROD's actual data anyway. Full incident detail (the false-pass catch,
-the `SGO`/10-vs-9 finding, `SEDDS1`'s resolution) in the
-`changeSupervisor()` task entry below.
-**Next action:** two parallel tracks now open — **Track A**: build and
-open PR #4 (bonus layer + the idempotency fix combined, since the fix
-gates the bonus layer's safety), same discipline as PR #3 (diff
-against `main`, drift check, full suite, stop for review before
-merge). **Track B**: confirm `Q2RatingsPreflightCheck.gs` is still
-live in PROD (already deployed earlier, `00c76b0`), then tell the user
-it's ready — they decide when to run it.
+**Just completed:** Track A — PR #4 opened.
+https://github.com/blccanada2026-lang/BLC-Automation/pull/4
+Branch `payroll-hardening/promote-bonus-period-layer-v2` (off `main`@`bb5d477`,
+commit `8e2dbf9`), combining the bonus-period layer
+(`payroll-hardening/promote-bonus-period-layer`@`ced0f68`) with the
+`changeSupervisor()` idempotency fix
+(`payroll-hardening/changesupervisor-idempotency-fix`@`1adb2c7`), since
+the fix gates the bonus layer's safety. Verified: full suite 381/381
+(matches the DEV rehearsal branch's count exactly); diff scope against
+`main` is exactly the expected 16 files; fresh isolated PROD pull
+confirms `StaffOnboarding.gs`, `PayrollEngine.gs`,
+`QuarterlyBonusEngine.gs`, `PortalData.gs`, `DAL.gs` are all still
+byte-identical to `main` (no leakage to PROD yet). **PR is open, not
+merged — awaiting the user's review per "stop for my review."**
+Track B: confirmed `Q2RatingsPreflightCheck.gs` is still live in PROD
+(byte-identical to `main` via the same isolated pull method, commit
+`00c76b0`) — ready to run, waiting on the user's go-ahead on timing.
+**Next action:** none pending from the assistant on either track — PR
+#4 awaits review/merge decision; Q2 ratings preflight awaits the
+user's decision on when to run it. Both are now the user's call.
 
 ---
 
