@@ -112,6 +112,19 @@ var PayrollEngine = (function () {
 
       var effFrom = toIsoDate_(row.effective_from);
       var effTo   = toIsoDate_(row.effective_to);
+
+      // Integrity check, unconditional — fires regardless of whether this
+      // row would otherwise match asOfDate. An inverted window is data
+      // corruption, not something to silently skip past. Added 2026-07-27
+      // after a broken changeSupervisor() idempotency check produced
+      // exactly this shape in DEV.
+      if (effFrom && effTo && effTo < effFrom) {
+        throw new Error('PayrollEngine.buildStaffCache_: person_code "' + code + '" has a DIM_STAFF_ROSTER row ' +
+                         'with an inverted validity window (effective_from="' + effFrom + '" is AFTER ' +
+                         'effective_to="' + effTo + '") — this is data corruption, not a query issue. ' +
+                         'Clean up the row before re-running.');
+      }
+
       if (effFrom && effFrom > asOfDate) continue; // not yet effective as of asOfDate
       if (effTo   && effTo   < asOfDate) continue; // already closed out as of asOfDate
 

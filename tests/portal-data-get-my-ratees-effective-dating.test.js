@@ -184,7 +184,27 @@ describe('PortalData.getMyRatees() — effective-dated supervisor lookup', () =>
         return { email: email, role: 'TEAM_LEAD', personCode: 'OLD_TL' };
       };
 
+      // Tightened 2026-07-27: assert on the SPECIFIC guard, not just any
+      // throw mentioning KUM.
       expect(() => PortalData.getMyRatees('old-tl@test.blc.internal', '2026-Q1')).toThrow(/KUM/);
+      expect(() => PortalData.getMyRatees('old-tl@test.blc.internal', '2026-Q1')).toThrow(/more than one/i);
+    });
+
+    test('throws on an inverted validity window (effective_to before effective_from), even for a quarter that would otherwise skip the row entirely', () => {
+      freezeToday('2026-08-01');
+      seedRoster([
+        { person_code: 'OLD_TL', role: 'TEAM_LEAD' },
+        // effective_from is AFTER effective_to — an impossible window, far outside
+        // Q1 2026's range either way, so the normal range filter would silently skip
+        // it if the inverted-window check didn't fire first.
+        { person_code: 'KUM', role: 'DESIGNER', supervisor_code: 'OLD_TL', effective_from: '2026-05-01', effective_to: '2026-04-01' }
+      ]);
+      mocks.RBAC.resolveActor = function (email) {
+        return { email: email, role: 'TEAM_LEAD', personCode: 'OLD_TL' };
+      };
+
+      expect(() => PortalData.getMyRatees('old-tl@test.blc.internal', '2026-Q1')).toThrow(/KUM/);
+      expect(() => PortalData.getMyRatees('old-tl@test.blc.internal', '2026-Q1')).toThrow(/inverted/i);
     });
   });
 });

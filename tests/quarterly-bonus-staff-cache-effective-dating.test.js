@@ -78,7 +78,19 @@ describe('QuarterlyBonusEngine.buildStaffCache_(asOfDate)', () => {
         { person_code: 'KUM', supervisor_code: 'NEW_TL', effective_from: '2025-01-01', effective_to: '' }
       ]);
 
+      // Tightened 2026-07-27: assert on the SPECIFIC guard, not just any
+      // throw mentioning KUM.
       expect(() => QuarterlyBonusEngine.buildStaffCache_('2026-01-01')).toThrow(/KUM/);
+      expect(() => QuarterlyBonusEngine.buildStaffCache_('2026-01-01')).toThrow(/more than one/i);
+    });
+
+    test('throws on an inverted validity window (effective_to before effective_from), even for an asOfDate that would otherwise skip the row entirely', () => {
+      seedRoster([
+        { person_code: 'KUM', supervisor_code: 'TL1', effective_from: '2026-05-01', effective_to: '2026-04-01' }
+      ]);
+
+      expect(() => QuarterlyBonusEngine.buildStaffCache_('2024-01-01')).toThrow(/KUM/);
+      expect(() => QuarterlyBonusEngine.buildStaffCache_('2024-01-01')).toThrow(/inverted/i);
     });
   });
 });

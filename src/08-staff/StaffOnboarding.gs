@@ -989,6 +989,24 @@ var StaffOnboarding = (function () {
   // both ends against a single target date.
   // ============================================================
 
+  /**
+   * Normalizes a Sheets date cell (Date object or string) to 'YYYY-MM-DD'.
+   * Mirrors PayrollEngine.gs's toIsoDate_ — separate module, can't share it.
+   * Added 2026-07-27: the idempotency check below used to compare
+   * effective_from with plain String() equality against a literal date
+   * string, which only ever matched Jest's plain-string mock fixtures —
+   * real Sheets returns a fresh Date object per read for a date-formatted
+   * column, and String(dateObject) never equals 'YYYY-MM-DD'. Every
+   * date-typed comparison in this function must go through this first.
+   */
+  function toIsoDateStr_(val) {
+    if (!val) return '';
+    if (val instanceof Date) {
+      return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    }
+    return String(val).trim().substring(0, 10);
+  }
+
   /** 'YYYY-MM-DD' -> 'YYYY-MM-DD' for the previous calendar day, UTC-based to avoid timezone drift. */
   function dayBefore_(isoDateStr) {
     var parts = String(isoDateStr).split('-');
@@ -1089,21 +1107,23 @@ var StaffOnboarding = (function () {
       throw new Error('StaffOnboarding.scd2FieldChange_: no DIM_STAFF_ROSTER row found for person_code "' + personCode + '"');
     }
 
-    // Idempotency: a row already representing this exact change means nothing to do.
-    var alreadyDone = existing.some(function (r) {
-      if (String(r.effective_from || '').trim() !== effectiveDate) return false;
-      return changedFields.every(function (k) {
-        return String(r[k] == null ? '' : r[k]).trim().toUpperCase() ===
-               String(fieldChanges[k] == null ? '' : fieldChanges[k]).trim().toUpperCase();
-      });
+    // Integrity pre-check: flag ANY row with an inverted validity window
+    // (effective_to before effective_from) unconditionally, before anything
+    // else runs — regardless of whether that row would otherwise match this
+    // call's asOfDate/idempotency logic. This is real data corruption, not
+    // a query-shape issue, and must surface loudly rather than sit silently
+    // in a payroll table. Found 2026-07-27: a broken idempotency check (see
+    // below) let repeat calls produce exactly this shape.
+    existing.forEach(function (r) {
+      var f = toIsoDateStr_(r.effective_from);
+      var t = toIsoDateStr_(r.effective_to);
+      if (f && t && t < f) {
+        throw new Error('StaffOnboarding.scd2FieldChange_: person_code "' + personCode + '" has a ' +
+                         'DIM_STAFF_ROSTER row with an inverted validity window (effective_from="' + f +
+                         '" is AFTER effective_to="' + t + '") — this is data corruption, not a query issue. ' +
+                         'Clean up the row before retrying.');
+      }
     });
-    if (alreadyDone) {
-      Logger.info('SCD2_CHANGE_ALREADY_DONE', {
-        module: MODULE, person_code: personCode,
-        field_changes: fieldChanges, effective_date: effectiveDate
-      });
-      return { personCode: personCode, closedRow: false, newRowCreated: false };
-    }
 
     // The row to close is whichever one is currently open-ended (effective_to blank).
     var openRows = existing.filter(function (r) { return !String(r.effective_to || '').trim(); });
@@ -1119,7 +1139,46 @@ var StaffOnboarding = (function () {
     }
     var currentRow = openRows[0];
 
+    // True idempotency, checked against the CURRENT OPEN ROW specifically
+    // (not "any existing row" — narrower and correct: a coincidentally
+    // matching HISTORICAL closed row must never be treated as "already
+    // done"). Normalizes effective_from via toIsoDateStr_ before comparing
+    // — the old check compared String(r.effective_from) directly against
+    // effectiveDate, which never matched a real Sheets Date object, so a
+    // repeat call never hit this path and kept writing new rows instead.
+    var currentRowEffectiveFrom = toIsoDateStr_(currentRow.effective_from);
+    if (currentRowEffectiveFrom === effectiveDate) {
+      var alreadyCurrent = changedFields.every(function (k) {
+        return String(currentRow[k] == null ? '' : currentRow[k]).trim().toUpperCase() ===
+               String(fieldChanges[k] == null ? '' : fieldChanges[k]).trim().toUpperCase();
+      });
+      if (alreadyCurrent) {
+        Logger.info('SCD2_CHANGE_ALREADY_DONE', {
+          module: MODULE, person_code: personCode,
+          field_changes: fieldChanges, effective_date: effectiveDate
+        });
+        return {
+          personCode: personCode, closedRow: false, newRowCreated: false,
+          changed: false, reason: 'already_current'
+        };
+      }
+    }
+
     var closedTo = dayBefore_(effectiveDate);
+
+    // Invariant: closing the current row with this effectiveDate must never
+    // produce effective_to < effective_from. The only way this can happen
+    // via the public API is effectiveDate being at or before the current
+    // row's own start date (a backdate earlier than when it began) — but
+    // it's also the exact shape the idempotency bug produced when a repeat
+    // call closed a row a PRIOR identical call had just opened. Reject it
+    // outright rather than writing corrupted data.
+    if (closedTo < currentRowEffectiveFrom) {
+      throw new Error('StaffOnboarding.scd2FieldChange_: refusing to close person_code "' + personCode +
+                       '"\'s current row (effective_from="' + currentRowEffectiveFrom + '") with effective_to="' +
+                       closedTo + '" — that is BEFORE the row\'s own start date, an inverted/impossible validity ' +
+                       'window. effectiveDate ("' + effectiveDate + '") must be after "' + currentRowEffectiveFrom + '".');
+    }
 
     // Match on effective_to = '' rather than effective_from: effective_from
     // is a date-formatted DIM_STAFF_ROSTER column, and the real DAL's
@@ -1163,7 +1222,10 @@ var StaffOnboarding = (function () {
       effective_date: effectiveDate, closed_effective_to: closedTo
     });
 
-    return { personCode: personCode, closedRow: closedCount === 1, newRowCreated: true };
+    return {
+      personCode: personCode, closedRow: closedCount === 1, newRowCreated: true,
+      changed: true, reason: 'applied'
+    };
   }
 
   /**
