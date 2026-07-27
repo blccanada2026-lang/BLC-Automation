@@ -42,33 +42,59 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ## Session State (last updated: end of turn, 2026-07-27)
 
-**Just completed:** Track A — PR #4 opened.
-https://github.com/blccanada2026-lang/BLC-Automation/pull/4
-Branch `payroll-hardening/promote-bonus-period-layer-v2` (off `main`@`bb5d477`,
-commit `8e2dbf9`), combining the bonus-period layer
-(`payroll-hardening/promote-bonus-period-layer`@`ced0f68`) with the
-`changeSupervisor()` idempotency fix
-(`payroll-hardening/changesupervisor-idempotency-fix`@`1adb2c7`), since
-the fix gates the bonus layer's safety. Verified: full suite 381/381
-(matches the DEV rehearsal branch's count exactly); diff scope against
-`main` is exactly the expected 16 files; fresh isolated PROD pull
-confirms `StaffOnboarding.gs`, `PayrollEngine.gs`,
-`QuarterlyBonusEngine.gs`, `PortalData.gs`, `DAL.gs` are all still
-byte-identical to `main` (no leakage to PROD yet). **PR is open, not
-merged — awaiting the user's review per "stop for my review."**
-Track B: confirmed `Q2RatingsPreflightCheck.gs` is still live in PROD
-(byte-identical to `main` via the same isolated pull method, commit
-`00c76b0`) — ready to run, waiting on the user's go-ahead on timing.
-**Next action:** none pending from the assistant on either track — PR
-#4 awaits review/merge decision; Q2 ratings preflight awaits the
-user's decision on when to run it. Both are now the user's call.
+**Just completed:** PR #4 merged by the user (`b39f175`) and deployed
+to PROD from the primary checkout on `main`. `npm run push:prod` — 153
+files pushed. Post-deploy verification via a fresh isolated PROD pull
+confirmed the bonus-period layer (`BonusPeriodEngine.gs`,
+`BonusPeriodCommit.gs`, `DanglingCorrectionGuard.gs`) and the
+`changeSupervisor()` idempotency fix (`StaffOnboarding.gs`,
+`PayrollEngine.gs`, `QuarterlyBonusEngine.gs`, `PortalData.gs`) are all
+live and byte-identical to `main`; `DAL.gs` carries the
+`BonusPeriodEngine` `WRITE_PERMISSIONS` entry; DEV-only rehearsal
+tooling correctly did NOT land in PROD. `npm run push:dev` run
+immediately after to keep DEV in sync; `.clasp.json` confirmed correct
+across the primary checkout and all worktrees (no contamination).
+PROD's pre-deploy version (81, "Version 1July 9") recorded as rollback
+reference. Full detail in the `changeSupervisor()` task entry below
+(now marked complete).
+**Q2 status:** `Q2RatingsPreflightCheck.gs` run by the user — **0 of 13**
+active staff have a `2026-Q2` `FACT_PERFORMANCE_RATINGS` row yet. Q2's
+bonus is blocked on ratings collection, not on code — nothing further
+to build here until ratings start coming in.
+**Next action:** none pending from the assistant. The Q2 bonus dry-run
+is a separate, explicit go-ahead from the user once ratings are in
+(fully or partially) — not scheduled or assumed here.
 
 ---
 
 ## Active
 
-- [ ] **`changeSupervisor()` is not truly idempotent — HIGHEST PRIORITY,
-      blocks the bonus-period-layer promotion.** Found 2026-07-27 via a
+- [x] **`changeSupervisor()` is not truly idempotent — FIXED, MERGED, DEPLOYED TO PROD, 2026-07-27.**
+      Shipped together with the bonus-period-layer promotion in PR #4
+      (merged `b39f175`), since the fix gates the bonus layer's safety.
+      `npm run push:prod` from the primary checkout, 153 files, from
+      `main`@`b39f175`. Post-deploy verification via a fresh isolated
+      PROD pull confirmed: `StaffOnboarding.gs`, `PayrollEngine.gs`,
+      `QuarterlyBonusEngine.gs`, `PortalData.gs` all byte-identical to
+      `main` (idempotency fix live); `BonusPeriodEngine.gs`,
+      `BonusPeriodCommit.gs`, `DanglingCorrectionGuard.gs` all present
+      and byte-identical to `main` (bonus layer live); `DAL.gs`'s
+      `FACT_QUARTERLY_BONUS` `WRITE_PERMISSIONS` carries the
+      `BonusPeriodEngine` entry. Confirmed absent from PROD (correctly
+      excluded, DEV-only tooling): `DevRosterDuplicateCleanup.gs`,
+      `Sedds1StaleRowFix.gs`, `BonusPeriodLayerDevRehearsal.gs`.
+      `npm run push:dev` run immediately after from the same checkout
+      (holds the superset — main content only, no DEV-only rehearsal
+      files) to keep DEV in sync; `.clasp.json` restored to DEV in the
+      primary checkout, other worktrees' independent `.clasp.json`
+      files confirmed untouched/still correct. PROD's pre-deploy Apps
+      Script version (81, "Version 1July 9", the version the live
+      `/exec` deployment is pinned to) recorded as the rollback
+      reference — this deploy doesn't touch `PortalView.html`/`Portal.gs`
+      so no New Version redeploy was needed for the `/exec` endpoint.
+      Below is the original investigation/fix history, preserved as-is.
+
+      Found 2026-07-27 via a
       DEV rehearsal of the (now-paused) bonus promotion: re-running
       `changeSupervisor()`/`scd2FieldChange_()` with identical arguments
       produced 6 corrupted `DIM_STAFF_ROSTER` rows for a synthetic
@@ -208,20 +234,23 @@ user's decision on when to run it. Both are now the user's call.
       seeding.
 
       **Two parallel tracks opened, 2026-07-27:**
-      - **Track A (promotion):** prepare PR #4 — the bonus layer
-        (`BonusPeriodEngine.gs`, `BonusPeriodCommit.gs`,
-        `DanglingCorrectionGuard.gs`, their tests, the one `DAL.gs`
-        `WRITE_PERMISSIONS` line) **combined with** the
-        `changeSupervisor()` idempotency fix (own branch, but gates the
-        bonus layer's safety — must ship together). Same discipline as
-        PR #3: diff against `main`, drift check, full suite, stop for
-        review before merge.
-      - **Track B (Q2 readiness):** `Q2RatingsPreflightCheck.gs` is
-        already built and was deployed to PROD earlier this session
-        (commit `00c76b0`) — re-confirming it's still live (every
-        subsequent `main` push has carried it forward) before telling
-        the user it's ready to run. Its output decides whether Q2 can
-        run this week or needs a ratings-collection round first.
+      - **Track A (promotion) — COMPLETE.** PR #4 built, verified
+        (381/381 tests, exact 16-file diff scope, zero PROD drift),
+        opened, and merged by the user (`b39f175`). Deployed to PROD
+        the same day — see the FIXED/MERGED/DEPLOYED status above for
+        the full deploy + post-deploy verification record. The bonus-
+        period layer and the idempotency fix are both now live in PROD.
+      - **Track B (Q2 readiness) — BLOCKED ON RATINGS.**
+        `Q2RatingsPreflightCheck.gs` confirmed live in PROD and run by
+        the user: **0 of 13** active designer/QC staff have a
+        `FACT_PERFORMANCE_RATINGS` row for `2026-Q2` yet. Q2's bonus
+        cannot run correctly until TL/PM quarterly ratings are actually
+        submitted through the portal — this is a data-collection gap,
+        not a code gap; nothing to fix here. **Next action:** once
+        ratings start coming in, re-run the preflight to track progress
+        toward 13/13, then the Q2 dry-run preview is a separate
+        go-ahead from the user once ratings are complete (or the user
+        decides to proceed with partial ratings).
 
 - [ ] **Partition headers silently diverge from canonical `SCHEMAS`, two
       independent ways — confirmed with real findings, not just a
