@@ -42,21 +42,23 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ## Session State (last updated: end of turn, 2026-07-27)
 
-**Just completed:** bonus-period-layer promotion is PAUSED (explicit
-instruction) after a DEV rehearsal surfaced a real `changeSupervisor()`
-idempotency bug (see "changeSupervisor() is not truly idempotent"
-below) — fixed the immediate corrupted DEV test data question by
-confirming PROD is clean (`RosterIntegrityCheck`: 0 inverted rows, 0
-duplicate-open person_codes). Deployed a second read-only diagnostic,
-`PartitionHeaderIntegrityCheck.gs`, to check every partition tab in
-PROD for blank/mismatched headers (the `ensurePartition()`
-non-atomicity risk) — pushed to PROD, not yet run.
-**Next action:** waiting on the user to run
-`runPartitionHeaderIntegrityCheck()` in PROD and report back. After
-that: fix `changeSupervisor()`'s idempotency bug (TDD, own branch, not
-the bonus promotion branch) per the four numbered items in that task
-entry below. Bonus promotion stays paused until the roster bug is
-fixed and re-verified.
+**Just completed:** full PROD partition-header scan reviewed — 0 blank
+headers (the bonus/payroll partitions are all clean, does NOT block the
+bonus promotion), but confirmed the deeper structural issue via three
+real findings: `FACT_QC_EVENTS` missing `qc_session_id` in 4 partitions
+(latent, no live writer, no data lost), `FACT_BILLING_LEDGER` column
+reorder in 2 partitions (not a live risk — all real reads/writes go
+through DAL's name-based mapping), `FACT_SOP_SUBMISSIONS` orphaned by an
+uncleaned rename (harmless). Folded all three into the consolidated
+"partition headers silently diverge from canonical SCHEMAS" task below.
+Explicitly confirmed independent of the other two active threads — the
+user said so directly, both proceed without waiting on this.
+**Next action:** two independent threads now unblocked and ready to
+resume: (1) fix `changeSupervisor()`'s idempotency bug (TDD, own
+branch, four numbered items in that task entry), which the bonus
+promotion is paused on; (2) nothing further needed on the partition-
+header task right now — it's fully recorded, no fix scoped/requested
+yet.
 
 ---
 
@@ -119,38 +121,80 @@ fixed and re-verified.
       re-verified** — it was otherwise fully built and green (see
       Completed section for the promotion's own status).
 
-- [ ] **`ensurePartition()` is not atomic — can silently discard every
-      write to a broken partition.** Found 2026-07-27, same DEV
-      rehearsal session (a real Sheets service timeout hit mid-call).
-      **Mechanism** (`DAL.gs`, `ensurePartition()`): creating a new
-      partition tab (`insertSheet()`) and populating its header row
-      (`getHeaders_()` + `setValues()`) are two separate Sheets API
-      calls, not one atomic operation. If execution is interrupted
-      between them — a timeout, a quota error, anything — the result
-      is a real tab that **exists but has no header row**. The
-      early-return "already exists" check
+- [ ] **Partition headers silently diverge from canonical `SCHEMAS`, two
+      independent ways — confirmed with real findings, not just a
+      theoretical hazard.** Started 2026-07-27 (a real Sheets service
+      timeout during the DEV rehearsal, since fixed independently —
+      `changeSupervisor()` idempotency task above), then confirmed
+      structural via a full PROD partition-header scan the same day.
+
+      **Mechanism A — `ensurePartition()` is not atomic.** (`DAL.gs`):
+      creating a new partition tab (`insertSheet()`) and populating its
+      header row (`getHeaders_()` + `setValues()`) are two separate
+      Sheets API calls. If interrupted between them — a timeout, a
+      quota error, anything — the result is a tab that **exists but has
+      no header row**, and the early-return "already exists" check
       (`if (existingSheet) return`) only checks the tab *name*, never
-      verifies headers are present, so a broken partition never
-      self-heals on a later call.
-      **Consequence — this is why it's serious, not cosmetic:**
+      verifies headers are present, so it never self-heals.
       `objectToRow_()` (used by every `DAL.appendRow()`) maps field
-      values strictly against row 1. A blank row 1 means every field
-      of every row written to that partition is **silently discarded**
-      — the write reports success, the data is gone. Same failure
-      shape as the independently-found Jan–May "exists but empty"
-      partition confusion. Recurs monthly, per partitioned table,
-      forever — not a one-time risk.
-      **Read-only PROD scan deployed 2026-07-27**
-      (`PartitionHeaderIntegrityCheck.gs`, pushed to PROD) — scans every
-      `TABLE|YYYY-MM` tab's row 1 against `SetupScript.gs`'s canonical
-      `SCHEMAS` map, flags blank or mismatched headers. **Not yet run —
-      waiting on the user to run `runPartitionHeaderIntegrityCheck()`
-      and report findings.**
+      values strictly against row 1 — a blank row 1 means every field
+      of every row written is **silently discarded**, write reports
+      success, data is gone. Same failure shape as the independently-
+      found Jan–May "exists but empty" confusion.
+
+      **Mechanism B — `ensurePartition()` propagates STALE schemas
+      forward, confirmed via a real example.** When creating a *new*
+      partition, `ensurePartition()` copies headers from whichever
+      existing partition tab it finds *first* in tab order — not from
+      canonical `SCHEMAS`, not from the most recent partition
+      (`DAL.gs`'s header-source loop breaks on first prefix match).
+      Real evidence: `qc_session_id` was added to `FACT_QC_EVENTS` in
+      `SCHEMAS` on 2026-06-26 (`df1eee8`) — but the `2026-07` partition,
+      created *after* that change, still lacks the column, because it
+      copied headers from an older sibling tab rather than the current
+      canonical definition. So old partitions don't just fail to get
+      migrated forward (expected) — brand-new partitions can be born
+      already stale.
+
+      **Full-spreadsheet PROD scan completed 2026-07-27**
+      (`PartitionHeaderIntegrityCheck.gs`) — 0 blank-header partitions
+      (`ensurePartition()`'s Mechanism A hasn't materialized in PROD;
+      `FACT_PAYROLL_LEDGER|2026-07` correctly provisioned, does not
+      block the bonus promotion). Three real Mechanism-B-class findings:
+      1. **`FACT_QC_EVENTS|2026-04/05/06/07`** missing `qc_session_id`.
+         Confirmed **latent, not active**: grepped all of `src/` —
+         zero live code writes this field (only referenced in the
+         unbuilt QMS Layer 2/3 subsystem's forward-declared schema,
+         `ADR-QMS-017`). No data has been lost. `QCHandler.gs`'s
+         `buildQCEvent_()` (the only live `FACT_QC_EVENTS` writer)
+         never includes it.
+      2. **`FACT_BILLING_LEDGER|2026-04` and `|2026-06`** have all
+         canonical columns present but in a different order (`notes`
+         shifted). Confirmed **not a live data-corruption risk**: every
+         read/write path to this table (`BillingEngine.gs`,
+         `MigrationReplayEngine.gs`) goes through `DAL.appendRow`/
+         `readAll`/`readWhere` exclusively — name-based mapping via
+         `objectToRow_`/`rowToObject_`, immune to column order. Likely
+         mechanism: `BillingEngine.gs`'s `runPatchBillingLedgerSchema()`
+         — an explicit one-time migration using raw
+         `sheet.insertColumnAfter()` per-tab, the one place that
+         manipulates these headers positionally instead of through DAL.
+      3. **`FACT_SOP_SUBMISSIONS`** exists in PROD with no `SCHEMAS`
+         entry. Confirmed harmless orphan: `git log -S` finds exactly
+         one commit (`b2da2f3`, 2026-06-23) whose own message states
+         *"Rename FACT_SOP_SUBMISSIONS → FACT_SOP_AUDITS (no handler
+         existed, no prod data)"* — the constant was renamed in code,
+         but the already-provisioned PROD tab was never cleaned up.
+         Zero live references to the old name anywhere in `src/`.
+
       **Proposed fix, for when this is scoped (not implemented yet):**
-      the early-return path must verify headers actually exist, not
-      just that the tab does — and repair them (copy from another
-      partition of the same table) if missing, rather than trusting
-      tab existence alone.
+      `ensurePartition()`'s early-return path should compare the
+      existing tab's headers against canonical `SCHEMAS` (not just
+      confirm the tab exists) and either repair or flag a mismatch,
+      rather than trusting tab existence alone — this addresses both
+      mechanisms at once, since both stem from the same root gap
+      (nothing ever re-checks a partition's headers against the
+      canonical source after creation).
 
 - [ ] **Task 3 — QC assignment mapping** (`DIM_QC_ASSIGNMENTS` +
       `QCHandler.gs` CC logic) — **unblocked as of 2026-07-26** (Task 2,
