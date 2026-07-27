@@ -109,18 +109,20 @@ supervisor_code encodes:
   BCH (Bharath) -> RKU, MARV        [ONLY these two]
   SDA (Sandy)   -> PBG, SYR
   SVN (Savvy)   -> JYS, BIT, ABB
-
-QC REVIEW relationships — these are NOT supervisor_code, they belong in
-Task 3's DIM_QC_ASSIGNMENTS and must never be written to supervisor_code:
-  BCH does QC for SDA
-  SDA does QC for BCH and SVN
-  RKU does QC for EVERYONE, scoped to OPEN_WOOD_FLOOR only
-  RKU is NOT a team lead — QC reviewer only
 ```
 
-**Rule:** `supervisor_code` encodes reporting-line (who a person's supervisor is, for payroll/bonus attribution and rating routing) and nothing else. QC review assignment is a separate, independent relationship that does not yet have a dedicated field/table (Task 3's `DIM_QC_ASSIGNMENTS`, not started as of this writing). The two relationships are not mirror images of each other and must never be inferred one from the other — notably, the QC network is intentionally cyclic (BCH QCs SDA, SDA QCs BCH), while the reporting tree (`supervisor_code`) must always be acyclic (`StaffOnboarding.changeSupervisor()` enforces this — see `wouldCreateCycle_()`, `src/08-staff/StaffOnboarding.gs`).
+**CORRECTED, 2026-07-27 — the default rule (this reverses the original framing below):** **the supervisor does QC by default.** `QCHandler.gs`'s existing `supervisor_code`-derived rework-notification routing is **correct default behavior, not a gap** — for everyone whose direct `supervisor_code` is a real TL (`PBG`, `SYR`, `JYS`, `BIT`, `ABB`, `MARV`, `RKU`), their QC reviewer is exactly their TL, read directly off `supervisor_code`, and needs no separate table entry.
 
-**Known pre-existing gap — `QCHandler.gs` currently violates this independence and is not yet fixed:** `sendReworkNotification_()` (`src/06-handlers/QCHandler.gs`, lines ~369 and ~448) derives who gets CC'd on rework notifications from `designer.supervisor_code` (`var supervisor = designer.supervisor_code ? roster[designer.supervisor_code] : null;`). This predates Task 2 and Task 2 does not touch it. Concretely: today, a rework notification for RKU's work would route based on RKU's `supervisor_code` (BCH) rather than the actual QC-review rule (RKU reviews everyone else's OWF work — he is not himself reviewed by a fixed reporting-based reviewer under this rule). **Until Task 3 (`DIM_QC_ASSIGNMENTS`) ships and replaces this derivation, QC/rework routing will NOT match the business rule above** — this is a known, accepted, temporary gap, not a regression to fix under Task 2.
+`DIM_QC_ASSIGNMENTS` (Task 3) therefore holds only the **exceptions and additions** to that default, confirmed 2026-07-27:
+```
+  BCH reviewed by SDA   [all job types]
+  SDA reviewed by BCH   [all job types]
+  SVN reviewed by SDA   [all job types]
+  RKU reviews everyone, scoped to OPEN_WOOD_FLOOR only   [addition]
+```
+The three all-type rules exist specifically because `BCH`/`SDA`/`SVN` report to `SGO` (the PM) — the default (CC your `supervisor_code`) can't sensibly apply to them, since QC review by the PM isn't the intended behavior, so peer review among the three TLs is the explicit override for exactly those three. `RKU`'s rule is a pure addition layered on top of whatever the default (or an override) already resolves for `OPEN_WOOD_FLOOR` jobs specifically — it does not remove anyone else's default reviewer. **Whether it adds or replaces, and whether the three all-type rules add to or replace the existing `SGO` supervisor CC for `BCH`/`SDA`/`SVN`, are open business decisions pending Sarty's confirmation** — not decided here, and Task 3's design must make either answer a config choice, not a rewrite.
+
+**What does NOT change from the original finding:** `supervisor_code` must still never be *written* based on a QC relationship — the original incident this section documents (nearly setting `SDA.supervisor_code = BCH` because "Bharath QCs Sandy") remains a real, correctly-caught bug. What's corrected is only the *read* direction: it was wrong to treat `QCHandler.gs` reading `supervisor_code` as the default QC reviewer as itself a violation. It isn't — that's the intended default. The independence that must hold is narrower than originally framed: `supervisor_code` is never *written* from a QC fact, but it **is** legitimately *read* as the default QC reviewer; `DIM_QC_ASSIGNMENTS` layers only the confirmed exceptions/additions on top, and picking the layering semantics (add vs. replace) is a business decision per override, not an engineering default. The reporting tree (`supervisor_code`) must still always stay acyclic (`StaffOnboarding.changeSupervisor()` enforces this — see `wouldCreateCycle_()`, `src/08-staff/StaffOnboarding.gs`) — the QC network is not required to be, and isn't (`BCH` reviewed by `SDA` and `SDA` reviewed by `BCH` is a real, intentional 2-cycle in QC review specifically, which is fine since QC review has no acyclicity requirement).
 
 ---
 
