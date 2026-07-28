@@ -304,9 +304,16 @@ var PortalData = (function () {
       isDesigner:        role === 'DESIGNER' || role === 'TEAM_LEAD' || role === 'QC' || role === 'QC_REVIEWER',
       canSubmitQC:       role === 'DESIGNER' || role === 'TEAM_LEAD' || role === 'QC' || role === 'QC_REVIEWER' || role === 'PM',
       isLeader:          role === 'CEO' || role === 'PM' || role === 'TEAM_LEAD',
-      canRunPayroll:     role === 'CEO',
-      canApprovePayroll: role === 'CEO',
-      canManageStaff:    role === 'CEO' || role === 'ADMIN',
+      // Phase B1 fix: these three were hardcoded `role === 'CEO'` /
+      // `role === 'CEO' || role === 'ADMIN'` checks — exactly the
+      // anti-pattern RBAC.gs's own file header forbids ("DO NOT: Write
+      // `if (actor.role === 'CEO')` in handlers — use hasPermission()").
+      // Routed through RBAC.hasPermission() so a future role (or a
+      // permission change to an existing one) doesn't need a matching
+      // edit here — same pattern as every other flag in this object.
+      canRunPayroll:     RBAC.hasPermission(actor, RBAC.ACTIONS.PAYROLL_RUN),
+      canApprovePayroll: RBAC.hasPermission(actor, RBAC.ACTIONS.PAYROLL_RUN),
+      canManageStaff:    RBAC.hasPermission(actor, RBAC.ACTIONS.ADMIN_CONFIG),
       // Work log corrections. Raw role !== 'QC' excludes plain QC actors
       // even though RBAC.PERMISSION_MATRIX['QC'] must say true for
       // WORK_LOG_AMEND/VOID so the QC_REVIEWER alias (same canonical row)

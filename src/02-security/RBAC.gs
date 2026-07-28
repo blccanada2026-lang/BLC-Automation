@@ -83,6 +83,10 @@ var RBAC = (function () {
     ADMIN:            'ADMIN',       // System admin — config only, no financial access
     SYSTEM:           'SYSTEM',      // Internal automation — bypasses human permission gates
     CLIENT:           'CLIENT',      // External client portal — read-only, scoped
+    // HR_ACCOUNTING: payroll automation, PREPARE + REVIEW only (dry-run
+    // previews, send paystub emails, generate reports) — never commit
+    // authority. See enforceFinancialAccess()'s action-aware gate below.
+    HR_ACCOUNTING:    'HR_ACCOUNTING',
     // ── Aliases (user-facing display names → canonical values) ──
     PROJECT_MANAGER:  'PM',          // Alias: same permission set as PM
     SUPER_ADMIN:      'CEO',         // Alias: same permission set as CEO
@@ -91,35 +95,39 @@ var RBAC = (function () {
 
   // Canonical role set (aliases excluded) — used for validation
   var CANONICAL_ROLES = {
-    DESIGNER:  true,
-    TEAM_LEAD: true,
-    QC:        true,
-    PM:        true,
-    CEO:       true,
-    ADMIN:     true,
-    SYSTEM:    true,
-    CLIENT:    true
+    DESIGNER:      true,
+    TEAM_LEAD:     true,
+    QC:            true,
+    PM:            true,
+    CEO:           true,
+    ADMIN:         true,
+    SYSTEM:        true,
+    CLIENT:        true,
+    HR_ACCOUNTING: true
   };
 
   // ── ROLE HIERARCHY ─────────────────────────────────────────
   // Numeric privilege rank per canonical role. Higher = more privilege.
   //
   // Rules:
-  //   - ADMIN and PM share rank 4: different domains, neither is a
-  //     superset of the other (PM can run billing; ADMIN cannot)
+  //   - ADMIN, PM, and HR_ACCOUNTING share rank 4: different domains,
+  //     none is a superset of the others (PM can run billing; ADMIN
+  //     cannot; HR_ACCOUNTING can prepare/preview payroll but not
+  //     commit or run billing)
   //   - SYSTEM outranks all human roles — internal automation
   //   - CLIENT is rank 0 — lowest, read-only external access
   //
   // Use roleRanksAbove() for comparisons — never compare these
   // numbers directly in handler code.
   var ROLE_HIERARCHY = {
-    CLIENT:    0,
-    DESIGNER:  1,
-    QC:        2,
-    TEAM_LEAD: 3,
-    ADMIN:     4,  // config domain — not a superset of PM
-    PM:        4,  // operational domain — not a superset of ADMIN
-    CEO:       5,
+    CLIENT:        0,
+    DESIGNER:      1,
+    QC:            2,
+    TEAM_LEAD:     3,
+    ADMIN:         4,  // config domain — not a superset of PM
+    PM:            4,  // operational domain — not a superset of ADMIN
+    HR_ACCOUNTING: 4,  // payroll prepare/review domain — not a superset of PM or ADMIN
+    CEO:           5,
     SYSTEM:    6   // highest — internal automation
   };
 
@@ -156,8 +164,19 @@ var RBAC = (function () {
     QC_REJECT:          'QC_REJECT',       // Reject/return a QC review
     // ── Financial ────────────────────────────────────────────
     BILLING_RUN:        'BILLING_RUN',     // Execute a billing calculation
-    PAYROLL_RUN:        'PAYROLL_RUN',     // Execute payroll (CEO + SYSTEM only)
+    PAYROLL_RUN:        'PAYROLL_RUN',     // Execute payroll (CEO + SYSTEM only) — the existing, fused compute+write+email action; unchanged, still gates runPayrollRun()/runBonusRun()/approveAllPayroll() as of Phase B1
     PAYROLL_VIEW:       'PAYROLL_VIEW',    // View payroll figures
+    // ── Payroll automation (Phase B1) — prepare/preview vs. commit split ──
+    // for HR_ACCOUNTING's access level (PREPARE + REVIEW only, no commit
+    // authority). Not yet wired into PayrollEngine.gs's existing functions
+    // — those still gate on PAYROLL_RUN above; a future phase migrates them.
+    PAYROLL_PREVIEW:     'PAYROLL_PREVIEW',     // Compute/preview payroll without committing to FACT_PAYROLL_LEDGER
+    PAYROLL_COMMIT:      'PAYROLL_COMMIT',      // Write PAYROLL_CALCULATED rows — CEO/SYSTEM only
+    BONUS_PREVIEW:       'BONUS_PREVIEW',       // Compute/preview supervisor bonus without committing
+    BONUS_COMMIT:        'BONUS_COMMIT',        // Write PAYROLL_BONUS_SUPERVISOR rows — CEO/SYSTEM only
+    APPROVE_ALL_PAYROLL: 'APPROVE_ALL_PAYROLL', // Final payroll sign-off (PAYROLL_PROCESSED) — CEO/SYSTEM only
+    TIMESHEET_GENERATE:  'TIMESHEET_GENERATE',  // Generate client/payroll timesheets
+    REPORT_GENERATE:     'REPORT_GENERATE',     // Generate payroll/operational reports
     // ── Queue ────────────────────────────────────────────────
     QUEUE_MODIFY:       'QUEUE_MODIFY',    // Update STG_PROCESSING_QUEUE entries
     // ── Admin ────────────────────────────────────────────────
@@ -199,14 +218,17 @@ var RBAC = (function () {
 
   // Which scope each canonical role gets
   var ROLE_SCOPES = {
-    DESIGNER:  SCOPES.SELF,
-    TEAM_LEAD: SCOPES.TEAM,
-    QC:        SCOPES.SELF,
-    PM:        SCOPES.ALL,
-    CEO:       SCOPES.ALL,
-    ADMIN:     SCOPES.ALL,
-    SYSTEM:    SCOPES.ALL,
-    CLIENT:    SCOPES.ACCOUNTS
+    DESIGNER:      SCOPES.SELF,
+    TEAM_LEAD:     SCOPES.TEAM,
+    QC:            SCOPES.SELF,
+    PM:            SCOPES.ALL,
+    CEO:           SCOPES.ALL,
+    ADMIN:         SCOPES.ALL,
+    SYSTEM:        SCOPES.ALL,
+    CLIENT:        SCOPES.ACCOUNTS,
+    // Payroll/bonus/timesheet/report operations are inherently
+    // company-wide — no per-team or per-account subset makes sense here.
+    HR_ACCOUNTING: SCOPES.ALL
   };
 
   // ============================================================
@@ -252,6 +274,13 @@ var RBAC = (function () {
       BILLING_RUN:     false,
       PAYROLL_RUN:     false,
       PAYROLL_VIEW:    false,
+      PAYROLL_PREVIEW:     false,
+      PAYROLL_COMMIT:      false,
+      BONUS_PREVIEW:       false,
+      BONUS_COMMIT:        false,
+      APPROVE_ALL_PAYROLL: false,
+      TIMESHEET_GENERATE:  false,
+      REPORT_GENERATE:     false,
       QUEUE_MODIFY:    false,
       ADMIN_CONFIG:    false,
       CLIENT_VIEW:     false,
@@ -282,6 +311,13 @@ var RBAC = (function () {
       BILLING_RUN:     false,
       PAYROLL_RUN:     false,
       PAYROLL_VIEW:    false,
+      PAYROLL_PREVIEW:     false,
+      PAYROLL_COMMIT:      false,
+      BONUS_PREVIEW:       false,
+      BONUS_COMMIT:        false,
+      APPROVE_ALL_PAYROLL: false,
+      TIMESHEET_GENERATE:  false,
+      REPORT_GENERATE:     false,
       QUEUE_MODIFY:    false,
       ADMIN_CONFIG:    false,
       CLIENT_VIEW:     true,
@@ -320,6 +356,13 @@ var RBAC = (function () {
       BILLING_RUN:     false,
       PAYROLL_RUN:     false,
       PAYROLL_VIEW:    false,
+      PAYROLL_PREVIEW:     false,
+      PAYROLL_COMMIT:      false,
+      BONUS_PREVIEW:       false,
+      BONUS_COMMIT:        false,
+      APPROVE_ALL_PAYROLL: false,
+      TIMESHEET_GENERATE:  false,
+      REPORT_GENERATE:     false,
       QUEUE_MODIFY:    false,
       ADMIN_CONFIG:    false,
       CLIENT_VIEW:     false,
@@ -350,6 +393,13 @@ var RBAC = (function () {
       BILLING_RUN:     true,
       PAYROLL_RUN:     false,  // PM cannot run payroll — CEO only
       PAYROLL_VIEW:    true,
+      PAYROLL_PREVIEW:     false,
+      PAYROLL_COMMIT:      false,
+      BONUS_PREVIEW:       false,
+      BONUS_COMMIT:        false,
+      APPROVE_ALL_PAYROLL: false,
+      TIMESHEET_GENERATE:  false,
+      REPORT_GENERATE:     false,
       QUEUE_MODIFY:    true,
       ADMIN_CONFIG:    false,  // PM cannot change system config
       CLIENT_VIEW:     true,
@@ -380,6 +430,13 @@ var RBAC = (function () {
       BILLING_RUN:     true,
       PAYROLL_RUN:     true,   // CEO only — enforceFinancialAccess() also required
       PAYROLL_VIEW:    true,
+      PAYROLL_PREVIEW:     true,
+      PAYROLL_COMMIT:      true,   // enforceFinancialAccess() also required
+      BONUS_PREVIEW:       true,
+      BONUS_COMMIT:        true,   // enforceFinancialAccess() also required
+      APPROVE_ALL_PAYROLL: true,   // enforceFinancialAccess() also required
+      TIMESHEET_GENERATE:  true,
+      REPORT_GENERATE:     true,
       QUEUE_MODIFY:    true,
       ADMIN_CONFIG:    true,
       CLIENT_VIEW:     true,
@@ -410,6 +467,13 @@ var RBAC = (function () {
       BILLING_RUN:     false,
       PAYROLL_RUN:     false,  // financial isolation: admin ≠ CEO
       PAYROLL_VIEW:    false,
+      PAYROLL_PREVIEW:     false,
+      PAYROLL_COMMIT:      false,
+      BONUS_PREVIEW:       false,
+      BONUS_COMMIT:        false,
+      APPROVE_ALL_PAYROLL: false,
+      TIMESHEET_GENERATE:  false,
+      REPORT_GENERATE:     false,
       QUEUE_MODIFY:    true,
       ADMIN_CONFIG:    true,
       CLIENT_VIEW:     true,
@@ -446,6 +510,13 @@ var RBAC = (function () {
       BILLING_RUN:     true,
       PAYROLL_RUN:     true,
       PAYROLL_VIEW:    true,
+      PAYROLL_PREVIEW:     true,
+      PAYROLL_COMMIT:      true,
+      BONUS_PREVIEW:       true,
+      BONUS_COMMIT:        true,
+      APPROVE_ALL_PAYROLL: true,
+      TIMESHEET_GENERATE:  true,
+      REPORT_GENERATE:     true,
       QUEUE_MODIFY:    true,
       ADMIN_CONFIG:    true,
       CLIENT_VIEW:     true,
@@ -475,10 +546,58 @@ var RBAC = (function () {
       BILLING_RUN:     false,
       PAYROLL_RUN:     false,
       PAYROLL_VIEW:    false,
+      PAYROLL_PREVIEW:     false,
+      PAYROLL_COMMIT:      false,
+      BONUS_PREVIEW:       false,
+      BONUS_COMMIT:        false,
+      APPROVE_ALL_PAYROLL: false,
+      TIMESHEET_GENERATE:  false,
+      REPORT_GENERATE:     false,
       QUEUE_MODIFY:    false,
       ADMIN_CONFIG:    false,
       CLIENT_VIEW:     true,   // scoped by ScopeFilter to own accounts
       DATA_EXPORT:     false,
+      RATE_STAFF:      false,
+      SOP_SAVE:        false,
+      SOP_ADMIN:       false
+    },
+
+    // ── HR_ACCOUNTING ─────────────────────────────────────────
+    // Payroll automation role (Phase B1). PREPARE + REVIEW only —
+    // dry-run previews, send paystub emails, generate reports. No
+    // commit authority: PAYROLL_COMMIT/BONUS_COMMIT/APPROVE_ALL_PAYROLL
+    // stay false here, and enforceFinancialAccess() (a second, separate
+    // gate) independently rejects her on those actions even if a future
+    // change to this row got it wrong — see PAYROLL_AUTOMATION_
+    // ARCHITECTURE.md §2 for the recorded business decision.
+    HR_ACCOUNTING: {
+      JOB_CREATE:      false,
+      JOB_ALLOCATE:    false,
+      JOB_START:       false,
+      JOB_HOLD:        false,
+      JOB_RESUME:      false,
+      JOB_VIEW:        false,
+      WORK_LOG_SUBMIT: false,
+      WORK_LOG_AMEND:  false,
+      WORK_LOG_VOID:   false,
+      WORK_LOG_REASSIGN: false,
+      QC_SUBMIT:       false,
+      QC_APPROVE:      false,
+      QC_REJECT:       false,
+      BILLING_RUN:     false,
+      PAYROLL_RUN:     false,  // the existing, fused commit-shaped action — not granted in Phase B1
+      PAYROLL_VIEW:    true,
+      PAYROLL_PREVIEW:     true,
+      PAYROLL_COMMIT:      false,
+      BONUS_PREVIEW:       true,
+      BONUS_COMMIT:        false,
+      APPROVE_ALL_PAYROLL: false,
+      TIMESHEET_GENERATE:  true,
+      REPORT_GENERATE:     true,
+      QUEUE_MODIFY:    false,
+      ADMIN_CONFIG:    false,
+      CLIENT_VIEW:     false,
+      DATA_EXPORT:     true,   // report operations imply exporting
       RATE_STAFF:      false,
       SOP_SAVE:        false,
       SOP_ADMIN:       false
@@ -532,7 +651,12 @@ var RBAC = (function () {
       'test-ceo@test.blc.internal':      { personCode: 'TCEO', role: ROLES.CEO,      displayName: 'Test CEO' },
       'test-pm@test.blc.internal':       { personCode: 'TPM',  role: ROLES.PM,       displayName: 'Test PM' },
       'test-designer@test.blc.internal': { personCode: 'DS1',  role: ROLES.DESIGNER, displayName: 'Test Designer' },
-      'test-qc@test.blc.internal':       { personCode: 'QC1',  role: ROLES.QC,       displayName: 'Test QC' }
+      'test-qc@test.blc.internal':       { personCode: 'QC1',  role: ROLES.QC,       displayName: 'Test QC' },
+      // Phase B1 (payroll automation) — lets the DEV gate-proof script
+      // exercise a real, resolver-produced HR_ACCOUNTING actor before
+      // Aarthi is actually onboarded (Item 2, a separate manual step
+      // gated on this item's review).
+      'test-hr@test.blc.internal':       { personCode: 'THR',  role: ROLES.HR_ACCOUNTING, displayName: 'Test HR/Accounting' }
     };
   }
 
@@ -1056,48 +1180,85 @@ var RBAC = (function () {
   // summaries but cannot execute payroll writes.
   // ============================================================
 
+  // Actions HR_ACCOUNTING may pass enforceFinancialAccess() for — the
+  // PREPARE + REVIEW set from the recorded business decision
+  // (PAYROLL_AUTOMATION_ARCHITECTURE.md §2). Deliberately does NOT
+  // include PAYROLL_RUN, PAYROLL_COMMIT, BONUS_COMMIT, or
+  // APPROVE_ALL_PAYROLL — those stay CEO/SYSTEM-only.
+  var HR_ACCOUNTING_FINANCIAL_ACTIONS_ = {
+    PAYROLL_PREVIEW:    true,
+    BONUS_PREVIEW:      true,
+    TIMESHEET_GENERATE: true,
+    REPORT_GENERATE:    true
+  };
+
   /**
-   * Enforces that the actor has CEO-level financial access.
+   * Enforces financial access. CEO and SYSTEM pass for any action
+   * (including when no action is given — preserves every pre-Phase-B1
+   * call site's exact behavior unchanged). HR_ACCOUNTING passes only
+   * for the specific PREPARE/REVIEW-class actions in
+   * HR_ACCOUNTING_FINANCIAL_ACTIONS_ — omitting the action parameter
+   * is the safe default and rejects her, since that's what every
+   * existing call site does today for the still-fused commit-shaped
+   * functions (runPayrollRun/runBonusRun/approveAllPayroll) that
+   * Phase B1 does not touch.
+   *
    * Must be called for all PAYROLL_RUN and direct FACT_PAYROLL_LEDGER
    * or FACT_BILLING_LEDGER write operations.
    *
    * @param {{ role: string, email: string }} actor
-   * @throws {RBACError_}  FINANCIAL_ACCESS_DENIED if actor is not CEO or SYSTEM
+   * @param {string} [action]  An ACTIONS value — omit to preserve the
+   *   pre-Phase-B1 CEO/SYSTEM-only behavior exactly.
+   * @throws {RBACError_}  FINANCIAL_ACCESS_DENIED if actor is not CEO/SYSTEM,
+   *   and (when HR_ACCOUNTING) the action is not in the allowed set
    */
-  function enforceFinancialAccess(actor) {
+  function enforceFinancialAccess(actor, action) {
     // Full actor validation including _rbacResolved flag.
     // A manually constructed { role: 'CEO' } object fails here —
     // financial access requires a resolver-produced identity.
     assertActorExists_(actor, 'enforceFinancialAccess');
 
     var canonical = resolveRole_(actor.role);
-    if (canonical === ROLES.CEO || canonical === ROLES.SYSTEM) return; // granted
+    if (canonical === ROLES.CEO || canonical === ROLES.SYSTEM) return; // granted, any action
+
+    if (canonical === ROLES.HR_ACCOUNTING && action) {
+      var canonicalAction = resolveAction_(action);
+      if (HR_ACCOUNTING_FINANCIAL_ACTIONS_[canonicalAction]) return; // granted, prepare/review only
+    }
 
     emitDenied_('FINANCIAL_ACCESS', actor, 'FINANCIAL_ACCESS_DENIED');
     throw new RBACError_(
       'FINANCIAL_ACCESS_DENIED',
       '"' + (actor.displayName || actor.email) + '" (' + canonical + ') ' +
       'does not have financial access. ' +
-      'Only CEO and SYSTEM may execute payroll or direct billing ledger writes.',
+      'Only CEO and SYSTEM may execute payroll or direct billing ledger writes ' +
+      '(HR_ACCOUNTING may prepare/preview/generate specific actions only).',
       {
         email:      actor.email,
         personCode: actor.personCode,
-        role:       canonical
+        role:       canonical,
+        action:     action || null
       }
     );
   }
 
   /**
-   * Returns true if the actor has financial access (CEO or SYSTEM).
-   * Boolean version for conditional checks.
+   * Returns true if the actor has financial access. Boolean version of
+   * enforceFinancialAccess() for conditional checks — same action-aware
+   * semantics, never throws.
    *
    * @param {{ role: string }} actor
+   * @param {string} [action]
    * @returns {boolean}
    */
-  function hasFinancialAccess(actor) {
+  function hasFinancialAccess(actor, action) {
     if (!actor || !actor.role) return false;
     var canonical = resolveRole_(actor.role);
-    return canonical === ROLES.CEO || canonical === ROLES.SYSTEM;
+    if (canonical === ROLES.CEO || canonical === ROLES.SYSTEM) return true;
+    if (canonical === ROLES.HR_ACCOUNTING && action) {
+      return !!HR_ACCOUNTING_FINANCIAL_ACTIONS_[resolveAction_(action)];
+    }
+    return false;
   }
 
   // ============================================================
