@@ -40,25 +40,27 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ---
 
-## Session State (last updated: end of turn, 2026-07-27)
+## Session State (last updated: end of turn, 2026-07-28)
 
-**Just completed:** all 4 payroll-automation investigations, read-only,
-on `payroll-automation/investigation` (own worktree). `PAYROLL_
-AUTOMATION_ARCHITECTURE.md` is the complete deliverable — existing-
-codebase audit, RBAC + PM bonus architecture (including the recorded
-Aarthi access decision — `aarthirajeshnair@gmail.com`, `HR_ACCOUNTING`,
-PREPARE+REVIEW only, no commit authority), the paystub-extension design,
-and a 4-phase build plan with 10 open questions and a 3-item risk
-register. No code/schema/config touched anywhere in this thread. Full
-detail in the new "Payroll automation build" task entry above.
+**Just completed:** Phase B1 (payroll automation Foundation), all 4
+items, branch `payroll-automation/phase-b1` (own worktree, off
+`main`@`dafc2b3`), TDD-first, 447/447 tests. All 4 items' code pushed
+to DEV (isolated-pull-verified byte-identical each time) — **no PROD
+deployment**. Item 1's DEV proof script was run live by the user
+(40/40 passed, matching Jest exactly); Items 2-4's proof scripts are
+pushed but not yet run by the user. Full detail in the "Payroll
+automation build" task entry above.
 **Q2 status (unrelated thread, unchanged):** `Q2RatingsPreflightCheck.gs`
 still shows **0 of 13** active staff confirmed for `2026-Q2` — blocked
 on ratings collection, not code.
-**Next action:** none pending from the assistant. Payroll automation
-implementation is blocked on your review of the architecture doc and
-the 10 open questions in its §4.4 — do not start Phase B1 without that
-review. Q2 bonus dry-run remains a separate go-ahead, your call on
-timing.
+**Next action:** none pending from the assistant. Waiting on the user
+to run `runPayrollAutomationOnboardProofB1()`,
+`runPayrollAutomationPmBonusProofB1()`, and
+`runPayrollAutomationTimesheetProofB1()` in the DEV Apps Script editor,
+and to review Phase B1 overall before any PROD deployment or further
+phases (B2 combined paystub, B3 aggregate gate/payment advice, B4
+reminder/UI) begin. Q2 bonus dry-run remains a separate go-ahead, your
+call on timing.
 
 ---
 
@@ -66,42 +68,96 @@ timing.
 
 - [ ] **Payroll automation build — HR_ACCOUNTING role for Aarthi, combined
       paystub, aggregate confirmation gate, PM bonus flat calc,
-      auto-reminder, collapsible My Hours UI.** Investigation phase
-      started and **fully complete** 2026-07-27, branch
-      `payroll-automation/investigation` (own worktree,
-      `.worktrees/payroll-automation-investigation`, off `main`@`58ed600`).
-      Full findings, proposals, phased build plan, open questions, and
-      risk register in **`PAYROLL_AUTOMATION_ARCHITECTURE.md`** at the
-      repo root (that branch) — four investigation sections (§1 existing
-      codebase audit, §2 RBAC + PM bonus architecture, §3 extending the
-      existing paystub system, §4 consolidated build plan/open questions/
-      risks), committed across 6 commits
-      (`0c0ab9e`, `903faf8`, `060e5cf`, `d35a98c`, `36348e2`).
-      **Business decision already recorded** (§2 of the doc): Aarthi's
-      email is `aarthirajeshnair@gmail.com`, role `HR_ACCOUNTING`, access
-      PREPARE + REVIEW only — dry-run previews, send paystub emails,
-      generate reports — no commit authority (payroll commit, bonus
-      commit stay CEO-exclusive). Read-only throughout — **no code,
-      schema, or config changes made in any of the 4 investigations.**
-      **Blocked on:** your review of the architecture document and
-      resolution of §4.4's open questions (10 items — payment advice
-      sheet format, the quarterly/annual bonus double-count marker
-      mechanism, `enforceFinancialAccess()`'s exact redesign shape,
-      whether the existing bonus button migrates to a new `BONUS_RUN`
-      action, whether Aarthi needs a distinct HR dashboard, and others —
-      full list in the doc). **Implementation has not started** — the doc
-      itself is the entire deliverable of this phase. Top 3 risks flagged
-      in §4.5: (1) the three RBAC gates (matrix, `enforceFinancialAccess()`,
-      hardcoded portal `role === 'CEO'` checks) shipping partially instead
-      of atomically, leaving Aarthi with buttons that fail confusingly;
-      (2) quarterly/annual bonus double-counting in the combined paystub
-      once merged in, since the annual-bonus lookup key is year- not
-      month-scoped; (3) the hardcoded-role-list duplication pattern found
-      independently in 3 places already (`onboardStaff`/`onboardStaffRow_`/
-      `buildPerms_`) — same failure shape as this session's own DEV-
-      clobbering and hardcoded-cleanup-list incidents in a different
-      domain, mitigated by one whole-`src/` grep sweep before Phase B1
-      ships.
+      auto-reminder, collapsible My Hours UI.**
+
+      **Investigation phase — complete, 2026-07-27**, branch
+      `payroll-automation/investigation` (own worktree, off
+      `main`@`58ed600`). Full findings/proposals/build plan/open
+      questions/risk register in `PAYROLL_AUTOMATION_ARCHITECTURE.md`
+      §1-§4, 6 commits (`0c0ab9e`..`36348e2`). Read-only — no
+      code/schema/config touched.
+
+      **Phase B1 (Foundation) — all 4 items complete, 2026-07-28**,
+      branch `payroll-automation/phase-b1` (own worktree, off
+      `main`@`dafc2b3`), TDD-first throughout, **all pushed to DEV,
+      not PROD**. `PAYROLL_AUTOMATION_ARCHITECTURE.md` §5 records what
+      was built, per item.
+
+      **Business decision recorded before coding** (§2/§5.1): Aarthi's
+      email `aarthirajeshnair@gmail.com`, role `HR_ACCOUNTING`, access
+      PREPARE + REVIEW only — no commit authority (payroll commit,
+      bonus commit stay CEO-exclusive).
+
+      - **Item 1 — RBAC extension, all three gates, atomic.** New
+        `HR_ACCOUNTING` role + 7 new actions
+        (`PAYROLL_PREVIEW/COMMIT`, `BONUS_PREVIEW/COMMIT`,
+        `APPROVE_ALL_PAYROLL`, `TIMESHEET_GENERATE`, `REPORT_GENERATE`).
+        `enforceFinancialAccess(actor, action)` now action-aware,
+        100% backward compatible (omitting `action` preserves every
+        pre-existing call site's exact CEO/SYSTEM-only behavior).
+        Portal's hardcoded `canRunPayroll`/`canApprovePayroll`/
+        `canManageStaff` (`role === 'CEO'` checks — exactly the
+        anti-pattern `RBAC.gs`'s own header forbids) replaced with
+        `RBAC.hasPermission()`. `PAYROLL_RUN` deliberately left
+        `false` for `HR_ACCOUNTING` — the existing
+        `runPayrollRun`/`runBonusRun`/`approveAllPayroll` aren't
+        touched yet, so granting it would show her buttons that then
+        fail confusingly (the exact risk #1 the architecture doc's
+        own risk register flagged). `StaffOnboarding.gs`'s two
+        independently-duplicated `validRoles` lists unified into one
+        `VALID_ONBOARD_ROLES_` constant. DEV proof script
+        (`PayrollAutomationRbacProofB1.gs`) **run live in DEV by the
+        user — 40/40 checks passed**, matching the Jest integration
+        test's prediction exactly.
+      - **Item 2 — DEV verification of the real onboarding path.**
+        Extended the proof script with
+        `runPayrollAutomationOnboardProofB1()`: onboards a synthetic
+        test person (not Aarthi) through the real
+        `StaffOnboarding.onboardStaff()` path, confirms
+        `RBAC.resolveActor()` picks up `HR_ACCOUNTING` from the live
+        roster row, deactivates the test row after. Pushed to DEV,
+        awaiting the user's run.
+      - **Item 3 — PM bonus flat calculation.** New
+        `PayrollEngine.buildPmBonusMap_()` — flat, roster-wide `INR
+        25 × Σ(every non-PM staff member's design hours)`, no
+        `supervisor_code`/`pm_code` lookup, not recursive.
+        `buildSupervisorBonusMap_` is now TL-only.
+        `runBonusRun()` merges both. 9 Jest tests including a real
+        `runBonusRun()` DEV rehearsal
+        (`PayrollAutomationPmBonusProofB1.gs`, synthetic 3-person
+        scenario in a dedicated fake period `2020-01`) proving TL and
+        PM both get independent, correct bonuses for the same hours —
+        intentional, not a double-count. Pushed to DEV, awaiting the
+        user's run.
+      - **Item 4 — `generateTimesheet(client, startDate, endDate)`.**
+        New file `GenerateTimesheet.gs` (deliberately narrower than
+        the existing billing-domain `ClientTimesheetEngine.generate()`
+        — no PreBillingGate, no PDF/invoice; a general-purpose
+        read-only data function). Reuses `isMigratedWorkLog()` and the
+        same netting *principle* Task 1 established (not the exact
+        `aggregateNetWorkLogHours()` function — wrong granularity for
+        a client timesheet, documented precisely in the source
+        comment). Handles cross-month partition reads. `firstHalf`/
+        `secondHalf(year, month)` loop every active client, with
+        correct 28/29/30/31-day month-boundary math. 18 Jest tests.
+        DEV proof script caught and fixed a real off-by-one bug **in
+        the proof script's own fallback verification code** (wrong
+        month-indexing) via the Jest integration test before push —
+        not in `secondHalf()` itself, which passed cleanly. Pushed to
+        DEV, awaiting the user's run.
+
+      **Test coverage**: 447/447 (381 baseline + 66 new across 8 new
+      test files). Every proof script verified end-to-end via a Jest
+      integration test loading the real production sources together
+      *before* being pushed to DEV — none handed off untested.
+
+      **Blocked on:** the user running the two not-yet-executed DEV
+      proof scripts (Items 2-4) and reviewing Phase B1 overall. **No
+      PROD deployment yet** — separate go-ahead required. §4.4's
+      original 10 open questions mostly still apply to *later* phases
+      (payment advice format, quarterly/annual double-count marker
+      mechanism, etc.) — Phase B1 only resolved the 5 items listed in
+      §5.1.
 
 - [x] **`changeSupervisor()` is not truly idempotent — FIXED, MERGED, DEPLOYED TO PROD, 2026-07-27.**
       Shipped together with the bonus-period-layer promotion in PR #4
