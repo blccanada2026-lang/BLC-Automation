@@ -59,6 +59,13 @@ var StaffOnboarding = (function () {
 
   var MODULE = 'StaffOnboarding';
 
+  // Single source of truth for onboardable roles — onboardStaff() and
+  // onboardStaffRow_() (the bulk-import row processor) previously each
+  // carried their own independently duplicated copy of this exact list
+  // (found in Investigation 2, PAYROLL_AUTOMATION_ARCHITECTURE.md §2.2c).
+  // Both now reference this one constant.
+  var VALID_ONBOARD_ROLES_ = { DESIGNER: 1, QC: 1, TEAM_LEAD: 1, PM: 1, CEO: 1, ADMIN: 1, HR_ACCOUNTING: 1 };
+
   // ── Folder name for generated contracts in Google Drive ─────
   var CONTRACT_FOLDER_NAME = 'BLC Contractor Agreements';
 
@@ -105,9 +112,8 @@ var StaffOnboarding = (function () {
     var personCode = String(payload.person_code).trim().toUpperCase();
     var role       = String(payload.role).trim().toUpperCase();
 
-    var validRoles = { DESIGNER: 1, QC: 1, TEAM_LEAD: 1, PM: 1, CEO: 1, ADMIN: 1 };
-    if (!validRoles[role]) {
-      throw new Error('StaffOnboarding: invalid role "' + role + '". Must be: DESIGNER, QC, TEAM_LEAD, PM, CEO, or ADMIN');
+    if (!VALID_ONBOARD_ROLES_[role]) {
+      throw new Error('StaffOnboarding: invalid role "' + role + '". Must be: ' + Object.keys(VALID_ONBOARD_ROLES_).join(', '));
     }
 
     var validCurrencies = { INR: 1, CAD: 1, USD: 1 };
@@ -877,10 +883,9 @@ var StaffOnboarding = (function () {
     var role        = String(payload.role).trim().toUpperCase();
     var payCurrency = String(payload.pay_currency).trim().toUpperCase();
 
-    var validRoles      = { DESIGNER: 1, QC: 1, TEAM_LEAD: 1, PM: 1, CEO: 1, ADMIN: 1 };
     var validCurrencies = { INR: 1, CAD: 1, USD: 1 };
 
-    if (!validRoles[role]) {
+    if (!VALID_ONBOARD_ROLES_[role]) {
       throw new Error('Invalid role "' + role + '"');
     }
     if (!validCurrencies[payCurrency]) {
