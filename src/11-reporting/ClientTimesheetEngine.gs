@@ -647,7 +647,18 @@ var ClientTimesheetEngine = (function () {
   return {
     generate:           generate,
     generateForClient:  generateForClient_,
-    getEntries:         getEntries_
+    getEntries:         getEntries_,
+
+    // Exposed 2026-07-28 (Phase B1, payroll automation, Item 4) — same
+    // precedent as PayrollEngine.gs's buildStaffCache_ exposure — so
+    // GenerateTimesheet.gs (a new, small file per RULE A8, this file is
+    // already over the ~500-line cap) can reuse the real job/product
+    // lookup and date-parsing helpers instead of duplicating them.
+    // All four are pure/read-only.
+    loadJobMap_:          loadJobMap_,
+    loadProductMap_:      loadProductMap_,
+    resolveProductName_:  resolveProductName_,
+    parseWorkDate_:       parseWorkDate_
   };
 
 }());
