@@ -249,15 +249,21 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
-  // SECTION 5: SUPERVISOR BONUS CALCULATION
+  // SECTION 5: SUPERVISOR BONUS CALCULATION (TEAM_LEAD only)
   //
   // Returns: { personCode → bonusAmountINR }
   //
   // TEAM_LEAD: bonus = INR 25 × Σ(design_hours of designers
   //            where staffCache[designer].supervisor_code = TL.code)
   //
-  // PM: bonus = INR 25 × Σ(design_hours of all staff
-  //     where staffCache[staff].pm_code = PM.code, excl. PM's own)
+  // PM bonus moved to buildPmBonusMap_() (Phase B1, payroll automation,
+  // 2026-07) — architecturally distinct: a flat, roster-wide sum with
+  // no supervisor_code/pm_code lookup at all, not a variant of this
+  // direct-report logic. See PAYROLL_AUTOMATION_ARCHITECTURE.md §2.3
+  // for why: the old PM branch here was already non-recursive, but its
+  // correctness depended on every non-PM staff row having pm_code
+  // correctly populated — a data-integrity dependency the new flat
+  // rule deliberately has none of.
   // ============================================================
 
   function buildSupervisorBonusMap_(staffCache, hoursMap) {
@@ -270,34 +276,67 @@ var PayrollEngine = (function () {
       var supervisor     = staffCache[supervisorCode];
       var role           = supervisor.role;
 
-      if (role !== 'TEAM_LEAD' && role !== 'PM') continue;
+      if (role !== 'TEAM_LEAD') continue;
 
       var supervisedDesignHours = 0;
 
-      if (role === 'TEAM_LEAD') {
-        // Sum design hours of all designers whose supervisor_code = this TL
-        for (var j = 0; j < staffCodes.length; j++) {
-          var designerCode = staffCodes[j];
-          var designer     = staffCache[designerCode];
-          if (designer.supervisor_code !== supervisorCode) continue;
-          var designerHours = hoursMap[designerCode];
-          if (designerHours) supervisedDesignHours += designerHours.design_hours;
-        }
-      } else {
-        // PM: sum design hours of all staff whose pm_code = this PM, excl. PM's own
-        for (var k = 0; k < staffCodes.length; k++) {
-          var memberCode = staffCodes[k];
-          if (memberCode === supervisorCode) continue;  // exclude PM's own hours
-          var member = staffCache[memberCode];
-          if (member.pm_code !== supervisorCode) continue;
-          var memberHours = hoursMap[memberCode];
-          if (memberHours) supervisedDesignHours += memberHours.design_hours;
-        }
+      // Sum design hours of all designers whose supervisor_code = this TL
+      for (var j = 0; j < staffCodes.length; j++) {
+        var designerCode = staffCodes[j];
+        var designer     = staffCache[designerCode];
+        if (designer.supervisor_code !== supervisorCode) continue;
+        var designerHours = hoursMap[designerCode];
+        if (designerHours) supervisedDesignHours += designerHours.design_hours;
       }
 
       if (supervisedDesignHours > 0) {
         bonusMap[supervisorCode] = Math.round(supervisedDesignHours * SUPERVISOR_BONUS_INR * 100) / 100;
       }
+    }
+
+    return bonusMap;
+  }
+
+  // ============================================================
+  // SECTION 5b: PM BONUS CALCULATION (flat, roster-wide)
+  //
+  // Returns: { personCode → bonusAmountINR }
+  //
+  // PM: bonus = INR 25 × Σ(design_hours of every staff member in
+  //     staffCache whose role !== 'PM') — company-wide, flat, no
+  //     supervisor_code/pm_code lookup. Deliberately NOT a superset
+  //     of buildSupervisorBonusMap_'s TL logic and NOT recursive —
+  //     see PAYROLL_AUTOMATION_ARCHITECTURE.md §2.3.
+  //
+  // Consequence of "flat, company-wide" worth restating here (not a
+  // bug): if more than one PM is active simultaneously, EVERY PM is
+  // credited the identical total — this function has no attribution
+  // mechanism between multiple PMs. Not a concern today (one PM), but
+  // a real, documented implication of the rule as specified.
+  // ============================================================
+
+  function buildPmBonusMap_(staffCache, hoursMap) {
+    var bonusMap = {};
+
+    var staffCodes    = Object.keys(staffCache);
+    var nonPmDesignHours = 0;
+
+    for (var j = 0; j < staffCodes.length; j++) {
+      var code   = staffCodes[j];
+      var member = staffCache[code];
+      if (member.role === 'PM') continue; // excludes every PM's own hours, not just "this" PM's
+      var memberHours = hoursMap[code];
+      if (memberHours) nonPmDesignHours += memberHours.design_hours;
+    }
+
+    if (nonPmDesignHours <= 0) return bonusMap;
+
+    var bonusAmount = Math.round(nonPmDesignHours * SUPERVISOR_BONUS_INR * 100) / 100;
+
+    for (var i = 0; i < staffCodes.length; i++) {
+      var supervisorCode = staffCodes[i];
+      if (staffCache[supervisorCode].role !== 'PM') continue;
+      bonusMap[supervisorCode] = bonusAmount;
     }
 
     return bonusMap;
@@ -728,7 +767,18 @@ var PayrollEngine = (function () {
       // whoever actually supervised that month, not today's supervisor.
       var staffCache = buildStaffCache_(periodId + '-01');
       var hoursMap   = aggregateHours_(periodId);
-      var bonusMap   = buildSupervisorBonusMap_(staffCache, hoursMap);
+      // TL (direct-report sum) and PM (flat, roster-wide sum) are two
+      // architecturally distinct calculations (Phase B1, payroll
+      // automation — see buildPmBonusMap_'s own header comment) merged
+      // into one map here. Person codes never collide — role is
+      // singular per person in staffCache — so a plain merge is safe;
+      // the write loop below is agnostic to which function produced
+      // which amount.
+      var tlBonusMap = buildSupervisorBonusMap_(staffCache, hoursMap);
+      var pmBonusMap = buildPmBonusMap_(staffCache, hoursMap);
+      var bonusMap   = {};
+      Object.keys(tlBonusMap).forEach(function (code) { bonusMap[code] = tlBonusMap[code]; });
+      Object.keys(pmBonusMap).forEach(function (code) { bonusMap[code] = pmBonusMap[code]; });
 
       var supervisorCodes = Object.keys(bonusMap);
       if (supervisorCodes.length === 0) {
@@ -1049,7 +1099,13 @@ var PayrollEngine = (function () {
     // real date-filtering and supervisor-attribution logic runPayrollRun()/
     // runBonusRun() actually use, not a reimplementation. Both read-only.
     buildStaffCache_:         buildStaffCache_,
-    buildSupervisorBonusMap_: buildSupervisorBonusMap_
+    buildSupervisorBonusMap_: buildSupervisorBonusMap_,
+
+    // Exposed 2026-07-28 (Phase B1, payroll automation) — same
+    // precedent as buildSupervisorBonusMap_ above, so the Jest suite
+    // can test the real, flat PM bonus calculation runBonusRun()
+    // actually uses, not a reimplementation.
+    buildPmBonusMap_: buildPmBonusMap_
   };
 
 }());
