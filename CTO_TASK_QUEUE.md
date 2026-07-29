@@ -40,27 +40,42 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ---
 
-## Session State (last updated: end of turn, 2026-07-28)
+## Session State (last updated: end of turn, 2026-07-29)
 
-**Just completed:** Phase B1 (payroll automation Foundation), all 4
-items, branch `payroll-automation/phase-b1` (own worktree, off
-`main`@`dafc2b3`), TDD-first, 447/447 tests. All 4 items' code pushed
-to DEV (isolated-pull-verified byte-identical each time) — **no PROD
-deployment**. Item 1's DEV proof script was run live by the user
-(40/40 passed, matching Jest exactly); Items 2-4's proof scripts are
-pushed but not yet run by the user. Full detail in the "Payroll
-automation build" task entry above.
+**Just completed:** PR #5 (Item 1, RBAC extension for `HR_ACCOUNTING`)
+merged and deployed to PROD — verified byte-identical, `HR_ACCOUNTING`
+role live. (Mid-deploy, a `push:dev` was accidentally run from the
+primary checkout instead of `payroll-automation/phase-b1`, briefly
+deleting Items 2-4's DEV-only files — caught and fixed within the same
+turn via isolated verification, per the standing `push:dev` rule
+above.) Then two rounds of real-DEV debugging on
+`PayrollAutomationPmBonusProofB1.gs` (Item 3's rehearsal script, still
+on `payroll-automation/phase-b1`, not yet promoted): (1) duplicate
+roster rows from a crashed first run — fixed with a full reset-at-start
+pattern (`parb1PmBonusReset_()`), same shape as `bpldrReset_()`; (2)
+verification couldn't find written bonus rows — root-caused to Google
+Sheets auto-formatting the `"YYYY-MM"` `period_id` string as a `Date`
+on write, a **new, system-wide, PROD-and-DEV-alike storage artifact**
+(zero current blast radius — full sweep found no other code anywhere
+in `src/` filtering on `period_id` as a cell-value condition) — fixed
+by matching on `event_type` alone within the already partition-scoped
+read, plus fixing the reset to also clear `FACT_PAYROLL_LEDGER|2020-01`
+(it was clearing `FACT_WORK_LOGS` but not the ledger, causing a false
+`processed:0` on re-run). New standing rule recorded:
+`PROJECT_MEMORY.md` §3.4. Full detail in the "Payroll automation
+build" task entry above.
 **Q2 status (unrelated thread, unchanged):** `Q2RatingsPreflightCheck.gs`
 still shows **0 of 13** active staff confirmed for `2026-Q2` — blocked
 on ratings collection, not code.
-**Next action:** none pending from the assistant. Waiting on the user
-to run `runPayrollAutomationOnboardProofB1()`,
-`runPayrollAutomationPmBonusProofB1()`, and
-`runPayrollAutomationTimesheetProofB1()` in the DEV Apps Script editor,
-and to review Phase B1 overall before any PROD deployment or further
-phases (B2 combined paystub, B3 aggregate gate/payment advice, B4
-reminder/UI) begin. Q2 bonus dry-run remains a separate go-ahead, your
-call on timing.
+**Next action:** none pending from the assistant. `runPayrollAutomation
+TimesheetProofB1()` already confirmed passing (9/9). Waiting on the
+user to re-run `runPayrollAutomationPmBonusProofB1()` (expecting a
+clean 3/3 pass this time) and to run the still-outstanding
+`runPayrollAutomationOnboardProofB1()` (status still unconfirmed — not
+yet reported run), then to review Phase B1 overall before any PROD
+deployment of Items 2-4 or further phases (B2 combined paystub, B3
+aggregate gate/payment advice, B4 reminder/UI) begin. Q2 bonus dry-run
+remains a separate go-ahead, your call on timing.
 
 ---
 
@@ -108,7 +123,14 @@ call on timing.
         `VALID_ONBOARD_ROLES_` constant. DEV proof script
         (`PayrollAutomationRbacProofB1.gs`) **run live in DEV by the
         user — 40/40 checks passed**, matching the Jest integration
-        test's prediction exactly.
+        test's prediction exactly. **Promoted separately** (PR #5,
+        branch `payroll-automation/promote-rbac-hr-accounting`, exactly
+        the 8 Item-1 files, no proof script/architecture doc),
+        **merged and deployed to PROD, 2026-07-29** — isolated pull
+        confirmed all 4 product files byte-identical to `main`,
+        `HR_ACCOUNTING` role is now live in PROD. Aarthi has not been
+        onboarded yet — that remains the user's own manual step,
+        separate from this deploy.
       - **Item 2 — DEV verification of the real onboarding path.**
         Extended the proof script with
         `runPayrollAutomationOnboardProofB1()`: onboards a synthetic
@@ -122,13 +144,34 @@ call on timing.
         25 × Σ(every non-PM staff member's design hours)`, no
         `supervisor_code`/`pm_code` lookup, not recursive.
         `buildSupervisorBonusMap_` is now TL-only.
-        `runBonusRun()` merges both. 9 Jest tests including a real
-        `runBonusRun()` DEV rehearsal
-        (`PayrollAutomationPmBonusProofB1.gs`, synthetic 3-person
-        scenario in a dedicated fake period `2020-01`) proving TL and
-        PM both get independent, correct bonuses for the same hours —
-        intentional, not a double-count. Pushed to DEV, awaiting the
-        user's run.
+        `runBonusRun()` merges both. **The PM bonus calculation logic
+        itself has been correct since it was first written and was
+        never in question at any point** — confirmed independently
+        three separate times (9 Jest tests against mocks; the DEV
+        rehearsal's own `runBonusRun()` return value; a real
+        `FACT_PAYROLL_LEDGER` readback once the verification bug
+        below was fixed). Two real-DEV bugs found and fixed in the
+        **rehearsal script** (`PayrollAutomationPmBonusProofB1.gs`),
+        2026-07-28/29, neither in product code: (1) duplicate active
+        roster rows from a crashed first run — fixed with a full
+        reset-at-start (`parb1PmBonusReset_()`, same pattern as
+        `bpldrReset_()`), replacing a fragile conditional-deactivate
+        that only had to fail once to leave stale state; (2) the
+        verification step matched on `period_id` as a cell-value
+        condition, which Google Sheets silently auto-formats as a
+        `Date` on write for any `"YYYY-MM"`-shaped string — a new,
+        **system-wide, PROD-and-DEV-alike storage artifact** (own
+        entry added to the "DAL date-column matching audit" task
+        below, own standing rule in `PROJECT_MEMORY.md` §3.4) — fixed
+        by matching on `event_type` alone within the already
+        partition-scoped read (the pattern every other real read in
+        this codebase already uses), plus fixing the reset to also
+        clear `FACT_PAYROLL_LEDGER|2020-01` (it was clearing
+        `FACT_WORK_LOGS` but not the ledger, so a second run's fresh
+        work-log seed fed a `runBonusRun()` that immediately skipped
+        against leftover idempotency keys from run 1 —
+        `processed:0`). Pushed to DEV. **Status: fixed, awaiting the
+        user's re-run** (expecting a clean 3/3 this time).
       - **Item 4 — `generateTimesheet(client, startDate, endDate)`.**
         New file `GenerateTimesheet.gs` (deliberately narrower than
         the existing billing-domain `ClientTimesheetEngine.generate()`
@@ -146,14 +189,24 @@ call on timing.
         not in `secondHalf()` itself, which passed cleanly. Pushed to
         DEV, awaiting the user's run.
 
-      **Test coverage**: 447/447 (381 baseline + 66 new across 8 new
-      test files). Every proof script verified end-to-end via a Jest
-      integration test loading the real production sources together
-      *before* being pushed to DEV — none handed off untested.
+      **Test coverage**: 450/450 (381 baseline + 69 new across 8 new
+      test files, after the two PM bonus proof-script fix rounds).
+      Every proof script verified end-to-end via a Jest integration
+      test loading the real production sources together *before* being
+      pushed to DEV — none handed off untested.
 
-      **Blocked on:** the user running the two not-yet-executed DEV
-      proof scripts (Items 2-4) and reviewing Phase B1 overall. **No
-      PROD deployment yet** — separate go-ahead required. §4.4's
+      **Status by item, 2026-07-29**: Item 1 fully done (DEV-verified,
+      promoted via PR #5, live in PROD). Item 4 DEV-verified (9/9).
+      Item 3 fixed twice on real DEV findings, awaiting a clean re-run.
+      Item 2 still not confirmed run at all. Items 2-3 remain on
+      `payroll-automation/phase-b1` only, not yet promoted.
+
+      **Blocked on:** the user re-running
+      `runPayrollAutomationPmBonusProofB1()` and running
+      `runPayrollAutomationOnboardProofB1()` for the first time, then
+      reviewing Phase B1 overall. **No PROD deployment of Items 2-4
+      yet** — separate go-ahead required, same promotion discipline as
+      Item 1 (PR, drift check, stop for review). §4.4's
       original 10 open questions mostly still apply to *later* phases
       (payment advice format, quarterly/annual double-count marker
       mechanism, etc.) — Phase B1 only resolved the 5 items listed in
@@ -524,6 +577,50 @@ call on timing.
       case-by-case forever. See `PROJECT_MEMORY.md` §3.1's second
       instance writeup for the underlying mock-fidelity gap that let
       the original bug through Jest undetected.
+
+      **New confirmed instance, 2026-07-29 — `period_id`, a different
+      trigger mechanism than the original finding.** Found via
+      `PayrollAutomationPmBonusProofB1.gs` (Phase B1, Item 3 DEV
+      rehearsal): `PayrollEngine.runBonusRun()` wrote
+      `FACT_PAYROLL_LEDGER` rows correctly (bonus amounts confirmed
+      right, no double-count), but a `readWhere` matching on
+      `period_id: '2020-01'` as a cell-value condition found nothing.
+      Root cause, confirmed via a raw diagnostic read: Google Sheets
+      auto-formatted the `"YYYY-MM"`-shaped string as a `Date` on
+      **write** — the stored value was
+      `"2020-01-01T06:00:00.000Z"`, not the string being compared
+      against. This is the *same bug class* as the original
+      `matchesConditions_()` finding above, but a **different trigger**
+      — that one was about *reading* a Date-formatted cell and
+      comparing two `Date` instances (reference-identity); this one is
+      about Sheets *silently reinterpreting a plain string as a Date at
+      write time*, before `matchesConditions_()` is ever involved.
+      Confirmed via direct code read that no column anywhere in this
+      codebase (`DAL.gs`, `SetupScript.gs`) is ever explicitly set to
+      plain-text format — so this is a **system-wide storage artifact,
+      present in DEV and PROD identically** (same write code path in
+      both), not something fixable per-column without a DAL-level
+      change (e.g. explicit `setNumberFormat('@')` on partition
+      creation, or storing period identifiers in a format Sheets won't
+      auto-convert).
+      **Blast radius, confirmed via a fresh full sweep**: exactly
+      **one** place in the entire `src/` tree ever filtered on
+      `period_id` as a row condition — the proof script itself (now
+      fixed, filters on `event_type` only within the already
+      partition-scoped read). Every other partition-scoped read in the
+      system relies exclusively on `options.periodId` for tab
+      selection (a JS string used to build a sheet *name*, never
+      written into a cell, never at risk) — **zero current exploitable
+      instances**, but a latent risk for any future caller that adds
+      such a filter without knowing this. New standing rule recorded:
+      `PROJECT_MEMORY.md` §3.4 — "Never match on `period_id` as a
+      cell-value condition; use `options.periodId` for partition
+      selection instead." Also worth noting for whoever picks up the
+      DAL-level fix: the same Sheets auto-formatting risk could in
+      principle apply to *any* other date-shaped string field in the
+      system, not just `period_id` — this instance is the second
+      confirmed proof that `matchesConditions_()`'s fragility isn't
+      limited to the columns already known to be Date-typed.
 
 ---
 

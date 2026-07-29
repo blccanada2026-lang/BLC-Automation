@@ -130,6 +130,16 @@ The three all-type rules exist specifically because `BCH`/`SDA`/`SVN` report to 
 
 ---
 
+## 3.4 Standing Rule — Never Match on `period_id` as a Cell-Value Condition
+
+**The rule, verbatim:** Never filter/match on `period_id` as a cell-value condition in `readWhere`/`readAll` — use the partition tab-selection mechanism (`options.periodId`) instead. Google Sheets auto-formats `YYYY-MM` strings as `Date` objects on write, so cell-value matches silently fail. This is a system-wide storage artifact, not fixable per-column without a DAL-level change.
+
+**Origin, 2026-07-29** — `PayrollAutomationPmBonusProofB1.gs` (Phase B1, Item 3 DEV rehearsal). `PayrollEngine.runBonusRun()` wrote `PAYROLL_BONUS_SUPERVISOR` rows correctly (confirmed: `TLBT1`/`PMBT1` both credited ₹300, no double-count — the flat PM bonus calculation itself was never in question). The proof script's own verification then reported 3 failures, unable to find those rows via `DAL.readWhere(FACT_PAYROLL_LEDGER, { event_type: 'PAYROLL_BONUS_SUPERVISOR', period_id: '2020-01' }, { periodId: '2020-01' })`. Direct code trace showed the write path and this read agreed exactly on table, `event_type`, and partition — none of the usual suspects (wrong table, wrong event_type, wrong partition name) held up. A diagnostic raw read confirmed the actual mechanism: the stored `period_id` value was `"2020-01-01T06:00:00.000Z"`, not the string `"2020-01"` the condition was comparing against — Sheets had auto-formatted the `"YYYY-MM"`-shaped string as a `Date` on write. `runBonusRun()`'s own return value (built in memory, never re-reading the sheet) was correct throughout; only a *cell-value* re-read of `period_id` was affected.
+
+**Same underlying class as §3.1's second instance** (`matchesConditions_()`'s loose `!=`, reference-identity on `Date` objects) — but a different trigger. That instance was about *reading* a Date-formatted cell and comparing two Date instances. This one is about *writing* a plain string that Sheets itself silently reinterprets as a Date before it's ever stored — the corruption happens at write time, not read time, and affects every partitioned FACT table's `period_id` column identically, since no column anywhere in this codebase (`DAL.gs`, `SetupScript.gs`) is ever explicitly set to plain-text format. **This means the risk is real and system-wide in storage — DEV and PROD alike, since the write path is identical code in both — but it is not currently exploitable anywhere in `src/`**: a full sweep of every `readWhere`/`readAll` call site found exactly one place in the entire codebase that ever filtered on `period_id` as a row condition (the proof script itself, now fixed); every other partition-scoped read relies exclusively on `options.periodId` for tab selection (a JS string used to build a sheet *name*, never written into a cell, never at risk) and then filters by other fields. See the "DAL date-column matching audit" task in `CTO_TASK_QUEUE.md` for the full blast-radius record and the broader latent risk (any *other* date-shaped string field could carry the identical risk if a future caller ever filters on it as a cell value).
+
+---
+
 ## 4. Database / Sheet / Table Structure
 
 Key tables only. Full list in `.claude/context/architecture.md §Key Tables`.
