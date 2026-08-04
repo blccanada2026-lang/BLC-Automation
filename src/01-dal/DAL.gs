@@ -351,6 +351,63 @@ var DAL = (function () {
   }
 
   /**
+   * Reads the header row, self-healing a BLANK header against canonical
+   * SCHEMAS before returning — the actual fix for ensurePartition()'s
+   * non-atomic insertSheet()-then-header-copy gap (two separate Sheets
+   * API calls; an interruption between them leaves a tab that exists
+   * with a blank row 1, and objectToRow_() maps every field against a
+   * 0-column header, silently discarding every value ever written
+   * against it — the root cause of the Aug 2026 partition incident,
+   * CTO_TASK_QUEUE.md).
+   *
+   * Called from appendRow()/appendRows() — not just ensurePartition()'s
+   * own early-return path — because many callers write against an
+   * already-provisioned partition without calling ensurePartition()
+   * again first (migration/recon fillers, payroll/billing engines).
+   * This is the one path every FACT write goes through regardless of
+   * caller discipline, so it's the only place that actually guarantees
+   * the gap can't cause silent data loss.
+   *
+   * Never touches a NON-blank header, even one that differs from
+   * canonical SCHEMAS (e.g. an older partition missing a column added
+   * later) — real data rows may already be positionally written against
+   * that exact header, so blindly rewriting row 1 risks silently
+   * misaligning existing data, which is worse than the drift itself.
+   * That case is only logged (WARN) — same class of drift
+   * PartitionHeaderIntegrityCheck.gs already flags separately, now also
+   * surfaced inline on every write.
+   *
+   * @returns {string[]} Headers to use for objectToRow_ — the
+   *   just-repaired canonical headers if a blank header was healed,
+   *   otherwise whatever was actually read from row 1.
+   * @throws {DalError_} BLANK_HEADER_NO_SCHEMA if the header is blank
+   *   and no canonical schema is available to repair it — a hard stop,
+   *   not a silent pass-through, since proceeding would silently
+   *   discard the write exactly as the original incident did.
+   */
+  function getHeadersSelfHealing_(sheet, tabName, tableName, callerModule) {
+    var headers = getHeaders_(sheet);
+    var isBlank = headers.filter(function (h) { return String(h || '').trim() !== ''; }).length === 0;
+    if (!isBlank) return headers;
+
+    var canonical = (typeof SCHEMAS !== 'undefined') ? SCHEMAS[tableName] : undefined;
+    if (!canonical || canonical.length === 0) {
+      throw new DalError_(
+        'BLANK_HEADER_NO_SCHEMA',
+        'Sheet tab "' + tabName + '" has a blank header row and no canonical schema is ' +
+        'available to repair it (SCHEMAS["' + tableName + '"] not found). Refusing to write — ' +
+        'proceeding would silently discard every field (ensurePartition() non-atomic gap).',
+        { tableName: tableName, tabName: tabName, callerModule: callerModule }
+      );
+    }
+
+    trackApiCall_();
+    sheet.getRange(1, 1, 1, canonical.length).setValues([canonical]);
+    emit_('WARN', 'BLANK_HEADER_SELF_HEALED', { tableName: tableName, tabName: tabName, callerModule: callerModule });
+    return canonical;
+  }
+
+  /**
    * Converts a raw row array to a plain object using header names as keys.
    * Blank header cells are skipped (they hold no column name).
    * @param {string[]} headers  From getHeaders_()
@@ -685,7 +742,7 @@ var DAL = (function () {
     var periodId = isPartitioned_(tableName) ? resolvePeriodId_(data, options) : null;
     var tabName  = resolveTabName_(tableName, periodId);
     var sheet    = requireSheet_(tabName, tableName);
-    var headers  = getHeaders_(sheet);
+    var headers  = getHeadersSelfHealing_(sheet, tabName, tableName, options.callerModule);
     var row      = objectToRow_(headers, data);
 
     trackApiCall_();
@@ -748,7 +805,7 @@ var DAL = (function () {
     var periodId = isPartitioned_(tableName) ? resolvePeriodId_(dataArray[0], options) : null;
     var tabName  = resolveTabName_(tableName, periodId);
     var sheet    = requireSheet_(tabName, tableName);
-    var headers  = getHeaders_(sheet);
+    var headers  = getHeadersSelfHealing_(sheet, tabName, tableName, options.callerModule);
 
     // Convert all objects to row arrays in one pass
     var rows = [];
@@ -931,42 +988,66 @@ var DAL = (function () {
     var existingSheet = getSheet_(tabName);
 
     if (existingSheet) {
+      // Self-heal here too (not just appendRow/appendRows) so a caller
+      // that only calls ensurePartition() ahead of time — without
+      // writing immediately — still gets a correctly repaired tab, and
+      // so this function's own return value doesn't claim success while
+      // silently leaving a blank header in place.
+      getHeadersSelfHealing_(existingSheet, tabName, tableName, callerModule);
       emit_('INFO', 'ENSURE_PARTITION_EXISTS', { tableName: tableName, tabName: tabName });
       return { created: false, tabName: tabName };
-    }
-
-    // Find an existing partition to copy headers from
-    trackApiCall_();
-    var allSheets     = getSpreadsheet_().getSheets();
-    var headerSource  = null;
-    var searchPrefix  = tableName + '|';
-
-    for (var i = 0; i < allSheets.length; i++) {
-      if (allSheets[i].getName().indexOf(searchPrefix) === 0) {
-        headerSource = allSheets[i];
-        break;
-      }
     }
 
     // Create the new tab
     trackApiCall_();
     var newSheet = getSpreadsheet_().insertSheet(tabName);
 
-    if (headerSource) {
-      var headers = getHeaders_(headerSource);
-      if (headers.length > 0) {
-        trackApiCall_();
-        newSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    // Header source priority: canonical SCHEMAS first — NOT "whichever
+    // sibling partition tab happens to be found first," which is how a
+    // new partition could previously be born already stale (a sibling
+    // predating a schema change propagates its missing/old columns
+    // forward forever, e.g. FACT_QC_EVENTS missing qc_session_id in
+    // partitions created after it was added — CTO_TASK_QUEUE.md,
+    // "Partition headers silently diverge," Mechanism B). Sibling-copy
+    // is kept only as a last-resort fallback for tables without a
+    // canonical schema entry (e.g. a table predating SCHEMAS, or a test
+    // harness that doesn't load SetupScript.gs).
+    var canonical    = (typeof SCHEMAS !== 'undefined') ? SCHEMAS[tableName] : undefined;
+    var headersToUse = null;
+    var headerSource = 'none';
+
+    if (canonical && canonical.length > 0) {
+      headersToUse = canonical;
+      headerSource = 'canonical_schema';
+    } else {
+      trackApiCall_();
+      var allSheets    = getSpreadsheet_().getSheets();
+      var searchPrefix = tableName + '|';
+      for (var i = 0; i < allSheets.length; i++) {
+        if (allSheets[i].getName().indexOf(searchPrefix) === 0) {
+          var siblingHeaders = getHeaders_(allSheets[i]);
+          if (siblingHeaders.length > 0) {
+            headersToUse = siblingHeaders;
+            headerSource = 'sibling_fallback';
+          }
+          break;
+        }
       }
     }
-    // If no headerSource: sheet is created empty.
+
+    if (headersToUse) {
+      trackApiCall_();
+      newSheet.getRange(1, 1, 1, headersToUse.length).setValues([headersToUse]);
+    }
+    // If still no headersToUse: sheet is created empty (no canonical
+    // schema and no sibling to copy from — first-ever deployment).
     // SetupScript or AdminEngine is responsible for the initial header row.
 
     emit_('INFO', 'ENSURE_PARTITION_CREATED', {
       tableName:    tableName,
       tabName:      tabName,
       callerModule: callerModule,
-      copiedHeaders: headerSource ? true : false
+      headerSource: headerSource
     });
 
     return { created: true, tabName: tabName };
