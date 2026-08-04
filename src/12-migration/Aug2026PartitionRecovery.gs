@@ -114,6 +114,70 @@ var A26PR_KNOWN_QUEUE_IDS_ = [
   '4642b87b-5e4a-4395-b02d-b9be3ccef0b2'
 ];
 
+/**
+ * Restricts a discovered item list to exactly the audited incident scope
+ * (A26PR_KNOWN_QUEUE_IDS_). Unlike a26prCrossCheckScope_ (a tripwire,
+ * never filters), this DOES filter — Commit only has done readiness/
+ * duplicate-reconciliation diligence on these 31 items; live discovery
+ * on DEAD_LETTER_QUEUE pulls in every historically dead-lettered WORK_LOG/
+ * QC_SUBMIT item regardless of age or root cause, most of which are an
+ * unrelated population (legacy job-number formats, many already
+ * INVOICED/COMPLETED_BILLABLE — replaying against those would violate
+ * Rule A5/D3, not part of this incident).
+ * @returns {{ inScope: Object[], excluded: Object[] }}
+ */
+function a26prScopeToKnown_(items) {
+  var knownSet = {};
+  A26PR_KNOWN_QUEUE_IDS_.forEach(function (id) { knownSet[id] = true; });
+  return {
+    inScope:  items.filter(function (it) { return !!knownSet[it.queue_id]; }),
+    excluded: items.filter(function (it) { return !knownSet[it.queue_id]; })
+  };
+}
+
+/**
+ * Normalizes a work_date value (Date object OR string) to 'YYYY-MM-DD',
+ * same approach as PortalData.gs's private normWorkDate_ — work_date is
+ * a date-formatted column subject to the same Sheets auto-format
+ * behavior documented in PROJECT_MEMORY.md §3.4.
+ */
+function a26prNormDate_(raw) {
+  if (!raw) return '';
+  if (raw instanceof Date) {
+    if (isNaN(raw.getTime())) return '';
+    var y = raw.getFullYear(), mo = raw.getMonth() + 1, d = raw.getDate();
+    return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (d < 10 ? '0' : '') + d;
+  }
+  var s   = String(raw).trim();
+  var iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
+  var p = new Date(s);
+  if (!isNaN(p.getTime())) {
+    var py = p.getFullYear(), pm = p.getMonth() + 1, pd = p.getDate();
+    return py + '-' + (pm < 10 ? '0' : '') + pm + '-' + (pd < 10 ? '0' : '') + pd;
+  }
+  return s;
+}
+
+/**
+ * Read-only. Finds any existing FACT_WORK_LOGS row matching this exact
+ * job/actor/date/hours combination with event_type WORK_LOG_SUBMITTED —
+ * used both as Commit's automatic double-count safety net and by the
+ * standalone reconciliation report.
+ */
+function a26prFindMatchingWorkLogRow_(jobNumber, actorCode, workDate, hours, periodId) {
+  var rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { callerModule: A26PR_CALLER_, periodId: periodId });
+  var normDate = a26prNormDate_(workDate);
+  var normHours = parseFloat(hours);
+  return rows.filter(function (r) {
+    return String(r.job_number || '') === jobNumber &&
+      String(r.actor_code || '').trim().toUpperCase() === actorCode &&
+      String(r.event_type || '') === 'WORK_LOG_SUBMITTED' &&
+      a26prNormDate_(r.work_date) === normDate &&
+      parseFloat(r.hours) === normHours;
+  });
+}
+
 // ============================================================
 // SECTION 1: Header status / repair (pure, side-effect isolated)
 // ============================================================
@@ -313,7 +377,19 @@ function runAug2026PartitionRecoveryHeaderRepairOnly() {
 // SECTION 4: Commit — repairs headers + replays through real handlers
 // ============================================================
 
-function runAug2026PartitionRecoveryCommit() {
+/**
+ * @param {string[]=} excludeQueueIds  Optional — queue_ids to skip without
+ *   replaying (e.g. internal-duplicate candidates flagged by
+ *   runAug2026PartitionRecoveryWorkLogReconciliation() that need a human
+ *   judgment call, not an automated one). Items already present in
+ *   FACT_WORK_LOGS are excluded automatically regardless of this list —
+ *   see Step 3b.
+ */
+function runAug2026PartitionRecoveryCommit(excludeQueueIds) {
+  excludeQueueIds = excludeQueueIds || [];
+  var excludeSet = {};
+  excludeQueueIds.forEach(function (id) { excludeSet[id] = true; });
+
   var scriptId = ScriptApp.getScriptId();
   console.log('=== Aug 2026 partition recovery — COMMIT ===');
   console.log('Script ID: ' + scriptId + ' — confirm which project this is ' +
@@ -334,21 +410,57 @@ function runAug2026PartitionRecoveryCommit() {
     return r;
   });
 
-  var items = a26prDiscoverDeadLetterItems_();
+  var discovered = a26prDiscoverDeadLetterItems_();
   console.log('');
-  console.log('--- Step 2: Discovery (' + items.length + ' item(s)) ---');
-  var crossCheck = a26prCrossCheckScope_(items);
+  console.log('--- Step 2: Discovery (' + discovered.length + ' item(s) found, before scoping) ---');
+  var crossCheck = a26prCrossCheckScope_(discovered);
   if (crossCheck.unexpected.length > 0 || crossCheck.missing.length > 0) {
-    console.log('*** WARNING — scope mismatch vs known incident list. Unexpected: ' +
-                JSON.stringify(crossCheck.unexpected) + ' Missing: ' + JSON.stringify(crossCheck.missing) +
-                ' — proceeding with LIVE discovery regardless (this is a tripwire, not a filter). ***');
+    console.log('*** NOTE — scope mismatch vs known incident list. Unexpected: ' +
+                JSON.stringify(crossCheck.unexpected) + ' Missing: ' + JSON.stringify(crossCheck.missing) + ' ***');
   }
+
+  var scoped = a26prScopeToKnown_(discovered);
+  var items  = scoped.inScope;
+  console.log('--- Step 2b: Scoped to the known ' + A26PR_KNOWN_QUEUE_IDS_.length +
+              '-item incident list — ' + items.length + ' in scope, ' + scoped.excluded.length +
+              ' excluded (not part of this incident, not replayed): ' +
+              JSON.stringify(scoped.excluded.map(function (i) { return i.queue_id; })));
 
   console.log('');
   console.log('--- Step 3: Replay ---');
   var results = items.map(function (it) {
     var result = { queue_id: it.queue_id, form_type: it.form_type };
+
+    if (excludeSet[it.queue_id]) {
+      result.status = 'SKIPPED_MANUAL_EXCLUDE';
+      result.detail = 'excluded via excludeQueueIds parameter';
+      console.log('  ' + it.queue_id + ' (' + it.form_type + '): ' + result.status);
+      return result;
+    }
+
     try {
+      var payload = JSON.parse(it.payload_json || '{}');
+
+      // Step 3b — WORK_LOG double-count safety net. Idempotency is
+      // keyed on queue_id alone (WorkLogHandler.gs:111-112), so it
+      // cannot catch two DIFFERENT dead-lettered queue_ids carrying
+      // identical hours, or a dead-lettered item whose hours were
+      // already re-submitted successfully after the header repair.
+      // Checked here unconditionally, not just via excludeQueueIds,
+      // since this specific case is unambiguous and mechanically
+      // detectable — no human judgment call needed.
+      if (it.form_type === Config.FORM_TYPES.WORK_LOG) {
+        var itemActorForCheck = RBAC.resolveActor(it.submitter_email);
+        var existing = a26prFindMatchingWorkLogRow_(
+          payload.job_number, itemActorForCheck.personCode, payload.work_date, payload.hours, periodId);
+        if (existing.length > 0) {
+          result.status = 'ALREADY_PRESENT';
+          result.detail = 'matching hours already in FACT_WORK_LOGS — not replayed (would double-count)';
+          console.log('  ' + it.queue_id + ' (' + it.form_type + '): ' + result.status + ' — ' + result.detail);
+          return result;
+        }
+      }
+
       var itemActor = RBAC.resolveActor(it.submitter_email);
       var queueItemLike = {
         queue_id:        it.queue_id,
@@ -377,17 +489,134 @@ function runAug2026PartitionRecoveryCommit() {
     return result;
   });
 
-  var summary = { recovered: 0, already_recovered: 0, error: 0 };
+  var summary = { recovered: 0, already_recovered: 0, already_present: 0, skipped_manual: 0, error: 0 };
   results.forEach(function (r) {
     if (r.status === 'RECOVERED') summary.recovered++;
     else if (r.status === 'ALREADY_RECOVERED') summary.already_recovered++;
+    else if (r.status === 'ALREADY_PRESENT') summary.already_present++;
+    else if (r.status === 'SKIPPED_MANUAL_EXCLUDE') summary.skipped_manual++;
     else summary.error++;
   });
 
   console.log('');
   console.log('=== Done. ' + summary.recovered + ' recovered, ' + summary.already_recovered +
-              ' already recovered (idempotent skip), ' + summary.error + ' error(s). ' +
+              ' already recovered (idempotent skip), ' + summary.already_present +
+              ' already present (double-count guard), ' + summary.skipped_manual +
+              ' manually excluded, ' + summary.error + ' error(s). ' +
               'DEAD_LETTER_QUEUE left untouched (historical record). ===');
 
-  return { repairs: repairs, discovered_count: items.length, cross_check: crossCheck, results: results, summary: summary };
+  return {
+    repairs: repairs, discovered_count: discovered.length, cross_check: crossCheck,
+    out_of_scope: scoped.excluded, out_of_scope_count: scoped.excluded.length,
+    results: results, summary: summary
+  };
+}
+
+// ============================================================
+// SECTION 5: WORK_LOG duplicate reconciliation (read-only)
+//
+// WorkLogHandler's idempotency key is queue_id alone (WorkLogHandler.gs:
+// 111-112) — it only stops the SAME dead-letter item from replaying
+// twice. It cannot catch two DIFFERENT dead-lettered queue_ids carrying
+// identical hours (e.g. a designer re-logging the same hours during the
+// outage, thinking the first attempt failed), or a dead-lettered item
+// whose hours were already successfully re-submitted after the header
+// repair. Both would double-count real payroll hours if blindly
+// replayed. Commit's Step 3b already auto-excludes the unambiguous case
+// (ALREADY_IN_FACT_WORK_LOGS) — this report exists for the ambiguous
+// case (two dead-letters that look identical), which needs a human
+// judgment call, not an automated one: could be an accidental retry, or
+// two genuinely separate days that happen to match.
+//
+// Read-only. Never writes. Run BEFORE Commit, review the
+// INTERNAL_DUPLICATE_CANDIDATE items, and pass whichever queue_ids
+// should be skipped to Commit's excludeQueueIds parameter.
+// ============================================================
+
+function runAug2026PartitionRecoveryWorkLogReconciliation() {
+  var scriptId = ScriptApp.getScriptId();
+  console.log('=== Aug 2026 partition recovery — WORK_LOG duplicate reconciliation (read-only) ===');
+  console.log('Script ID: ' + scriptId + ' — confirm which project this is ' +
+              '(DEV: 1smkj0mmUqcWDDJPq... / PROD: 1HzRiDrQJ6z-BxPzk...) before trusting this output.');
+
+  var actor = RBAC.resolveActor('raj.nair@bluelotuscanada.ca');
+  RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_VIEW);
+
+  var periodId = a26prActualPeriod_();
+  console.log('Resolved current period: ' + periodId);
+
+  var discovered = a26prDiscoverDeadLetterItems_();
+  var scoped = a26prScopeToKnown_(discovered);
+  var wlItems = scoped.inScope.filter(function (it) { return it.form_type === Config.FORM_TYPES.WORK_LOG; });
+  console.log('Reconciling ' + wlItems.length + ' known-incident WORK_LOG dead-letter item(s).');
+
+  // Parse + resolve actor for each item first, so grouping/matching
+  // never has to re-parse.
+  var parsed = wlItems.map(function (it) {
+    var payload = {};
+    var parseError = null;
+    try { payload = JSON.parse(it.payload_json || '{}'); } catch (e) { parseError = e.message; }
+    var itemActor = RBAC.resolveActor(it.submitter_email);
+    var normDate = a26prNormDate_(payload.work_date);
+    return {
+      queue_id: it.queue_id, job_number: payload.job_number, hours: payload.hours,
+      work_date: normDate, actor_code: itemActor.personCode, submitter_email: it.submitter_email,
+      parseError: parseError,
+      groupKey: payload.job_number + '|' + itemActor.personCode + '|' + normDate + '|' + parseFloat(payload.hours)
+    };
+  });
+
+  // Group by (job_number, actor_code, work_date, hours) to find internal duplicates.
+  var groups = {};
+  parsed.forEach(function (p) {
+    if (!groups[p.groupKey]) groups[p.groupKey] = [];
+    groups[p.groupKey].push(p.queue_id);
+  });
+
+  var items = parsed.map(function (p) {
+    var classification, detail, duplicateOf = [];
+    if (p.parseError) {
+      classification = 'INVALID_PAYLOAD';
+      detail = p.parseError;
+    } else {
+      var existing = a26prFindMatchingWorkLogRow_(p.job_number, p.actor_code, p.work_date, p.hours, periodId);
+      if (existing.length > 0) {
+        classification = 'ALREADY_IN_FACT_WORK_LOGS';
+        detail = 'matching hours already written — Commit will auto-skip this one';
+      } else if (groups[p.groupKey].length > 1) {
+        classification = 'INTERNAL_DUPLICATE_CANDIDATE';
+        duplicateOf = groups[p.groupKey].filter(function (id) { return id !== p.queue_id; });
+        detail = 'same job/actor/date/hours as: ' + duplicateOf.join(', ') + ' — needs your judgment (accidental retry vs. two real days)';
+      } else {
+        classification = 'UNIQUE';
+        detail = 'safe to replay';
+      }
+    }
+    var result = {
+      queue_id: p.queue_id, job_number: p.job_number, actor_code: p.actor_code,
+      work_date: p.work_date, hours: p.hours, classification: classification,
+      duplicate_of: duplicateOf, detail: detail
+    };
+    console.log('  ' + p.queue_id + ' (' + p.job_number + ', ' + p.actor_code + ', ' + p.work_date + ', ' + p.hours + 'h): ' + classification + ' — ' + detail);
+    return result;
+  });
+
+  var summary = { unique: 0, already_present: 0, internal_duplicate: 0, invalid: 0 };
+  items.forEach(function (r) {
+    if (r.classification === 'UNIQUE') summary.unique++;
+    else if (r.classification === 'ALREADY_IN_FACT_WORK_LOGS') summary.already_present++;
+    else if (r.classification === 'INTERNAL_DUPLICATE_CANDIDATE') summary.internal_duplicate++;
+    else summary.invalid++;
+  });
+
+  console.log('');
+  console.log('=== Done. ' + summary.unique + ' unique (safe), ' + summary.already_present +
+              ' already present (Commit auto-skips), ' + summary.internal_duplicate +
+              ' internal-duplicate candidate(s) (need your judgment), ' + summary.invalid +
+              ' invalid payload(s). Nothing written — read-only. ===');
+  if (summary.internal_duplicate > 0) {
+    console.log('For each INTERNAL_DUPLICATE_CANDIDATE group, decide which queue_id(s) to keep and pass the rest to runAug2026PartitionRecoveryCommit([...queue_ids to skip]).');
+  }
+
+  return { items: items, summary: summary };
 }
