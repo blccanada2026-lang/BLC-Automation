@@ -113,13 +113,18 @@ describe('PortalData buildPerms_ — canRunPayroll/canApprovePayroll/canManageSt
 
 describe('PortalData buildPerms_ — canRunBilling (RBAC audit finding, 2026-08-05)', () => {
   // Found via full RBAC audit: the "Run Billing" portal button was wired
-  // to canRunPayroll (RBAC.ACTIONS.PAYROLL_RUN), not its own
-  // RBAC.ACTIONS.BILLING_RUN. PM has BILLING_RUN:true but PAYROLL_RUN:false
-  // in the real matrix — so PM could never see Run Billing despite being
-  // authorized for it. buildPerms_ needs its own canRunBilling flag,
-  // independent of canRunPayroll.
-  test('canRunBilling reflects RBAC.hasPermission(actor, BILLING_RUN), not canRunPayroll', () => {
-    const perms = getPerms('PM', (actor, action) => action === 'BILLING_RUN');
+  // to canRunPayroll (RBAC.ACTIONS.PAYROLL_RUN) instead of its own
+  // RBAC.ACTIONS.BILLING_RUN — buildPerms_ needs its own canRunBilling
+  // flag, independent of canRunPayroll, delegating to hasPermission()
+  // like every other flag here (not the raw role string).
+  //
+  // Real matrix values (billing is CEO/ADMIN/HR_ACCOUNTING-only, PM
+  // explicitly excluded per business decision 2026-08-05) are covered
+  // in tests/rbac.test.js — this file is about delegation mechanics
+  // only, so the role/stub combinations below are illustrative, not a
+  // claim about real grants.
+  test('canRunBilling reflects RBAC.hasPermission(actor, BILLING_RUN), independent of canRunPayroll', () => {
+    const perms = getPerms('ADMIN', (actor, action) => action === 'BILLING_RUN');
     expect(perms.canRunBilling).toBe(true);
     expect(perms.canRunPayroll).toBe(false); // hasPermission stub only allows BILLING_RUN
   });
@@ -129,9 +134,8 @@ describe('PortalData buildPerms_ — canRunBilling (RBAC audit finding, 2026-08-
     expect(perms.canRunBilling).toBe(false);
   });
 
-  test('matches the real matrix: PM gets canRunBilling=true, canRunPayroll=false', () => {
-    const perms = getPerms('PM', (actor, action) => action === 'BILLING_RUN');
-    expect(perms.canRunBilling).toBe(true);
-    expect(perms.canRunPayroll).toBe(false);
+  test('canRunBilling is false for PM even when other billing-adjacent permissions are granted — no accidental fallback to role or canRunPayroll', () => {
+    const perms = getPerms('PM', (actor, action) => action === 'PAYROLL_VIEW'); // BILLING_RUN deliberately not stubbed true
+    expect(perms.canRunBilling).toBe(false);
   });
 });

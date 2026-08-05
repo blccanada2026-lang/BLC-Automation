@@ -60,12 +60,12 @@ describe('RBAC.PERMISSION_MATRIX — HR_ACCOUNTING role', () => {
     expect(RBAC.canPerform('HR_ACCOUNTING', 'PAYROLL_RUN')).toBe(false);
   });
 
-  test('cannot perform job-lifecycle, work-log, QC, billing, queue, admin, client, rating, or SOP actions', () => {
+  test('cannot perform job-lifecycle, work-log, QC, queue, admin, client, rating, or SOP actions', () => {
     var deniedActions = [
       'JOB_CREATE', 'JOB_ALLOCATE', 'JOB_START', 'JOB_HOLD', 'JOB_RESUME', 'JOB_VIEW',
       'WORK_LOG_SUBMIT', 'WORK_LOG_AMEND', 'WORK_LOG_VOID', 'WORK_LOG_REASSIGN',
       'QC_SUBMIT', 'QC_APPROVE', 'QC_REJECT',
-      'BILLING_RUN', 'QUEUE_MODIFY', 'ADMIN_CONFIG', 'CLIENT_VIEW',
+      'QUEUE_MODIFY', 'ADMIN_CONFIG', 'CLIENT_VIEW',
       'RATE_STAFF', 'SOP_SAVE', 'SOP_ADMIN'
     ];
     deniedActions.forEach(function (action) {
@@ -76,6 +76,10 @@ describe('RBAC.PERMISSION_MATRIX — HR_ACCOUNTING role', () => {
   test('can view payroll and export data', () => {
     expect(RBAC.canPerform('HR_ACCOUNTING', 'PAYROLL_VIEW')).toBe(true);
     expect(RBAC.canPerform('HR_ACCOUNTING', 'DATA_EXPORT')).toBe(true);
+  });
+
+  test('can run billing — business decision 2026-08-05: billing is financial-team-only (CEO/ADMIN/HR_ACCOUNTING), not a PM function', () => {
+    expect(RBAC.canPerform('HR_ACCOUNTING', 'BILLING_RUN')).toBe(true);
   });
 
   test('CEO and SYSTEM can perform every new action, existing roles are unaffected', () => {
@@ -89,9 +93,17 @@ describe('RBAC.PERMISSION_MATRIX — HR_ACCOUNTING role', () => {
     });
     // Existing, pre-Phase-B1 permissions unchanged — spot-check a few.
     expect(RBAC.canPerform('CEO', 'PAYROLL_RUN')).toBe(true);
-    expect(RBAC.canPerform('PM', 'BILLING_RUN')).toBe(true);
     expect(RBAC.canPerform('PM', 'PAYROLL_RUN')).toBe(false);
     expect(RBAC.canPerform('DESIGNER', 'WORK_LOG_SUBMIT')).toBe(true);
+  });
+
+  test('BILLING_RUN — business decision 2026-08-05: financial-team-only (CEO/ADMIN/HR_ACCOUNTING), PM no longer included', () => {
+    expect(RBAC.canPerform('CEO', 'BILLING_RUN')).toBe(true);
+    expect(RBAC.canPerform('ADMIN', 'BILLING_RUN')).toBe(true);
+    expect(RBAC.canPerform('HR_ACCOUNTING', 'BILLING_RUN')).toBe(true);
+    expect(RBAC.canPerform('PM', 'BILLING_RUN')).toBe(false);
+    expect(RBAC.canPerform('TEAM_LEAD', 'BILLING_RUN')).toBe(false);
+    expect(RBAC.canPerform('DESIGNER', 'BILLING_RUN')).toBe(false);
   });
 });
 
