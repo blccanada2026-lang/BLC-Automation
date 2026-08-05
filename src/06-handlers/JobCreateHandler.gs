@@ -193,6 +193,61 @@ var JobCreateHandler = (function () {
     }
   }
 
+  // Recent-content-duplicate window — confirmed real via BLC-00891/
+  // BLC-00892 (Sarty, 2026-08-05): queue_id-based idempotency above
+  // cannot catch two genuinely separate submissions (a slow response
+  // led to a resubmission 16.4 seconds later, each with a fresh
+  // queue_id). This is a second, independent guard against the same
+  // job being created twice in quick succession, not a replacement for
+  // the idempotency check above.
+  var RECENT_DUPLICATE_WINDOW_MS_ = 60 * 1000;
+
+  /**
+   * Returns the most recent JOB_CREATED event matching the same
+   * client/product/description/submitter within
+   * RECENT_DUPLICATE_WINDOW_MS_, or null. Deliberately skipped when
+   * client_job_ref is blank — two blank-description jobs for the same
+   * client/product by the same submitter within a minute is a much
+   * weaker signal and a legitimate bulk-create workflow, not
+   * necessarily a mistake.
+   *
+   * @param {Object} payload  Validated, clean payload object
+   * @param {Object} actor    RBAC actor from resolveActor()
+   * @returns {Object|null}
+   */
+  function findRecentContentDuplicate_(payload, actor) {
+    var ref = String(payload.client_job_ref || '').trim();
+    if (!ref) return null;
+
+    var periodId = Identifiers.generateCurrentPeriodId();
+    var rows;
+    try {
+      rows = DAL.readWhere(
+        Config.TABLES.FACT_JOB_EVENTS,
+        {
+          event_type:     Constants.EVENT_TYPES.JOB_CREATED,
+          client_code:    String(payload.client_code || ''),
+          product_code:   String(payload.product_code || ''),
+          client_job_ref: ref,
+          actor_code:     actor.personCode || ''
+        },
+        { periodId: periodId }
+      );
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') return null;
+      throw e;
+    }
+
+    var now = Date.now();
+    for (var i = 0; i < rows.length; i++) {
+      var ts = new Date(rows[i].timestamp).getTime();
+      if (!isNaN(ts) && now >= ts && (now - ts) < RECENT_DUPLICATE_WINDOW_MS_) {
+        return rows[i];
+      }
+    }
+    return null;
+  }
+
   // ============================================================
   // SECTION 3: SEQUENCE COUNTER
   //
@@ -406,6 +461,30 @@ var JobCreateHandler = (function () {
         idempotency_key: idempotencyKey
       });
       return 'DUPLICATE';
+    }
+
+    // ── Step 3b: Recent content-duplicate guard ─────────────
+    // Catches a genuinely separate submission the queue_id-based checks
+    // above cannot (see findRecentContentDuplicate_'s own header
+    // comment). Clears the idempotency mark just set above before
+    // throwing, so a deliberate retry of this exact queue item isn't
+    // itself blocked by a stale mark from this aborted attempt.
+    var recentDupe = findRecentContentDuplicate_(cleanPayload, actor);
+    if (recentDupe) {
+      IdempotencyEngine.clear(idempotencyKey);
+      Logger.warn('JOB_CREATE_RECENT_CONTENT_DUPLICATE', {
+        module:              'JobCreateHandler',
+        message:             'Blocked — matches a job created moments ago',
+        queue_id:            queueId,
+        matched_job_number:  recentDupe.job_number,
+        matched_timestamp:   recentDupe.timestamp
+      });
+      throw new Error(
+        'A job with this exact client, product, and description was already created ' +
+        '(' + recentDupe.job_number + ', moments ago). If this is genuinely a different job, ' +
+        'please wait a minute and try again, or check your job list first — a slow response ' +
+        'can look like nothing happened even though the first submission went through.'
+      );
     }
 
     // ── Step 4: Allocate next job sequence number ───────────
