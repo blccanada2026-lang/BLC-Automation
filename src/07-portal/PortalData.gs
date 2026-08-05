@@ -314,6 +314,11 @@ var PortalData = (function () {
       canRunPayroll:     RBAC.hasPermission(actor, RBAC.ACTIONS.PAYROLL_RUN),
       canApprovePayroll: RBAC.hasPermission(actor, RBAC.ACTIONS.PAYROLL_RUN),
       canManageStaff:    RBAC.hasPermission(actor, RBAC.ACTIONS.ADMIN_CONFIG),
+      // RBAC audit finding, 2026-08-05: "Run Billing" was wired to
+      // canRunPayroll — PM has BILLING_RUN:true but PAYROLL_RUN:false in
+      // the real matrix, so PM could never see the button despite being
+      // authorized. Own flag, own action.
+      canRunBilling:     RBAC.hasPermission(actor, RBAC.ACTIONS.BILLING_RUN),
       // Work log corrections. Raw role !== 'QC' excludes plain QC actors
       // even though RBAC.PERMISSION_MATRIX['QC'] must say true for
       // WORK_LOG_AMEND/VOID so the QC_REVIEWER alias (same canonical row)
@@ -500,9 +505,14 @@ var PortalData = (function () {
     }
     // CEO and PM: no filter — full list returned
 
-    // ── 3. Payroll status — CEO only ──────────────────────────
+    // ── 3. Payroll status ──────────────────────────────────────
+    // RBAC audit finding, 2026-08-05: was hardcoded `role === 'CEO'` —
+    // exactly the anti-pattern RBAC.gs's own file header forbids. Per
+    // the real matrix, PM also has PAYROLL_VIEW:true and should see
+    // this too (TEAM_LEAD/ADMIN correctly still don't — both lack
+    // PAYROLL_VIEW).
     var payrollStatus = [];
-    if (role === 'CEO') {
+    if (RBAC.hasPermission(actor, RBAC.ACTIONS.PAYROLL_VIEW)) {
       try {
         var martRows = DAL.readAll(Config.TABLES.MART_PAYROLL_SUMMARY, { callerModule: 'PortalData' });
         for (var m = 0; m < martRows.length; m++) {

@@ -247,7 +247,10 @@ var RBAC = (function () {
   // Audit notes (why each non-obvious permission is set):
   //   TEAM_LEAD / JOB_CREATE: Team leads intake jobs on behalf of clients
   //   QC / QC_APPROVE: QC reviewers can approve/reject their own reviews
-  //   PM / BILLING_RUN: PMs run billing, but NOT payroll (financial isolation)
+  //   BILLING_RUN: CEO/ADMIN/HR_ACCOUNTING only, as of 2026-08-05 — PM
+  //     previously had this ("financial isolation" from payroll) but the
+  //     business decision was corrected: billing is financial-team-only,
+  //     same tier as payroll visibility, not a PM function.
   //   CEO / PAYROLL_RUN: CEO-only. Also requires enforceFinancialAccess().
   //   ADMIN / ADMIN_CONFIG: System admins configure DIM tables without financial access
   // ============================================================
@@ -390,7 +393,7 @@ var RBAC = (function () {
       QC_SUBMIT:       true,
       QC_APPROVE:      true,
       QC_REJECT:       true,
-      BILLING_RUN:     true,
+      BILLING_RUN:     false,  // Billing is financial-team-only (CEO/ADMIN/HR_ACCOUNTING) — corrected 2026-08-05
       PAYROLL_RUN:     false,  // PM cannot run payroll — CEO only
       PAYROLL_VIEW:    true,
       PAYROLL_PREVIEW:     false,
@@ -464,7 +467,7 @@ var RBAC = (function () {
       QC_SUBMIT:       false,
       QC_APPROVE:      false,
       QC_REJECT:       false,
-      BILLING_RUN:     false,
+      BILLING_RUN:     true,   // Billing is financial-team-only (CEO/ADMIN/HR_ACCOUNTING) — corrected 2026-08-05
       PAYROLL_RUN:     false,  // financial isolation: admin ≠ CEO
       PAYROLL_VIEW:    false,
       PAYROLL_PREVIEW:     false,
@@ -584,7 +587,7 @@ var RBAC = (function () {
       QC_SUBMIT:       false,
       QC_APPROVE:      false,
       QC_REJECT:       false,
-      BILLING_RUN:     false,
+      BILLING_RUN:     true,   // Billing is financial-team-only (CEO/ADMIN/HR_ACCOUNTING) — corrected 2026-08-05
       PAYROLL_RUN:     false,  // the existing, fused commit-shaped action — not granted in Phase B1
       PAYROLL_VIEW:    true,
       PAYROLL_PREVIEW:     true,
