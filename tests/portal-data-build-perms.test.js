@@ -35,6 +35,9 @@ beforeEach(() => {
   // doesn't include SCOPES — buildPerms_'s canViewAll flag reads
   // RBAC.SCOPES.ALL/.TEAM directly, so it's added here.
   mocks.RBAC.SCOPES = { SELF: 'SELF', TEAM: 'TEAM', ACCOUNTS: 'ACCOUNTS', ALL: 'ALL' };
+  // Same reasoning — BILLING_RUN not in the shared stub's ACTIONS list,
+  // needed for the canRunBilling audit-fix tests below.
+  mocks.RBAC.ACTIONS.BILLING_RUN = 'BILLING_RUN';
   loadSrc('../src/07-portal/PortalData.gs');
 });
 
@@ -105,5 +108,30 @@ describe('PortalData buildPerms_ — canRunPayroll/canApprovePayroll/canManageSt
     const adminPerms = getPerms('ADMIN', (actor, action) => action === 'ADMIN_CONFIG');
     expect(adminPerms.canManageStaff).toBe(true);
     expect(adminPerms.canRunPayroll).toBe(false);
+  });
+});
+
+describe('PortalData buildPerms_ — canRunBilling (RBAC audit finding, 2026-08-05)', () => {
+  // Found via full RBAC audit: the "Run Billing" portal button was wired
+  // to canRunPayroll (RBAC.ACTIONS.PAYROLL_RUN), not its own
+  // RBAC.ACTIONS.BILLING_RUN. PM has BILLING_RUN:true but PAYROLL_RUN:false
+  // in the real matrix — so PM could never see Run Billing despite being
+  // authorized for it. buildPerms_ needs its own canRunBilling flag,
+  // independent of canRunPayroll.
+  test('canRunBilling reflects RBAC.hasPermission(actor, BILLING_RUN), not canRunPayroll', () => {
+    const perms = getPerms('PM', (actor, action) => action === 'BILLING_RUN');
+    expect(perms.canRunBilling).toBe(true);
+    expect(perms.canRunPayroll).toBe(false); // hasPermission stub only allows BILLING_RUN
+  });
+
+  test('canRunBilling is false when RBAC.hasPermission denies BILLING_RUN, even for CEO', () => {
+    const perms = getPerms('CEO', () => false);
+    expect(perms.canRunBilling).toBe(false);
+  });
+
+  test('matches the real matrix: PM gets canRunBilling=true, canRunPayroll=false', () => {
+    const perms = getPerms('PM', (actor, action) => action === 'BILLING_RUN');
+    expect(perms.canRunBilling).toBe(true);
+    expect(perms.canRunPayroll).toBe(false);
   });
 });
