@@ -206,6 +206,8 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
 - CEO daily briefing email (8 AM CST Mon–Sat via `runCEODailyBriefing`)
 - CEO portal: client-grouped collapsible jobs view + grouped QC backlog panel
 - **2026-08-06**: Timesheet-for-any-period feature (CEO/HR_ACCOUNTING only) — PR #15, deployed PROD `4c07df5`. Fixed Run Billing's identical `isLeader` UI unreachability bug in the same PR.
+- **2026-08-06**: `ADMIN` granted `TIMESHEET_GENERATE` (matches `BILLING_RUN`'s scope) — PR #16, deployed PROD `12d57cc`. Aarthi is onboarded as `ADMIN`, not `HR_ACCOUNTING` — see §8.
+- **2026-08-06**: Automatic staff-onboarding email (instructions + real personal portal link, on new hire) — PR #17, deployed PROD `17ef362`. New `StaffOnboardingMailer.gs`, T8.
 - **2026-06-16**: PROD cutover complete — Stacey sync removed, staff on V3 portal
 - **2026-06-18**: Post-cutover bug fix batch (Sarty's team feedback):
   - RBAC: TEAM_LEAD `QC_APPROVE/REJECT: true`; QC role `JOB_START: true`
@@ -272,6 +274,7 @@ Priority order:
 | Apps Script deployment | Low | `clasp push` alone is NOT enough — must also do "New version" redeploy in Apps Script editor for `/exec` URL to pick up changes. Portal redeploy requirement now explicit in R4/R5 checklists. |
 | **Billing access wrongly granted to PM** | ~~HIGH~~ | **RESOLVED 2026-08-05 (PR #11).** `RBAC.gs` `PERMISSION_MATRIX.PM.BILLING_RUN` was `true` (superseded design decision) — corrected to `false`; `ADMIN`/`HR_ACCOUNTING` corrected to `true`. Billing is now CEO/ADMIN/HR_ACCOUNTING-only, matching current business intent. |
 | **Job-create duplicate (BLC-00891/BLC-00892)** | ~~HIGH~~ | **RESOLVED 2026-08-06 (PR #14).** Root cause: `JobCreateHandler` idempotency keyed on `queue_id` alone, no protection against two genuinely separate submissions. Data fixed via `Job00891DuplicateFixer.gs`; prevention shipped as a 60s content-duplicate guard, designer-aware per §3.6. Deployed to PROD, New Version redeploy confirmed. |
+| **Aarthi's real role is ADMIN, not HR_ACCOUNTING** | Low (clarification, not a bug) | **CONFIRMED 2026-08-06.** The real, onboarded Aarthi (person_code `ARN`, email `aarthirajeshnair@gmail.com`) is role `ADMIN` in PROD's `DIM_STAFF_ROSTER`. Note: `tests/rbac.test.js`'s `HR_ACCOUNTING` test fixture also uses the name/email "Aarthi" (`aarthirajeshnair@gmail.com`, person_code `AAR`) — that's a **synthetic test identity from earlier HR_ACCOUNTING RBAC work, not the real person's actual role**. Don't assume "Aarthi" implies `HR_ACCOUNTING` in either code or conversation — check the real roster. `TIMESHEET_GENERATE` was extended to `ADMIN` (PR #16) specifically because of this mismatch. |
 
 ---
 

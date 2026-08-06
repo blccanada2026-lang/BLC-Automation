@@ -42,22 +42,33 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ## Session State (last updated: end of turn, 2026-08-06)
 
-**Just completed — timesheet-for-any-period feature shipped, PROD deploy
-done, New Version redeploy still pending user confirmation.** PR #15
-merged (`4c07df5`), pushed to PROD (161 files), 491/491 Jest passing,
-DEV mechanism-proof rehearsal 5/5 green (synthetic data — DEV has no
-real non-migrated FACT_WORK_LOGS at all). Also fixed Run Billing's
-identical `isLeader` UI trap in the same PR (HR_ACCOUNTING/ADMIN
-granted `BILLING_RUN` since PR #11 but could never see the button).
+**Just completed — 3 more PRs shipped same day: ADMIN granted
+TIMESHEET_GENERATE (PR #16, `12d57cc`), automatic staff-onboarding
+email feature (PR #17, `17ef362`), one-off send of Aarthi's onboarding
+email (PR #18, `84fb2c5`).** All deployed to PROD. New Version redeploy
+confirmed for PR #16 (user tested live, works). **Still pending user
+confirmation of the New Version redeploy for PR #17/#18** (touches
+`StaffOnboarding.gs`, part of the same deployed version as `Portal.gs`)
+before `runSendOnboardingEmailToARN()` can be run.
 
-**Next action:** confirm the New Version redeploy happened in PROD
-(mandatory — this PR touches `PortalView.html`/`Portal.gs`), then:
-(1) CEO smoke-test Generate Timesheet with one real client/small range
-before wider rollout; (2) the first-ever real HR_ACCOUNTING/ADMIN
-click on Run Billing should be supervised, not unattended, since it's
-now reachable for the first time; (3) for the manual-timesheet
-comparison the user wants, start with one known real period/client,
-not a bulk "all clients" run.
+**Next action:** (1) user does the New Version redeploy, then runs
+`runSendOnboardingEmailToARN()` once from the PROD Apps Script editor
+to send Aarthi her real onboarding email (delete the function after —
+it's a one-off); (2) Sarty is manually cross-checking regenerated
+timesheet PDFs against historical manually-sent ones — pending result;
+(3) the "first-ever supervised HR_ACCOUNTING/ADMIN Run Billing click"
+and "CEO smoke-test Generate Timesheet with one real range" items from
+the PR #15 entry below are still open, not yet confirmed done.
+
+---
+
+**Previously completed this session — timesheet-for-any-period feature shipped, PROD deploy
+done.** PR #15 merged (`4c07df5`), pushed to PROD (161 files), 491/491
+Jest passing, DEV mechanism-proof rehearsal 5/5 green (synthetic data —
+DEV has no real non-migrated FACT_WORK_LOGS at all). Also fixed Run
+Billing's identical `isLeader` UI trap in the same PR
+(HR_ACCOUNTING/ADMIN granted `BILLING_RUN` since PR #11 but could never
+see the button). New Version redeploy confirmed done.
 
 ---
 

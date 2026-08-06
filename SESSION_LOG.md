@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-08-06 Session Part 2 (ADMIN granted TIMESHEET_GENERATE; automatic staff-onboarding email shipped)
+
+### Work Completed
+- **Live-tested the timesheet feature** — user found Aarthi (real onboarded `ADMIN`, not `HR_ACCOUNTING`) couldn't see Generate Timesheet. Confirmed via RBAC.gs read: correct behavior per matrix, not a bug — `ADMIN` was never granted `TIMESHEET_GENERATE`. User's explicit decision: extend it to `ADMIN`, matching `BILLING_RUN`'s existing scope (PR #16, merged/deployed `12d57cc`). Two gates needed updating since `portal_generateTimesheetPdf` calls both: the `PERMISSION_MATRIX` flag and a new narrow `ADMIN_FINANCIAL_ACTIONS_` allowlist in `enforceFinancialAccess()`/`hasFinancialAccess()` (mirrors the existing `HR_ACCOUNTING_FINANCIAL_ACTIONS_` pattern — kept the defense-in-depth second gate rather than removing it). 496/496 Jest passing (5 new). No ADMIN actor exists in DEV to verify with — user explicitly accepted Jest-only + live PROD check, confirmed working after New Version redeploy.
+- **New feature: automatic staff-onboarding email** (PR #17, merged/deployed `17ef362`). User asked for a way to send new hires their portal access + instructions automatically. Found: portal link-sending already existed (`PortalAuth.sendAllLinks`/`requestLink`) but only as a bulk blast with no instructions; a role-specific instructional mailer already existed (`OnboardingMailer.gs`, T12) but only for DESIGNER/TEAM_LEAD/PM, editor-only, not portal-triggered, and using the generic shared URL not a real personal link. New `StaffOnboardingMailer.gs` (T8) combines both: one email per new hire with role-appropriate instructions + their actual personal tokenized link (`PortalAuth.buildPersonalLink`, new export of `buildLink_`), wired into `StaffOnboarding.onboardStaff()`'s `isNew` branch, best-effort (never blocks the roster write). Reuses `OnboardingMailer.gs`'s existing DESIGNER/TEAM_LEAD/PM bodies; new generic fallback for ADMIN/HR_ACCOUNTING/CEO/QC. Deliberately NOT wired into bulk import. 507/507 Jest passing (11 new + fixed 2 pre-existing tests broken by the new dependency). User chose Jest-only verification (no DEV dry-run) given low blast radius.
+- **One-off** (PR #18, merged/deployed `84fb2c5`): sent Aarthi her real onboarding email manually (`runSendOnboardingEmailToARN()`), since she was onboarded before the automatic trigger existed.
+
+### Files Changed
+- `src/02-security/RBAC.gs` (ADMIN_FINANCIAL_ACTIONS_)
+- `src/02-security/PortalAuth.gs` (buildPersonalLink export)
+- `src/08-staff/StaffOnboarding.gs`, `StaffOnboardingMailer.gs` (new)
+
+### Tests Run
+- Jest: 507/507 passing across both PRs
+
+### Issues Found
+- None outstanding. The "Aarthi is ADMIN not HR_ACCOUNTING" mismatch was the actual root cause of both the RBAC gap and the button-visibility confusion — now resolved at the source (RBAC matrix), not worked around.
+
+### Next Recommended Step
+- User still wants to spot-check the regenerated timesheet PDFs against manually-sent historical ones (Sarty is doing this manually, in progress as of session end).
+
+---
+
 ## 2026-08-06 Session (Timesheet-for-any-period feature shipped; Run Billing's isLeader trap fixed)
 
 ### Work Completed
