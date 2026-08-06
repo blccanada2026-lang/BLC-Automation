@@ -591,11 +591,25 @@ var ClientTimesheetEngine = (function () {
 
   // Uploads an HTML string as a temporary Drive file, converts it to PDF via Drive's
   // native converter, saves the PDF, trashes the HTML source, and returns the PDF URL.
-  function exportHtmlAsPdf_(htmlContent, fileName) {
+  //
+  // @param {string} [viewerEmail]  Optional — grants this address VIEW
+  //   access on the created PDF. The file is otherwise owned by whoever
+  //   the script executes as, which the requesting user may not be
+  //   (portal calls resolve identity from a token, not Session) —
+  //   without this, a returned driveUrl can 404 for them. Existing
+  //   callers (generateForClient_/runGenerateClientTimesheets, run from
+  //   the Apps Script editor by the file owner) omit it and keep their
+  //   exact prior behavior. Failure to share is logged, not thrown —
+  //   the PDF still exists and is reachable by the file owner/an admin.
+  function exportHtmlAsPdf_(htmlContent, fileName, viewerEmail) {
     var htmlBlob = Utilities.newBlob(htmlContent, 'text/html', fileName.replace(/\.pdf$/i, '.html'));
     var tempFile = DriveApp.createFile(htmlBlob);
     var pdfFile  = DriveApp.createFile(tempFile.getAs(MimeType.PDF).setName(fileName));
     tempFile.setTrashed(true);
+    if (viewerEmail) {
+      try { pdfFile.addViewer(viewerEmail); }
+      catch (e) { Logger.warn('TIMESHEET_PDF_SHARE_FAILED', { module: MODULE, viewer: viewerEmail, error: e.message }); }
+    }
     return pdfFile.getUrl();
   }
 
@@ -658,7 +672,23 @@ var ClientTimesheetEngine = (function () {
     loadJobMap_:          loadJobMap_,
     loadProductMap_:      loadProductMap_,
     resolveProductName_:  resolveProductName_,
-    parseWorkDate_:       parseWorkDate_
+    parseWorkDate_:       parseWorkDate_,
+
+    // Exposed 2026-08-06 (timesheet-for-any-period feature, CEO/HR_ACCOUNTING
+    // only) — same precedent as the block above. GenerateTimesheetPdf.gs (a
+    // new file, this file is already over the ~500-line cap) needs the
+    // polished-PDF pipeline (client/staff lookups, the styled HTML template,
+    // and the Drive PDF export) to produce a PDF for an arbitrary date range
+    // instead of a fixed 'YYYY-MMA'/'YYYY-MMB' period, without duplicating
+    // this HTML/PDF logic. All read-only except exportHtmlAsPdf_, which only
+    // writes to Drive (never a FACT table, so no DAL/WRITE_PERMISSIONS
+    // involvement).
+    loadClientMap_:       loadClientMap_,
+    loadStaffMap_:        loadStaffMap_,
+    loadStaffDetailMap_:  loadStaffDetailMap_,
+    buildDesignerSummary_: buildDesignerSummary_,
+    buildTimesheetHtml_:  buildTimesheetHtml_,
+    exportHtmlAsPdf_:     exportHtmlAsPdf_
   };
 
 }());

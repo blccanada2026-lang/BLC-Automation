@@ -110,7 +110,8 @@ var DAL = (function () {
                               'SbsReconFiller_Apr2026', 'MatixReconFiller',
                               'NelsonReconFiller', 'AlbertaReconFiller',
                               'JuneWorkLogImporter', 'WorkLogDedupFixer', 'WorkLogPeriodFixer',
-                              'OrphanJobNumberFixer', 'TestWorkLogVoidFixer', 'DataIntegrityMonitorTest'],
+                              'OrphanJobNumberFixer', 'TestWorkLogVoidFixer', 'DataIntegrityMonitorTest',
+                              'GenerateTimesheetPdfDevRehearsal'],
     'FACT_QC_EVENTS':        ['QCHandler', 'QCReassignHandler', 'MigrationEngine', 'MigratedQCApprovalFixer'],
     'FACT_BILLING_LEDGER':   ['BillingEngine', 'MigrationEngine', 'MigrationReplayEngine'],
     'FACT_PAYROLL_LEDGER':   ['PayrollEngine', 'MigrationEngine', 'MigrationReplayEngine'],
@@ -135,7 +136,7 @@ var DAL = (function () {
                               'Job260337DuplicateFixer', 'V2JobBackfill', 'V2BackfillStateReset', 'V2StateCorrection',
                               'JobCreateHandlerTest', 'WorkLogCorrectionHandlerTest', 'NorspanClientCodeFixer',
                               'TestHarness', 'TestArtifactVoidFixer', 'DataIntegrityMonitorTest', 'QuarterlyBonusEngine',
-                              'Job00891DuplicateFixer'],
+                              'Job00891DuplicateFixer', 'GenerateTimesheetPdfDevRehearsal'],
     'VW_DESIGNER_WORKLOAD':  ['EventReplayEngine', 'ReportingEngine'],
 
     // ── Mart tables (reporting aggregates) ──────────────────
