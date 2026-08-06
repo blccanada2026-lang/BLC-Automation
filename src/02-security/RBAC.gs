@@ -475,7 +475,7 @@ var RBAC = (function () {
       BONUS_PREVIEW:       false,
       BONUS_COMMIT:        false,
       APPROVE_ALL_PAYROLL: false,
-      TIMESHEET_GENERATE:  false,
+      TIMESHEET_GENERATE:  true,   // matches BILLING_RUN's scope — corrected 2026-08-06, explicit business decision
       REPORT_GENERATE:     false,
       QUEUE_MODIFY:    true,
       ADMIN_CONFIG:    true,
@@ -1195,16 +1195,29 @@ var RBAC = (function () {
     REPORT_GENERATE:    true
   };
 
+  // Actions ADMIN may pass enforceFinancialAccess() for — deliberately
+  // narrower than HR_ACCOUNTING's set. Added 2026-08-06: ADMIN already
+  // has BILLING_RUN (matrix-only gate, no enforceFinancialAccess call
+  // involved) and the explicit business decision was to give ADMIN
+  // TIMESHEET_GENERATE too, matching billing's scope — not the rest of
+  // HR_ACCOUNTING's PREPARE/REVIEW set (PAYROLL_PREVIEW, BONUS_PREVIEW,
+  // REPORT_GENERATE stay CEO/HR_ACCOUNTING-only unless explicitly
+  // extended later).
+  var ADMIN_FINANCIAL_ACTIONS_ = {
+    TIMESHEET_GENERATE: true
+  };
+
   /**
    * Enforces financial access. CEO and SYSTEM pass for any action
    * (including when no action is given — preserves every pre-Phase-B1
    * call site's exact behavior unchanged). HR_ACCOUNTING passes only
    * for the specific PREPARE/REVIEW-class actions in
-   * HR_ACCOUNTING_FINANCIAL_ACTIONS_ — omitting the action parameter
-   * is the safe default and rejects her, since that's what every
-   * existing call site does today for the still-fused commit-shaped
-   * functions (runPayrollRun/runBonusRun/approveAllPayroll) that
-   * Phase B1 does not touch.
+   * HR_ACCOUNTING_FINANCIAL_ACTIONS_; ADMIN passes only for the
+   * (narrower) actions in ADMIN_FINANCIAL_ACTIONS_ — omitting the
+   * action parameter is the safe default and rejects both, since
+   * that's what every existing call site does today for the
+   * still-fused commit-shaped functions (runPayrollRun/runBonusRun/
+   * approveAllPayroll) that this doesn't touch.
    *
    * Must be called for all PAYROLL_RUN and direct FACT_PAYROLL_LEDGER
    * or FACT_BILLING_LEDGER write operations.
@@ -1213,7 +1226,7 @@ var RBAC = (function () {
    * @param {string} [action]  An ACTIONS value — omit to preserve the
    *   pre-Phase-B1 CEO/SYSTEM-only behavior exactly.
    * @throws {RBACError_}  FINANCIAL_ACCESS_DENIED if actor is not CEO/SYSTEM,
-   *   and (when HR_ACCOUNTING) the action is not in the allowed set
+   *   and (when HR_ACCOUNTING/ADMIN) the action is not in their allowed set
    */
   function enforceFinancialAccess(actor, action) {
     // Full actor validation including _rbacResolved flag.
@@ -1229,13 +1242,19 @@ var RBAC = (function () {
       if (HR_ACCOUNTING_FINANCIAL_ACTIONS_[canonicalAction]) return; // granted, prepare/review only
     }
 
+    if (canonical === ROLES.ADMIN && action) {
+      var canonicalAdminAction = resolveAction_(action);
+      if (ADMIN_FINANCIAL_ACTIONS_[canonicalAdminAction]) return; // granted, matches billing's scope
+    }
+
     emitDenied_('FINANCIAL_ACCESS', actor, 'FINANCIAL_ACCESS_DENIED');
     throw new RBACError_(
       'FINANCIAL_ACCESS_DENIED',
       '"' + (actor.displayName || actor.email) + '" (' + canonical + ') ' +
       'does not have financial access. ' +
       'Only CEO and SYSTEM may execute payroll or direct billing ledger writes ' +
-      '(HR_ACCOUNTING may prepare/preview/generate specific actions only).',
+      '(HR_ACCOUNTING may prepare/preview/generate specific actions only; ' +
+      'ADMIN may generate timesheets only).',
       {
         email:      actor.email,
         personCode: actor.personCode,
@@ -1260,6 +1279,9 @@ var RBAC = (function () {
     if (canonical === ROLES.CEO || canonical === ROLES.SYSTEM) return true;
     if (canonical === ROLES.HR_ACCOUNTING && action) {
       return !!HR_ACCOUNTING_FINANCIAL_ACTIONS_[resolveAction_(action)];
+    }
+    if (canonical === ROLES.ADMIN && action) {
+      return !!ADMIN_FINANCIAL_ACTIONS_[resolveAction_(action)];
     }
     return false;
   }
