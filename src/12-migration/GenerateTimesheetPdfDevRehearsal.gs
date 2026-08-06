@@ -2,35 +2,140 @@
 // GenerateTimesheetPdfDevRehearsal.gs — BLC Nexus T12 (DEV-only)
 //
 // DEV rehearsal for the timesheet-for-any-period feature
-// (GenerateTimesheetPdf.gs). generateTimesheetPdf()/
-// generateAllTimesheetPdfsForRange() are pure-read on FACT/VW data —
-// no FACT/VW writes, so unlike this session's other DEV rehearsals
-// there is nothing to reset and no callerModule/WRITE_PERMISSIONS
-// registration needed. Their one real-service dependency Jest cannot
-// verify is the actual HTML-to-PDF Drive conversion (Jest's own test,
-// tests/generate-timesheet-pdf.test.js, mocks DriveApp) — this
-// rehearsal proves that conversion actually works against a real
-// Drive, using whatever real client/date-range data already exists in
-// DEV (safe: read-only on FACT/VW, the only write is a new Drive PDF
-// file, same as running runGenerateClientTimesheets() manually).
+// (GenerateTimesheetPdf.gs). Their one real-service dependency Jest
+// cannot verify is the actual HTML-to-PDF Drive conversion (Jest's own
+// test, tests/generate-timesheet-pdf.test.js, mocks DriveApp) — this
+// rehearsal proves that conversion actually works against a real Drive.
 //
-// This script alone CANNOT prove the addViewer() Drive-sharing fix
-// (ClientTimesheetEngine.exportHtmlAsPdf_'s viewerEmail param) actually
-// helps a real portal user — it runs as its own operator, who already
-// owns the files it creates. That needs a real CEO/HR_ACCOUNTING
-// account clicking "Generate PDF" in the portal itself and confirming
-// they can open the returned link — see the reminder this script
-// prints at the end.
+// 2026-08-06 finding: DEV has NO live (non-migrated) FACT_WORK_LOGS
+// data at all — everything before June 2026 is excluded by
+// isMigratedWorkLog() (V2->V3 migration, same exclusion every
+// timesheet/billing/payroll calculation applies, not unique to this
+// feature), and nothing has been logged in DEV since. So "whatever
+// real data exists" (this file's original approach) can never
+// exercise the real-PDF-generation path in DEV — runGenerateTimesheet
+// PdfMechanismProof() below seeds one small synthetic (TEST-CLIENT,
+// non-migrated event_type) work log entry instead, proving the Drive
+// pipeline actually works without depending on real data existing.
+// Narrow-filtered reset before AND after, same pattern as every other
+// DEV rehearsal this session — never bulk-clears either table.
+//
+// This mechanism proof does NOT and cannot prove the generated PDF's
+// BUSINESS CONTENT matches a real historical manually-sent timesheet
+// — that needs real non-migrated data, which only exists in PROD.
+//
+// It also cannot prove the addViewer() Drive-sharing fix
+// (ClientTimesheetEngine.exportHtmlAsPdf_'s viewerEmail param) helps a
+// real DIFFERENT user — it runs as its own operator, who already owns
+// the files it creates. That needs a real CEO/HR_ACCOUNTING account
+// clicking "Generate PDF" in the portal and confirming they can open
+// the returned link.
 //
 // HOW TO RUN (Apps Script editor, DEV project only):
-//   runGenerateTimesheetPdfDevRehearsal()                                   — all active clients, current month to date
-//   runGenerateTimesheetPdfDevRehearsal('SBS', '2026-08-01', '2026-08-20')  — one client, explicit range
-//   runGenerateTimesheetPdfDevRehearsalWideRange()                         — no-arg wrapper, all clients, 2026-01-01
-//                                                                             to today — the editor's Run button
-//                                                                             can't pass arguments, so use this
-//                                                                             when the current-month window has no
-//                                                                             logged hours to test against.
+//   runGenerateTimesheetPdfMechanismProof()                                — RECOMMENDED. Seeds synthetic
+//                                                                             non-migrated data, proves the real
+//                                                                             Drive PDF pipeline works, cleans up.
+//   runGenerateTimesheetPdfDevRehearsal()                                   — ad-hoc check against real DEV data,
+//   runGenerateTimesheetPdfDevRehearsal('SBS', '2026-08-01', '2026-08-20')    if/when DEV ever has any again.
+//   runGenerateTimesheetPdfDevRehearsalWideRange()                         — no-arg wide-range version of the above.
 // ============================================================
+
+var GTPDR_CLIENT_     = 'TEST-CLIENT';
+var GTPDR_JOB_NUMBER_  = 'BLC-90001'; // out-of-range synthetic block, per testing-policy.md §1
+var GTPDR_REF_         = 'DEVREHEARSAL-TIMESHEET-PDF';
+var GTPDR_PARTITION_   = '2026-06';   // after the Jan-May migration cutoff — a real non-migrated month
+var GTPDR_WORK_DATE_   = '2026-06-10';
+var GTPDR_DESIGNER_    = 'DS1';       // reserved DEV-only synthetic designer, per testing-policy.md §1
+var GTPDR_CALLER_      = 'GenerateTimesheetPdfDevRehearsal';
+
+function gtpdr_reset_() {
+  console.log('--- Reset: removing any prior rehearsal artifacts ---');
+  [
+    { table: Config.TABLES.FACT_WORK_LOGS, opts: { callerModule: GTPDR_CALLER_, periodId: GTPDR_PARTITION_ }, tabName: Config.TABLES.FACT_WORK_LOGS + '|' + GTPDR_PARTITION_, matchField: 'notes' },
+    { table: Config.TABLES.VW_JOB_CURRENT_STATE, opts: { callerModule: GTPDR_CALLER_ }, tabName: Config.TABLES.VW_JOB_CURRENT_STATE, matchField: 'client_job_ref' }
+  ].forEach(function (spec) {
+    var all;
+    try { all = DAL.readAll(spec.table, spec.opts); } catch (e) { all = []; }
+    var kept = all.filter(function (r) { return String(r[spec.matchField] || '').indexOf(GTPDR_REF_) === -1; });
+    if (kept.length < all.length) {
+      DAL.clearSheet(spec.tabName);
+      if (kept.length > 0) DAL.appendRows(spec.table, kept, spec.opts);
+      console.log('  ' + spec.table + ': kept ' + kept.length + ', dropped ' + (all.length - kept.length) + ' synthetic row(s).');
+    }
+  });
+  console.log('--- Reset complete. ---');
+}
+
+function gtpdr_seed_() {
+  DAL.ensurePartition(Config.TABLES.FACT_WORK_LOGS, GTPDR_PARTITION_, GTPDR_CALLER_); // idempotent — safe even if the tab already exists
+
+  DAL.appendRow(Config.TABLES.VW_JOB_CURRENT_STATE, {
+    job_number: GTPDR_JOB_NUMBER_, client_code: GTPDR_CLIENT_, product_code: 'ROOF_TRUSS',
+    job_type: 'DESIGN', client_job_ref: GTPDR_REF_, current_state: 'COMPLETED_BILLABLE',
+    allocated_to: GTPDR_DESIGNER_
+  }, { callerModule: GTPDR_CALLER_ });
+
+  DAL.appendRow(Config.TABLES.FACT_WORK_LOGS, {
+    event_id: Identifiers.generateId(), event_type: 'WORK_LOG_SUBMITTED',
+    job_number: GTPDR_JOB_NUMBER_, actor_code: GTPDR_DESIGNER_, hours: 3,
+    work_date: GTPDR_WORK_DATE_, notes: GTPDR_REF_
+  }, { callerModule: GTPDR_CALLER_, periodId: GTPDR_PARTITION_ });
+}
+
+/**
+ * RECOMMENDED entry point. Seeds one small, synthetic, non-migrated
+ * work log entry (TEST-CLIENT, June 2026 — a real live month, not the
+ * Jan-May migrated window), generates a real PDF against it, verifies
+ * the result, and cleans up. Proves the actual Drive PDF pipeline
+ * works without depending on real DEV data existing (it currently
+ * doesn't, past May 2026 — see this file's header).
+ */
+function runGenerateTimesheetPdfMechanismProof() {
+  if (!Config.isDev()) {
+    throw new Error('runGenerateTimesheetPdfMechanismProof cannot run outside DEV.');
+  }
+
+  var results = { pass: 0, fail: 0, failures: [] };
+  function check(label, actualPass, detail) {
+    if (actualPass) { results.pass++; console.log('  PASS — ' + label); }
+    else { results.fail++; results.failures.push(label + ' — ' + detail); console.log('  FAIL — ' + label + ' — ' + detail); }
+  }
+
+  console.log('=== generateTimesheetPdf — real Drive PDF mechanism proof (synthetic data) ===');
+  gtpdr_reset_();
+  gtpdr_seed_();
+
+  var viewerEmail = Session.getActiveUser().getEmail();
+  var result = null, err = null;
+  try {
+    result = generateTimesheetPdf(GTPDR_CLIENT_, '2026-06-01', '2026-06-15', viewerEmail);
+  } catch (e) { err = e.message; }
+
+  check('generateTimesheetPdf does not throw', err === null, err || '');
+  check('Result is not null (the seeded entry was found)', result !== null, JSON.stringify(result));
+
+  if (result) {
+    check('entries === 1', result.entries === 1, String(result.entries));
+    check('total_hours === 3', result.total_hours === 3, String(result.total_hours));
+    check('driveUrl looks like a real Drive URL', /^https:\/\/.*drive/.test(result.driveUrl || ''), result.driveUrl || '');
+    console.log('  [PDF] ' + result.client + ' — ' + result.entries + ' entries, ' + result.total_hours + 'h -> ' + result.driveUrl);
+  }
+
+  gtpdr_reset_();
+
+  console.log('');
+  console.log('=== RESULT: ' + results.pass + ' passed, ' + results.fail + ' failed ===');
+  if (result) console.log('Open the Drive URL above and eyeball the PDF — client name, 1 row for ' + GTPDR_WORK_DATE_ + ', 3h, designer resolved.');
+  console.log('NOTE: this proves the mechanism, not business-content correctness against a real historical ' +
+    'timesheet (needs real non-migrated data, only in PROD), and cannot prove addViewer() helps a DIFFERENT ' +
+    'user (this script owns its own files) — see this file\'s header.');
+  if (results.fail > 0) {
+    console.log('FAILURES:');
+    results.failures.forEach(function (f) { console.log('  - ' + f); });
+  }
+
+  return results;
+}
 
 function runGenerateTimesheetPdfDevRehearsalWideRange() {
   return runGenerateTimesheetPdfDevRehearsal('', '2026-01-01', generateTimesheetPdfDevRehearsal_toIso_(new Date()));
