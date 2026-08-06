@@ -86,6 +86,13 @@ function sendNewStaffOnboardingEmail_(personCode) {
   }
 }
 
+// One-off, editor-runnable send for a staff member onboarded before
+// this feature existed (so the automatic isNew trigger never fired for
+// them). Safe to delete once run — not needed again for this person.
+function runSendOnboardingEmailToARN() {
+  sendNewStaffOnboardingEmail_('ARN');
+}
+
 /**
  * Generic onboarding email body for any role without a dedicated
  * template (ADMIN, HR_ACCOUNTING, CEO, QC). Reuses OnboardingMailer.gs's
