@@ -5,6 +5,58 @@
 
 ---
 
+## 2026-08-05 → 2026-08-06 Session (RBAC audit + billing-access fix; Sarty duplicate-job incident diagnosed, fixed, and prevented)
+
+### Work Completed
+- **RBAC audit** (PR #11, merged/deployed): full `PERMISSION_MATRIX` table produced across all 9 roles. Found and fixed 2 real gaps — `getLeaderDashboard()`'s hardcoded `role==='CEO'` check (now `RBAC.hasPermission`), and "Run Billing" wired to `canRunPayroll` instead of its own flag. **User correction applied:** billing access is CEO/ADMIN/HR_ACCOUNTING-only — PM must NOT see it. Fixed the actual `BILLING_RUN` matrix values (PM→false, ADMIN→true, HR_ACCOUNTING→true), not just the wiring.
+- **Sarty's duplicate job (BLC-00891/BLC-00892):** root-caused — `JobCreateHandler`'s idempotency keys on `queue_id` alone, so two genuinely separate submissions (confirmed 16.4s apart via `JobDuplicateTimingCheck.gs`) both go through. Data fixed via one-off `Job00891DuplicateFixer.gs`, run successfully in PROD by the user (`{"status":"FIXED"}`), after the user manually confirmed BLC-00891 was the phantom via the spreadsheet.
+- **Prevention fix shipped** (PR #14, merged, deployed to PROD `c19b945`, New Version redeployed): 60-second content-duplicate guard (client + product + description + submitter) added on top of the existing idempotency check. **Designer-aware per explicit user correction** — some clients (e.g. Matix) legitimately reuse the same `client_job_ref` across two different designers (roof vs. floor), so the guard also compares intended designer (via a new `_intended_designer` hint `portal_createJob()` attaches to the raw payload, invisible to validated state) and does NOT block a same-ref/different-designer split. Frontend submit button now disables and waits for the real server response instead of closing the modal immediately.
+
+### Files Changed
+- `src/02-security/RBAC.gs`, `src/07-portal/PortalData.gs`, `src/07-portal/PortalView.html` (PR #11)
+- `src/12-migration/JobDuplicateTimingCheck.gs`, `src/12-migration/Job00891DuplicateFixer.gs` (PRs #12/#13)
+- `src/06-handlers/JobCreateHandler.gs`, `src/07-portal/Portal.gs`, `src/07-portal/PortalView.html`, `src/12-migration/JobCreateRecentDuplicateDevRehearsal.gs` (PR #14)
+
+### Tests Run
+- Jest: 482/482 passing (6 new cases directly covering the designer-split scenario)
+- DEV rehearsal (`runJobCreateRecentDuplicateDevRehearsal()`) against real Sheets: 8/8 passed — same-designer resubmission blocked, different-designer resubmission of the same ref succeeds, exactly 2 VW rows created not 3
+
+### Issues Found
+- None outstanding on this thread — both the RBAC gap and the duplicate-job class of bug are closed end-to-end (data fix + root-cause prevention + PROD deploy + New Version redeploy confirmed by user).
+
+### Next Recommended Step
+- Resume the paused timesheet-for-any-period feature (CEO/HR-admin only, polished-PDF output direction already chosen by user) — deferred mid-session for the urgent RBAC/duplicate-job work, not yet resumed.
+
+---
+
+## 2026-08-04 → 2026-08-05 Session (Aug 2026 partition incident — diagnosed, fixed, root-caused)
+
+### Work Completed
+- **Live PROD incident:** `FACT_WORK_LOGS|2026-08`/`FACT_QC_EVENTS|2026-08` created with blank headers (`ensurePartition()`'s non-atomic gap) — every designer/QC submission since 2026-08-01 failed and dead-lettered (31 items, nothing lost — full payloads in `DEAD_LETTER_QUEUE`).
+- Header repair shipped first, separately from the replay (PR #7) — stopped new submissions failing without waiting on the more complex fix.
+- 31-item replay shipped after adding a scope filter (61 dead-letter items existed total; only 31 audited for this incident, the rest a separate unrelated population) and a WORK_LOG double-count safety net (PR #8). Real PROD replay: 21/21 WORK_LOG recovered (59.75h, exact match to original count), 6/10 QC_SUBMIT recovered, 4 safely rejected by the pre-identified duplicate-routing guard.
+- **Root cause fixed** (PR #9, `fix/ensurepartition-header-gap`): `DAL.appendRow()`/`appendRows()` now self-heal a blank partition header against canonical `SCHEMAS` before writing; new partitions now write from canonical `SCHEMAS` directly instead of copying a possibly-stale sibling tab. Full writeup: `PROJECT_MEMORY.md` §3.5.
+
+### Files Changed
+- `src/01-dal/DAL.gs` (root cause fix, PR #9)
+- `src/12-migration/Aug2026PartitionRecovery.gs` (new — header repair/replay tool, PRs #7/#8)
+- `src/12-migration/DalPartitionSelfHealDevRehearsal.gs` (new — DEV rehearsal, PR #9)
+- Full incident tooling + DEV rehearsals also live on `incident/aug2026-partition-recovery` (own worktree)
+
+### Tests Run
+- Jest: 448/448 passing (10 new tests directly against real `DAL.gs`)
+- DEV: real Apps Script runs for every stage — header repair, replay mechanism, and the root-cause self-heal all proven against real Sheets, not just mocks (this incident's own root cause was exactly the kind of bug Jest mocks can't reproduce)
+
+### Issues Found
+- Discovery pulled in 61 dead-letter items, not 31 — the other 30 are an unrelated population (legacy job formats, some already `INVOICED`), correctly excluded, not investigated further.
+- One dead-letter item (`QITM-C0476432AD82`, job `BLC-99999`) is likely residue from the already-documented 2026-07-08 NORSPAN test-contamination incident — flagged, not chased.
+
+### Next Recommended Step
+- **PR #9 awaiting user review before merge/deploy to PROD** (as of session end — touches `DAL.gs`, a foundational file, so held for explicit sign-off unlike the two incident hotfixes).
+- Separately, still open: `FACT_PAYROLL_LEDGER|2020-03` in DEV has the same root-cause bug, root-caused but never repaired (blocks Phase B2 Item 2's own proof script).
+
+---
+
 ## 2026-06-30 → 2026-07-08 Sprint (Billing Hardening — job fixes, CI, timesheets, work log corrections, orphan cleanup)
 
 > Multi-day rollup entry — see git log for individual commits. Exceeds the usual 40-line

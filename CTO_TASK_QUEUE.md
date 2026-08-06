@@ -40,6 +40,363 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ---
 
+## Session State (last updated: end of turn, 2026-08-06)
+
+**Just completed — job-create duplicate-prevention thread fully closed.**
+Prevention fix (60s content-duplicate guard, designer-aware per user's
+Matix roof/floor correction) shipped as PR #14, merged (`c19b945`),
+482/482 Jest passing, DEV rehearsal 8/8 green against real Sheets, pushed
+to PROD (159 files), and user has confirmed the New Version redeploy is
+done. Nothing outstanding on this thread. Next thread to pick up: the
+paused CEO/HR-only timesheet-for-any-period feature (see PR #11's
+"Not done in this pass" note below for design direction already agreed).
+
+---
+
+**Previously completed this session — Sarty's job-duplicate bug diagnosed and fixer
+deployed, awaiting PROD run.** PM reported creating one job produced two
+(`BLC-00891`/`BLC-00892`, SBS/ROOF_TRUSS, "2608-9955 Litchfield Rev 1",
+both assigned to Sayan Roy). Ruled out any connection to this session's
+own RBAC/billing PR (diff review confirmed zero overlap with job-create
+code).
+
+**Root cause:** `JobCreateHandler`'s idempotency key is `queue_id`
+alone (same class of gap as `WorkLogHandler`, found earlier this
+session) — provides zero protection against two genuinely separate
+submissions. The "create job + assign designer in one step" flow calls
+`portal_createJob()` (`Portal.gs:158`), which mints a fresh `queue_id`
+per call and calls `JobCreateHandler.handle()` directly, **bypassing
+the queue's distributed lock** that the no-designer path has. Read-only
+diagnostic (`JobDuplicateTimingCheck.gs`, PR #12) confirmed the two
+`JOB_CREATED` events landed **16.4 seconds apart** — not milliseconds
+(ruling out a pure technical double-fire) but short enough to fit "user
+saw no clear feedback and tried again." Likely UX root cause: the
+create-job modal closes immediately, before the (multi-second) server
+round-trip even starts, so a slow response can look like nothing
+happened.
+
+User manually confirmed via the spreadsheet which job was real:
+`BLC-00891` was put `ON_HOLD` with zero work logged; `BLC-00892` has
+real work logged by Sayan. **Fixer deployed** (PR #13,
+`Job00891DuplicateFixer.gs`, same shape as the earlier `260337`
+precedent — `JOB_DUPLICATE_VOIDED` event + `VW_JOB_CURRENT_STATE` set
+to `VOIDED`, out-of-band admin correction not a StateMachine
+transition). Two-step, audit-then-fix. 472/472 Jest passing, pushed to
+PROD (158 files).
+
+**Data cleanup CONFIRMED DONE, 2026-08-05 15:25.** `runJob00891Fix()`
+run in PROD: `{"status":"FIXED","rowsUpdated":1}`. `BLC-00891` voided,
+`BLC-00892` (Sayan's real, active job) untouched. Sarty's report is
+resolved.
+
+**PREVENTION FIX BUILT, DEV-VERIFIED, AND DEPLOYED TO PROD, 2026-08-06 —
+THREAD CLOSED.** Both recommended mitigations shipped in PR #14
+(`feature/job-create-duplicate-prevention`): (a) submit button now
+disables and shows "Creating…" and the modal only closes on the real
+server response, instead of closing immediately; (b) a 60-second
+content-based duplicate guard (same client+product+description+
+submitter) added on top of the existing `queue_id` idempotency.
+
+**Critical correctness catch, from the user before the DEV rehearsal
+was run:** some clients (e.g. Matix) legitimately reuse the same
+`client_job_ref` across two different designers (one ref spanning both
+a roof job and a floor job). The first guard version didn't account for
+this and would have false-positived on that exact workflow. Fixed by
+also comparing intended designer — resolved via a new
+`_intended_designer` hint `portal_createJob()` (`Portal.gs`) attaches to
+the raw payload only (schema-unrecognized, never touches validated
+state/`allocated_to`), falling back to `cleanPayload.allocated_to` for
+non-portal callers. Same ref + different designer → not blocked. Same
+ref + same designer → still blocked.
+
+482/482 Jest passing (6 new designer-split cases). DEV rehearsal
+(`runJobCreateRecentDuplicateDevRehearsal()`) against real Sheets: 8/8
+passed. Merged as PR #14 (`c19b945`), pushed to PROD (159 files), user
+confirmed the required New Version redeploy (touches `Portal.gs`/
+`PortalView.html`) is done. No further action on this thread.
+
+---
+
+**Previously completed this session — PR #11 merged and deployed to PROD. RBAC audit
+thread fully closed.** Verification: CEO and PM both live-confirmed via
+Preview As (Run Billing visible/hidden correctly) — HR_ACCOUNTING and
+ADMIN could not be live-confirmed the same way since neither role has
+an onboarded staff member in DEV yet (Aarthi's HR_ACCOUNTING onboarding
+remains a separate, not-yet-done manual step). User explicitly chose to
+proceed on CEO/PM live-check + Jest coverage (`RBAC.canPerform` tested
+directly against the real `RBAC.gs` file) rather than seed a synthetic
+DEV test actor first — his call, recorded here in case HR/ADMIN
+visibility is ever worth a real look once real staff exist in those
+roles.
+
+Deployed from a clean detached-HEAD worktree at `ced0dc7` — 156 files,
+466/466 Jest passing pre-deploy, byte-identical to what was already live
+in DEV (verified via diff, no re-push needed there). **Reminder for the
+user: PROD also needs the New Version redeploy** (same as DEV did) for
+this to actually take effect on the live portal — `clasp push` alone
+isn't enough, this is the second time this exact gap surfaced this
+session (see the original Sarty report).
+
+**Next action:** confirm the PROD New Version redeploy happened, then
+this thread is done. Two things intentionally not touched, for future
+reference: (1) the audit was not an exhaustive line-by-line trace of
+every button in `PortalView.html`; (2) the new "generate timesheet for
+any period, CEO/HR only" feature request is still queued from earlier
+in this session, paused for the audit work.
+
+---
+
+**Previously completed this session — business-rule correction on PR #11: billing access is
+financial-team-only, PM excluded.** After the first fix landed, the user
+corrected the underlying assumption: giving PM a working `canRunBilling`
+flag was wrong, because PM's `BILLING_RUN:true` grant was itself wrong
+per current business intent (an earlier, now-superseded "PM runs
+billing, financial isolation from payroll" design decision). Fixed the
+actual `RBAC.gs` matrix, not just the portal flag: `PM.BILLING_RUN` ->
+`false`, `ADMIN.BILLING_RUN` -> `true`, `HR_ACCOUNTING.BILLING_RUN` ->
+`true`, `CEO` unchanged. Confirmed `runBillingRun()`
+(`BillingEngine.gs:560`) gates purely on the matrix (no separate
+`enforceFinancialAccess()` call for this action), so no other allowlist
+needed updating. 466/466 passing, pushed to DEV, PR #11 updated with a
+comment explaining the correction.
+
+**Next action:** ask the user to verify in DEV (after a New Version
+redeploy — this PR touches `PortalView.html`) that Run Billing is now
+visible for CEO/ADMIN/HR_ACCOUNTING and NOT for PM, then merge/deploy to
+PROD on confirmation. The original getLeaderDashboard payroll_status fix
+from the first commit is unaffected by this correction and still stands.
+
+---
+
+**Previously completed this session — full RBAC audit, 2 real inconsistencies fixed, PR
+open awaiting DEV verification.** User reported the "generate payroll"
+option visible to Sarty (PM). Full audit found the CODE is correct
+(`PAYROLL_RUN:false` for PM, `PortalView.html` buttons properly gated
+via `RBAC.hasPermission()`) — root cause is almost certainly a **stale
+PROD deployment**: the fix that routed `canRunPayroll` through RBAC
+(commit `a48f566`) may never have gotten a manual "New Version" redeploy
+in the Apps Script editor, so PROD may still be serving the old
+hardcoded-role-check portal code. **User still needs to check PROD's
+active deployment timestamp vs. `a48f566`'s merge date and redeploy if
+stale — this is the actual fix for the reported bug, no code change
+needed for it.**
+
+Two separate, real inconsistencies found along the way, now fixed — PR
+#11 (`fix/rbac-portal-gaps`, off `main`@`339850e`):
+1. `getLeaderDashboard()`'s `payroll_status` was hardcoded `role ===
+   'CEO'` instead of `RBAC.hasPermission(actor, PAYROLL_VIEW)` — PM has
+   `PAYROLL_VIEW:true` in the real matrix but wasn't getting this data
+   (under-privileged, fails safe, not a leak).
+2. "Run Billing" button was wired to `canRunPayroll` — PM has
+   `BILLING_RUN:true` but `PAYROLL_RUN:false`, so PM couldn't see the
+   button despite being authorized. New dedicated `canRunBilling` flag.
+
+464/464 Jest passing (13 new tests), pushed to DEV (162 files).
+**Not yet merged/deployed to PROD — awaiting DEV visual verification and
+user go-ahead.** Full audit table (all `RBAC.gs` actions × all roles) —
+delivered directly to the user in conversation, not yet copied into a
+project doc; consider adding to `PROJECT_MEMORY.md` if it should persist
+past this session.
+
+**Important — this PR touches `PortalView.html`.** Per `CLAUDE.md` R5/R4.7,
+`clasp push` alone does NOT update what the live portal serves — a
+manual "New Version" redeploy in the Apps Script editor is required in
+BOTH DEV (to actually verify this fix) and PROD (after merge). This is
+the exact same class of gap suspected in the original reported bug —
+don't let this PR silently repeat it.
+
+**Not done in this pass, flagged as future scope if wanted:** the audit
+was not an exhaustive line-by-line trace of all ~30+ buttons in
+`PortalView.html` — it covered the payroll cluster in depth (the
+reported bug) plus spot-checks elsewhere. Also, the new-timesheet-for-
+any-period feature request (CEO/HR_ACCOUNTING only) is still queued,
+paused for this audit — user confirmed they want the same polished PDF
+output as the existing fixed-period timesheets, which means extending
+`ClientTimesheetEngine.gs`'s PDF pipeline (currently hardcoded to strict
+`YYYY-MMA`/`YYYY-MMB` periods) rather than just wiring up the existing
+general-purpose `generateTimesheet(client, startDate, endDate)`
+data-only function. Open question before scoping further: whether the
+PreBillingGate check the current PDF generator runs makes sense for an
+ad-hoc CEO/HR request, or should be skipped for this new path.
+
+**Next action:** ask the user to (1) check/redeploy PROD's portal
+version for the original bug, (2) visually verify PR #11's two fixes in
+DEV (as a PM-role actor: payroll status should now show, Run Billing
+should now be visible) — remembering the New Version redeploy is needed
+in DEV too before it'll actually show — then merge/deploy on
+confirmation.
+
+---
+
+**Previously completed this session — `FACT_PAYROLL_LEDGER|2020-03` deferred item RESOLVED,
+Phase B2 Item 2 now DEV-verified (6/6).** Full record moved into the
+Aug 2026 incident's Completed entry (search "RESOLVED, 2026-08-05" in
+that section). Confirmed the DAL.gs self-heal fix was genuinely live
+and correct in DEV (fresh `clasp pull`, not just local worktree state)
+before concluding the recurrence was stale pre-existing state, not a
+fix gap. Added a pre-run header guard to the proof script itself
+(`paboc2AssertHeadersHealthy_()`) as defense-in-depth. Phase B2 Item 2's
+own core fix (bonus-only supervisor gets a zero-valued
+`PAYROLL_CALCULATED` row so they can confirm) is now proven end-to-end
+against real DEV Sheets — this does NOT change Phase B2's overall
+promotion status (still not promoted to `main`/PROD; that's a separate
+decision on `payroll-automation/phase-b2`), just resolves the blocking
+partition issue.
+
+**Next action:** none pending from the assistant on this specific
+thread. Phase B2's broader promotion timeline is the user's call,
+separate from this fix.
+
+---
+
+**Previously completed this session — PR #9 and PR #10 both merged and deployed to PROD.**
+Merged cleanly (no file overlap, no conflicts). Deployed from a clean
+detached-HEAD worktree at `339850e` — 156 files, 458/458 Jest passing
+pre-deploy, `DAL.gs` scope-confirmed clean (no rehearsal-only
+`MigrationReplayEngine` grants leaked in). DEV synced to match (162
+files, phase-b2 worktree still holds the DEV superset). Temporary
+worktrees/branches cleaned up.
+
+**Current PROD state — incident thread FULLY CLOSED.** The
+`ensurePartition()` root-cause fix is live (self-healing on
+`appendRow`/`appendRows`, canonical-first new-partition headers) — this
+exact class of bug should not recur, or should self-heal within one
+write if it somehow does. `runInstallPartitionHeaderMonitorTrigger()`
+was run by the user in PROD, 2026-08-05 08:33 — confirmed installed
+(daily, ~04:00). Not installed in DEV — lower priority, optional, not
+requested.
+
+**Next action:** none pending from the assistant on this thread.
+Remaining open items are the two already-recorded, deliberately deferred
+ones from earlier in this incident — `FACT_PAYROLL_LEDGER|2020-03` in
+DEV (same root-cause bug, root-caused but never repaired, blocks Phase
+B2 Item 2's own proof script); the `BLC-99999` dead-letter residue
+(likely 2026-07-08 NORSPAN test-contamination leftover, not chased).
+
+---
+
+**Previously completed this session — root cause fix built, tested, PR open, AWAITING REVIEW
+before merge/deploy.** PR #9 (`fix/ensurepartition-header-gap`, off
+`main`@`71329e2`) fixes `ensurePartition()`'s non-atomic
+insertSheet()-then-header-copy gap in `DAL.gs` — the actual root cause
+behind the Aug 2026 incident just resolved. Two mechanisms fixed: (1)
+`appendRow()`/`appendRows()` now self-heal a blank partition header
+against canonical `SCHEMAS` before writing (the load-bearing fix — most
+real callers don't call `ensurePartition()` again before writing, so
+this is the one path every FACT write actually goes through);
+`ensurePartition()`'s own early-return path self-heals too, as
+defense-in-depth. (2) A brand-new partition's header now comes directly
+from canonical `SCHEMAS`, never copied from a stale sibling tab (the
+mechanism that let `FACT_QC_EVENTS` partitions be born missing
+`qc_session_id` after it was added). Never auto-rewrites a non-blank
+header that merely differs from canonical — only warns; real data may
+be positionally written against it.
+
+**Verification status:** 448/448 Jest passing (10 new tests directly
+against real `DAL.gs`). DEV rehearsal — the load-bearing case (blank
+header → real `DAL.appendRow()` → self-heals → row lands) **passed live
+on the first try.** Two secondary live scenarios hit a confirmed
+test-harness-only artifact (rehearsal mixes `getActiveSpreadsheet()` for
+its own test-tab setup with DAL's internally-cached `openById()` handle
+— two different Sheets API sessions disagreeing about a just-created
+tab within one execution; not reproducible in production, where every
+write goes through DAL's single handle exclusively per Rule A2). Spent
+one advisor-reviewed diagnostic round on this, correctly stopped rather
+than chasing further live round-trips once it was clear the two failing
+scenarios have no real-Sheets-specific behavior Jest doesn't already
+cover — full reasoning documented in the rehearsal file's own header
+comment and PR #9's description.
+
+**Next action: this needs your review before I merge to `main` and
+deploy to PROD.** This touches `DAL.gs` — T1 foundation, every FACT
+write in the system goes through it — so unlike the incident hotfixes
+this isn't something to wave through without a look. PR:
+https://github.com/blccanada2026-lang/BLC-Automation/pull/9
+
+**Also just completed — early-warning monitor, PR open, separate from
+PR #9.** PR #10 (`feature/partition-header-monitor`, off
+`main`@`71329e2`, independent of PR #9 — reviewable/mergeable in either
+order): a daily automated check + email alert if a partition header is
+ever found blank again, for any reason — the actual gap that let the
+Aug 2026 incident run 4 days before anyone noticed. Reuses the exact
+alerting pattern already live in `ExecutionHealthMonitor.gs` (MailApp,
+cooldown, same recipient property) rather than a new one. Alerts only
+on a **blank** header (actively dangerous); mismatches/unknown tables
+are reported but don't trigger an alert — those are already confirmed
+latent/harmless. 446/446 Jest passing, 10 new tests. Deliberately
+**not DEV-live-verified beyond that** — the check's own detection logic
+was already proven against real PROD data earlier this session (found
+the original 2 blank headers correctly), and the new pieces here
+(`MailApp`, `ScriptApp.newTrigger`) are established APIs already live
+elsewhere in this codebase, not novel Sheets-timing territory the way
+the DAL fix was — so this didn't warrant another live round-trip.
+**Trigger installation (`runInstallPartitionHeaderMonitorTrigger()`) is
+a separate, deliberate step, not run automatically — your call on
+timing, in PROD and optionally DEV, after the PR merges.** PR:
+https://github.com/blccanada2026-lang/BLC-Automation/pull/10
+
+---
+
+**Previously completed this session — Aug 2026 partition incident FULLY RESOLVED.** Both
+the header-repair (stops new submissions failing) and the 31-item
+dead-letter replay (recovers already-lost August hours/QC events) are
+done, verified, live in PROD. Full record moved to Completed section
+below. Headline numbers: 21/21 WORK_LOG recovered, 59.75 hours — exact
+match to the original incident quantification, decimal for decimal. 6/10
+QC_SUBMIT recovered; the other 4 failed with the pre-identified, safe
+"job already in QC_REVIEW" routing guard (each of those 4 jobs had two
+QC_SUBMIT dead-letters from the same retry — one recovered the job
+state, the second correctly refused rather than double-writing).
+`already_present: 0` confirms the double-count safety net never had to
+fire — the pre-replay reconciliation was right, all 21 WORK_LOG entries
+were genuinely unique. `DEAD_LETTER_QUEUE` untouched, as designed.
+**Next action:** ask the user to spot-check "My Hours" for one affected
+designer (e.g. `BCH`, `MARV`, `JYS`) to confirm the fix is visible, not
+just correct in the ledger. Two follow-ups intentionally deferred, not
+forgotten — see the Completed entry: (1) `BLC-99999`/`QITM-C0476432AD82`
+dead-letter residue, likely from the already-documented 2026-07-08
+NORSPAN test-contamination incident, not investigated further; (2) the
+underlying `ensurePartition()` non-atomic create-then-header root cause
+is still unfixed — this exact incident recurs in September unless that's
+addressed (tracked in the "Partition headers silently diverge" task
+below).
+
+**Previously completed this session — header-repair half.** Designers
+couldn't see August hours in "My Hours" — `FACT_WORK_LOGS|2026-08` and
+`FACT_QC_EVENTS|2026-08` were created with blank header rows
+(`ensurePartition()`'s known non-atomic create-then-header gap), so every
+WORK_LOG/QC_SUBMIT since 2026-08-01 failed and dead-lettered (31 items
+confirmed: 21 WORK_LOG/59.75h, 10 QC_SUBMIT — nothing silently lost, full
+payloads intact in `DEAD_LETTER_QUEUE`). Built
+`Aug2026PartitionRecovery.gs` on its own incident branch, DEV-rehearsed.
+**Split the fix** rather than gating everything on one rehearsal: header
+repair (urgent, stops the bleeding) shipped separately from the 31-item
+replay (not urgent, safely parked). Header repair merged to `main` (PR #7,
+`a8dceee`) and deployed to PROD from a clean detached-HEAD worktree — 155
+files, verified scope-correct (no phase-b2 in-progress payroll code, no
+rehearsal-only `DAL.gs` permission grants). **Run in PROD by the user,
+confirmed: both headers REPAIRED.** New submissions should now succeed.
+**Two findings worth keeping:** (1) the recovery script originally
+hardcoded the target period — but `WorkLogHandler`/`QCHandler` always
+resolve `Identifiers.generateCurrentPeriodId()` internally (today's real
+date), so a hardcoded value only "worked" because today happened to fall
+in August; fixed by resolving the period dynamically and refusing to run
+if it drifts from the known incident period, before this caused a repeat
+of the exact same bug against a September partition. (2) The DEV
+rehearsal's own `DAL.gs` `WRITE_PERMISSIONS` widening
+(`MigrationReplayEngine` on `VW_JOB_CURRENT_STATE`/`STG_PROCESSING_QUEUE`/
+`DEAD_LETTER_QUEUE`) was rehearsal-scaffolding only — confirmed and kept
+out of the PROD merge entirely (verified via post-push grep).
+**Next action:** replay the 31 dead-lettered items via
+`runAug2026PartitionRecoveryCommit()` — not urgent, needs its own DEV
+rehearsal fix first (the rehearsal's own synthetic-period design has the
+same real-vs-synthetic period mismatch bug, still unfixed, tracked
+separately below). Also unresolved from the Phase B2 thread this
+interrupted: `FACT_PAYROLL_LEDGER|2020-03` in DEV was root-caused (same
+blank-header bug) but never actually repaired/re-verified.
+
+---
+
 ## Session State (last updated: end of turn, 2026-07-29)
 
 **Just completed:** PR #5 (Item 1, RBAC extension for `HR_ACCOUNTING`)
@@ -80,6 +437,10 @@ remains a separate go-ahead, your call on timing.
 ---
 
 ## Active
+
+- [ ] Nothing else new from this session — see "Aug 2026 partition
+      incident" in Completed below for the just-finished thread, and the
+      pre-existing entries below for everything still open.
 
 - [ ] **Payroll automation build — HR_ACCOUNTING role for Aarthi, combined
       paystub, aggregate confirmation gate, PM bonus flat calc,
@@ -625,6 +986,120 @@ remains a separate go-ahead, your call on timing.
 ---
 
 ## Completed
+
+- [x] **Aug 2026 partition incident — FULLY RESOLVED, 2026-08-04.**
+      Designers/QC couldn't see August hours in "My Hours."
+      `FACT_WORK_LOGS|2026-08`/`FACT_QC_EVENTS|2026-08` were created with
+      blank header rows (`ensurePartition()`'s non-atomic
+      insertSheet()-then-header-copy gap — same class as "Partition
+      headers silently diverge," Mechanism A, still open below). Every
+      WORK_LOG/QC_SUBMIT since 2026-08-01 failed and dead-lettered: 31
+      items (21 WORK_LOG, 59.75h; 10 QC_SUBMIT), cross-checked exactly
+      against `STG_PROCESSING_QUEUE`. Nothing silently lost — full
+      payloads intact in `DEAD_LETTER_QUEUE` throughout.
+
+      Branch `incident/aug2026-partition-recovery` (own worktree, off
+      `main`@`e3933f1`) holds the full recovery tool
+      (`Aug2026PartitionRecovery.gs`, `Aug2026PartitionRecoveryDevRehearsal.gs`)
+      and Jest coverage (33 + 3 tests). **Deliberately split into two
+      PROD deploys rather than gating the urgent fix on the full replay
+      being proven** — each merged to `main` as its own minimal,
+      scope-verified commit (no `DAL.gs` changes, no DEV-only rehearsal
+      script) and pushed from a clean detached-HEAD worktree at that
+      exact commit:
+
+      1. **Header repair — PR #7 (`a8dceee`), deployed, verified.**
+         `runAug2026PartitionRecoveryHeaderRepairOnly()` run in PROD:
+         both headers confirmed REPAIRED. Stopped the bleeding — new
+         submissions succeed from this point on. Fixed before shipping:
+         the script originally hardcoded the target period, but the
+         replay handlers always resolve
+         `Identifiers.generateCurrentPeriodId()` (today's real date)
+         internally — these only agreed because today fell in August.
+         Now resolves the period dynamically
+         (`a26prActualPeriod_()`/`a26prAssertExpectedPeriod_()`) and
+         refuses to proceed if it drifts from the known incident period,
+         so this exact bug can't silently repeat against a fresh,
+         equally-broken September partition next month (the underlying
+         `ensurePartition()` root cause is still unfixed — see the
+         existing task below).
+      2. **31-item replay — PR #8 (`71329e2`), deployed, verified, RUN.**
+         Two real risks caught before this ran, both fixed and DEV-proven
+         against real Sheets data (not just Jest) before PROD:
+         - **Scope creep.** `Commit`'s discovery pulled in every
+           historically dead-lettered WORK_LOG/QC_SUBMIT item, not just
+           this incident's — a live PROD preview found 61, not 31. The
+           other 30 are a separate, unaudited population (legacy
+           job-number formats, many already
+           INVOICED/COMPLETED_BILLABLE — replaying against those would
+           violate Rule A5/D3). Fixed: `a26prScopeToKnown_()` restricts
+           replay to exactly the audited 31, reporting (not silently
+           dropping) what's excluded.
+         - **WORK_LOG double-counting.** `WorkLogHandler`'s idempotency
+           key is `queue_id` alone (`WorkLogHandler.gs:111-112`) — it
+           cannot catch two different dead-letters carrying identical
+           hours, or an item already re-submitted successfully after the
+           header repair. Fixed: `a26prFindMatchingWorkLogRow_()` checked
+           automatically before every WORK_LOG replay, auto-skips an
+           unambiguous match (`ALREADY_PRESENT`). New read-only
+           `runAug2026PartitionRecoveryWorkLogReconciliation()` reports
+           the ambiguous case (two dead-letters, identical
+           job/actor/date/hours) for human judgment — run against PROD
+           before the real replay: **all 21 WORK_LOG items came back
+           UNIQUE**, no internal duplicates, nothing already present.
+         **Real PROD replay result:** 27 recovered (21/21 WORK_LOG + 6/10
+         QC_SUBMIT), 4 errors — all 4 the pre-identified, safe "job
+         already in QC_REVIEW" routing guard (4 jobs each had two
+         QC_SUBMIT dead-letters from the same retry; first replay moved
+         the job state, second correctly refused rather than
+         double-writing — QC_SUBMIT is self-protecting this way, unlike
+         WORK_LOG). `already_present: 0` confirms the reconciliation was
+         right. **Recovered hours summed to 59.75 — exact match, decimal
+         for decimal, to the original incident quantification.**
+         `DEAD_LETTER_QUEUE` left untouched, as designed.
+
+      **Deliberately deferred, not forgotten:**
+      - `BLC-99999`/`QITM-C0476432AD82` — a dead-letter item discovered
+        during scope investigation, pointing at the reserved TEST job
+        number, sitting in PROD's `DEAD_LETTER_QUEUE`. Excluded from
+        this replay (correctly, automatically, by the scoping fix).
+        `QITM-` is confirmed a legitimate real ID-prefix
+        (`IntakeService.gs`), not itself evidence of test contamination
+        — but a sibling diagnostic file (`QueueItemDeepAudit.gs`) already
+        investigated a same-shaped `QITM`/dead-letter item from the
+        documented 2026-07-08 NORSPAN test-contamination incident,
+        making this very likely old residue from that same incident, not
+        a fresh problem. Not investigated further — no user-facing
+        impact (dead-letter table, not a live FACT/reporting table).
+        Worth a standalone look someday, not urgent.
+      - `FACT_PAYROLL_LEDGER|2020-03` in DEV — **RESOLVED, 2026-08-05.**
+        Root-caused to this exact same blank-header bug class during the
+        Phase B2 debugging thread this incident interrupted. Recurred
+        once more after the DAL.gs fix reached DEV (confirmed via a
+        fresh `clasp pull` that the fix was genuinely live and correct
+        at the time — the recurrence was a stale pre-existing blank tab
+        from before the fix deployed, not a gap in it). User deleted the
+        broken tab manually; a new `paboc2AssertHeadersHealthy_()`
+        pre-run guard was added to
+        `PayrollAutomationBonusOnlyConfirmProofB2.gs` (checks both
+        target partitions' headers before any seeding, aborts with a
+        named-tab error rather than silently proceeding — 14 new tests,
+        505/505 suite). Re-run clean: **6/6 passed** — Item 2's core fix
+        (a bonus-only supervisor with zero personal hours gets a
+        zero-valued `PAYROLL_CALCULATED` row so `confirmPaystub()`
+        works) confirmed end-to-end,
+        `confirmPaystub()` succeeded for TLCONF1 where it previously
+        errored "No payroll found." **Item 2 is DEV-verified — see the
+        "Payroll automation build" entry above for promotion status.**
+      - The root cause itself — `ensurePartition()`'s non-atomic
+        create-then-header gap — is still unfixed. **This exact incident
+        recurs in September** (or any future month) unless addressed;
+        see "Partition headers silently diverge" below, which already
+        has a proposed fix scoped, not yet implemented.
+
+      **Next action:** none pending from the assistant. Ask the user to
+      spot-check "My Hours" for one affected designer to confirm the fix
+      is visible end-to-end, not just correct in the ledger.
 
 - [x] **Payroll aggregation fix (Task 1)** — 2026-07-24. PR #2 merged into
       `main`, deployed to PROD (`d9c876e`). PROD dry-run run and its

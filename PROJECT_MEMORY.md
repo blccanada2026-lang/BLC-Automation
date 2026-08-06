@@ -140,6 +140,30 @@ The three all-type rules exist specifically because `BCH`/`SDA`/`SVN` report to 
 
 ---
 
+## 3.5 Standing Rule — Fixed: `ensurePartition()`'s Non-Atomic Header Gap (Aug 2026 Incident Root Cause)
+
+**The rule, verbatim:** As of PR #9 (2026-08-04/05, `fix/ensurepartition-header-gap`, merged to `main`), `DAL.appendRow()`/`DAL.appendRows()` self-heal a blank partition header against canonical `SCHEMAS` before writing — this closed the actual root cause behind the Aug 2026 "My Hours" incident (PRs #7/#8). If you ever see a partition tab with a blank header again, it should now repair itself on the next write rather than requiring a manual incident response. If it doesn't, that's a regression in `DAL.gs` — investigate `getHeadersSelfHealing_()` first.
+
+**Root cause, for context:** `ensurePartition()` creates a new partition tab via `insertSheet()` then populates its header via a *separate* `setValues()` call. An interruption between the two (timeout, quota error, anything) left the tab existing with a permanently blank header — and the early-return "already exists" check only verified the tab's *name*, never its headers, so it never self-healed. `objectToRow_()` maps every write against that blank (0-column) header, so every field of every row was silently discarded. This is exactly how `FACT_WORK_LOGS|2026-08`/`FACT_QC_EVENTS|2026-08` broke for four days before anyone noticed — every designer/QC submission against them failed and dead-lettered, `DEAD_LETTER_QUEUE` preserved the payloads so nothing was permanently lost, but "My Hours" showed nothing until the fix and a manual replay (31 items, 59.75 recovered hours) landed.
+
+**Why the fix lives in `appendRow`/`appendRows`, not just `ensurePartition()`:** most real FACT writers (migration/recon fillers, payroll/billing engines) write against an already-provisioned partition without calling `ensurePartition()` again first — so `appendRow`/`appendRows` is the one path every FACT write actually goes through regardless of caller discipline. `ensurePartition()`'s own early-return path also self-heals, as defense-in-depth, but it is not the load-bearing guarantee.
+
+**Two related fixes, same PR:** (1) self-healing as above; (2) a brand-new partition's header now comes directly from canonical `SCHEMAS`, never copied from whichever sibling tab happens to be found first in tab order — the mechanism that separately let some `FACT_QC_EVENTS` partitions be born missing `qc_session_id` after it was added to `SCHEMAS` (a real, confirmed, latent finding from the 2026-07-27 full PROD partition-header scan, see the "Partition headers silently diverge" task history in `CTO_TASK_QUEUE.md`).
+
+**Deliberately NOT auto-fixed:** a *non-blank* header that merely differs from canonical (e.g. an older partition missing a newer column) is only logged (`WARN`), never auto-rewritten — real data rows may already be positionally written against that exact header, so blindly rewriting row 1 risks silently misaligning existing data, which is worse than the drift itself.
+
+---
+
+## 3.6 Standing Business Rule — `client_job_ref` Is Not Unique Per Job; Some Clients Split One Ref Across Two Designers
+
+**The rule, verbatim:** for some client accounts (confirmed example: Matix), the SAME `client_job_ref` legitimately covers two distinct scopes of work — e.g. one ref spanning both a roof design job and a floor design job — each sometimes assigned to a DIFFERENT designer. Any future logic that treats `client_job_ref` (alone, or combined with client/product) as a uniqueness or duplicate-detection key **must** also account for designer assignment, or it will false-positive and block a legitimate second job.
+
+**Origin, 2026-08-05/06** — surfaced by the user, proactively, before running the DEV rehearsal for the job-create duplicate-prevention fix (PR #14, built in response to Sarty's BLC-00891/BLC-00892 incident — see §8/`CTO_TASK_QUEUE.md`). The first version of the fix's 60-second content-duplicate guard matched only on client+product+description+submitter and would have blocked exactly this legitimate workflow. Fixed by also comparing intended designer: `JobCreateHandler.gs`'s `resolveIntendedDesigner_()` reads a new `_intended_designer` hint that `portal_createJob()` (`Portal.gs`) attaches to the raw submission payload (schema-unrecognized — `ValidationEngine` strips it, so it never affects `cleanPayload`/`VW_JOB_CURRENT_STATE.allocated_to`), falling back to `cleanPayload.allocated_to` for any non-portal caller (SBS intake, migration) that sets it directly on the JOB_CREATE payload itself.
+
+**Applies beyond this one guard** — any future feature that groups, dedupes, or reasons about jobs "by `client_job_ref`" (reporting, billing rollups, timesheet grouping, etc.) should be checked against this pattern before assuming one ref = one job = one designer.
+
+---
+
 ## 4. Database / Sheet / Table Structure
 
 Key tables only. Full list in `.claude/context/architecture.md §Key Tables`.
@@ -235,6 +259,8 @@ Priority order:
 | Dead-letter queue items (27 VALIDATION_FAILED) | Low | Fix deployed. Affected staff must resubmit any submissions from before 2026-06-18. |
 | Dead-letter queue — full investigation | ~~Low~~ | **RESOLVED.** 1 real blocked job (NORSPAN, Sarty notified — separate from the NORSPAN client-duplicate issue above); 14 historical QC_SUBMIT failures, all pre-existing and resolved by `MigratedQCApprovalFixer`. |
 | Apps Script deployment | Low | `clasp push` alone is NOT enough — must also do "New version" redeploy in Apps Script editor for `/exec` URL to pick up changes. Portal redeploy requirement now explicit in R4/R5 checklists. |
+| **Billing access wrongly granted to PM** | ~~HIGH~~ | **RESOLVED 2026-08-05 (PR #11).** `RBAC.gs` `PERMISSION_MATRIX.PM.BILLING_RUN` was `true` (superseded design decision) — corrected to `false`; `ADMIN`/`HR_ACCOUNTING` corrected to `true`. Billing is now CEO/ADMIN/HR_ACCOUNTING-only, matching current business intent. |
+| **Job-create duplicate (BLC-00891/BLC-00892)** | ~~HIGH~~ | **RESOLVED 2026-08-06 (PR #14).** Root cause: `JobCreateHandler` idempotency keyed on `queue_id` alone, no protection against two genuinely separate submissions. Data fixed via `Job00891DuplicateFixer.gs`; prevention shipped as a 60s content-duplicate guard, designer-aware per §3.6. Deployed to PROD, New Version redeploy confirmed. |
 
 ---
 
