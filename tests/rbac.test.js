@@ -105,6 +105,21 @@ describe('RBAC.PERMISSION_MATRIX — HR_ACCOUNTING role', () => {
     expect(RBAC.canPerform('TEAM_LEAD', 'BILLING_RUN')).toBe(false);
     expect(RBAC.canPerform('DESIGNER', 'BILLING_RUN')).toBe(false);
   });
+
+  test('TIMESHEET_GENERATE — business decision 2026-08-06: ADMIN added to match BILLING_RUN\'s scope (Aarthi is onboarded as ADMIN, not HR_ACCOUNTING)', () => {
+    expect(RBAC.canPerform('CEO', 'TIMESHEET_GENERATE')).toBe(true);
+    expect(RBAC.canPerform('ADMIN', 'TIMESHEET_GENERATE')).toBe(true);
+    expect(RBAC.canPerform('HR_ACCOUNTING', 'TIMESHEET_GENERATE')).toBe(true);
+    expect(RBAC.canPerform('PM', 'TIMESHEET_GENERATE')).toBe(false);
+    expect(RBAC.canPerform('TEAM_LEAD', 'TIMESHEET_GENERATE')).toBe(false);
+    expect(RBAC.canPerform('DESIGNER', 'TIMESHEET_GENERATE')).toBe(false);
+  });
+
+  test('ADMIN did NOT gain the rest of HR_ACCOUNTING\'s PREPARE/REVIEW set — only TIMESHEET_GENERATE was extended', () => {
+    expect(RBAC.canPerform('ADMIN', 'PAYROLL_PREVIEW')).toBe(false);
+    expect(RBAC.canPerform('ADMIN', 'BONUS_PREVIEW')).toBe(false);
+    expect(RBAC.canPerform('ADMIN', 'REPORT_GENERATE')).toBe(false);
+  });
 });
 
 describe('RBAC.enforceFinancialAccess(actor, action) — action-aware', () => {
@@ -121,6 +136,11 @@ describe('RBAC.enforceFinancialAccess(actor, action) — action-aware', () => {
   function resolveDesignerActor() {
     seedRosterActor(mocks, { person_code: 'DES1', email: 'designer1@test.blc.internal', role: 'DESIGNER' });
     return RBAC.resolveActor('designer1@test.blc.internal');
+  }
+
+  function resolveAdminActor() {
+    seedRosterActor(mocks, { person_code: 'ADM1', email: 'admin1@test.blc.internal', role: 'ADMIN' });
+    return RBAC.resolveActor('admin1@test.blc.internal');
   }
 
   test('HR_ACCOUNTING passes for PAYROLL_PREVIEW, BONUS_PREVIEW, TIMESHEET_GENERATE, REPORT_GENERATE', () => {
@@ -165,6 +185,24 @@ describe('RBAC.enforceFinancialAccess(actor, action) — action-aware', () => {
     expect(() => RBAC.enforceFinancialAccess(actor)).toThrow(/FINANCIAL_ACCESS_DENIED/);
     expect(() => RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.PAYROLL_PREVIEW)).toThrow(/FINANCIAL_ACCESS_DENIED/);
     expect(() => RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.TIMESHEET_GENERATE)).toThrow(/FINANCIAL_ACCESS_DENIED/);
+  });
+
+  test('ADMIN passes for TIMESHEET_GENERATE only — 2026-08-06 business decision, matches BILLING_RUN\'s scope', () => {
+    var actor = resolveAdminActor();
+    expect(() => RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.TIMESHEET_GENERATE)).not.toThrow();
+  });
+
+  test('ADMIN is rejected for every other financial action, including HR_ACCOUNTING\'s own set — not accidentally widened past TIMESHEET_GENERATE', () => {
+    var actor = resolveAdminActor();
+    expect(() => RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.PAYROLL_PREVIEW)).toThrow(/FINANCIAL_ACCESS_DENIED/);
+    expect(() => RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.BONUS_PREVIEW)).toThrow(/FINANCIAL_ACCESS_DENIED/);
+    expect(() => RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.REPORT_GENERATE)).toThrow(/FINANCIAL_ACCESS_DENIED/);
+    expect(() => RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.PAYROLL_COMMIT)).toThrow(/FINANCIAL_ACCESS_DENIED/);
+  });
+
+  test('ADMIN is rejected when called with no action at all — same safe backward-compatible default as HR_ACCOUNTING', () => {
+    var actor = resolveAdminActor();
+    expect(() => RBAC.enforceFinancialAccess(actor)).toThrow(/FINANCIAL_ACCESS_DENIED/);
   });
 
   test('the denial error names the actor and role, same as before this change', () => {
