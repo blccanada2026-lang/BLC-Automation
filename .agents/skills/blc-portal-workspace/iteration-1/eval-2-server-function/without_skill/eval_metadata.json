@@ -1,0 +1,13 @@
+{
+  "eval_id": 2,
+  "eval_name": "server-function-pattern",
+  "prompt": "Add a new portal_* server function to Portal.gs that lets the CEO preview the quarterly bonus for a given quarter and year before running it. The function should accept quarter (e.g. 'Q2') and year (e.g. 2026) as separate parameters. It calls QuarterlyBonusEngine.previewQuarterlyBonus. Also write the corresponding PortalData helper if needed.",
+  "assertions": [
+    { "text": "Function is not nested inside a class or IIFE — top-level global", "passed": null, "evidence": null },
+    { "text": "First statement is var email = Session.getActiveUser().getEmail()", "passed": null, "evidence": null },
+    { "text": "Returns JSON.stringify(...) not a raw object", "passed": null, "evidence": null },
+    { "text": "Calls QuarterlyBonusEngine.previewQuarterlyBonus — no business logic inline", "passed": null, "evidence": null },
+    { "text": "Has /** ... */ JSDoc block above the function", "passed": null, "evidence": null },
+    { "text": "Function is named portal_previewQuarterlyBonus", "passed": null, "evidence": null }
+  ]
+}

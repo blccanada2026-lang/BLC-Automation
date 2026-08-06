@@ -1,0 +1,112 @@
+<!-- ══ ADMIN TOOLS PANEL (without-skill baseline) ══════════════════════════════ -->
+<!-- Merge into PortalView.html — see integration notes in JS comments          -->
+
+<style>
+  /* ── Admin Tools Panel ─────────────────────────────────── */
+  #admin-tools-panel {
+    display: none;
+    margin-top: 24px;
+  }
+  .admin-panel-hdr {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
+  }
+  .admin-panel-hdr h2 { font-size: 15px; font-weight: 700; }
+  .admin-panel-body {
+    background: var(--c-surface); border: 1px solid var(--c-border);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 24px;
+  }
+  .admin-tools-description { font-size: 13px; color: var(--c-muted); margin-bottom: 16px; line-height: 1.6; }
+  .admin-btn-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .admin-btn-spinner {
+    display: none; width: 14px; height: 14px;
+    border: 2px solid rgba(0,0,0,0.2); border-top-color: var(--c-secondary);
+    border-radius: 50%; animation: spin .7s linear infinite;
+  }
+  .admin-status-msg { display: none; font-size: 13px; padding: 10px 14px;
+                      border-radius: var(--radius); line-height: 1.5; }
+  .admin-status-msg.success { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+  .admin-status-msg.error   { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+</style>
+
+<!-- HTML — place inside <main>, after #staff-panel -->
+<div id="admin-tools-panel">
+  <div class="admin-panel-hdr"><h2>Admin Tools</h2></div>
+  <div class="admin-panel-body">
+    <p class="admin-tools-description">
+      System maintenance operations. Run <strong>Rebuild Views</strong> when
+      VW_JOB_CURRENT_STATE appears out of sync. Run <strong>Refresh Dashboard</strong>
+      to push latest data into Looker Studio MART tables.
+    </p>
+    <div class="admin-btn-row">
+      <button class="btn-danger btn-sm" id="admin-btn-rebuild-views">Rebuild Views</button>
+      <button class="btn-primary btn-sm" id="admin-btn-refresh-dashboard">Refresh Dashboard</button>
+      <div class="admin-btn-spinner" id="admin-btn-spinner"></div>
+    </div>
+    <div id="admin-status-msg" class="admin-status-msg" role="status"></div>
+  </div>
+</div>
+
+<script>
+  // Integration point 1: call in DOMContentLoaded to wire buttons
+  function initAdminTools() {
+    document.getElementById('admin-btn-rebuild-views').addEventListener('click', adminRebuildViews);
+    document.getElementById('admin-btn-refresh-dashboard').addEventListener('click', adminRefreshDashboard);
+  }
+
+  // Integration point 2: call in onDataLoaded() after resolving actor/perms
+  // if (perms.canManageStaff) document.getElementById('admin-tools-panel').style.display = 'block';
+  // NOTE: baseline uses a perms flag; skill version uses explicit role check (actor.role === 'CEO'|'ADMIN')
+
+  function adminSetStatus(msg, type) {
+    var el = document.getElementById('admin-status-msg');
+    el.className = 'admin-status-msg ' + (type || '');
+    el.textContent = msg;
+    el.style.display = msg ? 'block' : 'none';
+  }
+
+  function adminSetBusy(busy) {
+    document.getElementById('admin-btn-rebuild-views').disabled    = busy;
+    document.getElementById('admin-btn-refresh-dashboard').disabled = busy;
+    document.getElementById('admin-btn-spinner').style.display     = busy ? 'inline-block' : 'none';
+  }
+
+  function adminRebuildViews() {
+    adminSetBusy(true);
+    adminSetStatus('Rebuilding views\u2026', '');
+    google.script.run
+      .withSuccessHandler(function(json) {
+        adminSetBusy(false);
+        var r = JSON.parse(json);
+        adminSetStatus(
+          'Views rebuilt \u2014 ' + r.vw_job + ' job rows, ' +
+          r.vw_workload + ' workload rows (' + Math.round(r.elapsed_ms / 1000) + 's)',
+          'success'
+        );
+      })
+      .withFailureHandler(function(err) {
+        adminSetBusy(false);
+        adminSetStatus('Rebuild failed: ' + err.message, 'error');
+      })
+      .portal_rebuildViews();
+  }
+
+  function adminRefreshDashboard() {
+    adminSetBusy(true);
+    adminSetStatus('Refreshing dashboard\u2026', '');
+    google.script.run
+      .withSuccessHandler(function(json) {
+        adminSetBusy(false);
+        var r = JSON.parse(json);
+        adminSetStatus(
+          'Dashboard refreshed \u2014 ' + r.periods + ' periods, ' +
+          Math.round(r.elapsed_ms / 1000) + 's',
+          'success'
+        );
+      })
+      .withFailureHandler(function(err) {
+        adminSetBusy(false);
+        adminSetStatus('Refresh failed: ' + err.message, 'error');
+      })
+      .portal_refreshDashboard();
+  }
+</script>

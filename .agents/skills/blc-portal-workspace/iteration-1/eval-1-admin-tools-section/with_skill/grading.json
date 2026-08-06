@@ -1,0 +1,16 @@
+{
+  "eval_id": 1,
+  "run": "with_skill",
+  "assertions": [
+    { "text": "No let or const in JS block — ES5 only", "passed": true, "evidence": "All declarations use var; no let/const found" },
+    { "text": "Uses .withSuccessHandler(...).withFailureHandler(...) on google.script.run", "passed": true, "evidence": "Both calls chain withSuccessHandler then withFailureHandler before the function call" },
+    { "text": "Checks actor.role === 'CEO' or 'ADMIN' before showing the panel", "passed": true, "evidence": "maybeShowAdminTools: if (actor.role === 'CEO' || actor.role === 'ADMIN')" },
+    { "text": "Buttons use .btn-primary / .btn-success / .btn-warning / .btn-danger classes", "passed": true, "evidence": "btn-warning on Rebuild Views, btn-primary on Refresh Dashboard" },
+    { "text": "No http:// or https:// URL references (no external CDN)", "passed": true, "evidence": "No external URLs present" },
+    { "text": "Shows a spinner or loading indicator while the call is in flight", "passed": true, "evidence": "#admin-spinner element toggled via style.display in adminSetBusy()" },
+    { "text": "Renders server response in a status element after the call completes", "passed": true, "evidence": "adminSetStatus() sets textContent on #admin-status-msg after withSuccessHandler fires" }
+  ],
+  "pass_count": 7,
+  "total": 7,
+  "pass_rate": 1.0
+}

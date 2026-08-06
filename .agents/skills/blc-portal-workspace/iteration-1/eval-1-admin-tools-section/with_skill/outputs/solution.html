@@ -1,0 +1,100 @@
+<!-- ══ ADMIN TOOLS PANEL (with-skill output) ═══════════════════════════════════ -->
+<!-- Insert after the leader dashboard section in PortalView.html               -->
+<!-- Visibility controlled by JS role check after portal_getViewData() resolves -->
+
+<style>
+  #admin-tools-panel { display: none; margin-top: 24px; }
+  .admin-tools-hdr { display: flex; justify-content: space-between; align-items: center;
+                     margin-bottom: 14px; }
+  .admin-tools-hdr h2 { font-size: 15px; font-weight: 700; }
+  .admin-panel { background: var(--c-surface); border: 1px solid var(--c-border);
+                 border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
+  .admin-panel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .admin-status { margin-top: 14px; font-size: 13px; min-height: 20px; color: var(--c-muted); }
+  .admin-status.ok  { color: var(--c-success); }
+  .admin-status.err { color: var(--c-danger); }
+  .admin-spinner { display: none; width: 14px; height: 14px; border: 2px solid #ddd;
+                   border-top-color: var(--c-secondary); border-radius: 50%;
+                   animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<div id="admin-tools-panel">
+  <div class="admin-tools-hdr">
+    <h2>Admin Tools</h2>
+  </div>
+  <div class="admin-panel">
+    <div class="admin-panel-actions">
+      <button class="btn-warning" id="btn-rebuild-views" onclick="adminRebuildViews()">
+        Rebuild Views
+      </button>
+      <button class="btn-primary" id="btn-refresh-dashboard" onclick="adminRefreshDashboard()">
+        Refresh Dashboard
+      </button>
+      <div class="admin-spinner" id="admin-spinner"></div>
+    </div>
+    <div class="admin-status" id="admin-status-msg"></div>
+  </div>
+</div>
+
+<script>
+  // Show admin tools panel for CEO and ADMIN roles only.
+  // Call this from the portal_getViewData success handler.
+  function maybeShowAdminTools(actor) {
+    if (actor.role === 'CEO' || actor.role === 'ADMIN') {
+      document.getElementById('admin-tools-panel').style.display = 'block';
+    }
+  }
+
+  function adminSetStatus(msg, isErr) {
+    var el = document.getElementById('admin-status-msg');
+    el.className = 'admin-status' + (isErr ? ' err' : (msg ? ' ok' : ''));
+    el.textContent = msg;
+  }
+
+  function adminSetBusy(busy) {
+    document.getElementById('btn-rebuild-views').disabled    = busy;
+    document.getElementById('btn-refresh-dashboard').disabled = busy;
+    document.getElementById('admin-spinner').style.display   = busy ? 'inline-block' : 'none';
+  }
+
+  function adminRebuildViews() {
+    adminSetBusy(true);
+    adminSetStatus('Rebuilding views\u2026', false);
+    google.script.run
+      .withSuccessHandler(function(json) {
+        adminSetBusy(false);
+        var r = JSON.parse(json);
+        adminSetStatus(
+          'Views rebuilt \u2014 ' + r.vw_job + ' job rows, ' +
+          r.vw_workload + ' workload rows (' + Math.round(r.elapsed_ms / 1000) + 's)',
+          false
+        );
+      })
+      .withFailureHandler(function(err) {
+        adminSetBusy(false);
+        adminSetStatus('Rebuild failed: ' + err.message, true);
+      })
+      .portal_rebuildViews();
+  }
+
+  function adminRefreshDashboard() {
+    adminSetBusy(true);
+    adminSetStatus('Refreshing dashboard MARTs\u2026', false);
+    google.script.run
+      .withSuccessHandler(function(json) {
+        adminSetBusy(false);
+        var r = JSON.parse(json);
+        adminSetStatus(
+          'Dashboard refreshed \u2014 ' + r.periods + ' periods, ' +
+          Math.round(r.elapsed_ms / 1000) + 's',
+          false
+        );
+      })
+      .withFailureHandler(function(err) {
+        adminSetBusy(false);
+        adminSetStatus('Refresh failed: ' + err.message, true);
+      })
+      .portal_refreshDashboard();
+  }
+</script>
