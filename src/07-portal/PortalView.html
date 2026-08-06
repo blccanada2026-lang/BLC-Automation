@@ -2452,24 +2452,53 @@ function submitCreateJob() {
   if (dueDate) payload.target_date    = dueDate;
   if (notes)   payload.notes          = notes;
 
-  closeModal('modal-create');
+  // Keep the modal open and disable the submit button until the request
+  // actually completes, instead of closing immediately. Job creation
+  // (plus designer assignment) can take several seconds on Apps Script —
+  // closing the modal right away made a slow-but-successful request
+  // look exactly like nothing had happened, which led directly to a
+  // real PM resubmitting and creating a genuine duplicate job
+  // (BLC-00891/BLC-00892, 2026-08-05). The backend now also has its own
+  // independent safety net for this (JobCreateHandler.gs's recent-
+  // content-duplicate guard) — this is the other half: reducing the
+  // chance a user feels the need to retry in the first place.
+  var submitBtn      = document.getElementById('btn-submit-create');
+  var originalLabel  = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Creating…';
+
+  function restoreCreateButton_() {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+  }
 
   if (designer) {
-    showLoading(true);
     TOKEN_RUN
       .withSuccessHandler(function(json) {
-        showLoading(false);
+        restoreCreateButton_();
+        closeModal('modal-create');
         var result = JSON.parse(json);
         loadData();
         showToast((result.job_number || 'Job') + ' created and assigned.', 'success');
       })
       .withFailureHandler(function(err) {
-        showLoading(false);
+        restoreCreateButton_();
         showToast(err.message || 'Job creation failed.', 'error');
       })
       .portal_createJob(JSON.stringify(payload), designer);
   } else {
-    submitAction('JOB_CREATE', payload, 'Job created successfully.');
+    TOKEN_RUN
+      .withSuccessHandler(function() {
+        restoreCreateButton_();
+        closeModal('modal-create');
+        showToast('Job created successfully.', 'success');
+        setTimeout(loadData, 800);
+      })
+      .withFailureHandler(function(err) {
+        restoreCreateButton_();
+        showToast('Error: ' + (err.message || String(err)), 'error');
+      })
+      .portal_submitAction('JOB_CREATE', JSON.stringify(payload));
   }
 }
 
