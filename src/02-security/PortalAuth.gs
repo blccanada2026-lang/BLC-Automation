@@ -240,7 +240,11 @@ var PortalAuth = (function () {
     verifyToken:  verifyToken,
     resolveEmail: resolveEmail,
     requestLink:  requestLink,
-    sendAllLinks: sendAllLinks
+    sendAllLinks: sendAllLinks,
+    // Exposed 2026-08-06 for StaffOnboardingMailer.gs — lets the new
+    // onboarding email embed a person's actual working portal link
+    // (not the generic PORTAL_BASE_URL) without duplicating token logic.
+    buildPersonalLink: buildLink_
   };
 
 }());

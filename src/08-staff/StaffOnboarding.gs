@@ -184,6 +184,12 @@ var StaffOnboarding = (function () {
         role:        role,
         actor:       actorEmail
       });
+
+      // Best-effort welcome email (StaffOnboardingMailer.gs) — only for
+      // genuinely new staff, never on re-activation of an existing row.
+      // Never allowed to fail the onboarding write itself; see that
+      // file's own try/catch.
+      sendNewStaffOnboardingEmail_(personCode);
     }
 
     // ── Write DIM_STAFF_BANKING (if banking fields provided) ──
