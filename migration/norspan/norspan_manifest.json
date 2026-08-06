@@ -1,0 +1,74 @@
+[
+  {
+    "source_file": "Invoice_From_April_16th_to_30th_Norspan.pdf",
+    "csv_file": "Invoice_From_April_16th_to_30th_Norspan.csv",
+    "row_count": 48,
+    "total_hours": 76.25,
+    "exceptions": 0,
+    "checksum": "318867f1706ef24956bfb7f115258d31",
+    "status": "READY"
+  },
+  {
+    "source_file": "Invoice_From_April_1st-15th_Norspan_Alpine.pdf",
+    "csv_file": "Invoice_From_April_1st-15th_Norspan_Alpine.csv",
+    "row_count": 36,
+    "total_hours": 36.25,
+    "exceptions": 0,
+    "checksum": "86a0cabbd12e9263d3c2910050af42ba",
+    "status": "READY"
+  },
+  {
+    "source_file": "Invoice_From_Feb_16th_to_28thNorspan.pdf",
+    "csv_file": "Invoice_From_Feb_16th_to_28thNorspan.csv",
+    "row_count": 36,
+    "total_hours": 72.5,
+    "exceptions": 0,
+    "checksum": "b57429e751ca3c3e43a11b28ff352430",
+    "status": "READY"
+  },
+  {
+    "source_file": "Invoice_From_Feb_1st-15th_Norspan.pdf",
+    "csv_file": "Invoice_From_Feb_1st-15th_Norspan.csv",
+    "row_count": 31,
+    "total_hours": 71.5,
+    "exceptions": 0,
+    "checksum": "98592b919692d2e31d1e9b4bf67d8891",
+    "status": "READY"
+  },
+  {
+    "source_file": "Invoice_From_Jan_16th-31st_Norspan.pdf",
+    "csv_file": "Invoice_From_Jan_16th-31st_Norspan.csv",
+    "row_count": 42,
+    "total_hours": 94.65,
+    "exceptions": 0,
+    "checksum": "5b66b4600d8917e88c1321ec29a8eedd",
+    "status": "READY"
+  },
+  {
+    "source_file": "Invoice_From_Jan_1st-15th_Norspan.pdf",
+    "csv_file": "Invoice_From_Jan_1st-15th_Norspan.csv",
+    "row_count": 30,
+    "total_hours": 71.5,
+    "exceptions": 0,
+    "checksum": "ce9e4f7fae756c7339b541190dfb5e05",
+    "status": "READY"
+  },
+  {
+    "source_file": "Invoice_From_March_16th_to_31st_Norspan.pdf",
+    "csv_file": "Invoice_From_March_16th_to_31st_Norspan.csv",
+    "row_count": 63,
+    "total_hours": 111.75,
+    "exceptions": 0,
+    "checksum": "cf7b7ae4e8e71f2ffe780cc8ae32892f",
+    "status": "READY"
+  },
+  {
+    "source_file": "Invoice_From_March_1st-15th_Norspan_MB.pdf",
+    "csv_file": "Invoice_From_March_1st-15th_Norspan_MB.csv",
+    "row_count": 47,
+    "total_hours": 81.75,
+    "exceptions": 0,
+    "checksum": "ee04684f71e84ee24e56d305d689e4cb",
+    "status": "READY"
+  }
+]

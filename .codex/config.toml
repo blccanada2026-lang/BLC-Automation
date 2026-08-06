@@ -1,0 +1,11 @@
+[mcp_servers.code-review-graph]
+command = "/Users/rajnair/blc-nexus/code-review-graph/venv/bin/python3"
+args = [
+    "-m",
+    "code_review_graph",
+    "serve",
+]
+
+[mcp_servers.code-review-graph.env]
+PYTHONUNBUFFERED = "1"
+PATH = "/opt/homebrew/bin:/usr/bin:/bin"
