@@ -25,7 +25,16 @@
 // HOW TO RUN (Apps Script editor, DEV project only):
 //   runGenerateTimesheetPdfDevRehearsal()                                   — all active clients, current month to date
 //   runGenerateTimesheetPdfDevRehearsal('SBS', '2026-08-01', '2026-08-20')  — one client, explicit range
+//   runGenerateTimesheetPdfDevRehearsalWideRange()                         — no-arg wrapper, all clients, 2026-01-01
+//                                                                             to today — the editor's Run button
+//                                                                             can't pass arguments, so use this
+//                                                                             when the current-month window has no
+//                                                                             logged hours to test against.
 // ============================================================
+
+function runGenerateTimesheetPdfDevRehearsalWideRange() {
+  return runGenerateTimesheetPdfDevRehearsal('', '2026-01-01', generateTimesheetPdfDevRehearsal_toIso_(new Date()));
+}
 
 function runGenerateTimesheetPdfDevRehearsal(clientCode, startDate, endDate) {
   if (!Config.isDev()) {
