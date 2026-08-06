@@ -658,7 +658,23 @@ var ClientTimesheetEngine = (function () {
     loadJobMap_:          loadJobMap_,
     loadProductMap_:      loadProductMap_,
     resolveProductName_:  resolveProductName_,
-    parseWorkDate_:       parseWorkDate_
+    parseWorkDate_:       parseWorkDate_,
+
+    // Exposed 2026-08-06 (timesheet-for-any-period feature, CEO/HR_ACCOUNTING
+    // only) — same precedent as the block above. GenerateTimesheetPdf.gs (a
+    // new file, this file is already over the ~500-line cap) needs the
+    // polished-PDF pipeline (client/staff lookups, the styled HTML template,
+    // and the Drive PDF export) to produce a PDF for an arbitrary date range
+    // instead of a fixed 'YYYY-MMA'/'YYYY-MMB' period, without duplicating
+    // this HTML/PDF logic. All read-only except exportHtmlAsPdf_, which only
+    // writes to Drive (never a FACT table, so no DAL/WRITE_PERMISSIONS
+    // involvement).
+    loadClientMap_:       loadClientMap_,
+    loadStaffMap_:        loadStaffMap_,
+    loadStaffDetailMap_:  loadStaffDetailMap_,
+    buildDesignerSummary_: buildDesignerSummary_,
+    buildTimesheetHtml_:  buildTimesheetHtml_,
+    exportHtmlAsPdf_:     exportHtmlAsPdf_
   };
 
 }());

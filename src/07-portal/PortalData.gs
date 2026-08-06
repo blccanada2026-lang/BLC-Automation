@@ -319,6 +319,9 @@ var PortalData = (function () {
       // the real matrix, so PM could never see the button despite being
       // authorized. Own flag, own action.
       canRunBilling:     RBAC.hasPermission(actor, RBAC.ACTIONS.BILLING_RUN),
+      // Timesheet-for-any-period feature, CEO/HR_ACCOUNTING only — RBAC
+      // matrix already gates TIMESHEET_GENERATE to CEO/SYSTEM/HR_ACCOUNTING.
+      canGenerateTimesheet: RBAC.hasPermission(actor, RBAC.ACTIONS.TIMESHEET_GENERATE),
       // Work log corrections. Raw role !== 'QC' excludes plain QC actors
       // even though RBAC.PERMISSION_MATRIX['QC'] must say true for
       // WORK_LOG_AMEND/VOID so the QC_REVIEWER alias (same canonical row)

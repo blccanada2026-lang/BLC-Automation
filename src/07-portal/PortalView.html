@@ -438,6 +438,7 @@
         <button class="btn-muted btn-sm" id="btn-send-feedback" style="display:none">✉ Send Feedback Requests</button>
         <button class="btn-muted btn-sm" id="btn-send-ratings" style="display:none">📋 Send Rating Requests</button>
         <button class="btn-warning btn-sm" id="btn-run-billing" style="display:none">🧾 Run Billing</button>
+        <button class="btn-muted btn-sm" id="btn-generate-timesheet" style="display:none">📄 Generate Timesheet</button>
         <button class="btn-muted btn-sm" id="btn-run-bonus" style="display:none">💰 Run Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-quarterly-bonus" style="display:none">🏆 Run Quarterly Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-annual-bonus" style="display:none">🎁 Run Annual Bonus</button>
@@ -808,6 +809,31 @@
     <div class="modal-footer">
       <button class="btn-muted" data-close="modal-create">Cancel</button>
       <button class="btn-primary" id="btn-submit-create">Create Job</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ GENERATE TIMESHEET MODAL (CEO/HR_ACCOUNTING only) ═══════ -->
+<div class="modal-backdrop" id="modal-generate-timesheet">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Generate Timesheet</h3>
+      <button class="modal-close" data-close="modal-generate-timesheet">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>Client</label>
+        <select id="gts-client">
+          <option value="">— All Active Clients —</option>
+        </select></div>
+      <div class="field"><label>Start Date</label>
+        <input id="gts-start-date" type="date"></div>
+      <div class="field"><label>End Date</label>
+        <input id="gts-end-date" type="date"></div>
+      <div id="gts-results" style="margin-top:12px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-muted" data-close="modal-generate-timesheet">Close</button>
+      <button class="btn-primary" id="btn-submit-generate-timesheet">Generate PDF</button>
     </div>
   </div>
 </div>
@@ -1309,6 +1335,8 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-send-ratings').addEventListener('click',      sendRatingRequests);
   document.getElementById('btn-sbs-intake').addEventListener('click',        processSbsIntake);
   document.getElementById('btn-run-billing').addEventListener('click',       runBillingRun);
+  document.getElementById('btn-generate-timesheet').addEventListener('click', openGenerateTimesheetModal);
+  document.getElementById('btn-submit-generate-timesheet').addEventListener('click', submitGenerateTimesheet);
   document.getElementById('btn-run-bonus').addEventListener('click',         runBonusRun);
   document.getElementById('btn-run-quarterly-bonus').addEventListener('click', runQuarterlyBonus);
   document.getElementById('btn-run-annual-bonus').addEventListener('click',    runAnnualBonus);
@@ -1427,6 +1455,7 @@ function onDataLoaded(jsonStr) {
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-feedback').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-ratings').style.display    = 'inline-block';
   if (_data.perms.canRunBilling)      document.getElementById('btn-run-billing').style.display            = 'inline-block';
+  if (_data.perms.canGenerateTimesheet) document.getElementById('btn-generate-timesheet').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-bonus').style.display              = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-quarterly-bonus').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-annual-bonus').style.display      = 'inline-block';
@@ -1696,7 +1725,8 @@ function renderPortal_(data) {
   // Hide ALL toolbar + dashboard action buttons before re-showing what this role gets
   var allBtns = ['btn-create-job','btn-sbs-intake','btn-process-queue','btn-clients',
                  'btn-leader-dash','btn-staff-panel',
-                 'btn-send-briefing','btn-send-feedback','btn-send-ratings','btn-run-billing','btn-run-bonus',
+                 'btn-send-briefing','btn-send-feedback','btn-send-ratings','btn-run-billing',
+                 'btn-generate-timesheet','btn-run-bonus',
                  'btn-run-quarterly-bonus','btn-run-annual-bonus','btn-rebuild-views',
                  'btn-refresh-dashboard',
                  'btn-approve-payroll','lbl-test-mode'];
@@ -1715,6 +1745,7 @@ function renderPortal_(data) {
   if (perms.isLeader)        document.getElementById('btn-leader-dash').style.display   = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-staff-panel').style.display   = 'inline-block';
   if (perms.canRunBilling)   document.getElementById('btn-run-billing').style.display         = 'inline-block';
+  if (perms.canGenerateTimesheet) document.getElementById('btn-generate-timesheet').style.display = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-run-quarterly-bonus').style.display = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-run-annual-bonus').style.display    = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-rebuild-views').style.display        = 'inline-block';
@@ -4262,6 +4293,82 @@ function runBillingRun() {
       showToast('Billing run error: ' + (err.message || String(err)), 'error');
     })
     .portal_runBillingRun('');
+}
+
+// ── Generate Timesheet Modal (CEO/HR_ACCOUNTING only) ───────────
+function openGenerateTimesheetModal() {
+  var sel = document.getElementById('gts-client');
+  clearSelect(sel, '— All Active Clients —');
+  document.getElementById('gts-start-date').value = '';
+  document.getElementById('gts-end-date').value   = '';
+  clearResults('gts-results');
+  openModal('modal-generate-timesheet');
+
+  TOKEN_RUN
+    .withSuccessHandler(function(json) {
+      var clients = JSON.parse(json);
+      for (var i = 0; i < clients.length; i++) {
+        sel.appendChild(buildOption(clients[i].client_code,
+          clients[i].client_name + ' (' + clients[i].client_code + ')'));
+      }
+    })
+    .withFailureHandler(function() {
+      showToast('Could not load client list — "All Active Clients" still works.', 'warning');
+    })
+    .portal_getClientList();
+}
+
+function clearResults(id) {
+  var el = document.getElementById(id);
+  while (el.firstChild) el.removeChild(el.firstChild);
+}
+
+function submitGenerateTimesheet() {
+  var clientCode = val('gts-client');
+  var startDate  = val('gts-start-date');
+  var endDate    = val('gts-end-date');
+
+  if (!startDate || !endDate) { showToast('Start and end date are both required.', 'error'); return; }
+  if (startDate > endDate)    { showToast('Start date must be on or before end date.', 'error'); return; }
+
+  clearResults('gts-results');
+  showLoading(true);
+  TOKEN_RUN
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      var result = JSON.parse(json);
+      renderTimesheetResults(result.results);
+      if (result.generated === 0) {
+        showToast('No billable entries found for that range.', 'warning');
+      } else {
+        showToast(result.generated + ' timesheet PDF(s) generated.', 'success');
+      }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Timesheet generation error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_generateTimesheetPdf(clientCode, startDate, endDate);
+}
+
+function renderTimesheetResults(results) {
+  var container = document.getElementById('gts-results');
+  clearResults('gts-results');
+  if (!results || results.length === 0) return;
+
+  var list = document.createElement('ul');
+  list.style.cssText = 'margin:0;padding-left:18px;font-size:13px';
+  results.forEach(function(r) {
+    var li   = document.createElement('li');
+    var link = document.createElement('a');
+    link.href        = r.driveUrl;
+    link.target       = '_blank';
+    link.rel          = 'noopener';
+    link.textContent = r.client + ' — ' + r.entries + ' entries, ' + r.total_hours + 'h';
+    li.appendChild(link);
+    list.appendChild(li);
+  });
+  container.appendChild(list);
 }
 
 function runBonusRun() {

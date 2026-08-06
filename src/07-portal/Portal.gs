@@ -541,6 +541,36 @@ function portal_sendCEOBriefing(ptoken) {
 }
 
 // ============================================================
+// portal_generateTimesheetPdf — timesheet PDF for an arbitrary period
+// ============================================================
+
+/**
+ * Generates a polished PDF timesheet for one client (or every active
+ * client, if clientCode is blank) over an arbitrary date range.
+ * CEO/HR_ACCOUNTING only (TIMESHEET_GENERATE + enforceFinancialAccess
+ * — RBAC.gs's PERMISSION_MATRIX already grants TIMESHEET_GENERATE to
+ * CEO/SYSTEM/HR_ACCOUNTING only, same as PAYROLL_PREVIEW/REPORT_GENERATE).
+ *
+ * @param {string} clientCode  Client code, or '' for every active client.
+ * @param {string} startDate   'YYYY-MM-DD'
+ * @param {string} endDate     'YYYY-MM-DD'
+ * @returns {string}  JSON: { generated, results: Array<{driveUrl, entries, client, start_date, end_date, total_hours}> }
+ */
+function portal_generateTimesheetPdf(ptoken, clientCode, startDate, endDate) {
+  var email = PortalAuth.resolveEmail(ptoken);
+  var actor = RBAC.resolveActor(email);
+  RBAC.enforcePermission(actor, RBAC.ACTIONS.TIMESHEET_GENERATE);
+  RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.TIMESHEET_GENERATE);
+
+  var cc = String(clientCode || '').trim();
+  var results = cc
+    ? [generateTimesheetPdf(cc, startDate, endDate)].filter(Boolean)
+    : generateAllTimesheetPdfsForRange(startDate, endDate);
+
+  return JSON.stringify({ generated: results.length, results: results });
+}
+
+// ============================================================
 // portal_confirmPaystub — staff confirms their own paystub
 // ============================================================
 
