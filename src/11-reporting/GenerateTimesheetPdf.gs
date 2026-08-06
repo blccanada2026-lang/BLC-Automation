@@ -56,10 +56,13 @@ function gtp_isoToDate_(iso) {
  * @param {string} client          Client code (e.g. 'ACME'). Required.
  * @param {string|Date} startDate  'YYYY-MM-DD' or a Date. Required.
  * @param {string|Date} endDate    'YYYY-MM-DD' or a Date. Required, >= startDate.
+ * @param {string} [viewerEmail]   Grants this address VIEW access on the
+ *   created PDF — see exportHtmlAsPdf_'s own comment for why this
+ *   matters for portal callers specifically.
  * @returns {{ driveUrl: string, entries: number, client: string,
  *             start_date: string, end_date: string, total_hours: number }|null}
  */
-function generateTimesheetPdf(client, startDate, endDate) {
+function generateTimesheetPdf(client, startDate, endDate, viewerEmail) {
   var data = generateTimesheet(client, startDate, endDate); // validates client/dates, throws on bad input
 
   if (data.entries.length === 0) {
@@ -90,7 +93,7 @@ function generateTimesheetPdf(client, startDate, endDate) {
     data.client, clientInfo.client_name, clientInfo.address, periodId, label, entries, staffMap, summary
   );
   var fileName = 'BLC-Timesheet_' + data.client + '_' + data.start_date + '_to_' + data.end_date + '.pdf';
-  var driveUrl = ClientTimesheetEngine.exportHtmlAsPdf_(html, fileName);
+  var driveUrl = ClientTimesheetEngine.exportHtmlAsPdf_(html, fileName, viewerEmail);
 
   return {
     driveUrl:    driveUrl,
@@ -108,11 +111,21 @@ function generateTimesheetPdf(client, startDate, endDate) {
  * skipped (same as generateTimesheetPdf's null contract) — not an
  * error, just nothing to bill.
  *
+ * RULE P1 quota guard: each client does 2 DriveApp.createFile calls
+ * plus an HTML->PDF conversion — seconds of real work per client, not
+ * the cheap per-record case RULE P1's usual "check every 20" cadence
+ * assumes. Checked every iteration instead, since a handful of
+ * remaining clients could each individually push past the 6-minute
+ * execution limit. Stops before starting a client it can't safely
+ * finish and reports what was skipped — never a silent partial run.
+ *
  * @param {string|Date} startDate
  * @param {string|Date} endDate
- * @returns {Array<ReturnType<generateTimesheetPdf>>}  Only non-null results.
+ * @param {string} [viewerEmail]  See generateTimesheetPdf's own comment.
+ * @returns {{ results: Array<ReturnType<generateTimesheetPdf>>,
+ *             truncated: boolean, remainingClients: Array<string> }}
  */
-function generateAllTimesheetPdfsForRange(startDate, endDate) {
+function generateAllTimesheetPdfsForRange(startDate, endDate, viewerEmail) {
   var activeCodes = [];
   try {
     var rows = DAL.readAll(Config.TABLES.DIM_CLIENT_MASTER, { callerModule: 'GenerateTimesheetPdf' });
@@ -122,11 +135,22 @@ function generateAllTimesheetPdfsForRange(startDate, endDate) {
       }
     });
   } catch (e) { /* no clients configured */ }
+  activeCodes = activeCodes.filter(Boolean);
 
   var results = [];
-  activeCodes.filter(Boolean).forEach(function (code) {
-    var pdf = generateTimesheetPdf(code, startDate, endDate);
+  var i;
+  for (i = 0; i < activeCodes.length; i++) {
+    if (HealthMonitor.isApproachingLimit()) break;
+    var pdf = generateTimesheetPdf(activeCodes[i], startDate, endDate, viewerEmail);
     if (pdf) results.push(pdf);
-  });
-  return results;
+  }
+
+  var truncated = i < activeCodes.length;
+  if (truncated) {
+    Logger.warn('TIMESHEET_PDF_RANGE_QUOTA_CUTOFF', {
+      module: 'GenerateTimesheetPdf', processed: i, total: activeCodes.length
+    });
+  }
+
+  return { results: results, truncated: truncated, remainingClients: activeCodes.slice(i) };
 }

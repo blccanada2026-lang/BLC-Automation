@@ -42,6 +42,10 @@ function installMocks() {
   global.Logger = { info: function () {}, warn: function () {}, error: function () {} };
   var idCounter = 0;
   global.Identifiers = { generateId: function () { idCounter++; return 'RUN-' + idCounter; } };
+  global.HealthMonitor = { isApproachingLimit: function () { return false; } };
+
+  var addViewerCalls = [];
+  store.__addViewerCalls = addViewerCalls;
 
   // Drive mocks for ClientTimesheetEngine.exportHtmlAsPdf_. createFile is
   // called twice (HTML temp file, then the converted PDF file) — the
@@ -57,6 +61,7 @@ function installMocks() {
       return {
         getAs: function () { return { setName: function (name) { return { __pdf: true, name: name }; } }; },
         setTrashed: function () {},
+        addViewer: function (email) { addViewerCalls.push({ fileName: blob.name, email: email }); },
         getUrl: function () { return isPdf ? ('https://drive.example/' + blob.name) : 'https://drive.example/temp'; }
       };
     }
@@ -168,14 +173,62 @@ describe('generateAllTimesheetPdfsForRange(startDate, endDate)', () => {
       { job_number: 'BLC-011', actor_code: 'SYR', hours: 2, work_date: '2026-08-04' }
     ]);
 
-    const results = generateAllTimesheetPdfsForRange('2026-08-01', '2026-08-20');
+    const outcome = generateAllTimesheetPdfsForRange('2026-08-01', '2026-08-20');
 
-    const clients = results.map(r => r.client).sort();
+    const clients = outcome.results.map(r => r.client).sort();
     expect(clients).toEqual(['ACME']); // INACTIVE skipped by active filter, EMPTY skipped for zero entries
+    expect(outcome.truncated).toBe(false);
+    expect(outcome.remainingClients).toEqual([]);
   });
 
-  test('returns an empty array when no clients are configured', () => {
-    const results = generateAllTimesheetPdfsForRange('2026-08-01', '2026-08-20');
-    expect(results).toEqual([]);
+  test('returns an empty results array when no clients are configured', () => {
+    const outcome = generateAllTimesheetPdfsForRange('2026-08-01', '2026-08-20');
+    expect(outcome.results).toEqual([]);
+    expect(outcome.truncated).toBe(false);
+  });
+
+  test('RULE P1: stops before starting a client once HealthMonitor reports approaching the limit, reports what was skipped', () => {
+    seedClients([
+      { client_code: 'ACME', client_name: 'Acme', active: 'TRUE' },
+      { client_code: 'BETA', client_name: 'Beta', active: 'TRUE' }
+    ]);
+    seedJobs([
+      { job_number: 'BLC-020', client_code: 'ACME' },
+      { job_number: 'BLC-021', client_code: 'BETA' }
+    ]);
+    seedWorkLogs('2026-08', [
+      { job_number: 'BLC-020', actor_code: 'SYR', hours: 1, work_date: '2026-08-04' },
+      { job_number: 'BLC-021', actor_code: 'SYR', hours: 1, work_date: '2026-08-04' }
+    ]);
+    global.HealthMonitor.isApproachingLimit = jest.fn().mockReturnValue(true);
+
+    const outcome = generateAllTimesheetPdfsForRange('2026-08-01', '2026-08-20');
+
+    expect(outcome.results).toEqual([]);
+    expect(outcome.truncated).toBe(true);
+    expect(outcome.remainingClients).toEqual(['ACME', 'BETA']);
+  });
+
+  test('threads viewerEmail through to Drive sharing for every generated PDF', () => {
+    seedClients([{ client_code: 'ACME', client_name: 'Acme', active: 'TRUE' }]);
+    seedJobs([{ job_number: 'BLC-022', client_code: 'ACME' }]);
+    seedWorkLogs('2026-08', [{ job_number: 'BLC-022', actor_code: 'SYR', hours: 1, work_date: '2026-08-04' }]);
+
+    generateAllTimesheetPdfsForRange('2026-08-01', '2026-08-20', 'ceo@blclotus.com');
+
+    expect(store.__addViewerCalls).toEqual([
+      { fileName: 'BLC-Timesheet_ACME_2026-08-01_to_2026-08-20.pdf', email: 'ceo@blclotus.com' }
+    ]);
+  });
+});
+
+describe('generateTimesheetPdf — viewerEmail sharing', () => {
+  test('does not call addViewer when viewerEmail is omitted (Apps-Script-editor callers keep prior behavior)', () => {
+    seedJobs([{ job_number: 'BLC-023', client_code: 'ACME' }]);
+    seedWorkLogs('2026-08', [{ job_number: 'BLC-023', actor_code: 'SYR', hours: 1, work_date: '2026-08-04' }]);
+
+    generateTimesheetPdf('ACME', '2026-08-01', '2026-08-20');
+
+    expect(store.__addViewerCalls).toEqual([]);
   });
 });

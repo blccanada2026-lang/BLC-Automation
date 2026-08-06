@@ -554,7 +554,8 @@ function portal_sendCEOBriefing(ptoken) {
  * @param {string} clientCode  Client code, or '' for every active client.
  * @param {string} startDate   'YYYY-MM-DD'
  * @param {string} endDate     'YYYY-MM-DD'
- * @returns {string}  JSON: { generated, results: Array<{driveUrl, entries, client, start_date, end_date, total_hours}> }
+ * @returns {string}  JSON: { generated, truncated, remainingClients,
+ *   results: Array<{driveUrl, entries, client, start_date, end_date, total_hours}> }
  */
 function portal_generateTimesheetPdf(ptoken, clientCode, startDate, endDate) {
   var email = PortalAuth.resolveEmail(ptoken);
@@ -563,11 +564,16 @@ function portal_generateTimesheetPdf(ptoken, clientCode, startDate, endDate) {
   RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.TIMESHEET_GENERATE);
 
   var cc = String(clientCode || '').trim();
-  var results = cc
-    ? [generateTimesheetPdf(cc, startDate, endDate)].filter(Boolean)
-    : generateAllTimesheetPdfsForRange(startDate, endDate);
+  var outcome = cc
+    ? { results: [generateTimesheetPdf(cc, startDate, endDate, email)].filter(Boolean), truncated: false, remainingClients: [] }
+    : generateAllTimesheetPdfsForRange(startDate, endDate, email);
 
-  return JSON.stringify({ generated: results.length, results: results });
+  return JSON.stringify({
+    generated:        outcome.results.length,
+    truncated:        outcome.truncated,
+    remainingClients: outcome.remainingClients,
+    results:          outcome.results
+  });
 }
 
 // ============================================================

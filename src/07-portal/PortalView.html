@@ -352,6 +352,7 @@
       <button class="btn-muted btn-sm" id="btn-staff-panel" style="display:none">👤 Staff</button>
       <button class="btn-muted btn-sm" id="btn-sbs-intake" style="display:none">⬆ Process SBS Jobs</button>
       <button class="btn-muted btn-sm" id="btn-preview-as" style="display:none">👁 Preview As</button>
+      <button class="btn-muted btn-sm" id="btn-generate-timesheet" style="display:none">📄 Generate Timesheet</button>
       <button class="btn-primary btn-sm" id="btn-create-job" style="display:none">+ New Job</button>
     </div>
   </div>
@@ -438,7 +439,6 @@
         <button class="btn-muted btn-sm" id="btn-send-feedback" style="display:none">✉ Send Feedback Requests</button>
         <button class="btn-muted btn-sm" id="btn-send-ratings" style="display:none">📋 Send Rating Requests</button>
         <button class="btn-warning btn-sm" id="btn-run-billing" style="display:none">🧾 Run Billing</button>
-        <button class="btn-muted btn-sm" id="btn-generate-timesheet" style="display:none">📄 Generate Timesheet</button>
         <button class="btn-muted btn-sm" id="btn-run-bonus" style="display:none">💰 Run Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-quarterly-bonus" style="display:none">🏆 Run Quarterly Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-annual-bonus" style="display:none">🎁 Run Annual Bonus</button>
@@ -1449,13 +1449,16 @@ function onDataLoaded(jsonStr) {
   if (_data.perms.isLeader)      document.getElementById('btn-leader-dash').style.display     = 'inline-block';
   if (_data.perms.canManageStaff) document.getElementById('btn-staff-panel').style.display    = 'inline-block';
   if (_data.perms.canRunPayroll) document.getElementById('btn-preview-as').style.display      = 'inline-block';
+  // Not nested in the isLeader-gated block below — HR_ACCOUNTING has
+  // canGenerateTimesheet but is not a leader (isLeader = CEO/PM/TEAM_LEAD),
+  // so this must be reachable from the always-evaluated main toolbar.
+  if (_data.perms.canGenerateTimesheet) document.getElementById('btn-generate-timesheet').style.display = 'inline-block';
 
   // Leader dashboard payroll action buttons
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-briefing').style.display  = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-feedback').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-ratings').style.display    = 'inline-block';
   if (_data.perms.canRunBilling)      document.getElementById('btn-run-billing').style.display            = 'inline-block';
-  if (_data.perms.canGenerateTimesheet) document.getElementById('btn-generate-timesheet').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-bonus').style.display              = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-quarterly-bonus').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-annual-bonus').style.display      = 'inline-block';
@@ -1742,10 +1745,10 @@ function renderPortal_(data) {
   if (perms.canCreateJob)    document.getElementById('btn-sbs-intake').style.display    = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-process-queue').style.display = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-clients').style.display       = 'inline-block';
+  if (perms.canGenerateTimesheet) document.getElementById('btn-generate-timesheet').style.display = 'inline-block';
   if (perms.isLeader)        document.getElementById('btn-leader-dash').style.display   = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-staff-panel').style.display   = 'inline-block';
   if (perms.canRunBilling)   document.getElementById('btn-run-billing').style.display         = 'inline-block';
-  if (perms.canGenerateTimesheet) document.getElementById('btn-generate-timesheet').style.display = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-run-quarterly-bonus').style.display = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-run-annual-bonus').style.display    = 'inline-block';
   if (perms.canRunPayroll)   document.getElementById('btn-rebuild-views').style.display        = 'inline-block';
@@ -4340,6 +4343,10 @@ function submitGenerateTimesheet() {
       renderTimesheetResults(result.results);
       if (result.generated === 0) {
         showToast('No billable entries found for that range.', 'warning');
+      } else if (result.truncated) {
+        showToast(result.generated + ' generated — stopped early (execution limit), ' +
+          result.remainingClients.length + ' client(s) not yet run: ' +
+          result.remainingClients.join(', '), 'warning');
       } else {
         showToast(result.generated + ' timesheet PDF(s) generated.', 'success');
       }

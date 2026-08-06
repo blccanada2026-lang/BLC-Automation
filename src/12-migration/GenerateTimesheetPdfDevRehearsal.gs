@@ -14,6 +14,14 @@
 // DEV (safe: read-only on FACT/VW, the only write is a new Drive PDF
 // file, same as running runGenerateClientTimesheets() manually).
 //
+// This script alone CANNOT prove the addViewer() Drive-sharing fix
+// (ClientTimesheetEngine.exportHtmlAsPdf_'s viewerEmail param) actually
+// helps a real portal user — it runs as its own operator, who already
+// owns the files it creates. That needs a real CEO/HR_ACCOUNTING
+// account clicking "Generate PDF" in the portal itself and confirming
+// they can open the returned link — see the reminder this script
+// prints at the end.
+//
 // HOW TO RUN (Apps Script editor, DEV project only):
 //   runGenerateTimesheetPdfDevRehearsal()                                   — all active clients, current month to date
 //   runGenerateTimesheetPdfDevRehearsal('SBS', '2026-08-01', '2026-08-20')  — one client, explicit range
@@ -46,17 +54,25 @@ function runGenerateTimesheetPdfDevRehearsal(clientCode, startDate, endDate) {
   var end   = endDate   || generateTimesheetPdfDevRehearsal_toIso_(now);
 
   var pdfResults = [];
+  var truncated  = false;
   var runErr     = null;
+  var viewerEmail = Session.getActiveUser().getEmail(); // proves the addViewer share path against a real Drive too
   try {
-    pdfResults = clientCode
-      ? [generateTimesheetPdf(clientCode, start, end)].filter(Boolean)
-      : generateAllTimesheetPdfsForRange(start, end);
+    if (clientCode) {
+      pdfResults = [generateTimesheetPdf(clientCode, start, end, viewerEmail)].filter(Boolean);
+    } else {
+      var outcome = generateAllTimesheetPdfsForRange(start, end, viewerEmail);
+      pdfResults = outcome.results;
+      truncated  = outcome.truncated;
+    }
   } catch (e) { runErr = e.message; }
 
   check('Real-data range does not throw', runErr === null, runErr || '');
   check('At least one PDF was generated for ' + start + ' to ' + end,
     pdfResults.length > 0,
     'Got 0 results — try passing a client_code/date range known to have logged hours in DEV.');
+  check('Did not hit the RULE P1 quota cutoff for this small a run', !truncated,
+    'truncated=true — unexpected for a normal-size DEV rehearsal run.');
 
   pdfResults.forEach(function (r) {
     check('PDF for ' + r.client + ' has a real Drive URL', /^https:\/\/.*drive/.test(r.driveUrl || ''), r.driveUrl || '');
@@ -66,6 +82,10 @@ function runGenerateTimesheetPdfDevRehearsal(clientCode, startDate, endDate) {
   console.log('');
   console.log('=== RESULT: ' + results.pass + ' passed, ' + results.fail + ' failed ===');
   console.log('Open the Drive URL(s) above and eyeball the PDF — correct client name/address, dates in range, designer names resolved, totals add up.');
+  console.log('NOTE: this script runs as ' + viewerEmail + ', who already owns these files by default — ' +
+    'it cannot prove the addViewer() share actually helps a DIFFERENT user. Verify that separately: have an ' +
+    'actual CEO/HR_ACCOUNTING account click "Generate PDF" in the real portal and confirm THEY can open the ' +
+    'returned link.');
   if (results.fail > 0) {
     console.log('FAILURES:');
     results.failures.forEach(function (f) { console.log('  - ' + f); });
