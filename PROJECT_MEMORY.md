@@ -164,6 +164,16 @@ The three all-type rules exist specifically because `BCH`/`SDA`/`SVN` report to 
 
 ---
 
+## 3.7 Standing Finding — DEV Has No Live (Non-Migrated) `FACT_WORK_LOGS` Data
+
+**The finding, verbatim:** as of 2026-08-06, DEV has zero non-migrated `FACT_WORK_LOGS` rows. Everything in DEV dated before June 2026 is stamped `event_type: WORK_LOG_MIGRATED`/`WORK_LOG_MIGRATION` from the V2→V3 migration and is correctly excluded by `isMigratedWorkLog()` — the same exclusion every timesheet/billing/payroll calculation applies, not a bug. Nothing has been logged live in DEV since. Any feature that reads real work-log hours (timesheets, billing, payroll previews) will return **zero results for any real client/period in DEV**, regardless of how much raw data sits in a `FACT_WORK_LOGS|YYYY-MM` sheet.
+
+**Origin, 2026-08-06** — discovered while trying to DEV-verify the timesheet-for-any-period feature (`GenerateTimesheetPdf.gs`, PR #15) against real DEV data; every attempt against real clients/current-month and even a wide 2026-01-01-to-today range returned 0 entries.
+
+**How to test anything that reads `FACT_WORK_LOGS` in DEV going forward:** don't rely on real client data existing — seed one small synthetic entry instead (`TEST-CLIENT`, a non-migrated `event_type` like `WORK_LOG_SUBMITTED`, a partition after May 2026, e.g. `2026-06`), narrow-filtered reset before and after. See `GenerateTimesheetPdfDevRehearsal.gs`'s `runGenerateTimesheetPdfMechanismProof()` for the pattern. Business-content correctness (does output match a real historical document) still can't be checked this way — that needs PROD.
+
+---
+
 ## 4. Database / Sheet / Table Structure
 
 Key tables only. Full list in `.claude/context/architecture.md §Key Tables`.
@@ -195,6 +205,7 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
 - V2→V3 migration: Jan–May 2026 work logs (2000+ rows), active jobs (168), Stacey auto-sync
 - CEO daily briefing email (8 AM CST Mon–Sat via `runCEODailyBriefing`)
 - CEO portal: client-grouped collapsible jobs view + grouped QC backlog panel
+- **2026-08-06**: Timesheet-for-any-period feature (CEO/HR_ACCOUNTING only) — PR #15, deployed PROD `4c07df5`. Fixed Run Billing's identical `isLeader` UI unreachability bug in the same PR.
 - **2026-06-16**: PROD cutover complete — Stacey sync removed, staff on V3 portal
 - **2026-06-18**: Post-cutover bug fix batch (Sarty's team feedback):
   - RBAC: TEAM_LEAD `QC_APPROVE/REJECT: true`; QC role `JOB_START: true`

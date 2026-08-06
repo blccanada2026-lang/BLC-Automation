@@ -42,14 +42,31 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ## Session State (last updated: end of turn, 2026-08-06)
 
-**Just completed — job-create duplicate-prevention thread fully closed.**
+**Just completed — timesheet-for-any-period feature shipped, PROD deploy
+done, New Version redeploy still pending user confirmation.** PR #15
+merged (`4c07df5`), pushed to PROD (161 files), 491/491 Jest passing,
+DEV mechanism-proof rehearsal 5/5 green (synthetic data — DEV has no
+real non-migrated FACT_WORK_LOGS at all). Also fixed Run Billing's
+identical `isLeader` UI trap in the same PR (HR_ACCOUNTING/ADMIN
+granted `BILLING_RUN` since PR #11 but could never see the button).
+
+**Next action:** confirm the New Version redeploy happened in PROD
+(mandatory — this PR touches `PortalView.html`/`Portal.gs`), then:
+(1) CEO smoke-test Generate Timesheet with one real client/small range
+before wider rollout; (2) the first-ever real HR_ACCOUNTING/ADMIN
+click on Run Billing should be supervised, not unattended, since it's
+now reachable for the first time; (3) for the manual-timesheet
+comparison the user wants, start with one known real period/client,
+not a bulk "all clients" run.
+
+---
+
+**Previously completed this session — job-create duplicate-prevention thread fully closed.**
 Prevention fix (60s content-duplicate guard, designer-aware per user's
 Matix roof/floor correction) shipped as PR #14, merged (`c19b945`),
 482/482 Jest passing, DEV rehearsal 8/8 green against real Sheets, pushed
 to PROD (159 files), and user has confirmed the New Version redeploy is
-done. Nothing outstanding on this thread. Next thread to pick up: the
-paused CEO/HR-only timesheet-for-any-period feature (see PR #11's
-"Not done in this pass" note below for design direction already agreed).
+done. Nothing outstanding on this thread.
 
 ---
 

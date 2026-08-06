@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-08-06 Session (Timesheet-for-any-period feature shipped; Run Billing's isLeader trap fixed)
+
+### Work Completed
+- **Timesheet-for-any-period feature** (PR #15, merged/deployed to PROD `4c07df5`): CEO/HR_ACCOUNTING-only "Generate Timesheet" button — arbitrary date range, any client or all active clients, same polished PDF output as the existing fixed-period timesheets. New `GenerateTimesheetPdf.gs` bridges the already-shipped `generateTimesheet()` (Phase B1 Item 4) with `ClientTimesheetEngine.gs`'s HTML/PDF pipeline. `RBAC.gs`'s `TIMESHEET_GENERATE` was already correctly CEO/SYSTEM/HR_ACCOUNTING-only — no matrix change needed.
+- **Advisor review before DEV push caught 3 real gaps, all fixed**: (1) button was nested inside the `isLeader`-gated leader-dashboard, unreachable for HR_ACCOUNTING — moved to the main toolbar; (2) added a RULE P1 quota guard to the all-clients generation loop (`HealthMonitor.isApproachingLimit()` checked every iteration, since each client does real Drive PDF-conversion work); (3) generated PDFs now explicitly shared with the requesting user (`exportHtmlAsPdf_`'s new optional `viewerEmail` param) — portal calls resolve identity from a token, not `Session`, so without this a returned Drive link could 404 for whoever generated it.
+- **Same-root-cause bonus fix**: `Run Billing` (PR #11) had the identical `isLeader` trap — HR_ACCOUNTING/ADMIN were granted `BILLING_RUN` weeks ago but could never see the button. Fixed in this same PR (moved to main toolbar). No RBAC change — `canRunBilling` was already correct, only its container was unreachable for 2 of its 3 granted roles.
+- **DEV verification finding**: DEV has no live (non-migrated) `FACT_WORK_LOGS` data at all — everything before June 2026 is excluded by the standard `isMigratedWorkLog()` exclusion, and nothing has been logged in DEV since. Built `runGenerateTimesheetPdfMechanismProof()` — seeds one synthetic non-migrated TEST-CLIENT entry, generates a real PDF, verifies it, cleans up — to prove the real Drive pipeline works without depending on real DEV data. Ran clean: 5/5, real PDF + real Drive URL.
+
+### Files Changed
+- `src/07-portal/Portal.gs`, `PortalData.gs`, `PortalView.html`
+- `src/11-reporting/ClientTimesheetEngine.gs`, `GenerateTimesheetPdf.gs` (new)
+- `src/12-migration/GenerateTimesheetPdfDevRehearsal.gs` (new)
+- `src/01-dal/DAL.gs` (WRITE_PERMISSIONS: registered `GenerateTimesheetPdfDevRehearsal`)
+
+### Tests Run
+- Jest: 491/491 passing (9 new tests: happy path, empty-range null, cross-month range, active-client loop, P1 truncation, viewerEmail sharing)
+- DEV mechanism proof against real Drive: 5/5 passing
+
+### Issues Found
+- None outstanding on the mechanism itself. Two things remain genuinely unverifiable anywhere except PROD (DEV structurally lacks the data/actors): HR_ACCOUNTING's live button/click flow, and business-content correctness against a real historical manually-sent timesheet.
+
+### Next Recommended Step
+- Post-deploy: CEO smoke-test Generate Timesheet in PROD with one real client/small range before wider rollout. Before HR_ACCOUNTING/ADMIN use Run Billing for the first time ever (now reachable), do that first click supervised, not unattended. For the manual-timesheet comparison, start with one known real period/client, not a bulk run.
+
+---
+
 ## 2026-08-05 → 2026-08-06 Session (RBAC audit + billing-access fix; Sarty duplicate-job incident diagnosed, fixed, and prevented)
 
 ### Work Completed
