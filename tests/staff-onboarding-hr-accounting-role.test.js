@@ -29,6 +29,11 @@ beforeEach(() => {
   mocks.Config.TABLES.STG_STAFF_IMPORT = 'STG_STAFF_IMPORT';
   mocks.HealthMonitor = { isApproachingLimit: () => false };
   global.HealthMonitor = mocks.HealthMonitor;
+  // 2026-08-06: onboardStaff() now fires a best-effort welcome email
+  // (StaffOnboardingMailer.gs) for genuinely new staff — irrelevant to
+  // role validation, which is what this file tests. See
+  // staff-onboarding-email.test.js for the email's own coverage.
+  global.sendNewStaffOnboardingEmail_ = function () {};
   loadSrc('../src/08-staff/StaffOnboarding.gs');
 });
 
