@@ -203,20 +203,58 @@ var JobCreateHandler = (function () {
   var RECENT_DUPLICATE_WINDOW_MS_ = 60 * 1000;
 
   /**
+   * Resolves "the designer this submission is intended for," for
+   * duplicate-comparison purposes only. Two sources, in priority order:
+   *   1. rawPayload._intended_designer — set by portal_createJob()
+   *      (Portal.gs) specifically for this comparison. NOT a
+   *      JOB_CREATE_SCHEMA field, so ValidationEngine strips it from
+   *      cleanPayload — it never affects initial state or the
+   *      VW_JOB_CURRENT_STATE allocated_to column. Needed because
+   *      portal_createJob()'s own JOB_CREATE payload never includes the
+   *      designer at all (it's a separate parameter, used only for a
+   *      SEPARATE, subsequent JobAssignHandler.handle() call) — without
+   *      this, every portal-created job would compare as
+   *      designer="", making this guard unable to tell two
+   *      different-designer submissions apart.
+   *   2. cleanPayload.allocated_to — the real, validated schema field,
+   *      for any OTHER caller (SBS intake, migration, etc.) that
+   *      legitimately sets allocated_to directly on the JOB_CREATE
+   *      payload itself.
+   * @returns {string}
+   */
+  function resolveIntendedDesigner_(rawPayload, cleanPayload) {
+    var hint = rawPayload && rawPayload._intended_designer;
+    if (hint) return String(hint).trim();
+    return String(cleanPayload.allocated_to || '').trim();
+  }
+
+  /**
    * Returns the most recent JOB_CREATED event matching the same
-   * client/product/description/submitter within
+   * client/product/description/submitter/designer within
    * RECENT_DUPLICATE_WINDOW_MS_, or null. Deliberately skipped when
    * client_job_ref is blank — two blank-description jobs for the same
    * client/product by the same submitter within a minute is a much
    * weaker signal and a legitimate bulk-create workflow, not
    * necessarily a mistake.
    *
-   * @param {Object} payload  Validated, clean payload object
-   * @param {Object} actor    RBAC actor from resolveActor()
+   * Designer assignment is part of the match — confirmed real business
+   * pattern (2026-08-05, some clients e.g. MATIX): the SAME
+   * client_job_ref legitimately covers multiple distinct scopes (e.g.
+   * one ref spanning both a roof and a floor job), each sometimes
+   * assigned to a DIFFERENT designer. product_code already
+   * distinguishes most of those; requiring the same designer too
+   * catches the remaining case where product_code might coincide but
+   * the work is deliberately being split across people. See
+   * resolveIntendedDesigner_ for where the designer actually comes
+   * from — it is NOT reliably cleanPayload.allocated_to.
+   *
+   * @param {Object} cleanPayload  Validated, clean payload object
+   * @param {Object} rawPayload   Unvalidated, originally-submitted payload
+   * @param {Object} actor        RBAC actor from resolveActor()
    * @returns {Object|null}
    */
-  function findRecentContentDuplicate_(payload, actor) {
-    var ref = String(payload.client_job_ref || '').trim();
+  function findRecentContentDuplicate_(cleanPayload, rawPayload, actor) {
+    var ref = String(cleanPayload.client_job_ref || '').trim();
     if (!ref) return null;
 
     var periodId = Identifiers.generateCurrentPeriodId();
@@ -226,8 +264,8 @@ var JobCreateHandler = (function () {
         Config.TABLES.FACT_JOB_EVENTS,
         {
           event_type:     Constants.EVENT_TYPES.JOB_CREATED,
-          client_code:    String(payload.client_code || ''),
-          product_code:   String(payload.product_code || ''),
+          client_code:    String(cleanPayload.client_code || ''),
+          product_code:   String(cleanPayload.product_code || ''),
           client_job_ref: ref,
           actor_code:     actor.personCode || ''
         },
@@ -238,12 +276,19 @@ var JobCreateHandler = (function () {
       throw e;
     }
 
+    var newDesigner = resolveIntendedDesigner_(rawPayload, cleanPayload);
     var now = Date.now();
     for (var i = 0; i < rows.length; i++) {
-      var ts = new Date(rows[i].timestamp).getTime();
-      if (!isNaN(ts) && now >= ts && (now - ts) < RECENT_DUPLICATE_WINDOW_MS_) {
-        return rows[i];
-      }
+      var row = rows[i];
+      var ts  = new Date(row.timestamp).getTime();
+      if (isNaN(ts) || now < ts || (now - ts) >= RECENT_DUPLICATE_WINDOW_MS_) continue;
+
+      var rowPayload = {};
+      try { rowPayload = JSON.parse(row.payload_json || '{}'); }
+      catch (e) { continue; /* malformed payload_json — can't compare designer, skip */ }
+
+      var rowDesigner = resolveIntendedDesigner_(rowPayload, rowPayload);
+      if (rowDesigner === newDesigner) return row;
     }
     return null;
   }
@@ -469,7 +514,7 @@ var JobCreateHandler = (function () {
     // comment). Clears the idempotency mark just set above before
     // throwing, so a deliberate retry of this exact queue item isn't
     // itself blocked by a stale mark from this aborted attempt.
-    var recentDupe = findRecentContentDuplicate_(cleanPayload, actor);
+    var recentDupe = findRecentContentDuplicate_(cleanPayload, payload, actor);
     if (recentDupe) {
       IdempotencyEngine.clear(idempotencyKey);
       Logger.warn('JOB_CREATE_RECENT_CONTENT_DUPLICATE', {

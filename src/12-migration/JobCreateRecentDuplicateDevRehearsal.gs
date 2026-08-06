@@ -7,6 +7,13 @@
 // identical payload — proves the second call is blocked against real
 // Sheets, not just a Jest mock.
 //
+// Also proves the 2026-08-05 designer-awareness correction: the same
+// client_job_ref submitted for two DIFFERENT designers (confirmed real
+// pattern for some clients, e.g. Matix — same ref covering both a roof
+// job and a floor job, each to a different designer) must NOT be
+// blocked. Uses the _intended_designer hint the same way
+// portal_createJob() (Portal.gs) actually sets it.
+//
 // Writes into DEV's REAL current-period FACT_JOB_EVENTS/
 // VW_JOB_CURRENT_STATE (JobCreateHandler always resolves
 // Identifiers.generateCurrentPeriodId() internally — same constraint
@@ -64,34 +71,48 @@ function runJobCreateRecentDuplicateDevRehearsal() {
   var actor = RBAC.resolveActor(JCRDDR_EMAIL_);
   check('actor resolves correctly (PM test actor)', actor && actor.personCode, JSON.stringify(actor));
 
-  var payload = {
-    client_code: JCRDDR_CLIENT_, job_type: 'DESIGN', product_code: JCRDDR_PRODUCT_,
-    quantity: 1, client_job_ref: JCRDDR_REF_
-  };
-
-  function makeQueueItem() {
-    return { queue_id: Identifiers.generateId(), payload_json: JSON.stringify(payload) };
+  function makePayload(designerCode) {
+    var p = {
+      client_code: JCRDDR_CLIENT_, job_type: 'DESIGN', product_code: JCRDDR_PRODUCT_,
+      quantity: 1, client_job_ref: JCRDDR_REF_
+    };
+    if (designerCode) p._intended_designer = designerCode;
+    return p;
   }
 
-  // ── 1. First call — must succeed ──
+  function makeQueueItem(designerCode) {
+    return { queue_id: Identifiers.generateId(), payload_json: JSON.stringify(makePayload(designerCode)) };
+  }
+
+  // ── 1. First call (designer: ALICE) — must succeed ──
   var firstJobNumber = null, firstErr = null;
   try {
-    firstJobNumber = JobCreateHandler.handle(makeQueueItem(), actor);
+    firstJobNumber = JobCreateHandler.handle(makeQueueItem('DEVREHEARSAL-ALICE'), actor);
   } catch (e) { firstErr = e.message; }
   check('First JobCreateHandler.handle() call succeeds (no throw)', firstErr === null, firstErr || '');
   check('First call returns a real job_number', !!(firstJobNumber && String(firstJobNumber).indexOf('BLC-') === 0), String(firstJobNumber));
 
-  // ── 2. Second call, same content, moments later — must be blocked ──
+  // ── 2. Second call, same content, same designer (ALICE), moments later — must be blocked ──
   var secondJobNumber = null, secondErr = null;
   try {
-    secondJobNumber = JobCreateHandler.handle(makeQueueItem(), actor);
+    secondJobNumber = JobCreateHandler.handle(makeQueueItem('DEVREHEARSAL-ALICE'), actor);
   } catch (e) { secondErr = e.message; }
-  check('Second call (same client/product/description/submitter, moments later) throws', secondErr !== null, String(secondJobNumber));
+  check('Second call (same client/product/description/submitter/designer, moments later) throws', secondErr !== null, String(secondJobNumber));
   check('Thrown message names the matched job and explains the block', !!(secondErr && secondErr.indexOf(firstJobNumber) !== -1), secondErr || '');
 
-  // ── 3. Verify exactly ONE VW row was created, not two ──
+  // ── 3. Third call, same content, DIFFERENT designer (BOB) — must NOT be blocked.
+  //    Proves the 2026-08-05 correction: same client_job_ref legitimately split
+  //    across two designers (e.g. Matix roof vs. floor) is not a false positive. ──
+  var thirdJobNumber = null, thirdErr = null;
+  try {
+    thirdJobNumber = JobCreateHandler.handle(makeQueueItem('DEVREHEARSAL-BOB'), actor);
+  } catch (e) { thirdErr = e.message; }
+  check('Third call (same client/product/description, DIFFERENT designer) does NOT throw', thirdErr === null, thirdErr || '');
+  check('Third call returns a real, distinct job_number', !!(thirdJobNumber && String(thirdJobNumber).indexOf('BLC-') === 0 && thirdJobNumber !== firstJobNumber), String(thirdJobNumber));
+
+  // ── 4. Verify exactly TWO VW rows exist — one per designer, not three ──
   var vwRows = DAL.readWhere(Config.TABLES.VW_JOB_CURRENT_STATE, { client_job_ref: JCRDDR_REF_ }, { callerModule: JCRDDR_CALLER_ });
-  check('Exactly 1 VW_JOB_CURRENT_STATE row exists for this synthetic job — no duplicate was created', vwRows.length === 1, JSON.stringify(vwRows));
+  check('Exactly 2 VW_JOB_CURRENT_STATE rows exist (ALICE + BOB) — blocked duplicate did not create a 3rd', vwRows.length === 2, JSON.stringify(vwRows));
 
   console.log('');
   console.log('=== RESULT: ' + results.pass + ' passed, ' + results.fail + ' failed ===');

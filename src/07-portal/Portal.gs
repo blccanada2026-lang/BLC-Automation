@@ -163,6 +163,19 @@ function portal_createJob(ptoken, payloadJson, designerCode) {
   try { payload = JSON.parse(payloadJson); }
   catch (e) { throw new Error('portal_createJob: invalid JSON payload.'); }
 
+  // Not a JOB_CREATE_SCHEMA field — ValidationEngine drops it from
+  // JobCreateHandler's cleanPayload, so it never affects initial state
+  // or VW_JOB_CURRENT_STATE.allocated_to (designerCode is applied via
+  // the separate JobAssignHandler call below, as before). Embedded
+  // here purely so JobCreateHandler's recent-content-duplicate guard
+  // can tell two same-client/same-product/same-description submissions
+  // apart when they're legitimately being split across different
+  // designers (confirmed real pattern for some clients — 2026-08-05) —
+  // designerCode is otherwise invisible to JobCreateHandler entirely,
+  // since it's only ever used for the assign call, never part of this
+  // payload.
+  if (designerCode) payload._intended_designer = designerCode;
+
   var now      = new Date().toISOString();
   var queueId  = Identifiers.generateId();
 
