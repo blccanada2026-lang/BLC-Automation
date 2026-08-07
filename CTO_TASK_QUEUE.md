@@ -40,25 +40,23 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ---
 
-## Session State (last updated: end of turn, 2026-08-06)
+## Session State (last updated: end of turn, 2026-08-07)
 
-**Just completed — 3 more PRs shipped same day: ADMIN granted
-TIMESHEET_GENERATE (PR #16, `12d57cc`), automatic staff-onboarding
-email feature (PR #17, `17ef362`), one-off send of Aarthi's onboarding
-email (PR #18, `84fb2c5`).** All deployed to PROD. New Version redeploy
-confirmed for PR #16 (user tested live, works). **Still pending user
-confirmation of the New Version redeploy for PR #17/#18** (touches
-`StaffOnboarding.gs`, part of the same deployed version as `Portal.gs`)
-before `runSendOnboardingEmailToARN()` can be run.
+**Just completed — full onboarding-email thread closed.** PR #16 (ADMIN
+`TIMESHEET_GENERATE`, `12d57cc`), PR #17 (automatic staff-onboarding
+email, `17ef362`), PR #18 (one-off send to Aarthi, `84fb2c5`) all
+deployed to PROD, New Version redeploy done, `runSendOnboardingEmailToARN()`
+run successfully — **user confirmed Aarthi received the email.**
+Nothing outstanding on this thread. `runSendOnboardingEmailToARN()`
+is still sitting in `StaffOnboardingMailer.gs`, harmless but no longer
+needed — safe to delete next time that file is touched, not urgent.
 
-**Next action:** (1) user does the New Version redeploy, then runs
-`runSendOnboardingEmailToARN()` once from the PROD Apps Script editor
-to send Aarthi her real onboarding email (delete the function after —
-it's a one-off); (2) Sarty is manually cross-checking regenerated
-timesheet PDFs against historical manually-sent ones — pending result;
-(3) the "first-ever supervised HR_ACCOUNTING/ADMIN Run Billing click"
-and "CEO smoke-test Generate Timesheet with one real range" items from
-the PR #15 entry below are still open, not yet confirmed done.
+**Next action / still open from earlier this session:** (1) Sarty is
+manually cross-checking regenerated timesheet PDFs against historical
+manually-sent ones — pending result, not yet confirmed; (2) the
+"first-ever supervised HR_ACCOUNTING/ADMIN Run Billing click" and "CEO
+smoke-test Generate Timesheet with one real range" items from the PR
+#15 entry below are still open, not yet confirmed done.
 
 ---
 
