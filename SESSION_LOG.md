@@ -5,6 +5,27 @@
 
 ---
 
+## 2026-08-07 Session (Pending-work audit; NORSPAN duplicate-client investigation closed)
+
+### Work Completed
+- **Pending-development-task audit** — surveyed `PROJECT_MEMORY.md`, `CTO_TASK_QUEUE.md`, `.claude/context/backlog.md`, `.claude/context/open-items.md` for a full pending-work list. Found and fixed two stale entries before reporting: `backlog.md`'s auto-onboarding-link item was already fully shipped (PR #17) but never marked done — split into a completed entry + a residual "extend to bulk import" pending item; `open-items.md`'s "review migration/ directory" item was already resolved (committed `6ed2703`, prior session) but never checked off.
+- **NORSPAN duplicate-client-entries investigation, RESOLVED** — user asked to investigate Sarty's 2026-07-08 report (plain "NORSPAN" ~55 jobs vs "NORSPAN-MB" ~4 jobs both visible), with a specific hypothesis that some apparent duplicates might be legitimate roof/floor splits sharing one job_number with different product_codes (same pattern as §3.6). Built `NorspanClientCodeCheck.gs` (read-only, PR #19, deployed PROD `afb9502`) rather than trust a 2026-07-09 fix note at face value (different job count, unclear whether jobs were voided or corrected). Real result: bare `NORSPAN` has 88 jobs, **all voided, zero active today**; `NORSPAN-MB` has 112 active jobs, zero voided; zero overlap between codes; zero in-code duplicates. Already fully cleaned up by the 2026-07-09 fix — nothing left to do. The roof/floor hypothesis was checked directly and did not reproduce for this specific report. User confirmed no billing/data-loss concern (regenerated timesheet matched Sarty's manually-sent ones) — this also closes the pending "Sarty manual cross-check" item from the day before.
+
+### Files Changed
+- `src/12-migration/NorspanClientCodeCheck.gs` (new, read-only, no writes)
+- `.claude/context/backlog.md`, `.claude/context/open-items.md` (staleness fixes)
+
+### Tests Run
+- Jest: 507/507 passing (no new tests — read-only diagnostic, same precedent as `JobDuplicateTimingCheck.gs`)
+
+### Issues Found
+- None outstanding.
+
+### Next Recommended Step
+- Still open from 2026-08-06: first supervised HR_ACCOUNTING/ADMIN click on Run Billing (now reachable for the first time), and a CEO smoke-test of Generate Timesheet with one real client/range.
+
+---
+
 ## 2026-08-06 Session Part 2 (ADMIN granted TIMESHEET_GENERATE; automatic staff-onboarding email shipped)
 
 ### Work Completed

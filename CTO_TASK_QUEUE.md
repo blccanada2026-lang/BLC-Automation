@@ -42,21 +42,24 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ## Session State (last updated: end of turn, 2026-08-07)
 
-**Just completed — full onboarding-email thread closed.** PR #16 (ADMIN
-`TIMESHEET_GENERATE`, `12d57cc`), PR #17 (automatic staff-onboarding
-email, `17ef362`), PR #18 (one-off send to Aarthi, `84fb2c5`) all
-deployed to PROD, New Version redeploy done, `runSendOnboardingEmailToARN()`
-run successfully — **user confirmed Aarthi received the email.**
-Nothing outstanding on this thread. `runSendOnboardingEmailToARN()`
+**Just completed — NORSPAN duplicate-client investigation closed, RESOLVED
+(already fixed, nothing to do).** `NorspanClientCodeCheck.gs` (read-only,
+PR #19, deployed PROD `afb9502`) confirmed: bare `NORSPAN` has 88 jobs,
+all voided, zero active today; `NORSPAN-MB` (the real client) has 112
+active jobs; zero overlap/duplicates in current data. Whatever Sarty
+saw 2026-07-08 was already cleaned up by a 2026-07-09 fix. User's
+roof/floor-same-job-number hypothesis was checked directly and did not
+reproduce here. **User also confirmed Sarty's manual timesheet
+cross-check passed** (regenerated PDF matched his manually-sent ones) —
+closes that pending item from the PR #15 thread too. Full detail in
+`PROJECT_MEMORY.md` §8.
+
+**Next action / still open from earlier this session:** the "first-ever
+supervised HR_ACCOUNTING/ADMIN Run Billing click" and "CEO smoke-test
+Generate Timesheet with one real range" items from the PR #15 entry
+below are still open, not yet confirmed done. `runSendOnboardingEmailToARN()`
 is still sitting in `StaffOnboardingMailer.gs`, harmless but no longer
 needed — safe to delete next time that file is touched, not urgent.
-
-**Next action / still open from earlier this session:** (1) Sarty is
-manually cross-checking regenerated timesheet PDFs against historical
-manually-sent ones — pending result, not yet confirmed; (2) the
-"first-ever supervised HR_ACCOUNTING/ADMIN Run Billing click" and "CEO
-smoke-test Generate Timesheet with one real range" items from the PR
-#15 entry below are still open, not yet confirmed done.
 
 ---
 
