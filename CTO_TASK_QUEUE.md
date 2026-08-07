@@ -42,24 +42,52 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ## Session State (last updated: end of turn, 2026-08-07)
 
-**Just completed — NORSPAN duplicate-client investigation closed, RESOLVED
+**Just completed — full CTO architecture/performance/tech-debt assessment
+delivered (read-only, no code changes) + trigger audit acted on.** Full
+writeup in that turn's transcript / `SESSION_LOG.md`; durable findings in
+`PROJECT_MEMORY.md` §3.8. Headlines: `src/12-migration/` is 44% of the
+codebase (mostly one-off tooling, Wave 1 cleanup candidate, not yet
+touched); `src/13-sop/` QC/SOP checklist gate is **already built**
+(3,725 lines, feature-flagged) — do not rebuild if asked for "QC/SOP
+integration"; zero performance instrumentation exists anywhere; Learning
+Hub and Growth Platform are 100% absent (confirmed, greenfield).
+
+**Trigger audit, via `runListTriggers()` (10 live triggers found), acted
+on same turn:** Stacey sync trigger confirmed gone (no incident). CEO
+daily briefing trigger was NOT installed despite being documented as
+live — real doc-vs-reality gap — **fixed**, reinstalled via the
+pre-existing `runInstallCEOBriefingTrigger()`, confirmed firing daily
+~8 AM CST Mon–Sat. Legacy `onIntakeFormSubmit` form trigger also found
+not installed — investigated, correctly left uninstalled (current SBS
+intake is 100% portal-button-triggered, no form involved; that installer
+is legacy/pre-refactor, likely predates or violates R1) — flagged as a
+Wave 1 dead-code candidate instead of reinstalled.
+
+**Next action:** two Critical Questions from the assessment are still
+open, not yet answered — (1) PROD Apps Script project ID rotation status
+(flagged security-urgent 2026-06-22, unverified); (2) current
+`SOP_ENABLED` state in PROD. Once answered, persist the confirmed
+Wave 0–5 execution sequence into this file as real EPIC/FEATURE/TASK
+entries (deliberately not written yet — user hasn't signed off on the
+wave sequencing itself). Also still open from earlier: "first-ever
+supervised HR_ACCOUNTING/ADMIN Run Billing click" and "CEO smoke-test
+Generate Timesheet with one real range." `runSendOnboardingEmailToARN()`
+is still sitting in `StaffOnboardingMailer.gs`, harmless, safe to delete
+whenever that file is next touched.
+
+---
+
+**Previously completed this session — NORSPAN duplicate-client investigation closed, RESOLVED
 (already fixed, nothing to do).** `NorspanClientCodeCheck.gs` (read-only,
 PR #19, deployed PROD `afb9502`) confirmed: bare `NORSPAN` has 88 jobs,
 all voided, zero active today; `NORSPAN-MB` (the real client) has 112
 active jobs; zero overlap/duplicates in current data. Whatever Sarty
 saw 2026-07-08 was already cleaned up by a 2026-07-09 fix. User's
 roof/floor-same-job-number hypothesis was checked directly and did not
-reproduce here. **User also confirmed Sarty's manual timesheet
-cross-check passed** (regenerated PDF matched his manually-sent ones) —
-closes that pending item from the PR #15 thread too. Full detail in
+reproduce here. User also confirmed Sarty's manual timesheet
+cross-check passed (regenerated PDF matched his manually-sent ones) —
+closed that pending item from the PR #15 thread too. Full detail in
 `PROJECT_MEMORY.md` §8.
-
-**Next action / still open from earlier this session:** the "first-ever
-supervised HR_ACCOUNTING/ADMIN Run Billing click" and "CEO smoke-test
-Generate Timesheet with one real range" items from the PR #15 entry
-below are still open, not yet confirmed done. `runSendOnboardingEmailToARN()`
-is still sitting in `StaffOnboardingMailer.gs`, harmless but no longer
-needed — safe to delete next time that file is touched, not urgent.
 
 ---
 

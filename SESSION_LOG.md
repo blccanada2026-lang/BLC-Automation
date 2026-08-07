@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-08-07 Session Part 2 (CTO architecture/performance/tech-debt assessment; trigger audit + fixes)
+
+### Work Completed
+- **Full CTO-level architecture assessment** (read-only, no code changes) delivered per the user's "master program prompt" — covered current architecture map, production function audit, trigger audit, performance/instrumentation assessment, QC/SOP gap analysis, Learning Hub/Growth Platform gap analysis, system boundaries, execution waves. Key findings, evidence-based (not guessed):
+  - `src/12-migration/` is 71 of 160 total `.gs` files (44%) — overwhelmingly one-off incident diagnostics/fixers/importers already served their purpose. Single biggest, cheapest technical-debt cleanup opportunity. Proposed as Wave 1, not yet executed.
+  - `src/13-sop/` (3,725 lines, 11 files) is a **mature, already-built** QC/SOP checklist gate system — template engine, admin engine, importer, audit engine, full portal UI — feature-flagged off by default (`SOP_ENABLED`/`SOP_MODE`/`SOP_PILOT_CLIENTS`). Workstream A from the user's prompt is "finish and activate," not "build." Current activation state in PROD still unconfirmed — open question.
+  - **Zero performance instrumentation exists anywhere** — `PerformanceMonitor.gs` measures business health (stuck jobs, error rates), not latency/query-cost/page-load. "Portal feels slow" currently has no supporting telemetry. Recommended 3 minimal additive instrumentation points (entry-point timing, DAL read row-count+elapsed-ms, execution duration) as Wave 0.
+  - Learning Hub and Growth Platform confirmed 100% absent by direct search — genuinely greenfield, correctly sequenced after QC/SOP produces real error-classification data.
+- **Trigger audit, real findings, acted on:**
+  - Ran `runListTriggers()` (already existed, `setup/Triggers.gs`) — 10 triggers actually live in PROD.
+  - **Stacey sync trigger confirmed NOT installed** — resolves the one risk flagged in the assessment; matches `PROJECT_MEMORY.md`'s claim it was removed at cutover. No incident.
+  - **SBS intake form trigger (`onIntakeFormSubmit`/`INTAKE_FORM_ID`) also not installed** — initially proposed reinstalling it, but investigation showed current SBS intake is entirely portal-button-triggered (`portal_processSbsIntake` → `SheetAdapter.gs` → `STG_INTAKE_SBS`), no form involved at all. This trigger is legacy/pre-refactor, likely predates or violates R1 (No Google Forms). **Correctly did NOT reinstall it** — flagged as a Wave 1 dead-code candidate instead.
+  - **CEO daily briefing trigger (`runCEODailyBriefing`) was NOT installed**, despite `PROJECT_MEMORY.md` describing it as a live daily feature — real doc-vs-reality gap. User confirmed they want it automatic. Reinstalled via the already-existing `runInstallCEOBriefingTrigger()` (idempotent, no new code) — **confirmed installed, fires daily ~8 AM CST Mon–Sat.**
+
+### Files Changed
+- None — this entire session part was read-only investigation plus running two pre-existing Apps Script functions (`runListTriggers`, `runInstallCEOBriefingTrigger`). No commits, no deploys.
+
+### Tests Run
+- N/A — no code changed.
+
+### Issues Found
+- See assessment above. Two items from the assessment's "Critical Questions" remain genuinely open (not yet answered by user): (1) PROD Apps Script ID rotation status (flagged security-urgent 2026-06-22, still unverified); (2) current `SOP_ENABLED`/pilot-client state in PROD.
+
+### Next Recommended Step
+- Get answers to the two open critical questions above, then persist the confirmed Wave 0–5 backlog structure into `CTO_TASK_QUEUE.md`/`backlog.md` (deliberately not written yet — user hasn't signed off on the wave sequencing itself, only individually actioned the trigger findings so far).
+
+---
+
 ## 2026-08-07 Session (Pending-work audit; NORSPAN duplicate-client investigation closed)
 
 ### Work Completed
