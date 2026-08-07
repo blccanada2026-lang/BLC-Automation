@@ -13,8 +13,7 @@
 
 ## 🟡 Next Session — Claude Code tasks
 
-- [ ] 🟡 NEXT | Review `blc-go-live-fixes.patch` — determine if changes are already in src or need applying | Added: 2026-06-22 | File is untracked in repo root. Unknown if patch has been applied.
-- [ ] 🟡 NEXT | Review `migration/` directory — determine contents and whether to commit or gitignore | Added: 2026-06-22 | Directory is untracked. Contents unknown.
+- [ ] 🟡 NEXT | Review `blc-go-live-fixes.patch` — determine if changes are already in src or need applying | Added: 2026-06-22 | File is gitignored (`*.patch`) in repo root, confirmed still present and unreviewed as of 2026-08-07. Unknown if patch has been applied.
 - [ ] 🟡 NEXT | Update `preflight.md` to reference `cutover-plan.md` and `test-plan.md` | Added: 2026-06-22 | Both files exist in `.claude/context/` but are not loaded by preflight for any session type.
 - [ ] 🟡 NEXT | Complete architecture module map in `architecture.md` | Added: 2026-06-22 | Only T8 and T9 are listed. T0–T7 and T10–T13 are missing from the Module Map table.
 
@@ -28,3 +27,4 @@
 - [x] ✅ 2026-06-22 | Commit all `.claude/` context, commands, and rules
 - [x] ✅ 2026-06-22 | Add R1 rule — git commit required before every PROD deploy
 - [x] ✅ 2026-06-22 | Push all commits to `origin/main` and deploy to PROD via clasp (86 files, HEAD `a64d432`)
+- [x] ✅ 2026-08-07 | Review `migration/` directory — contents were real Norspan migration source data (CSVs, extractor script, import plan), safe to commit. Committed 2026-08-06, `6ed2703`.
