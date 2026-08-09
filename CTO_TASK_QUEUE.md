@@ -40,36 +40,61 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ---
 
-## Session State (last updated: end of turn, 2026-08-07)
+## Session State (last updated: end of turn, 2026-08-09)
 
-**Just completed — full CTO architecture/performance/tech-debt assessment
-delivered (read-only, no code changes) + trigger audit acted on.** Full
-writeup in that turn's transcript / `SESSION_LOG.md`; durable findings in
-`PROJECT_MEMORY.md` §3.8. Headlines: `src/12-migration/` is 44% of the
-codebase (mostly one-off tooling, Wave 1 cleanup candidate, not yet
-touched); `src/13-sop/` QC/SOP checklist gate is **already built**
-(3,725 lines, feature-flagged) — do not rebuild if asked for "QC/SOP
-integration"; zero performance instrumentation exists anywhere; Learning
-Hub and Growth Platform are 100% absent (confirmed, greenfield).
+**Just completed — both Critical Questions from the CTO assessment
+answered, Wave 0–5 backlog now written up below as real tracked
+entries.** `SOP_ENABLED` confirmed OFF everywhere — Wave 2 (SOP/QC) is a
+clean pilot launch, not reviving something stalled. PROD Apps Script ID
+rotation explicitly **deferred by the user** — do NOT do it unprompted;
+remind them once the current implementation wave is fully done (also
+saved as a durable cross-session memory note so this survives even past
+this repo's own session-log rotation).
 
-**Trigger audit, via `runListTriggers()` (10 live triggers found), acted
-on same turn:** Stacey sync trigger confirmed gone (no incident). CEO
-daily briefing trigger was NOT installed despite being documented as
-live — real doc-vs-reality gap — **fixed**, reinstalled via the
-pre-existing `runInstallCEOBriefingTrigger()`, confirmed firing daily
-~8 AM CST Mon–Sat. Legacy `onIntakeFormSubmit` form trigger also found
-not installed — investigated, correctly left uninstalled (current SBS
-intake is 100% portal-button-triggered, no form involved; that installer
-is legacy/pre-refactor, likely predates or violates R1) — flagged as a
-Wave 1 dead-code candidate instead of reinstalled.
+**Next action:** ask the user which wave/task to start implementing
+first (see "CTO Wave Backlog" section below) — nothing in that backlog
+has been started yet, this turn was recording/prioritization only, per
+the master assessment's own "STOP, don't implement until approved" rule.
 
-**Next action:** two Critical Questions from the assessment are still
-open, not yet answered — (1) PROD Apps Script project ID rotation status
-(flagged security-urgent 2026-06-22, unverified); (2) current
-`SOP_ENABLED` state in PROD. Once answered, persist the confirmed
-Wave 0–5 execution sequence into this file as real EPIC/FEATURE/TASK
-entries (deliberately not written yet — user hasn't signed off on the
-wave sequencing itself). Also still open from earlier: "first-ever
+---
+
+## CTO Wave Backlog (from 2026-08-07 assessment, prioritized 2026-08-09)
+
+Source: full CTO architecture/performance/tech-debt assessment,
+2026-08-07 (see `PROJECT_MEMORY.md` §3.8 for durable findings). Not a
+duplicate of the task entries below this section — those are individual
+incident/feature threads; this is the multi-wave program structure the
+user's master prompt asked for. **Nothing below has been implemented
+yet** — recorded for planning/prioritization only.
+
+### EPIC: Wave 0 — Verification & Safety
+- **TASK W0-1** | PROD Apps Script project ID rotation | P0 (security) but **explicitly DEFERRED by user, 2026-08-09** — do not action without being asked again; reminder saved to cross-session memory, surface once the rest of this backlog is implemented.
+- **TASK W0-2** | Add minimal performance instrumentation (entry-point timing, DAL read row-count+elapsed-ms, execution duration — all via existing `Logger`/`_SYS_LOGS`) | P1 | Directly targets the reported "portal feels slow" signal with zero current telemetry. DEV first, additive only, no behavior change. | Not started.
+- **TASK W0-3** | Review `blc-go-live-fixes.patch` (gitignored, unreviewed since June) | P3 | Unknown-unknown — determine if already applied or still needed. | Not started.
+
+### EPIC: Wave 1 — Technical Debt Reduction (`src/12-migration/` archival)
+- **TASK W1-1** | Systematic caller-trace of all 71 T12 files (cross-reference `DAL.gs` `WRITE_PERMISSIONS` + git history per file) → classify KEEP/ARCHIVE definitively | P2 | Prerequisite — do not archive anything before this. | Not started.
+- **TASK W1-2** | Archive the legacy `onIntakeFormSubmit`/`INTAKE_FORM_ID` trigger installer in `setup/Triggers.gs` (confirmed not installed, confirmed superseded by portal-button SBS intake) | P3 | Not started.
+
+### EPIC: Wave 2 — SOP/QC Finish & Activate (NOT a rebuild — `src/13-sop/` already exists)
+- **TASK W2-1** | Design pilot rollout plan: which client(s) first, `WARN_ONLY` vs `BLOCK`, timeline | P2 | Needs user/business input — which client(s) are the right pilot candidates? | Not started. `SOP_ENABLED` confirmed off everywhere (2026-08-09).
+- **TASK W2-2** | Trace `QcFindingTypes.gs` (521 lines, defines a QC finding taxonomy) — confirm whether an internal-QC reviewer queue UI exists or still needs building | P2 | Not started — unknown status, needs a read.
+
+### EPIC: Wave 3 — Client Feedback data-model extension
+- **TASK W3-1** | Add structured severity/root-cause/resubmission fields to the existing `ClientFeedback.gs` intake | P3 | Depends on Wave 2 producing real QC data to feed quality analytics. Not started.
+
+### EPIC: Wave 4 — Quality Analytics
+- **TASK W4-1** | Define metrics precisely (First Pass Quality, rework rate by designer/client/product, etc.) before any dashboard work | P3 | Explicit user warning against misleading KPIs from inconsistent data — definitions come before dashboards. Not started.
+
+### EPIC: Wave 5 — Learning Hub
+- **TASK W5-1** | Design content/tagging model | P4 | Correctly sequenced after Wave 2 produces real error-classification data — building this earlier means guessing at what training content matters. Not started.
+
+### Parallel Track: BLC Growth Platform
+- **TASK GP-1** | Standalone project decision + architecture (own future CTO assessment, not folded into this backlog) | P4 | User's own instinct (standalone, controlled integration) matches the evidence — `PortalView.html`'s existing size/weight means shared blast radius with live payroll/billing if integrated. Not started, not scoped yet.
+
+---
+
+Also still open from earlier this session, unrelated to the wave backlog: "first-ever
 supervised HR_ACCOUNTING/ADMIN Run Billing click" and "CEO smoke-test
 Generate Timesheet with one real range." `runSendOnboardingEmailToARN()`
 is still sitting in `StaffOnboardingMailer.gs`, harmless, safe to delete
