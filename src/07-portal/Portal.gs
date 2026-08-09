@@ -89,8 +89,20 @@ function doGet(e) {
  *   }
  */
 function portal_getViewData(ptoken) {
-  var email = PortalAuth.resolveEmail(ptoken);
-  return PortalData.getViewData(email);
+  // Wave 0 perf instrumentation (2026-08-09) — reuses HealthMonitor's
+  // existing startExecution/endExecution pattern (already used by
+  // QueueProcessor/BillingEngine/PayrollEngine), not new infrastructure.
+  // Logs one EXECUTION_COMPLETE (duration_ms, api_calls) to _SYS_LOGS
+  // per call — this is the single highest-traffic entry point (every
+  // portal load hits it), the first place to get real "is it slow"
+  // signal instead of guessing.
+  HealthMonitor.startExecution('portal_getViewData');
+  try {
+    var email = PortalAuth.resolveEmail(ptoken);
+    return PortalData.getViewData(email);
+  } finally {
+    HealthMonitor.endExecution();
+  }
 }
 
 // portal_getViewDataWithEmail REMOVED (B1 fix).
@@ -487,8 +499,14 @@ function portal_getFeedbackStatus(ptoken, periodId) {
  * @returns {string}  JSON: { period_id, team_hours[], payroll_status[] }
  */
 function portal_getLeaderDashboard(ptoken) {
-  var email = PortalAuth.resolveEmail(ptoken);
-  return PortalData.getLeaderDashboard(email);
+  // Wave 0 perf instrumentation (2026-08-09) — see portal_getViewData's comment.
+  HealthMonitor.startExecution('portal_getLeaderDashboard');
+  try {
+    var email = PortalAuth.resolveEmail(ptoken);
+    return PortalData.getLeaderDashboard(email);
+  } finally {
+    HealthMonitor.endExecution();
+  }
 }
 
 // ============================================================
@@ -502,8 +520,14 @@ function portal_getLeaderDashboard(ptoken) {
  * @returns {string}  JSON: { period_id, total_hours, entries[] }
  */
 function portal_getMyHours(ptoken) {
-  var email = PortalAuth.resolveEmail(ptoken);
-  return PortalData.getMyHours(email);
+  // Wave 0 perf instrumentation (2026-08-09) — see portal_getViewData's comment.
+  HealthMonitor.startExecution('portal_getMyHours');
+  try {
+    var email = PortalAuth.resolveEmail(ptoken);
+    return PortalData.getMyHours(email);
+  } finally {
+    HealthMonitor.endExecution();
+  }
 }
 
 // ============================================================
@@ -518,8 +542,14 @@ function portal_getMyHours(ptoken) {
  * @returns {string}  JSON: { period_id, job_summary, load_balance, quality_rates, qc_backlog }
  */
 function portal_getCEODashboard(ptoken) {
-  var email = PortalAuth.resolveEmail(ptoken);
-  return PortalData.getCEODashboard(email);
+  // Wave 0 perf instrumentation (2026-08-09) — see portal_getViewData's comment.
+  HealthMonitor.startExecution('portal_getCEODashboard');
+  try {
+    var email = PortalAuth.resolveEmail(ptoken);
+    return PortalData.getCEODashboard(email);
+  } finally {
+    HealthMonitor.endExecution();
+  }
 }
 
 // ============================================================
