@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-08-10 Session Part 2 (State-doc cleanup for lean fresh-session context)
+
+### Work Completed
+- User asked to cap fresh-session context at 100K tokens before moving to Wave 2. `CTO_TASK_QUEUE.md` had grown to ~1390 lines (~21K tokens) of mostly closed-thread narrative already duplicated in `PROJECT_MEMORY.md`/this file — trimmed to ~100 lines (~2.6K tokens): standing practices, Session State, CTO Wave Backlog, and one consolidated "Other Still-Open Items" list (also absorbed several genuinely-open items that only lived in `PROJECT_MEMORY.md` §7 before, e.g. 19 orphaned job_numbers, admin overhead policy, `submitted_at` bug). Nothing lost — full pre-trim detail recoverable via `git log -p CTO_TASK_QUEUE.md`.
+- Found and fixed real staleness while doing this: `PROJECT_MEMORY.md` §0/§6/§7 still listed the NORSPAN investigation as the #1 unresolved priority despite it closing 2026-08-07, and §0 listed a resolved job + passed June deadlines as "time-critical." Both sections now point to `CTO_TASK_QUEUE.md` as the single pending-work source instead of an independently-drifting duplicate.
+- `CLAUDE_START_HERE.md` never listed `CTO_TASK_QUEUE.md` in its reading order at all — a fresh session following it literally would never have read the active-workstreams file. Fixed. Also removed a stale June 16 cutover reminder.
+- Total fresh-session reading order (`CLAUDE_START_HERE.md`→`PROJECT_MEMORY.md`→`SESSION_LOG.md`→`CTO_TASK_QUEUE.md`): **~29.5K tokens**, comfortably under the 100K target.
+
+### Files Changed
+- `CTO_TASK_QUEUE.md`, `PROJECT_MEMORY.md`, `CLAUDE_START_HERE.md` (docs only, no code)
+
+### Next Recommended Step
+- Move to Wave 2 (SOP/QC pilot launch design, task W2-1) — session context can be cleared now, next session will pick this up correctly via the trimmed docs.
+
+---
+
 ## 2026-08-09 → 2026-08-10 Session (Wave 0 performance instrumentation shipped)
 
 ### Work Completed
