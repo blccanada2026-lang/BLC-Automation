@@ -5,6 +5,37 @@
 
 ---
 
+## 2026-08-10 Session Part 4 (Wave 2 task W2-1 — pilot rollout plan)
+
+### Work Completed
+- User confirmed the three inputs W2-1 was blocked on: pilot client `NORSPAN-MB`, mode `WARN_ONLY`, start week of 2026-08-17 (next Monday from session date 2026-08-10).
+- Traced `SopGate.gs` to confirm rollout mechanics: activation is Script-Properties-only (`SOP_ENABLED='true'`, `SOP_MODE='WARN_ONLY'`, `SOP_PILOT_CLIENTS='NORSPAN-MB'`), no code change needed — flags are already read live by `evaluate_()`.
+- Surfaced a pre-flight gap while tracing: `SopGate.evaluate_()` silently no-ops with `reason: 'NO_TEMPLATE'` if no ACTIVE/PUBLISHED template exists in `DIM_SOP_TEMPLATES` for `NORSPAN-MB` × its product code(s). This can't be verified from code — needs a live-sheet check (or `SopDAL.findActiveTemplateForJob('NORSPAN-MB', <productCode>)` run in the Apps Script editor). Without this check, flipping the flags could look like a live pilot while producing zero actual signal. Flagged as a must-resolve item before 2026-08-17.
+- Recorded the confirmed decision in `PROJECT_MEMORY.md` §12 and the full rollout detail in `CTO_TASK_QUEUE.md` W2-1.
+
+### Files Changed
+- `CTO_TASK_QUEUE.md`, `PROJECT_MEMORY.md` (docs only — no code touched)
+
+### Next Recommended Step
+- Verify a NORSPAN-MB SOP template exists and is ACTIVE before 2026-08-17. If missing, building/publishing one via `SopAdminEngine` becomes a prerequisite task ahead of flipping `SOP_ENABLED`. W2-3 (findings-picker UI) still not started.
+
+---
+
+## 2026-08-10 Session Part 3 (Wave 2 task W2-2 — QC finding taxonomy trace)
+
+### Work Completed
+- Traced `QcFindingTypes.gs` (`src/13-sop/`) per Wave 2 task W2-2. It's a self-contained 17-code QC finding taxonomy (structural/process/documentation categories, severity/kpi_weight/structural-risk metadata) that idempotently seeds `DIM_QC_FINDING_TYPES`. Confirmed via grep across `src/`: no code anywhere reads that table — it's pure unwired reference data, not dormant functionality.
+- Confirmed the live QC review flow (`src/06-handlers/QCHandler.gs` + `#modal-qc-review` in `PortalView.html:1105-1129`) only captures coarse `qc_result` (APPROVED/MINOR_REWORK/MAJOR_REWORK/CLIENT_SENT) plus free-text `rework_notes`/`notes` — no structured finding-code selection exists in any form.
+- Answer to W2-2's open question: unlike the SOP checklist gate itself (§3.8 point 2, already built and just needs activating), the findings-picker reviewer UI genuinely does not exist and needs building. Scoped as new task **W2-3** in `CTO_TASK_QUEUE.md`: multi-select finding picker on the QC review modal, new `portal_getQcFindingTypes()` read endpoint (first-ever reader of `DIM_QC_FINDING_TYPES`), and `QCHandler.gs` changes to store selected finding code(s) on the QC event.
+
+### Files Changed
+- `CTO_TASK_QUEUE.md`, `PROJECT_MEMORY.md` (docs only — read-only investigation, no code touched)
+
+### Next Recommended Step
+- W2-1 (pilot rollout plan) still blocked on user input: pilot client(s), WARN_ONLY vs BLOCK, timeline. W2-3 (findings-picker UI) can be designed/sequenced in parallel — likely bundles with W2-1 since both touch `#modal-qc-review`.
+
+---
+
 ## 2026-08-10 Session Part 2 (State-doc cleanup for lean fresh-session context)
 
 ### Work Completed

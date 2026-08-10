@@ -33,18 +33,21 @@ lacks, that silently deletes it from DEV.
 
 ## Session State (last updated: end of turn, 2026-08-10)
 
-**Just completed — Wave 0 task W0-2 (performance instrumentation)
-shipped end-to-end.** PR #20 merged, deployed PROD `0014b58`, DEV
-verified with real numbers before deploy. Also surfaced an unplanned
-finding (W0-4, `QueueProcessor` 232s execution outlier) while
-validating the new report tooling — not yet investigated.
+**Just completed — Wave 2 task W2-2 (`QcFindingTypes.gs` trace).**
+Confirmed: the 17-code QC finding taxonomy is fully built and seeded
+into `DIM_QC_FINDING_TYPES`, but is pure unwired reference data — no
+consumer reads that table anywhere in the codebase. The live QC review
+flow (`QCHandler.gs` + `#modal-qc-review` in `PortalView.html`) only
+captures coarse `qc_result` (APPROVED/MINOR_REWORK/MAJOR_REWORK/
+CLIENT_SENT) + free-text notes. **No reviewer findings-picker UI
+exists — it needs to be built.** Scoped into Wave 2 as new task W2-3
+(see backlog below).
 
-**Next action:** confirm PROD New Version redeploy is done (required —
-touched `Portal.gs`), let real PROD usage accumulate a day or two, then
-read `runPerfBaselineReport()` there for the real signal (DEV's numbers
-are not representative — far less data). User's chosen sequence is
-Wave 0 → Wave 2 (SOP/QC pilot) next, skipping Wave 1 for now. **Moving
-to Wave 2 design work now** (2026-08-10) — see backlog below.
+**Next action:** W2-1 inputs confirmed (NORSPAN-MB, WARN_ONLY, starts
+2026-08-17) — but a pre-flight gap surfaced: unverified whether an
+ACTIVE SOP template exists for NORSPAN-MB in `DIM_SOP_TEMPLATES`. Must
+check before flipping `SOP_ENABLED`, or the pilot will look live but
+silently do nothing. W2-3 (findings-picker UI) not yet started.
 
 ---
 
@@ -64,8 +67,9 @@ Source: full CTO architecture/performance/tech-debt assessment,
 - **TASK W1-2** | Archive the legacy `onIntakeFormSubmit`/`INTAKE_FORM_ID` trigger installer in `setup/Triggers.gs` (confirmed not installed, confirmed superseded by portal-button SBS intake) | P3 | Not started.
 
 ### EPIC: Wave 2 — SOP/QC Finish & Activate (NOT a rebuild — `src/13-sop/` already exists, 3,725 lines, feature-flagged pilot infra) — **CURRENT FOCUS**
-- **TASK W2-1** | Design pilot rollout plan: which client(s) first, `WARN_ONLY` vs `BLOCK`, timeline | P2 | `SOP_ENABLED` confirmed off everywhere (2026-08-09) — clean pilot launch, not reviving anything. Needs user/business input on pilot client(s). **In progress as of 2026-08-10.**
-- **TASK W2-2** | Trace `QcFindingTypes.gs` (521 lines, defines a QC finding taxonomy) — confirm whether an internal-QC reviewer queue UI exists or still needs building | P2 | Not started — unknown status, needs a read.
+- **TASK W2-1** | Design pilot rollout plan: which client(s) first, `WARN_ONLY` vs `BLOCK`, timeline | P2 | **Inputs confirmed 2026-08-10: client `NORSPAN-MB`, mode `WARN_ONLY`, start week of 2026-08-17 (Monday).** Rollout mechanics (`SopGate.gs`): set Script Properties `SOP_ENABLED='true'`, `SOP_MODE='WARN_ONLY'`, `SOP_PILOT_CLIENTS='NORSPAN-MB'` in the Apps Script editor (no code change needed — flags are already read live). WARN_ONLY means non-blocking — designers see nothing rejected, only `SOP_GATE_WARN` log entries land in `_SYS_LOGS` when a QC submission has incomplete checklist items. **Pre-flight gap identified 2026-08-10, resolution path changed same day:** a read-only diagnostic (`NorspanSopTemplateCheck.gs`, live-DB check via `DIM_SOP_TEMPLATES`) was drafted but never committed/pushed — user chose instead to provide the source SOP checklist document directly (originally a Google Form) so the template gets built fresh from real content rather than just checking whether an old one exists. **User is pasting source SOP docs one by one.** First one received (2026-08-10) was actually for `MATIX-SK` ("Matix Saskatoon – Floor Design Verification"), not NORSPAN-MB — confirmed out of current pilot scope, held aside (not discarded — may be useful as a future template outside Wave 2). NORSPAN-MB-specific docs still incoming. Once received: review content, ask clarifying questions on ambiguous items (required vs optional, job_type/software/product scope), then build via `SopAdminEngine.createTemplate`/`addItem`/`publishTemplate` for `NORSPAN-MB` before 2026-08-17.
+- **TASK W2-2** | Trace `QcFindingTypes.gs` (521 lines, defines a QC finding taxonomy) — confirm whether an internal-QC reviewer queue UI exists or still needs building | P2 | **DONE 2026-08-10.** Taxonomy (17 codes, `DIM_QC_FINDING_TYPES`) is fully seeded but has zero consumers anywhere — no reviewer UI reads it. Current QC review flow (`QCHandler.gs`/`#modal-qc-review`) only captures `qc_result` + free text, no structured findings. Confirmed: needs building, not reviving. See W2-3.
+- **TASK W2-3** | Build QC findings-picker UI: multi-select finding codes (from `DIM_QC_FINDING_TYPES`) on the `#modal-qc-review` modal, new `portal_getQcFindingTypes()` read endpoint (first-ever reader of that table), `QCHandler.gs` changes to accept/store selected finding code(s) on the QC event | P2 | Not started. Scoped 2026-08-10 from W2-2's trace finding. Design/sequencing TBD — likely bundles with W2-1's pilot plan since both touch the same review modal.
 
 ### EPIC: Wave 3 — Client Feedback data-model extension
 - **TASK W3-1** | Add structured severity/root-cause/resubmission fields to the existing `ClientFeedback.gs` intake | P3 | Depends on Wave 2 producing real QC data. Not started.
