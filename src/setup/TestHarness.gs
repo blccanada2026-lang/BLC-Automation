@@ -267,10 +267,11 @@ function thSetupMinorFixJob_(tag) {
     formType:       Config.FORM_TYPES.QC_SUBMIT,
     submitterEmail: TH_QC_EMAIL,
     payload: {
-      job_number:   jn,
-      qc_result:    'MINOR_REWORK',
-      rework_notes: 'th-setup minor-fix' + (tag ? ':' + tag : ''),
-      notes:        'setup helper — drive to MINOR_FIX'
+      job_number:    jn,
+      qc_result:     'MINOR_REWORK',
+      rework_notes:  'th-setup minor-fix' + (tag ? ':' + tag : ''),
+      notes:         'setup helper — drive to MINOR_FIX',
+      finding_codes: ['LOAD_ERROR']
     },
     source: 'TEST'
   });

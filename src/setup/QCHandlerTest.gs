@@ -658,10 +658,11 @@ function testQCHandler_flowB_minorRework() {
       formType:       Config.FORM_TYPES.QC_SUBMIT,
       submitterEmail: TH_QC_EMAIL,
       payload: {
-        job_number:   jobNumber,
-        qc_result:    'MINOR_REWORK',
-        rework_notes: 'QCHandlerTest flowB_minorRework — minor label correction needed',
-        notes:        'Fix and send direct to client'
+        job_number:    jobNumber,
+        qc_result:     'MINOR_REWORK',
+        rework_notes:  'QCHandlerTest flowB_minorRework — minor label correction needed',
+        notes:         'Fix and send direct to client',
+        finding_codes: ['LOAD_ERROR']
       },
       source: 'TEST'
     });
@@ -748,10 +749,11 @@ function testQCHandler_flowB_majorRework() {
       formType:       Config.FORM_TYPES.QC_SUBMIT,
       submitterEmail: TH_QC_EMAIL,
       payload: {
-        job_number:   jobNumber,
-        qc_result:    'MAJOR_REWORK',
-        rework_notes: 'QCHandlerTest flowB_majorRework — truss geometry incorrect, must redo',
-        notes:        'Re-submit to QC after revision'
+        job_number:    jobNumber,
+        qc_result:     'MAJOR_REWORK',
+        rework_notes:  'QCHandlerTest flowB_majorRework — truss geometry incorrect, must redo',
+        notes:         'Re-submit to QC after revision',
+        finding_codes: ['LOAD_ERROR']
       },
       source: 'TEST'
     });
@@ -909,6 +911,13 @@ function runQCHandlerFlowTests() {
   console.log('═══════════════════════════════════════════════════════');
 
   seedTestStaff();
+  // Rework path now requires finding_codes to resolve against
+  // DIM_QC_FINDING_TYPES (see getFindingMeta_ in QCHandler.gs) —
+  // testQCHandler_flowB_minorRework, testQCHandler_flowB_majorRework,
+  // and thSetupMinorFixJob_ (used by testQCHandler_flowC_clientSent)
+  // all submit MINOR_REWORK/MAJOR_REWORK with finding_codes:['LOAD_ERROR'],
+  // so LOAD_ERROR must be seeded before this suite's tests run.
+  QcFindingTypes.seed(TH_QC_EMAIL);
 
   var suiteCounters = { passed: 0, failed: 0 };
   var tests = [
