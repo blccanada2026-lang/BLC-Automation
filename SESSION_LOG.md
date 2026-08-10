@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-08-09 → 2026-08-10 Session (Wave 0 performance instrumentation shipped)
+
+### Work Completed
+- **Both Critical Questions from the 2026-08-07 CTO assessment answered**: `SOP_ENABLED` confirmed off everywhere (Wave 2 SOP/QC is a clean pilot launch, not reviving something stalled); PROD Apps Script ID rotation explicitly deferred by the user, saved as a durable cross-session memory note (`project_prod_appsscript_id_rotation_deferred.md`) so it isn't lost — remind again once the current implementation wave is fully done, don't action without being asked.
+- **Full Wave 0–5 CTO backlog written into `CTO_TASK_QUEUE.md`** as real EPIC/TASK entries with priorities (P0–P4), per the master prompt's task-management format. User chose to do Wave 0 then Wave 2 next, skipping Wave 1 (`12-migration` cleanup) for now.
+- **Wave 0 task W0-2 shipped** (PR #20, deployed PROD `0014b58`): instrumented the 4 highest-traffic portal reads (`portal_getViewData`, `portal_getLeaderDashboard`, `portal_getMyHours`, `portal_getCEODashboard`) by reusing the already-existing `HealthMonitor.startExecution()`/`endExecution()` pattern (already used by `QueueProcessor`/`BillingEngine`/`PayrollEngine`) — no new infrastructure built, zero behavior change to the wrapped functions. New `PerfBaselineReport.gs` (read-only) queries the resulting `_SYS_LOGS` rows and reports count/min/avg/p95/max `duration_ms` per module. Verified end-to-end in DEV (real numbers: 1.2s–2.9s range on DEV's small dataset) before PROD deploy. 507/507 Jest passing throughout (no new tests — matches established precedent that thin `portal_*` wrappers are DEV/live-verified, not unit tested).
+- **Unplanned finding, surfaced by building the report**: pre-existing `QueueProcessor` instrumentation (unrelated to this PR) shows a `max=231994ms` (232s) outlier against a healthy `p95≈8.8s` across 2,906+ calls — close to Apps Script's 6-minute execution ceiling. Flagged as a new backlog item, not yet investigated.
+
+### Files Changed
+- `src/07-portal/Portal.gs` (4 functions wrapped)
+- `src/09-monitoring/PerfBaselineReport.gs` (new)
+
+### Tests Run
+- Jest: 507/507 passing
+
+### Issues Found
+- QueueProcessor's 232-second outlier (see above) — worth investigating once Wave 0's own baseline has more data.
+
+### Next Recommended Step
+- Confirm the PROD New Version redeploy is done (required — this touched `Portal.gs`), then let real PROD usage accumulate for a day or two before reading `runPerfBaselineReport()` there. After that, move to Wave 2 (SOP/QC pilot launch design) per the user's chosen sequencing.
+
+---
+
 ## 2026-08-07 Session Part 2 (CTO architecture/performance/tech-debt assessment; trigger audit + fixes)
 
 ### Work Completed

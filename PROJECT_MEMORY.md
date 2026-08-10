@@ -222,6 +222,7 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
 - **2026-08-06**: Timesheet-for-any-period feature (CEO/HR_ACCOUNTING only) — PR #15, deployed PROD `4c07df5`. Fixed Run Billing's identical `isLeader` UI unreachability bug in the same PR.
 - **2026-08-06**: `ADMIN` granted `TIMESHEET_GENERATE` (matches `BILLING_RUN`'s scope) — PR #16, deployed PROD `12d57cc`. Aarthi is onboarded as `ADMIN`, not `HR_ACCOUNTING` — see §8.
 - **2026-08-06**: Automatic staff-onboarding email (instructions + real personal portal link, on new hire) — PR #17, deployed PROD `17ef362`. New `StaffOnboardingMailer.gs`, T8.
+- **2026-08-10**: Wave 0 performance instrumentation (CTO assessment task W0-2) — PR #20, deployed PROD `0014b58`. Reused existing `HealthMonitor` execution-tracking pattern on the 4 highest-traffic portal reads; new `PerfBaselineReport.gs` reports p50/p95/max per module from real `_SYS_LOGS` data. First real telemetry this codebase has ever had for "is the portal slow." Surfaced a pre-existing `QueueProcessor` 232-second execution outlier as a side effect — see §8.
 - **2026-06-16**: PROD cutover complete — Stacey sync removed, staff on V3 portal
 - **2026-06-18**: Post-cutover bug fix batch (Sarty's team feedback):
   - RBAC: TEAM_LEAD `QC_APPROVE/REJECT: true`; QC role `JOB_START: true`
@@ -294,7 +295,8 @@ Priority order:
 | **`src/12-migration/` is 44% of the codebase, mostly one-off tooling** | Medium (tech debt) | **IDENTIFIED 2026-08-07, not yet acted on.** 71 of 160 `.gs` files. See §3.8 for the full breakdown. Proposed as "Wave 1" — needs a systematic caller-trace (DAL `WRITE_PERMISSIONS` cross-reference + git history per file) before any archival, not a blind purge. |
 | **Zero performance instrumentation exists** | Medium (observability gap) | **IDENTIFIED 2026-08-07.** No latency/query-cost/page-load telemetry anywhere — `PerformanceMonitor.gs` only checks business-health signals. "Portal feels slow" has no supporting data yet. See §3.8. |
 | **PROD Apps Script project ID rotation status unverified** | **Potentially HIGH — unresolved since 2026-06-22** | Flagged urgent that day (old ID was public since first commit, treat as compromised). Cannot be verified from code — needs the user to confirm directly in the Google Apps Script/Cloud console. |
-| **`SOP_ENABLED` current PROD state unverified** | Medium (program risk) | Identified 2026-08-07 (see §3.8) — the QC/SOP checklist gate system is fully built but feature-flagged; whether it's currently live for any pilot client is unknown. Determines whether "finish QC/SOP" is a small verification task or a "revive a stalled pilot" task. |
+| **`SOP_ENABLED` current PROD state unverified** | ~~Medium~~ | **RESOLVED 2026-08-09.** User confirmed: off everywhere. Wave 2 is a clean pilot launch, not reviving something stalled. |
+| **`QueueProcessor` 232-second execution outlier** | Medium, unconfirmed pattern | **FOUND 2026-08-10**, via `PerfBaselineReport.gs` (built for W0-2, unrelated purpose). `max=231994ms` against `p95≈8.8s` across 2,906+ calls — close to Apps Script's 6-minute execution ceiling. If ever actually hit mid-run, that's a silent partial-processing risk. Single outlier so far in the sample — not yet confirmed as recurring. Not investigated further. |
 
 ---
 

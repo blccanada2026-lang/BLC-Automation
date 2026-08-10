@@ -40,21 +40,19 @@ afterward as a manual follow-up step" — was rejected: it's the same
 
 ---
 
-## Session State (last updated: end of turn, 2026-08-09)
+## Session State (last updated: end of turn, 2026-08-10)
 
-**Just completed — both Critical Questions from the CTO assessment
-answered, Wave 0–5 backlog now written up below as real tracked
-entries.** `SOP_ENABLED` confirmed OFF everywhere — Wave 2 (SOP/QC) is a
-clean pilot launch, not reviving something stalled. PROD Apps Script ID
-rotation explicitly **deferred by the user** — do NOT do it unprompted;
-remind them once the current implementation wave is fully done (also
-saved as a durable cross-session memory note so this survives even past
-this repo's own session-log rotation).
+**Just completed — Wave 0 task W0-2 (performance instrumentation)
+shipped end-to-end.** PR #20 merged, deployed PROD `0014b58`, DEV
+verified with real numbers before deploy. Also surfaced an unplanned
+finding (W0-4, `QueueProcessor` 232s execution outlier) while
+validating the new report tooling — not yet investigated.
 
-**Next action:** ask the user which wave/task to start implementing
-first (see "CTO Wave Backlog" section below) — nothing in that backlog
-has been started yet, this turn was recording/prioritization only, per
-the master assessment's own "STOP, don't implement until approved" rule.
+**Next action:** confirm PROD New Version redeploy is done (required —
+touched `Portal.gs`), let real PROD usage accumulate a day or two, then
+read `runPerfBaselineReport()` there for the real signal (DEV's numbers
+are not representative — far less data). User's chosen sequence is
+Wave 0 → Wave 2 (SOP/QC pilot) next, skipping Wave 1 for now.
 
 ---
 
@@ -69,8 +67,9 @@ yet** — recorded for planning/prioritization only.
 
 ### EPIC: Wave 0 — Verification & Safety
 - **TASK W0-1** | PROD Apps Script project ID rotation | P0 (security) but **explicitly DEFERRED by user, 2026-08-09** — do not action without being asked again; reminder saved to cross-session memory, surface once the rest of this backlog is implemented.
-- **TASK W0-2** | Add minimal performance instrumentation (entry-point timing, DAL read row-count+elapsed-ms, execution duration — all via existing `Logger`/`_SYS_LOGS`) | P1 | Directly targets the reported "portal feels slow" signal with zero current telemetry. DEV first, additive only, no behavior change. | Not started.
+- **TASK W0-2** | Add minimal performance instrumentation to the 4 highest-traffic portal reads | P1 | **DONE 2026-08-10, PR #20, deployed PROD `0014b58`.** Reused existing `HealthMonitor.startExecution()`/`endExecution()` pattern — `portal_getViewData`/`portal_getLeaderDashboard`/`portal_getMyHours`/`portal_getCEODashboard` now log duration_ms+api_calls to `_SYS_LOGS` per call. `PerfBaselineReport.gs` (new, read-only) reports count/min/avg/p95/max per module. Verified end-to-end in DEV before deploy (1.2s–2.9s range on DEV's small dataset). **Pending: confirm PROD New Version redeploy done, then let real usage accumulate a day or two before reading the report there.**
 - **TASK W0-3** | Review `blc-go-live-fixes.patch` (gitignored, unreviewed since June) | P3 | Unknown-unknown — determine if already applied or still needed. | Not started.
+- **TASK W0-4** | Investigate `QueueProcessor` 232-second execution outlier (`max=231994ms` vs `p95≈8.8s` across 2,906+ calls, pre-existing instrumentation) | P2 | **NEW, found 2026-08-10** while validating W0-2's report tooling — unrelated to that PR. Close to Apps Script's 6-min execution ceiling; if the queue processor ever actually hits the wall mid-run, that's a silent partial-processing risk. Not yet investigated — single outlier so far, not confirmed as a pattern.
 
 ### EPIC: Wave 1 — Technical Debt Reduction (`src/12-migration/` archival)
 - **TASK W1-1** | Systematic caller-trace of all 71 T12 files (cross-reference `DAL.gs` `WRITE_PERMISSIONS` + git history per file) → classify KEEP/ARCHIVE definitively | P2 | Prerequisite — do not archive anything before this. | Not started.
