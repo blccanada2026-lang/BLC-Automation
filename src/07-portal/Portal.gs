@@ -1212,19 +1212,3 @@ function portal_getSopGateStatus(ptoken, jobNumber) {
     reason:     result.reason
   });
 }
-
-// ============================================================
-// _manualCheck_portalGetQcFindingTypes — Task 1 verification
-// ============================================================
-function _manualCheck_portalGetQcFindingTypes() {
-  QcFindingTypes.seed(TH_QC_EMAIL);  // idempotent — ensures DIM_QC_FINDING_TYPES has rows
-  var actor = RBAC.resolveActor(TH_QC_EMAIL);       // TH_QC_EMAIL has QC_APPROVE
-  RBAC.enforcePermission(actor, RBAC.ACTIONS.QC_APPROVE);
-  var rows = DAL.readAll(Config.TABLES.DIM_QC_FINDING_TYPES, { callerModule: 'Portal' });
-  var filtered = rows.filter(function (r) {
-    return String(r.active_flag) === 'TRUE' &&
-      (String(r.product_applicability) === 'ALL' || String(r.product_applicability) === 'Alpine-iCommand');
-  });
-  console.log('findingTypes count: ' + filtered.length);
-  console.log(JSON.stringify(filtered.map(function (r) { return r.finding_code; })));
-}
