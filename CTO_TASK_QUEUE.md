@@ -33,21 +33,45 @@ lacks, that silently deletes it from DEV.
 
 ## Session State (last updated: end of turn, 2026-08-10)
 
-**Just completed — Wave 2 task W2-2 (`QcFindingTypes.gs` trace).**
-Confirmed: the 17-code QC finding taxonomy is fully built and seeded
-into `DIM_QC_FINDING_TYPES`, but is pure unwired reference data — no
-consumer reads that table anywhere in the codebase. The live QC review
-flow (`QCHandler.gs` + `#modal-qc-review` in `PortalView.html`) only
-captures coarse `qc_result` (APPROVED/MINOR_REWORK/MAJOR_REWORK/
-CLIENT_SENT) + free-text notes. **No reviewer findings-picker UI
-exists — it needs to be built.** Scoped into Wave 2 as new task W2-3
-(see backlog below).
+**Just completed — W2-1 NORSPAN-MB SOP docs received and partially
+scoped, then paused on manager input.** Two real source docs arrived
+(both correctly in-scope for NORSPAN-MB, unlike the earlier MATIX-SK
+doc): `SOP-NOR-TRS-003` (designer design/submission rules) and
+`SOP-NOR-TRS-QC-005` (QC-reviewer checklist). Settled so far: design
+software = **Alpine**; designer checklist item granularity =
+**category-level, ~9 items** (one per doc section, matching the
+existing `GLOBAL_QC_PROCESS` precedent rather than one item per
+numeric spec). `job_type='Roof Truss'` / `scope_code='TRUSS'` also
+settled (matches existing NORSPAN-MB job records + the
+`PRODUCT_QC_TRUSS` convention already in `QcConstants.gs`).
 
-**Next action:** W2-1 inputs confirmed (NORSPAN-MB, WARN_ONLY, starts
-2026-08-17) — but a pre-flight gap surfaced: unverified whether an
-ACTIVE SOP template exists for NORSPAN-MB in `DIM_SOP_TEMPLATES`. Must
-check before flipping `SOP_ENABLED`, or the pilot will look live but
-silently do nothing. W2-3 (findings-picker UI) not yet started.
+**Blocked, paused by user 2026-08-10 — escalated to their managers,
+answer pending:** the two source docs materially disagree on real
+design values, not just wording:
+- Deflection limit: Doc 1 says L/360 (LL+TL), Doc 2 says L/300 (LL+TL)
+- Valley truss stud spacing: Doc 1 says 4' O.C., Doc 2 says 24" O.C.
+- Span limit basis: Doc 1 frames it as Residential/Commercial caps
+  (40'/75'), Doc 2 frames it as a lumber-size threshold (2×4 up to
+  28', 2×6 for spans ≥48') — unclear if both apply or one supersedes.
+
+Also undecided: Doc 2's QC-reviewer content (admin tracking, Pass/Fail
++ Root Cause tagging with categories that don't match the existing
+17-code `DIM_QC_FINDING_TYPES` taxonomy, Section 7 drawing/hatching
+notes) targets the separate, currently-unwired `PRODUCT_QC_TRUSS`
+system — not the designer-facing `SopGate` template this pilot uses.
+Whether to scope that as a new task now or hold it aside is also
+pending the user's answer.
+
+**Do not build/publish the NORSPAN-MB SOP template via
+`SopAdminEngine` until the three numeric conflicts above are
+resolved** — this is a real QC gate, guessing wrong risks false
+warnings or missed real defects. **Next action:** wait for user to
+return with manager-confirmed values, then build via
+`SopAdminEngine.createTemplate`/`addItem`/`publishTemplate`. Original
+pre-flight gap (unverified whether an ACTIVE template already exists
+in `DIM_SOP_TEMPLATES` for NORSPAN-MB) still applies — check before
+flipping `SOP_ENABLED`. 2026-08-17 pilot start date is now at risk
+pending this answer. W2-3 (findings-picker UI) not yet started.
 
 ---
 
@@ -67,7 +91,7 @@ Source: full CTO architecture/performance/tech-debt assessment,
 - **TASK W1-2** | Archive the legacy `onIntakeFormSubmit`/`INTAKE_FORM_ID` trigger installer in `setup/Triggers.gs` (confirmed not installed, confirmed superseded by portal-button SBS intake) | P3 | Not started.
 
 ### EPIC: Wave 2 — SOP/QC Finish & Activate (NOT a rebuild — `src/13-sop/` already exists, 3,725 lines, feature-flagged pilot infra) — **CURRENT FOCUS**
-- **TASK W2-1** | Design pilot rollout plan: which client(s) first, `WARN_ONLY` vs `BLOCK`, timeline | P2 | **Inputs confirmed 2026-08-10: client `NORSPAN-MB`, mode `WARN_ONLY`, start week of 2026-08-17 (Monday).** Rollout mechanics (`SopGate.gs`): set Script Properties `SOP_ENABLED='true'`, `SOP_MODE='WARN_ONLY'`, `SOP_PILOT_CLIENTS='NORSPAN-MB'` in the Apps Script editor (no code change needed — flags are already read live). WARN_ONLY means non-blocking — designers see nothing rejected, only `SOP_GATE_WARN` log entries land in `_SYS_LOGS` when a QC submission has incomplete checklist items. **Pre-flight gap identified 2026-08-10, resolution path changed same day:** a read-only diagnostic (`NorspanSopTemplateCheck.gs`, live-DB check via `DIM_SOP_TEMPLATES`) was drafted but never committed/pushed — user chose instead to provide the source SOP checklist document directly (originally a Google Form) so the template gets built fresh from real content rather than just checking whether an old one exists. **User is pasting source SOP docs one by one.** First one received (2026-08-10) was actually for `MATIX-SK` ("Matix Saskatoon – Floor Design Verification"), not NORSPAN-MB — confirmed out of current pilot scope, held aside (not discarded — may be useful as a future template outside Wave 2). NORSPAN-MB-specific docs still incoming. Once received: review content, ask clarifying questions on ambiguous items (required vs optional, job_type/software/product scope), then build via `SopAdminEngine.createTemplate`/`addItem`/`publishTemplate` for `NORSPAN-MB` before 2026-08-17.
+- **TASK W2-1** | Design pilot rollout plan: which client(s) first, `WARN_ONLY` vs `BLOCK`, timeline | P2 | **Inputs confirmed 2026-08-10: client `NORSPAN-MB`, mode `WARN_ONLY`, start week of 2026-08-17 (Monday) — now at risk, see Session State.** Rollout mechanics (`SopGate.gs`): set Script Properties `SOP_ENABLED='true'`, `SOP_MODE='WARN_ONLY'`, `SOP_PILOT_CLIENTS='NORSPAN-MB'` in the Apps Script editor (no code change needed — flags are already read live). WARN_ONLY means non-blocking — designers see nothing rejected, only `SOP_GATE_WARN` log entries land in `_SYS_LOGS` when a QC submission has incomplete checklist items. Both NORSPAN-MB source SOP docs received 2026-08-10 (design software Alpine, ~9-item category-level checklist, `job_type='Roof Truss'`/`scope_code='TRUSS'` all settled) — **blocked on 3 real numeric conflicts between the two docs, escalated to user's managers, answer pending.** Full detail in Session State above. Original pre-flight gap (verify an ACTIVE template doesn't already/shouldn't exist) still applies once unblocked.
 - **TASK W2-2** | Trace `QcFindingTypes.gs` (521 lines, defines a QC finding taxonomy) — confirm whether an internal-QC reviewer queue UI exists or still needs building | P2 | **DONE 2026-08-10.** Taxonomy (17 codes, `DIM_QC_FINDING_TYPES`) is fully seeded but has zero consumers anywhere — no reviewer UI reads it. Current QC review flow (`QCHandler.gs`/`#modal-qc-review`) only captures `qc_result` + free text, no structured findings. Confirmed: needs building, not reviving. See W2-3.
 - **TASK W2-3** | Build QC findings-picker UI: multi-select finding codes (from `DIM_QC_FINDING_TYPES`) on the `#modal-qc-review` modal, new `portal_getQcFindingTypes()` read endpoint (first-ever reader of that table), `QCHandler.gs` changes to accept/store selected finding code(s) on the QC event | P2 | Not started. Scoped 2026-08-10 from W2-2's trace finding. Design/sequencing TBD — likely bundles with W2-1's pilot plan since both touch the same review modal.
 
