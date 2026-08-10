@@ -1094,23 +1094,22 @@ function openQCReview(jobNumber) {
 
 - [ ] **Step 4: Add a shared toggle handler + fetch/render/error functions**
 
-The existing decision-change toggle currently lives wherever `#qc-result`'s `change` listener shows/hides `#rework-notes-field` (search for `rework-notes-field` in the `<script>` block — the listener attaches `.style.display` based on `qc-result`'s value). Find that listener (likely near the other `addEventListener('click', ...)` wiring, registered as a `change` listener on `document.getElementById('qc-result')`) and replace its body so it also drives `#qc-findings-field` and triggers the fetch. If the existing listener reads:
+The existing decision-change toggle is at `src/07-portal/PortalView.html:1352-1355` (verified — exact text below). Change it from:
 ```javascript
-document.getElementById('qc-result').addEventListener('change', function() {
-  var isRework = this.value === 'MINOR_REWORK' || this.value === 'MAJOR_REWORK';
-  document.getElementById('rework-notes-field').style.display = isRework ? 'block' : 'none';
-});
+  document.getElementById('qc-result').addEventListener('change', function() {
+    var isRework = (this.value === 'MINOR_REWORK' || this.value === 'MAJOR_REWORK');
+    document.getElementById('rework-notes-field').style.display = isRework ? 'block' : 'none';
+  });
 ```
-change it to:
+to:
 ```javascript
-document.getElementById('qc-result').addEventListener('change', function() {
-  var isRework = this.value === 'MINOR_REWORK' || this.value === 'MAJOR_REWORK';
-  document.getElementById('rework-notes-field').style.display = isRework ? 'block' : 'none';
-  document.getElementById('qc-findings-field').style.display  = isRework ? 'block' : 'none';
-  if (isRework && !_qcFindingTypes) loadQcFindingTypes_();
-});
+  document.getElementById('qc-result').addEventListener('change', function() {
+    var isRework = (this.value === 'MINOR_REWORK' || this.value === 'MAJOR_REWORK');
+    document.getElementById('rework-notes-field').style.display = isRework ? 'block' : 'none';
+    document.getElementById('qc-findings-field').style.display  = isRework ? 'block' : 'none';
+    if (isRework && !_qcFindingTypes) loadQcFindingTypes_();
+  });
 ```
-(If the existing listener is phrased differently, preserve its exact structure and add only the two new lines + the `loadQcFindingTypes_()` trigger — do not rewrite unrelated logic.)
 
 Then insert these three new functions immediately before `function openQCReview(jobNumber) {`:
 ```javascript
