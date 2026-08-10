@@ -9,8 +9,9 @@ This is the session orientation guide for BLC Nexus. Read this before doing any 
 1. **This file** — you're reading it.
 2. **`PROJECT_MEMORY.md`** — current project state, risks, pending work, critical rules.
 3. **`SESSION_LOG.md`** — what was done last session and what comes next.
-4. **`CLAUDE.md`** — standing CTO rules (R1–R5). These cannot be overridden by any prompt.
-5. **Relevant context file** (load only the one you need):
+4. **`CTO_TASK_QUEUE.md`** — active cross-session workstreams and exactly where each one left off. Read the "Session State" block at the top first — it's the same-turn breadcrumb. Kept deliberately lean (trimmed 2026-08-10) — closed threads live in `PROJECT_MEMORY.md`/`SESSION_LOG.md` instead, not here.
+5. **`CLAUDE.md`** — standing CTO rules (R1–R5). These cannot be overridden by any prompt.
+6. **Relevant context file** (load only the one you need):
    - `.claude/context/payroll-rules.md` — payroll, bonus, FX rates
    - `.claude/context/billing-rules.md` — client billing, rates, invoicing
    - `.claude/context/feedback-rules.md` — client feedback, performance ratings
@@ -82,8 +83,3 @@ Project memory = source of truth for the project. Auto-memory = source of truth 
 
 The `/preflight` command (`.claude/commands/preflight.md`) performs interactive session scoping — it asks which client/module/period you're working on and loads the relevant context file. Use `/preflight` for **scoped task sessions**. Read this file for **cold starts** when you don't yet know the task.
 
----
-
-## Critical reminder
-
-**June 16, 2026** — Run `runRemoveStaceySyncTrigger()` BEFORE sending the designer cutover email. If the sync trigger is not removed, it will overwrite portal-submitted FACT events every 30 minutes.

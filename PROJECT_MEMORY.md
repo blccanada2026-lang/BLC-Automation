@@ -7,12 +7,14 @@
 
 ## 0. Time-Critical
 
-| Deadline | Action | Risk if missed |
-|---|---|---|
-| **ASAP** | Confirm with Sarty: job `260337` — same job entered twice, or two separate jobs? | Billing engine may invoice it twice (two COMPLETED_BILLABLE VW rows) |
-| **2026-Q2 (end of June)** | Send Q2 rating requests via portal (Send Rating Requests → `2026-Q2`) | Q2 quarterly bonus lacks rating input |
-| **2026-Q2** | Send Q2 feedback requests to clients | Q2 quarterly bonus lacks client feedback |
-| **End of June** | Forward Q1 bonus letters — 16 in CEO inbox (blccanada2026@gmail.com) | Designers haven't received their Q1 bonus details |
+Nothing with a genuine upcoming deadline right now (last reviewed
+2026-08-10). The Q2 ratings/feedback/Q1-bonus-letter items that used to
+sit here are past their original "end of June" framing and are now
+tracked as overdue/status-unknown items in `CTO_TASK_QUEUE.md`'s "Other
+Still-Open Items" instead (business/ops bullet) — check there, not here,
+for what's actually outstanding. PROD Apps Script ID rotation
+(security-flagged 2026-06-22) is explicitly deferred by the user until
+the current implementation wave is done — see `CTO_TASK_QUEUE.md` W0-1.
 
 ---
 
@@ -235,33 +237,21 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
 
 ---
 
-## 6. Current Active Work
+## 6. Current Active Work / 7. Pending Work
 
-- **PROD portal live** ✅ — ~17 staff active, post-cutover bugs resolved as of 2026-06-18.
-- **BATCH-004 migration complete** ✅ — June 1–15 timesheets fully reconciled: 1278.25h, all 16 actors balanced.
-- **Q1 bonus corrections** — ✅ COMPLETE (2026-06-16). 16 letters in CEO inbox (₹72,231.13 total). Not yet forwarded to designers.
-- **Stacey auto-sync** — ✅ Removed (2026-06-16 cutover).
-- **Client timesheet generator** — ✅ BUILT (HTML-to-PDF, all clients, designer summary, product fallback). See SESSION_LOG.md 2026-06-30→07-08 entry.
-- **Work log correction system** — ✅ SHIPPED — amend/void/reassign with RBAC hierarchy + period-close guard, portal UI on My Hours.
-- **Work log job_number orphan cleanup** — ✅ 46 of 66 post-cutover orphans resolved (see §7 for the 19 remaining + §12 ADR-WL-001).
-- **June billing** — **PENDING**, blocked on Sarty confirmation of the June 06B reconciliation findings (client mis-attribution: BCH, DBS; missing hours: PBG, DBG, AR001) and outstanding designer hour submissions.
-- **New Sarty-reported portal issue (2026-07-08, not yet investigated)** — duplicate NORSPAN client entries in the job list, and `WORK_LOG_PERIOD_FIXED` maintenance rows visible in My Hours. See §8.
+**Authoritative source: `CTO_TASK_QUEUE.md`** — "Session State" (exactly
+where things left off) + "CTO Wave Backlog" (the active multi-wave
+program, currently Wave 2 SOP/QC) + "Other Still-Open Items" (everything
+else pending, code and business/ops alike). Kept there, not duplicated
+here, so there's one place to check instead of two that can silently
+drift apart — this section deliberately holds only durable facts unlikely
+to change week to week.
 
----
-
-## 7. Pending Work / Next Steps
-
-Priority order:
-1. **Investigate Sarty's 2026-07-08 email** — (a) duplicate NORSPAN client entries (plain "NORSPAN" 55 jobs vs. "NORSPAN-MB" 4 jobs — same class of problem as MATIX vs. MATIX-SK); (b) `WORK_LOG_PERIOD_FIXED` system-maintenance rows visible to Sarty in My Hours — need to be filtered from that view. **Not yet investigated as of this entry.**
-2. **19 truly orphaned job_numbers** (post-cutover, don't resolve via normalization) — need a manual decision: create VW rows for them, or write them off. See ADR-WL-001.
-3. **Admin overhead policy decision** — how should `"job assign & help"`-style non-job hours be tracked going forward? Separate pseudo-job in VW, or excluded entirely from work-log reporting?
-4. **Fix `submitted_at`/`created_at` bug in `writeQueueItem`** — identified 2026-07-08, not yet fixed.
-5. **Test suite uses real staff identities** — flagged as a risk; needs a DEV-only test actor pass so test runs can't affect real staff data.
-6. **Inactive staff security check** — review RBAC/portal access for staff marked inactive in DIM_STAFF_ROSTER.
-7. **June billing** — resolve pending on Sarty confirmation + outstanding designer hour submissions, then run first June payroll from V3.
-8. **Forward Q1 bonus letters** — 16 in CEO inbox (blccanada2026@gmail.com), review and forward to designers.
-9. **Send Q2 rating requests + Q2 feedback requests** — via portal (may be overtaken by events — confirm current quarter status before sending).
-10. **Raw Q1 FACT_WORK_LOGS dedup** — 1,694 duplicate rows from Jan–Mar CSV re-import not yet cleaned (bonus already corrected via amendment; distinct from the 6 June duplicates found and voided this sprint).
+- **PROD portal live** ✅ — post-cutover since 2026-06-16, ~17+ staff active (real count has grown since; check `DIM_STAFF_ROSTER` for current).
+- **Stacey auto-sync** — ✅ removed at cutover, confirmed still absent from PROD's live triggers as of the 2026-08-07 trigger audit.
+- **Client timesheet generator** (fixed-period) — ✅ built; **timesheet-for-any-period** (arbitrary range, CEO/HR_ACCOUNTING/ADMIN) — ✅ built 2026-08-06.
+- **Work log correction system** — ✅ shipped (amend/void/reassign, RBAC hierarchy, period-close guard).
+- **QC/SOP checklist gate** (`src/13-sop/`) — ✅ fully built, feature-flagged, **`SOP_ENABLED` confirmed off everywhere** as of 2026-08-09. See §3.8.
 
 → Full backlog: `.claude/context/backlog.md`
 → Cutover sequence: `.claude/context/cutover-plan.md`
