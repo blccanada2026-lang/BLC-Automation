@@ -126,7 +126,7 @@ var DAL = (function () {
     'DIM_QC_PROCESS_ITEMS':     ['QcProcessAdminEngine', 'QcProcessSeed'],
     'FACT_QC_REVIEW_SESSIONS':  ['QcReviewDAL'],
     'FACT_QC_REVIEW_CHECKLISTS': ['QcReviewDAL'],
-    'FACT_QC_FINDINGS':          ['QcReviewDAL'],
+    'FACT_QC_FINDINGS':          ['QcReviewDAL', 'QCHandler'],
 
     // ── View tables (rebuilt projections) ───────────────────
     'VW_JOB_CURRENT_STATE':  ['EventReplayEngine', 'JobCreateHandler', 'JobAssignHandler', 'JobStartHandler',

@@ -78,6 +78,17 @@ var QCHandler = (function () {
       required:  false,
       maxLength: 500,
       label:     'Rework Notes'
+    },
+    finding_codes: {
+      // No 'type' key — ValidationEngine.checkType_ only recognizes
+      // 'string'|'number'|'boolean'|'date'|'email' (its default case
+      // returns false), so declaring type:'array' would reject every
+      // submission. Omitting 'type' skips the type-check block
+      // entirely and the array passes through into cleanPayload
+      // untouched; shape/contents are validated manually in
+      // handleFlowB_ (Array.isArray + getFindingMeta_).
+      required: false,
+      label:    'Finding Codes'
     }
   };
 
@@ -199,6 +210,34 @@ var QCHandler = (function () {
   }
 
   /**
+   * Looks up severity_default for each submitted finding code and
+   * validates it's known, active, and applicable to the given product.
+   * Read-only — used for both validation (blocking) and metadata
+   * (feeds the later write). Throws on the first invalid code found.
+   *
+   * @param {string[]} codes
+   * @param {string}   productCode
+   * @returns {Object}  { code: { severity: string } }
+   */
+  function getFindingMeta_(codes, productCode) {
+    var rows = DAL.readAll(Config.TABLES.DIM_QC_FINDING_TYPES, { callerModule: 'QCHandler' });
+    var byCode = {};
+    rows.forEach(function (r) { byCode[r.finding_code] = r; });
+
+    var meta = {};
+    codes.forEach(function (code) {
+      var row = byCode[code];
+      var applicable = row && String(row.active_flag) === 'TRUE' &&
+        (String(row.product_applicability) === 'ALL' || String(row.product_applicability) === String(productCode));
+      if (!applicable) {
+        throw new Error('QCHandler: finding_code "' + code + '" is unknown, inactive, or not applicable to product "' + productCode + '".');
+      }
+      meta[code] = { severity: row.severity_default };
+    });
+    return meta;
+  }
+
+  /**
    * Flow B: QC reviewer processes the result.
    * APPROVED:      QC_REVIEW → COMPLETED_BILLABLE
    * MINOR_REWORK:  QC_REVIEW → MINOR_FIX (designer fixes + sends direct to client)
@@ -213,6 +252,20 @@ var QCHandler = (function () {
     }
 
     RBAC.enforcePermission(actor, RBAC.ACTIONS.QC_APPROVE);
+
+    // ── Finding codes: blocking validation (policy, not infra) ──
+    // Runs here — after RBAC, alongside the rework_notes check —
+    // because code validity is a review-completeness rule, same
+    // category as "rework_notes is required". The actual FACT_QC_FINDINGS
+    // *write* happens much later (see below) and is deliberately NOT
+    // blocking — see the comment at that call site for why.
+    var findingMeta = null;
+    if (qcResult === 'MINOR_REWORK' || qcResult === 'MAJOR_REWORK') {
+      if (!Array.isArray(cleanPayload.finding_codes) || cleanPayload.finding_codes.length === 0) {
+        throw new Error('QCHandler: at least one finding_code is required when qc_result = "' + qcResult + '".');
+      }
+      findingMeta = getFindingMeta_(cleanPayload.finding_codes, view.product_code);
+    }
 
     var targetState, eventType;
     if (qcResult === 'APPROVED') {
@@ -244,7 +297,11 @@ var QCHandler = (function () {
     var periodId = Identifiers.generateCurrentPeriodId();
     DAL.ensurePartition(Config.TABLES.FACT_QC_EVENTS, periodId, 'QCHandler');
 
+    var sessionId = (qcResult === 'MINOR_REWORK' || qcResult === 'MAJOR_REWORK')
+      ? Identifiers.generatePrefixedId(Config.ID_PREFIXES.QC_SESSION)
+      : '';
     var eventRow = buildQCEvent_(eventType, cleanPayload, actor, periodId, idempotencyKey, rawPayload);
+    eventRow.qc_session_id = sessionId;
     try {
       DAL.appendRow(Config.TABLES.FACT_QC_EVENTS, eventRow, { callerModule: 'QCHandler', periodId: periodId });
     } catch (e) {
@@ -277,6 +334,53 @@ var QCHandler = (function () {
     }
     if (qcResult === 'APPROVED') {
       sendClientCompletionEmail_(view);
+    }
+
+    // ── Findings write: isolated failure domain (infra, not policy) ──
+    // Code validity was already enforced above via getFindingMeta_
+    // (findingMeta is non-null here whenever there are codes to write).
+    // This block writes to FACT_QC_FINDINGS, a table that has never
+    // been written before in this codebase — DAL.ensurePartition
+    // creates its first-ever partition tab here. If this write fails
+    // for any infra reason, the review must still land (event written,
+    // state transitioned, notification sent, above) rather than
+    // stranding the job — isDuplicate_ checks FACT_QC_EVENTS directly,
+    // so a retry after a thrown error here would be treated as a
+    // duplicate and never reach this write or the VW update again.
+    if (findingMeta) {
+      try {
+        DAL.ensurePartition(Config.TABLES.FACT_QC_FINDINGS, periodId, 'QCHandler');
+        var findingRows = cleanPayload.finding_codes.map(function (code) {
+          return {
+            qc_finding_id:         Identifiers.generatePrefixedId(Config.ID_PREFIXES.QC_FINDING),
+            event_type:            'FINDING_RECORDED',
+            amendment_of:          '',
+            period_id:             periodId,
+            qc_session_id:         sessionId,
+            job_number:            jobNumber,
+            client_code:           view.client_code || '',
+            product_code:          view.product_code || '',
+            reviewer_person_code:  actor.personCode || '',
+            finding_code:          code,
+            severity:              findingMeta[code].severity,
+            comment:               cleanPayload.rework_notes || '',
+            corrected_at:          '',
+            corrected_in_revision: '',
+            created_at:            eventRow.timestamp,
+            request_id:            queueId
+          };
+        });
+        DAL.appendRows(Config.TABLES.FACT_QC_FINDINGS, findingRows, { callerModule: 'QCHandler', periodId: periodId });
+      } catch (findingsErr) {
+        Logger.error('QC_FINDINGS_WRITE_FAILED', {
+          module:     'QCHandler',
+          event_id:   eventRow.event_id,
+          job_number: jobNumber,
+          codes:      cleanPayload.finding_codes.join(','),
+          error:      findingsErr.message
+        });
+        // Do not rethrow — the review itself already succeeded above.
+      }
     }
 
     Logger.info(eventType, {
