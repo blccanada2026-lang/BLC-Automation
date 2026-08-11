@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-08-10 → 2026-08-11 Session (Wave 2 task W2-3 — findings-picker implemented, subagent-driven, 4 tasks)
+
+### Work Completed
+- Implemented W2-3 (QC findings-picker) end-to-end on branch `qc-findings-picker` via subagent-driven development, 4 tasks, each independently reviewed. Commits `fb0728b..efd548c`.
+- **Task 1**: new `portal_getQcFindingTypes` read endpoint (`Portal.gs`) — first-ever reader of `DIM_QC_FINDING_TYPES`. Reviewed clean after 1 fix round (removed a debug/manual-check helper that shipped by accident — write-before-RBAC, no `Config.isDev()` guard, testing-policy.md §3 violation).
+- **Task 2**: `QCHandler.gs` validation (rejects MINOR_REWORK/MAJOR_REWORK without `finding_codes`) + `FACT_QC_FINDINGS` write, 5 new tests, suite 12 registered in `TestHarness.gs`. Reviewed clean (0 Critical, 0 Important, 5 Minor deferred — below). Implementer itself caught and fixed a real pre-existing-test regression (3 fixtures needed `finding_codes` added) before review started.
+- **Task 3**: frontend picker UI on `#modal-qc-review` (`PortalView.html`). Reviewed clean after 1 fix round (added a missing scroll cap on the checklist, mirroring the existing `#sop-items-list` pattern).
+
+### Files Changed
+- `src/07-portal/Portal.gs`, `src/07-portal/PortalView.html`, `src/06-handlers/QCHandler.gs`, `src/setup/QCHandlerTest.gs`, `src/setup/TestHarness.gs`, `src/01-dal/DAL.gs` (1-line)
+
+### Tests Run
+- **Not literally executed** — this environment has no live Google Apps Script editor. `runQCFindingsPickerTests`/`runQCHandlerTests`/`runQCHandlerFlowTests` were verified by manual code trace only, by both each task's implementer and its independent task reviewer. This is real, accumulated evidence but is NOT the same as "ran green in DEV." Live GAS execution is still outstanding.
+- Jest: not touched by this work (GAS-only change surface).
+
+### Issues Found (deferred Minor findings — carried forward, not silently dropped)
+- Task 2 (5): (1) no de-dup of `finding_codes` before write — dupes create duplicate append-only `FACT_QC_FINDINGS` rows; (2) 2 tests read `FACT_QC_FINDINGS` for a partition not guaranteed to exist standalone post-rollover, mitigated by setup-time partition creation; (3) inconsistent `DIM_QC_FINDING_TYPES` seeding convention between suite 9 (seeds once at runner, individual tests now silently depend on it) and suite 12 (seeds per-test) — breaks the direct-function-picker workflow testing-policy.md anticipates; (4) the duplicate-replay test doesn't actually re-exercise the findings write path (job already in a different state by replay time, hits a different pre-existing guard) — disclosed coverage gap, not a false pass.
+- Task 3 (2): (1) missing a flex wrapper div around each checkbox row's label (cosmetic, matches the plan's own literal spec — not implementer drift); (2) a product with zero applicable `DIM_QC_FINDING_TYPES` rows would show an empty picker and permanently block rework submission with no in-UI escape — currently unreachable (16/17 codes apply to all products today), backlog item for future data-entry mistakes.
+- **Deployment-sequencing constraint (not a code defect — a deploy-checklist item):** Task 2's backend and Task 3's frontend are not independently deployable. Backend unconditionally rejects rework submissions without `finding_codes`; only the Task 3 UI supplies that field. **Must ship to PROD together, same push**, or every live QC rework submission breaks the moment the backend alone lands.
+
+### Next Recommended Step
+- Run the live GAS test suites (`runQCFindingsPickerTests`, `runQCHandlerTests`, `runQCHandlerFlowTests`, or the full `runV3HandlerTests()`) in DEV via the Apps Script editor — first real execution, not just trace-verification.
+- Get explicit user approval before `npm run push:prod` (branch is not yet merged to main either — that's also a user decision).
+- Per R4.7: since `PortalView.html` and `Portal.gs` both changed, a New Version redeploy in the Apps Script editor is required after any PROD push — not yet applicable since no PROD push has happened.
+
+---
+
 ## 2026-08-10 Session Part 4 (Wave 2 task W2-1 — pilot rollout plan)
 
 ### Work Completed
