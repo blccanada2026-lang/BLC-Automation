@@ -1117,6 +1117,12 @@
           <option value="MINOR_REWORK">⚠ MINOR ERROR — designer fixes and sends direct to client</option>
           <option value="MAJOR_REWORK">❌ MAJOR ERROR — designer revises and re-submits to QC</option>
         </select></div>
+      <div class="field" id="qc-findings-field" style="display:none">
+        <label>Finding(s) <span style="color:var(--c-danger)">*</span></label>
+        <div id="qc-findings-error" class="sop-error-banner" style="display:none"></div>
+        <div id="qc-findings-loading" style="color:var(--c-muted);font-size:13px;display:none">Loading finding types…</div>
+        <div id="qc-findings-list"></div>
+      </div>
       <div class="field" id="rework-notes-field" style="display:none">
         <label>Rework Notes <span style="color:var(--c-danger)">*</span></label>
         <textarea id="qc-rework-notes" rows="3" maxlength="500"
@@ -1352,6 +1358,8 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('qc-result').addEventListener('change', function() {
     var isRework = (this.value === 'MINOR_REWORK' || this.value === 'MAJOR_REWORK');
     document.getElementById('rework-notes-field').style.display = isRework ? 'block' : 'none';
+    document.getElementById('qc-findings-field').style.display  = isRework ? 'block' : 'none';
+    if (isRework && !_qcFindingTypes) loadQcFindingTypes_();
   });
 
   // Close modals via [data-close] buttons + backdrop click
@@ -2308,6 +2316,59 @@ function openResume(jobNumber) {
   setModalJobInfo('resume-job-info', _activeJob);
   openModal('modal-resume');
 }
+var _qcFindingTypes = null;  // cache for the current modal session — cleared in openQCReview()
+
+function loadQcFindingTypes_() {
+  document.getElementById('qc-findings-error').style.display   = 'none';
+  document.getElementById('qc-findings-loading').style.display = 'block';
+  var list = document.getElementById('qc-findings-list');
+  while (list.firstChild) list.removeChild(list.firstChild);
+
+  TOKEN_RUN
+    .withSuccessHandler(function (json) {
+      var data;
+      try { data = JSON.parse(json); } catch (e) { showQcFindingsError_('Could not parse finding types response.'); return; }
+      _qcFindingTypes = data.findingTypes || [];
+      renderQcFindingTypes_(_qcFindingTypes);
+    })
+    .withFailureHandler(function (err) {
+      showQcFindingsError_('Could not load finding types: ' + (err.message || String(err)));
+    })
+    .portal_getQcFindingTypes(_activeJob.product_code || '');
+}
+
+function showQcFindingsError_(msg) {
+  document.getElementById('qc-findings-loading').style.display = 'none';
+  var banner = document.getElementById('qc-findings-error');
+  banner.textContent   = msg;  // textContent — never innerHTML
+  banner.style.display = 'block';
+}
+
+function renderQcFindingTypes_(findingTypes) {
+  document.getElementById('qc-findings-loading').style.display = 'none';
+  var list = document.getElementById('qc-findings-list');
+  while (list.firstChild) list.removeChild(list.firstChild);
+
+  findingTypes.forEach(function (ft) {
+    var row = document.createElement('div');
+    row.className = 'sop-item';  // reuse existing checkbox-row styling
+
+    var cb = document.createElement('input');
+    cb.type           = 'checkbox';
+    cb.id              = 'qc-finding-cb-' + ft.finding_code;
+    cb.dataset.code    = ft.finding_code;
+
+    var lbl = document.createElement('label');
+    lbl.htmlFor   = cb.id;
+    lbl.className = 'sop-item-label';
+    lbl.appendChild(document.createTextNode(ft.finding_label));
+
+    row.appendChild(cb);
+    row.appendChild(lbl);
+    list.appendChild(row);
+  });
+}
+
 function openQCReview(jobNumber) {
   _activeJob = findJob(jobNumber);
   if (!_activeJob) return;
@@ -2315,7 +2376,13 @@ function openQCReview(jobNumber) {
   document.getElementById('qc-result').value       = 'APPROVED';
   document.getElementById('qc-rework-notes').value = '';
   document.getElementById('qc-notes').value        = '';
-  document.getElementById('rework-notes-field').style.display = 'none';
+  document.getElementById('rework-notes-field').style.display  = 'none';
+  document.getElementById('qc-findings-field').style.display   = 'none';
+  document.getElementById('qc-findings-error').style.display   = 'none';
+  document.getElementById('qc-findings-loading').style.display = 'none';
+  var list = document.getElementById('qc-findings-list');
+  while (list.firstChild) list.removeChild(list.firstChild);
+  _qcFindingTypes = null;
   openModal('modal-qc-review');
 }
 
@@ -2759,14 +2826,25 @@ function submitQCReview() {
   var qcResult    = document.getElementById('qc-result').value;
   var reworkNotes = val('qc-rework-notes');
   var notes       = val('qc-notes');
+  var isRework    = qcResult === 'MINOR_REWORK' || qcResult === 'MAJOR_REWORK';
 
-  if ((qcResult === 'MINOR_REWORK' || qcResult === 'MAJOR_REWORK') && !reworkNotes) {
+  if (isRework && !reworkNotes) {
     return showToast('Rework notes are required when returning a job.', 'error');
+  }
+
+  var findingCodes = [];
+  if (isRework) {
+    var checked = document.querySelectorAll('#qc-findings-list input[type="checkbox"]:checked');
+    checked.forEach(function (cb) { findingCodes.push(cb.dataset.code); });
+    if (findingCodes.length === 0) {
+      return showToast('Select at least one finding when returning a job for rework.', 'error');
+    }
   }
 
   var payload = { job_number: _activeJob.job_number, qc_result: qcResult };
   if (reworkNotes) payload.rework_notes = reworkNotes;
   if (notes)       payload.notes = notes;
+  if (isRework)    payload.finding_codes = findingCodes;
 
   closeModal('modal-qc-review');
   var msg = qcResult === 'APPROVED'
