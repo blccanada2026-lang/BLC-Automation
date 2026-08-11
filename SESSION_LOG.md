@@ -8,7 +8,7 @@
 ## 2026-08-10 → 2026-08-11 Session (Wave 2 task W2-3 — findings-picker implemented, subagent-driven, 4 tasks)
 
 ### Work Completed
-- Implemented W2-3 (QC findings-picker) end-to-end on branch `qc-findings-picker` via subagent-driven development, 4 tasks, each independently reviewed. Commits `fb0728b..efd548c`.
+- Implemented W2-3 (QC findings-picker) end-to-end on branch `qc-findings-picker` via subagent-driven development, 4 tasks. The 3 implementation tasks were each independently reviewed and confirmed clean; this session-close-out entry (Task 4) is reviewed separately. Commits `fb0728b..efd548c`.
 - **Task 1**: new `portal_getQcFindingTypes` read endpoint (`Portal.gs`) — first-ever reader of `DIM_QC_FINDING_TYPES`. Reviewed clean after 1 fix round (removed a debug/manual-check helper that shipped by accident — write-before-RBAC, no `Config.isDev()` guard, testing-policy.md §3 violation).
 - **Task 2**: `QCHandler.gs` validation (rejects MINOR_REWORK/MAJOR_REWORK without `finding_codes`) + `FACT_QC_FINDINGS` write, 5 new tests, suite 12 registered in `TestHarness.gs`. Reviewed clean (0 Critical, 0 Important, 5 Minor deferred — below). Implementer itself caught and fixed a real pre-existing-test regression (3 fixtures needed `finding_codes` added) before review started.
 - **Task 3**: frontend picker UI on `#modal-qc-review` (`PortalView.html`). Reviewed clean after 1 fix round (added a missing scroll cap on the checklist, mirroring the existing `#sop-items-list` pattern).
