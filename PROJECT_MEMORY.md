@@ -288,6 +288,7 @@ to change week to week.
 | **PROD Apps Script project ID rotation status unverified** | **Potentially HIGH — unresolved since 2026-06-22** | Flagged urgent that day (old ID was public since first commit, treat as compromised). Cannot be verified from code — needs the user to confirm directly in the Google Apps Script/Cloud console. |
 | **`SOP_ENABLED` current PROD state unverified** | ~~Medium~~ | **RESOLVED 2026-08-09.** User confirmed: off everywhere. Wave 2 is a clean pilot launch, not reviving something stalled. |
 | **`QueueProcessor` 232-second execution outlier** | Medium, unconfirmed pattern | **FOUND 2026-08-10**, via `PerfBaselineReport.gs` (built for W0-2, unrelated purpose). `max=231994ms` against `p95≈8.8s` across 2,906+ calls — close to Apps Script's 6-minute execution ceiling. If ever actually hit mid-run, that's a silent partial-processing risk. Single outlier so far in the sample — not yet confirmed as recurring. Not investigated further. |
+| **`DIM_QC_FINDING_TYPES` has no production seeding path** | Medium–High (deploy blocker if unaddressed) | **IDENTIFIED 2026-08-11**, W2-3 findings-picker branch's final whole-branch review. The table is now load-bearing for QC rework (`QCHandler.gs` validation added on this branch), but `runFullSetup` only creates its header row — the only callers of `QcFindingTypes.seed()` anywhere in `src/` are test files, no PROD entry point exists. If unseeded in the deploy target, every MINOR_REWORK/MAJOR_REWORK QC submission is silently rejected (empty picker, no explanatory message, no in-UI recovery). Manual seed step required before this feature's PROD deploy — see `CTO_TASK_QUEUE.md` Session State. |
 
 ---
 
@@ -367,6 +368,8 @@ runCEODailyBriefing()             # live run — sends email
 | **ADR-WL-003** — closed-job guard blocks work log submission against INVOICED/VOIDED/CANCELLED jobs | Protects billing integrity once a job is invoiced; corrections route through WorkLogCorrectionHandler instead. Full ADR: `docs/SOP_DECISIONS.md` |
 | **ADR-JOB-002** — product_code required at job creation, enforced via post-validation guard (not schema `required: true`) | Generic ValidationEngine message isn't actionable for a dropdown-driven submission; product_code drives job_type, SOP template resolution, and timesheet columns downstream. Full ADR: `docs/SOP_DECISIONS.md` |
 | Wave 2 SOP pilot: client `NORSPAN-MB`, mode `WARN_ONLY`, starts 2026-08-17 | User's confirmed business input, 2026-08-10, for W2-1. Non-blocking by design (WARN_ONLY) — first real-world signal on checklist completeness before ever considering BLOCK mode. See `CTO_TASK_QUEUE.md` W2-1 for rollout mechanics and the open pre-flight template-existence gap. |
+| W2-3 findings-picker: Task 2 (backend) and Task 3 (frontend) must ship to PROD together, same push | `QCHandler.gs` unconditionally rejects MINOR_REWORK/MAJOR_REWORK submissions lacking `finding_codes`; `PortalView.html`'s picker is the only thing that supplies that field from the real UI — deploying the backend alone breaks every live QC rework submission until the frontend follows. |
+| W2-3 is the first-ever consumer/writer of `FACT_QC_FINDINGS` | The table (T13 QMS Layer 3) existed in schema only, unwired, until this branch — `portal_getQcFindingTypes()` (first-ever reader of `DIM_QC_FINDING_TYPES`) and `QCHandler.gs`'s write to `FACT_QC_FINDINGS` were both implemented on branch `qc-findings-picker` 2026-08-11 (not yet merged to main or deployed). |
 
 ---
 
@@ -382,3 +385,4 @@ runCEODailyBriefing()             # live run — sends email
 8. **CEO email** = `raj.nair@bluelotuscanada.ca` (with dot). Also aliased as `blccanada2026@gmail.com`.
 9. **June 16: remove Stacey sync trigger before cutover.**
 10. **No payroll run until Phase 3 cutover verified.**
+11. **Before W2-3 (findings-picker) PROD deploy: confirm `DIM_QC_FINDING_TYPES` is seeded** (`QcFindingTypes.seed(<admin email>)`, idempotent) — no production seeding path exists yet; see §8.

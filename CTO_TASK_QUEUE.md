@@ -78,10 +78,12 @@ registration), Task 3 (frontend picker on `#modal-qc-review` in
 reviewer after implementation, 2 fix rounds total (Task 1: removed a
 debug helper; Task 3: added a missing scroll cap), both addressed,
 both re-verified clean. Task 4 (this session close-out) is undergoing
-its own review now — not yet confirmed clean. 5 Minor findings
-deferred from Task 2's review + 2 Minor from Task 3's — see
-`SESSION_LOG.md`'s 2026-08-11 entry (not a complete re-listing here,
-kept lean).
+its own review now — not yet confirmed clean. 4 actionable Minor
+findings deferred from Task 2's review + 2 Minor from Task 3's; a 5th
+item from Task 2's review was a pre-existing-code observation
+(`rework_notes` check ordering, unrelated to this branch, no action
+needed), not a deferred item — see `SESSION_LOG.md`'s 2026-08-11
+entry (not a complete re-listing here, kept lean).
 **GAS test execution still pending** — no live Apps Script editor in
 this environment, so `runQCFindingsPickerTests`/`runQCHandlerTests`/
 `runQCHandlerFlowTests` were verified by manual code trace only (by
@@ -96,6 +98,17 @@ submission gets rejected until Task 3 follows. **Next action:** get a
 human to run the GAS suites live in DEV; then explicit user
 go-ahead before `npm run push:prod` (out of scope for this plan —
 deploy/merge decisions belong to the user).
+
+**Before deploying:** confirm `DIM_QC_FINDING_TYPES` has its 17 rows
+populated in the target environment (`QcFindingTypes.seed(<admin
+email>)`, idempotent, safe to re-run). If unpopulated, every QC
+rework submission will be silently rejected — the picker shows an
+empty list with no explanatory message, and there's no way to
+recover except reopening the modal (which just re-fetches the same
+empty result). No current production entry point exists for this
+seeder outside the Apps Script editor's function picker — a backlog
+item, not blocking this deploy, but the manual step itself is
+required.
 
 ---
 
