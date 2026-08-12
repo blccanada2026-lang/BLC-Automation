@@ -1127,7 +1127,7 @@ function portal_getQcFindingTypes(ptoken, productCode) {
   }
 
   var filtered = rows.filter(function (r) {
-    return String(r.active_flag) === 'TRUE' &&
+    return String(r.active_flag).toUpperCase() === 'TRUE' &&
       (String(r.product_applicability) === 'ALL' || String(r.product_applicability) === String(productCode));
   });
 

@@ -227,7 +227,7 @@ var QCHandler = (function () {
     var meta = {};
     codes.forEach(function (code) {
       var row = byCode[code];
-      var applicable = row && String(row.active_flag) === 'TRUE' &&
+      var applicable = row && String(row.active_flag).toUpperCase() === 'TRUE' &&
         (String(row.product_applicability) === 'ALL' || String(row.product_applicability) === String(productCode));
       if (!applicable) {
         throw new Error('QCHandler: finding_code "' + code + '" is unknown, inactive, or not applicable to product "' + productCode + '".');
