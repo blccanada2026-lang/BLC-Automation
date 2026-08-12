@@ -169,7 +169,8 @@ var DAL = (function () {
     'FACT_QC_EVENTS':       true,
     'FACT_BILLING_LEDGER':  true,
     'FACT_PAYROLL_LEDGER':  true,
-    'FACT_SOP_AUDITS':      true
+    'FACT_SOP_AUDITS':      true,
+    'FACT_QC_FINDINGS':     true
   };
 
   // FACT tables are the same set as partitioned tables here.
