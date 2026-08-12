@@ -31,7 +31,7 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-08-11)
+## Session State (last updated: end of turn, 2026-08-12)
 
 **W2-1 — numeric conflicts resolved by user's managers, 2026-08-10.**
 All three blockers from the two NORSPAN-MB source docs (`SOP-NOR-TRS-003`
@@ -67,48 +67,23 @@ conflicting ACTIVE template already exists in `DIM_SOP_TEMPLATES` for
 NORSPAN-MB) still applies — check before flipping `SOP_ENABLED`.
 2026-08-17 pilot start date back on track.
 
-**W2-3 (findings-picker UI) — implementation complete, subagent-driven,
-4 tasks; NOT yet merged to main, NOT deployed.**
-Sits entirely on branch `qc-findings-picker` (a git worktree), commits
-`fb0728b..efd548c`. The 3 implementation tasks — Task 1
-(`portal_getQcFindingTypes` read endpoint), Task 2 (`QCHandler.gs`
-validation + `FACT_QC_FINDINGS` write, 5 new tests, suite 12
-registration), Task 3 (frontend picker on `#modal-qc-review` in
-`PortalView.html`) — were each independently reviewed by a task
-reviewer after implementation, 2 fix rounds total (Task 1: removed a
-debug helper; Task 3: added a missing scroll cap), both addressed,
-both re-verified clean. Task 4 (this session close-out) is undergoing
-its own review now — not yet confirmed clean. 4 actionable Minor
-findings deferred from Task 2's review + 2 Minor from Task 3's; a 5th
-item from Task 2's review was a pre-existing-code observation
-(`rework_notes` check ordering, unrelated to this branch, no action
-needed), not a deferred item — see `SESSION_LOG.md`'s 2026-08-11
-entry (not a complete re-listing here, kept lean).
-**GAS test execution still pending** — no live Apps Script editor in
-this environment, so `runQCFindingsPickerTests`/`runQCHandlerTests`/
-`runQCHandlerFlowTests` were verified by manual code trace only (by
-both implementer and reviewer, independently), never actually run.
-**Deployment-sequencing constraint (hard blocker on PROD, not just a
-should):** Task 2's backend unconditionally rejects any
-MINOR_REWORK/MAJOR_REWORK QC submission that lacks `finding_codes`;
-Task 3's frontend is the only thing that supplies that field from the
-real UI. **Tasks 2 and 3 must ship to PROD together, same push** — if
-Task 2's backend alone reaches PROD first, every live QC rework
-submission gets rejected until Task 3 follows. **Next action:** get a
-human to run the GAS suites live in DEV; then explicit user
-go-ahead before `npm run push:prod` (out of scope for this plan —
-deploy/merge decisions belong to the user).
-
-**Before deploying:** confirm `DIM_QC_FINDING_TYPES` has its 17 rows
-populated in the target environment (`QcFindingTypes.seed(<admin
-email>)`, idempotent, safe to re-run). If unpopulated, every QC
-rework submission will be silently rejected — the picker shows an
-empty list with no explanatory message, and there's no way to
-recover except reopening the modal (which just re-fetches the same
-empty result). No current production entry point exists for this
-seeder outside the Apps Script editor's function picker — a backlog
-item, not blocking this deploy, but the manual step itself is
-required.
+**W2-3 (findings-picker UI) — merged to main 2026-08-12 (PR #21,
+`5e80aa7`), fully validated live in DEV.**
+`runQCFindingsPickerTests()` 23/23, `runQCHandlerTests()` 25/25,
+`runQCHandlerFlowTests()` 31/31 — **79/79 passing, 0 regressions.**
+Live execution (this was the first time these suites ever actually
+ran — previously only manually traced) found and fixed 2 real bugs
+along the way: a `PARTITIONED_TABLES` registration gap for
+`FACT_QC_FINDINGS`, and a Google-Sheets-coerces-`"TRUE"`-to-boolean
+bug in the `active_flag` check (2 call sites). Full writeup in "Other
+Still-Open Items" below and in `SESSION_LOG.md`'s 2026-08-12 entry.
+`DIM_QC_FINDING_TYPES` confirmed seeded correctly in DEV (17/17 rows).
+**Not yet deployed to PROD** — no PROD deploy is authorized without
+separate, explicit user approval (CLAUDE.md R4/R6/R9). When that
+approval comes: Tasks 2+3 (backend validation + frontend picker) must
+ship together, same push — the backend unconditionally rejects
+MINOR_REWORK/MAJOR_REWORK without `finding_codes`, and the frontend is
+the only thing that supplies it from the real UI.
 
 ---
 
@@ -129,8 +104,8 @@ Source: full CTO architecture/performance/tech-debt assessment,
 
 ### EPIC: Wave 2 — SOP/QC Finish & Activate (NOT a rebuild — `src/13-sop/` already exists, 3,725 lines, feature-flagged pilot infra) — **CURRENT FOCUS**
 - **TASK W2-1** | Design pilot rollout plan: which client(s) first, `WARN_ONLY` vs `BLOCK`, timeline | P2 | **Inputs confirmed 2026-08-10: client `NORSPAN-MB`, mode `WARN_ONLY`, start week of 2026-08-17 (Monday).** Rollout mechanics (`SopGate.gs`): set Script Properties `SOP_ENABLED='true'`, `SOP_MODE='WARN_ONLY'`, `SOP_PILOT_CLIENTS='NORSPAN-MB'` in the Apps Script editor (no code change needed — flags are already read live). WARN_ONLY means non-blocking — designers see nothing rejected, only `SOP_GATE_WARN` log entries land in `_SYS_LOGS` when a QC submission has incomplete checklist items. **Unblocked 2026-08-10** — all content decisions settled (software Alpine, ~9-item category-level checklist, job_type/scope_code, and the 3 numeric conflicts between the two source docs all resolved via user's managers). Full detail in Session State above. **Ready to build via `SopAdminEngine`** — pre-flight gap (verify no conflicting ACTIVE template already exists) still applies before flipping `SOP_ENABLED`.
-- **TASK W2-2** | Trace `QcFindingTypes.gs` (521 lines, defines a QC finding taxonomy) — confirm whether an internal-QC reviewer queue UI exists or still needs building | P2 | **DONE 2026-08-10.** Taxonomy (17 codes, `DIM_QC_FINDING_TYPES`) is fully seeded but has zero consumers anywhere — no reviewer UI reads it. Current QC review flow (`QCHandler.gs`/`#modal-qc-review`) only captures `qc_result` + free text, no structured findings. Confirmed: needs building, not reviving. See W2-3.
-- **TASK W2-3** | Build QC findings-picker UI: multi-select finding codes (from `DIM_QC_FINDING_TYPES`) on the `#modal-qc-review` modal, new `portal_getQcFindingTypes()` read endpoint (first-ever reader of that table), `QCHandler.gs` changes to accept/store selected finding code(s) on the QC event | P2 | **Implementation DONE 2026-08-11** on branch `qc-findings-picker` (commits `fb0728b..efd548c`) — the 3 implementation tasks (endpoint, handler, UI) are reviewed clean; this close-out task (Task 4) is in its own review now. NOT merged to main, NOT deployed — GAS test execution and PROD deploy both still pending. Tasks 2+3 must ship together (see Session State above). See `SESSION_LOG.md`'s 2026-08-11 entry.
+- **TASK W2-2** | Trace `QcFindingTypes.gs` (521 lines, defines a QC finding taxonomy) — confirm whether an internal-QC reviewer queue UI exists or still needs building | P2 | **DONE 2026-08-10.** At the time, taxonomy (17 codes, `DIM_QC_FINDING_TYPES`) was fully seeded but had zero consumers — confirmed needing a UI, not a revival. **W2-3 (below) built and merged that consumer 2026-08-12** — no longer zero consumers.
+- **TASK W2-3** | Build QC findings-picker UI: multi-select finding codes (from `DIM_QC_FINDING_TYPES`) on the `#modal-qc-review` modal, new `portal_getQcFindingTypes()` read endpoint (first-ever reader of that table), `QCHandler.gs` changes to accept/store selected finding code(s) on the QC event | P2 | **DONE 2026-08-12 — merged to main (PR #21), 79/79 tests passing live in DEV.** Only remaining step is a PROD deploy, which needs separate explicit user approval. See Session State above.
 
 ### EPIC: Wave 3 — Client Feedback data-model extension
 - **TASK W3-1** | Add structured severity/root-cause/resubmission fields to the existing `ClientFeedback.gs` intake | P3 | Depends on Wave 2 producing real QC data. Not started.
@@ -153,10 +128,8 @@ Source: full CTO architecture/performance/tech-debt assessment,
 - **DAL date-column matching audit** — `DAL.gs`'s `matchesConditions_()` uses loose `!=`, breaks on Date-object-vs-Date-object comparison (see `PROJECT_MEMORY.md` §3.1/§3.4 for the confirmed bug class). Full blast-radius sweep (2026-07-26): 242/243 call sites safe, one low-confidence unconfirmed case (`Job260337DuplicateFixer.gs:184`, string-vs-Date, likely coincidentally safe). Not urgent — proper fix is scoping `matchesConditions_()` itself as its own task.
 - **Partition headers can diverge from canonical `SCHEMAS`** — proposed fix scoped, not implemented: `ensurePartition()`'s early-return path should verify existing headers against canonical `SCHEMAS`, not just tab existence. 0 blank-header partitions found in a full 2026-07-27 PROD scan; a few confirmed-harmless header-order/orphan-table cases found alongside. Low urgency — see git history for full detail if ever needed.
 - **Payroll Automation Phase B1 (Items 2–3)** — status last checked 2026-07-29, not revisited since. Item 1 (RBAC/`HR_ACCOUNTING`) is live in PROD. Items 2 (onboarding proof) and 3 (PM bonus, fixed twice on real DEV findings) — **needs a status check**, may be stale/paused or simply forgotten. Branch `payroll-automation/phase-b1`. **Correction (2026-08-12): DEV was NOT actually holding this branch** — see DEV state note below; this item's "pushed to DEV" claim was stale/inaccurate and should be re-verified once DEV is repointed back to phase-b2.
-- **DEV environment state (2026-08-12):** DEV was found to be running the **uncommitted working tree** of `payroll-automation/phase-b2` (confirmed via `clasp pull` byte-for-byte comparison — 167/167 files matched that worktree's on-disk, not-yet-committed state, not any single git branch). That uncommitted work has now been committed as `payroll-automation/phase-b2` commit `0786b49` (not yet pushed to origin) so it's durable in git. A full backup snapshot of DEV's pre-swap file contents was also saved to `~/blc-nexus-dev-snapshot-2026-08-12.tar.gz`. DEV now holds `qc-findings-picker` (currently at commit `9656559`). **To restore DEV to the phase-b2/Aug2026-partition-recovery state:** run `npm run push:dev` from `.worktrees/payroll-automation-phase-b2` (now safe to re-run any time — the content is committed, not just on-disk).
-- **W2-3 fully validated live in DEV (2026-08-12) — 79/79 tests passing, 0 failures, 0 regressions:** `runQCFindingsPickerTests()` 23/23, `runQCHandlerTests()` 25/25, `runQCHandlerFlowTests()` 31/31. Both bugs below were found and fixed by this live run (never caught by manual code trace). PR #21 updated with full results — ready to merge pending user's own review.
-- **`FACT_QC_FINDINGS` PARTITIONED_TABLES gap (found + fixed 2026-08-12):** first live execution of `runQCFindingsPickerTests()` in DEV (previously only manually traced, per PR #21's own caveat) surfaced a real bug: `FACT_QC_FINDINGS` was declared "partitioned" in its own schema comment and in `SetupScript.gs`'s `FACT_TABLE_NAMES`, but was missing from `DAL.gs`'s `PARTITIONED_TABLES` map — so every read/write resolved to a bare, never-created `FACT_QC_FINDINGS` tab instead of a monthly partition. Fixed on `qc-findings-picker` (commit `9656559`, one-line add to `PARTITIONED_TABLES`), pushed to DEV. No data migration needed — every prior write attempt threw, nothing was ever written under the wrong name. **`FACT_QC_REVIEW_SESSIONS` and `FACT_QC_REVIEW_CHECKLISTS` have the identical latent gap** (also missing from `PARTITIONED_TABLES`) but have no writer yet in the codebase — not fixed, will bite their first writer the same way; fix when one is built.
-- **`active_flag` Sheets-boolean-coercion bug (found + fixed 2026-08-12):** same test run also found every finding code (`LOAD_ERROR` etc.) rejected as "unknown, inactive, or not applicable" by `QCHandler.gs`'s `getFindingMeta_`, even though `DIM_QC_FINDING_TYPES` was confirmed fully and correctly seeded (17/17 rows, verified by manual sheet inspection — the earlier "stale header" hypothesis was wrong and is retracted). **Root cause, confirmed via `=ISLOGICAL()` on a live cell:** Google Sheets silently converts the string `"TRUE"` written into a default-formatted cell into a real boolean `true`. `getValues()` then returns JS boolean `true`, and `String(true) === 'true'` (lowercase) — so a strict `=== 'TRUE'` check against `active_flag` fails for every row. Fixed on `qc-findings-picker` (commit `0ccac33`, `String(x.active_flag).toUpperCase() === 'TRUE'`) in **two places** — `QCHandler.gs`'s `getFindingMeta_` and `Portal.gs`'s `portal_getQcFindingTypes` (the latter would have shipped an empty findings picker in the UI, unrelated to any code path the backend tests exercise). Pushed to DEV. **Standing gotcha worth remembering:** any future `DIM_*`/`FACT_*` table with a `TRUE`/`FALSE`-valued column will hit this same coercion — compare with `.toUpperCase()` (or reuse `DAL.gs`'s existing loose-equality philosophy in `matchesConditions_`), don't assume Sheets preserves boolean-looking strings as text. The stale W2-2 "fully seeded" entry (line ~132) turns out to be accurate after all — the seed was never bad, only the read.
+- **DEV environment state (2026-08-12):** DEV had been running the **uncommitted working tree** of `payroll-automation/phase-b2` (found via `clasp pull` comparison — not any committed branch). That work is now committed (`payroll-automation/phase-b2` `0786b49`, not yet pushed to origin) plus backed up to `~/blc-nexus-dev-snapshot-2026-08-12.tar.gz`. DEV now holds `qc-findings-picker`/`main` post-merge. **To restore DEV to the phase-b2/Aug2026-partition-recovery state:** run `npm run push:dev` from `.worktrees/payroll-automation-phase-b2`.
+- **Two real bugs found by W2-3's first-ever live test execution (2026-08-12), both fixed, merged in PR #21:** (1) `FACT_QC_FINDINGS` was missing from `DAL.gs`'s `PARTITIONED_TABLES` map, so every read/write resolved to a bare, never-created tab instead of a monthly partition (`FACT_QC_REVIEW_SESSIONS`/`FACT_QC_REVIEW_CHECKLISTS` have the identical latent gap, not fixed — no writer yet, will bite their first writer the same way). (2) Google Sheets silently coerces a `"TRUE"` string into a real boolean on write; `String(true) === 'true'` (lowercase) failed a strict `=== 'TRUE'` check on `DIM_QC_FINDING_TYPES.active_flag`, rejecting every finding code as inactive despite correct seed data. Fixed in `QCHandler.gs` and `Portal.gs` (`.toUpperCase()` before compare). **Standing gotcha:** any future `DIM_*`/`FACT_*` table with a `TRUE`/`FALSE` column will hit this same coercion.
 - **Q2 ratings** — blocked on data collection, not code. `Q2RatingsPreflightCheck.gs` last showed 0/13 active staff confirmed for `2026-Q2`. Re-run to check current progress before any Q2 bonus dry-run.
 - **First-ever supervised HR_ACCOUNTING/ADMIN Run Billing click** and **CEO smoke-test of Generate Timesheet with a real range** — both still open from the 2026-08-06 PR #15 thread, not yet confirmed done.
 - `runSendOnboardingEmailToARN()` — harmless one-off sitting in `StaffOnboardingMailer.gs`, safe to delete whenever that file is next touched.
