@@ -1103,6 +1103,49 @@ function portal_getSopChecklist(ptoken, jobNumber) {
   });
 }
 
+/**
+ * Returns active QC finding types applicable to the given product,
+ * for the multi-select finding-code picker on #modal-qc-review.
+ * Filtering here is client-advisory only — QCHandler.handleFlowB_
+ * re-validates server-side against the same table before any write.
+ *
+ * @param {string} ptoken
+ * @param {string} productCode
+ * @returns {string} JSON: { findingTypes: [{ finding_code, finding_label, category }] }
+ */
+function portal_getQcFindingTypes(ptoken, productCode) {
+  var email = PortalAuth.resolveEmail(ptoken);
+  var actor = RBAC.resolveActor(email);
+  RBAC.enforcePermission(actor, RBAC.ACTIONS.QC_APPROVE);
+
+  var rows;
+  try {
+    rows = DAL.readAll(Config.TABLES.DIM_QC_FINDING_TYPES, { callerModule: 'Portal' });
+  } catch (e) {
+    Logger.error('PORTAL_QC_FINDING_TYPES_READ_FAILED', { module: 'Portal', error: e.message });
+    throw e;
+  }
+
+  var filtered = rows.filter(function (r) {
+    return String(r.active_flag).toUpperCase() === 'TRUE' &&
+      (String(r.product_applicability) === 'ALL' || String(r.product_applicability) === String(productCode));
+  });
+
+  filtered.sort(function (a, b) {
+    return (Number(a.display_order) || 0) - (Number(b.display_order) || 0);
+  });
+
+  var findingTypes = filtered.map(function (r) {
+    return {
+      finding_code:  r.finding_code,
+      finding_label: r.finding_label,
+      category:      r.category
+    };
+  });
+
+  return JSON.stringify({ findingTypes: findingTypes });
+}
+
 // ============================================================
 // portal_getSopGateStatus — T13 SOP Gate Pre-check (PR 5)
 // Called lazily from the portal when the designer clicks

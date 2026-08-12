@@ -658,10 +658,11 @@ function testQCHandler_flowB_minorRework() {
       formType:       Config.FORM_TYPES.QC_SUBMIT,
       submitterEmail: TH_QC_EMAIL,
       payload: {
-        job_number:   jobNumber,
-        qc_result:    'MINOR_REWORK',
-        rework_notes: 'QCHandlerTest flowB_minorRework — minor label correction needed',
-        notes:        'Fix and send direct to client'
+        job_number:    jobNumber,
+        qc_result:     'MINOR_REWORK',
+        rework_notes:  'QCHandlerTest flowB_minorRework — minor label correction needed',
+        notes:         'Fix and send direct to client',
+        finding_codes: ['LOAD_ERROR']
       },
       source: 'TEST'
     });
@@ -748,10 +749,11 @@ function testQCHandler_flowB_majorRework() {
       formType:       Config.FORM_TYPES.QC_SUBMIT,
       submitterEmail: TH_QC_EMAIL,
       payload: {
-        job_number:   jobNumber,
-        qc_result:    'MAJOR_REWORK',
-        rework_notes: 'QCHandlerTest flowB_majorRework — truss geometry incorrect, must redo',
-        notes:        'Re-submit to QC after revision'
+        job_number:    jobNumber,
+        qc_result:     'MAJOR_REWORK',
+        rework_notes:  'QCHandlerTest flowB_majorRework — truss geometry incorrect, must redo',
+        notes:         'Re-submit to QC after revision',
+        finding_codes: ['LOAD_ERROR']
       },
       source: 'TEST'
     });
@@ -909,6 +911,13 @@ function runQCHandlerFlowTests() {
   console.log('═══════════════════════════════════════════════════════');
 
   seedTestStaff();
+  // Rework path now requires finding_codes to resolve against
+  // DIM_QC_FINDING_TYPES (see getFindingMeta_ in QCHandler.gs) —
+  // testQCHandler_flowB_minorRework, testQCHandler_flowB_majorRework,
+  // and thSetupMinorFixJob_ (used by testQCHandler_flowC_clientSent)
+  // all submit MINOR_REWORK/MAJOR_REWORK with finding_codes:['LOAD_ERROR'],
+  // so LOAD_ERROR must be seeded before this suite's tests run.
+  QcFindingTypes.seed(TH_QC_EMAIL);
 
   var suiteCounters = { passed: 0, failed: 0 };
   var tests = [
@@ -916,6 +925,478 @@ function runQCHandlerFlowTests() {
     testQCHandler_flowB_minorRework,
     testQCHandler_flowB_majorRework,
     testQCHandler_flowC_clientSent
+  ];
+
+  for (var i = 0; i < tests.length; i++) {
+    DAL._resetApiCallCount();
+    var c = tests[i]();
+    suiteCounters.passed += c.passed;
+    suiteCounters.failed += c.failed;
+  }
+
+  console.log('');
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('  SUITE TOTAL — passed: ' + suiteCounters.passed +
+              '  failed: ' + suiteCounters.failed);
+  if (suiteCounters.failed === 0) {
+    console.log('  ✅  ALL TESTS PASSED — ready to commit');
+  } else {
+    console.log('  ❌  ' + suiteCounters.failed + ' test(s) failed — fix before commit');
+  }
+  console.log('═══════════════════════════════════════════════════════');
+
+  thCleanupTestArtifacts_();
+  return suiteCounters;
+}
+
+// ============================================================
+// FINDINGS-PICKER TESTS (W2-3) — Flow B finding_codes handling
+//
+// These tests are registered as suite 12 (runQCFindingsPickerTests)
+// in runV3HandlerTests() in TestHarness.gs.
+//
+// HOW TO RUN (Apps Script editor):
+//   runQCFindingsPickerTests()  — all 5 tests, summary at end
+//
+// Uses real DIM_QC_FINDING_TYPES codes (seeded via QcFindingTypes.seed()):
+//   LOAD_ERROR, GEOMETRY_ERROR — severity_default CRITICAL/MAJOR, product_applicability ALL
+//   PLATE_ERROR                — severity_default MAJOR, product_applicability TRUSS only
+// Test jobs use TH_PRODUCT_CODE = 'Alpine-iCommand' (not TRUSS), so PLATE_ERROR
+// is the natural "inapplicable to this job's product" case — no synthetic
+// product code needed.
+// ============================================================
+
+// ============================================================
+// TEST 10 — Findings happy path
+// MINOR_REWORK with 2 valid ALL-applicability codes → FACT_QC_EVENTS
+// row + 2 FACT_QC_FINDINGS rows, matching qc_session_id on both,
+// correct severity per code.
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testQCFindings_happyPath() {
+  var results  = [];
+  var counters = { passed: 0, failed: 0 };
+
+  try {
+    QcFindingTypes.seed(TH_QC_EMAIL);
+
+    var jobNumber = thSetupQCReviewJob_('findings-happy');
+    assertH_(results, counters, 'Setup: job in QC_REVIEW', !!jobNumber,
+      'jobNumber=' + jobNumber);
+    if (!jobNumber) { results.push('  SKIP: setup failed'); return counters; }
+
+    DAL._resetApiCallCount();
+
+    var submitResult = IntakeService.processSubmission({
+      formType:       Config.FORM_TYPES.QC_SUBMIT,
+      submitterEmail: TH_QC_EMAIL,
+      payload: {
+        job_number:    jobNumber,
+        qc_result:     'MINOR_REWORK',
+        rework_notes:  'QCFindings happyPath — load path and geometry both need correction',
+        finding_codes: ['LOAD_ERROR', 'GEOMETRY_ERROR']
+      },
+      source: 'TEST'
+    });
+    assertH_(results, counters, 'IntakeService returns ok=true',
+      submitResult.ok === true, JSON.stringify(submitResult));
+
+    processQueueFresh_();
+
+    // ── FACT_QC_EVENTS row has a qc_session_id ─────────────────
+    var events = DAL.readWhere(
+      Config.TABLES.FACT_QC_EVENTS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'QCHandlerTest' }
+    );
+    var minorEvent = null;
+    for (var i = 0; i < events.length; i++) {
+      if (events[i].event_type === Constants.EVENT_TYPES.QC_MINOR_REWORK) { minorEvent = events[i]; break; }
+    }
+    assertH_(results, counters, 'FACT_QC_EVENTS has QC_MINOR_REWORK row', !!minorEvent,
+      'event_types found: ' + events.map(function(e) { return e.event_type; }).join(','));
+    assertH_(results, counters, 'QC_MINOR_REWORK has a qc_session_id (QS- prefixed)',
+      minorEvent && String(minorEvent.qc_session_id || '').indexOf('QS-') === 0,
+      minorEvent ? minorEvent.qc_session_id : 'null');
+
+    // ── FACT_QC_FINDINGS has exactly 2 rows, correct linkage ───
+    var findings = DAL.readWhere(
+      Config.TABLES.FACT_QC_FINDINGS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'QCHandlerTest' }
+    );
+    assertH_(results, counters, 'FACT_QC_FINDINGS has exactly 2 rows', findings.length === 2,
+      'count=' + findings.length);
+
+    var byCode = {};
+    findings.forEach(function (f) { byCode[f.finding_code] = f; });
+
+    assertH_(results, counters, 'LOAD_ERROR finding row present', !!byCode.LOAD_ERROR);
+    assertH_(results, counters, 'GEOMETRY_ERROR finding row present', !!byCode.GEOMETRY_ERROR);
+
+    if (byCode.LOAD_ERROR) {
+      assertH_(results, counters, 'LOAD_ERROR severity = CRITICAL',
+        byCode.LOAD_ERROR.severity === 'CRITICAL', byCode.LOAD_ERROR.severity);
+      assertH_(results, counters, 'LOAD_ERROR qc_session_id matches event',
+        minorEvent && byCode.LOAD_ERROR.qc_session_id === minorEvent.qc_session_id,
+        byCode.LOAD_ERROR.qc_session_id + ' vs ' + (minorEvent ? minorEvent.qc_session_id : 'null'));
+      assertH_(results, counters, 'LOAD_ERROR comment = shared rework_notes text',
+        byCode.LOAD_ERROR.comment === 'QCFindings happyPath — load path and geometry both need correction',
+        byCode.LOAD_ERROR.comment);
+      assertH_(results, counters, 'LOAD_ERROR reviewer_person_code = QC1',
+        byCode.LOAD_ERROR.reviewer_person_code === TH_QC_CODE, byCode.LOAD_ERROR.reviewer_person_code);
+    }
+    if (byCode.GEOMETRY_ERROR) {
+      assertH_(results, counters, 'GEOMETRY_ERROR severity = MAJOR',
+        byCode.GEOMETRY_ERROR.severity === 'MAJOR', byCode.GEOMETRY_ERROR.severity);
+      assertH_(results, counters, 'GEOMETRY_ERROR qc_session_id matches event',
+        minorEvent && byCode.GEOMETRY_ERROR.qc_session_id === minorEvent.qc_session_id,
+        byCode.GEOMETRY_ERROR.qc_session_id + ' vs ' + (minorEvent ? minorEvent.qc_session_id : 'null'));
+    }
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+
+  printResultsH_('testQCFindings_happyPath', results, counters);
+  return counters;
+}
+
+// ============================================================
+// TEST 11 — Missing finding codes rejected
+// MINOR_REWORK with finding_codes omitted (or empty array) must be
+// rejected the same way rework_notes-missing already is: queue item
+// not completed, no FACT_QC_EVENTS row, no FACT_QC_FINDINGS row.
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testQCFindings_missingCodes() {
+  var results  = [];
+  var counters = { passed: 0, failed: 0 };
+
+  try {
+    QcFindingTypes.seed(TH_QC_EMAIL);
+
+    var jobNumber = thSetupQCReviewJob_('findings-missing');
+    if (!jobNumber) {
+      results.push('  SKIP: setup failed');
+      counters.failed++;
+      printResultsH_('testQCFindings_missingCodes', results, counters);
+      return counters;
+    }
+
+    DAL._resetApiCallCount();
+
+    var submitResult = IntakeService.processSubmission({
+      formType:       Config.FORM_TYPES.QC_SUBMIT,
+      submitterEmail: TH_QC_EMAIL,
+      payload: {
+        job_number:   jobNumber,
+        qc_result:    'MINOR_REWORK',
+        rework_notes: 'QCFindings missingCodes — notes present, finding_codes intentionally omitted'
+        // finding_codes omitted
+      },
+      source: 'TEST'
+    });
+    processQueueFresh_();
+
+    var queueItems = DAL.readWhere(
+      Config.TABLES.STG_PROCESSING_QUEUE,
+      { queue_id: submitResult.queueId },
+      { callerModule: 'QCHandlerTest' }
+    );
+    var queueItem = queueItems.length > 0 ? queueItems[0] : null;
+    assertH_(results, counters, 'Queue item not completed (missing finding_codes rejected)',
+      queueItem && queueItem.status !== 'COMPLETED',
+      queueItem ? queueItem.status : 'null');
+
+    var events = DAL.readWhere(
+      Config.TABLES.FACT_QC_EVENTS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'QCHandlerTest' }
+    );
+    var minorRows = events.filter(function (e) { return e.event_type === Constants.EVENT_TYPES.QC_MINOR_REWORK; });
+    assertH_(results, counters, 'No QC_MINOR_REWORK row written', minorRows.length === 0,
+      'count=' + minorRows.length);
+
+    var findings = DAL.readWhere(
+      Config.TABLES.FACT_QC_FINDINGS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'QCHandlerTest' }
+    );
+    assertH_(results, counters, 'No FACT_QC_FINDINGS rows written', findings.length === 0,
+      'count=' + findings.length);
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+
+  printResultsH_('testQCFindings_missingCodes', results, counters);
+  return counters;
+}
+
+// ============================================================
+// TEST 12 — Unknown finding code rejected
+// A code that doesn't exist in DIM_QC_FINDING_TYPES at all must be
+// rejected by getFindingMeta_ before any FACT table is touched.
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testQCFindings_unknownCode() {
+  var results  = [];
+  var counters = { passed: 0, failed: 0 };
+
+  try {
+    QcFindingTypes.seed(TH_QC_EMAIL);
+
+    var jobNumber = thSetupQCReviewJob_('findings-unknown');
+    if (!jobNumber) {
+      results.push('  SKIP: setup failed');
+      counters.failed++;
+      printResultsH_('testQCFindings_unknownCode', results, counters);
+      return counters;
+    }
+
+    DAL._resetApiCallCount();
+
+    var submitResult = IntakeService.processSubmission({
+      formType:       Config.FORM_TYPES.QC_SUBMIT,
+      submitterEmail: TH_QC_EMAIL,
+      payload: {
+        job_number:    jobNumber,
+        qc_result:     'MAJOR_REWORK',
+        rework_notes:  'QCFindings unknownCode — deliberately bad code',
+        finding_codes: ['NOT_A_REAL_CODE']
+      },
+      source: 'TEST'
+    });
+    processQueueFresh_();
+
+    var queueItems = DAL.readWhere(
+      Config.TABLES.STG_PROCESSING_QUEUE,
+      { queue_id: submitResult.queueId },
+      { callerModule: 'QCHandlerTest' }
+    );
+    var queueItem = queueItems.length > 0 ? queueItems[0] : null;
+    assertH_(results, counters, 'Queue item not completed (unknown code rejected)',
+      queueItem && queueItem.status !== 'COMPLETED',
+      queueItem ? queueItem.status : 'null');
+
+    var events = DAL.readWhere(
+      Config.TABLES.FACT_QC_EVENTS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'QCHandlerTest' }
+    );
+    var majorRows = events.filter(function (e) { return e.event_type === Constants.EVENT_TYPES.QC_MAJOR_REWORK; });
+    assertH_(results, counters, 'No QC_MAJOR_REWORK row written', majorRows.length === 0,
+      'count=' + majorRows.length);
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+
+  printResultsH_('testQCFindings_unknownCode', results, counters);
+  return counters;
+}
+
+// ============================================================
+// TEST 13 — Product-inapplicable code rejected server-side
+// PLATE_ERROR (product_applicability='TRUSS') submitted directly
+// against a job whose product_code is TH_PRODUCT_CODE
+// ('Alpine-iCommand', not TRUSS) — bypasses the picker/endpoint
+// filter entirely, proving the server-side check in getFindingMeta_
+// isn't just cosmetic.
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testQCFindings_productInapplicable() {
+  var results  = [];
+  var counters = { passed: 0, failed: 0 };
+
+  try {
+    QcFindingTypes.seed(TH_QC_EMAIL);
+
+    var jobNumber = thSetupQCReviewJob_('findings-inapplicable');
+    if (!jobNumber) {
+      results.push('  SKIP: setup failed');
+      counters.failed++;
+      printResultsH_('testQCFindings_productInapplicable', results, counters);
+      return counters;
+    }
+
+    DAL._resetApiCallCount();
+
+    var submitResult = IntakeService.processSubmission({
+      formType:       Config.FORM_TYPES.QC_SUBMIT,
+      submitterEmail: TH_QC_EMAIL,
+      payload: {
+        job_number:    jobNumber,
+        qc_result:     'MINOR_REWORK',
+        rework_notes:  'QCFindings productInapplicable — PLATE_ERROR on a non-TRUSS job',
+        finding_codes: ['PLATE_ERROR']
+      },
+      source: 'TEST'
+    });
+    processQueueFresh_();
+
+    var queueItems = DAL.readWhere(
+      Config.TABLES.STG_PROCESSING_QUEUE,
+      { queue_id: submitResult.queueId },
+      { callerModule: 'QCHandlerTest' }
+    );
+    var queueItem = queueItems.length > 0 ? queueItems[0] : null;
+    assertH_(results, counters, 'Queue item not completed (PLATE_ERROR rejected for non-TRUSS job)',
+      queueItem && queueItem.status !== 'COMPLETED',
+      queueItem ? queueItem.status : 'null');
+
+    var findings = DAL.readWhere(
+      Config.TABLES.FACT_QC_FINDINGS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'QCHandlerTest' }
+    );
+    assertH_(results, counters, 'No FACT_QC_FINDINGS rows written', findings.length === 0,
+      'count=' + findings.length);
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+
+  printResultsH_('testQCFindings_productInapplicable', results, counters);
+  return counters;
+}
+
+// ============================================================
+// TEST 14 — Duplicate replay does not double-write findings
+// Submit MINOR_REWORK with finding codes once (success), then
+// directly re-call handle() with the same queue item. Mirrors the
+// existing testQCHandler_duplicate pattern (TEST 5) for Flow B.
+// ============================================================
+
+/**
+ * @returns {{ passed: number, failed: number }}
+ */
+function testQCFindings_duplicateReplay() {
+  var results  = [];
+  var counters = { passed: 0, failed: 0 };
+
+  try {
+    QcFindingTypes.seed(TH_QC_EMAIL);
+
+    var jobNumber = thSetupQCReviewJob_('findings-dupe');
+    if (!jobNumber) {
+      results.push('  SKIP: setup failed');
+      counters.failed++;
+      printResultsH_('testQCFindings_duplicateReplay', results, counters);
+      return counters;
+    }
+
+    DAL._resetApiCallCount();
+
+    var firstResult = IntakeService.processSubmission({
+      formType:       Config.FORM_TYPES.QC_SUBMIT,
+      submitterEmail: TH_QC_EMAIL,
+      payload: {
+        job_number:    jobNumber,
+        qc_result:     'MINOR_REWORK',
+        rework_notes:  'QCFindings duplicateReplay',
+        finding_codes: ['LOAD_ERROR']
+      },
+      source: 'TEST'
+    });
+    processQueueFresh_();
+
+    var findingsAfterFirst = DAL.readWhere(
+      Config.TABLES.FACT_QC_FINDINGS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'QCHandlerTest' }
+    );
+    assertH_(results, counters, 'Exactly 1 FACT_QC_FINDINGS row after first submission',
+      findingsAfterFirst.length === 1, 'count=' + findingsAfterFirst.length);
+
+    var firstQueueItems = DAL.readWhere(
+      Config.TABLES.STG_PROCESSING_QUEUE,
+      { queue_id: firstResult.queueId },
+      { callerModule: 'QCHandlerTest' }
+    );
+    if (firstQueueItems.length === 0) {
+      results.push('  SKIP: cannot find original queue item for duplicate test');
+      counters.failed++;
+      printResultsH_('testQCFindings_duplicateReplay', results, counters);
+      return counters;
+    }
+
+    var fakeActor = RBAC.resolveActor(TH_QC_EMAIL);
+    var secondThrew = false;
+    var secondReturn;
+    try {
+      secondReturn = QCHandler.handle(firstQueueItems[0], fakeActor);
+    } catch (routingError) {
+      secondThrew = true;
+    }
+
+    assertH_(results, counters,
+      'Second handle() threw or returned DUPLICATE (no second write)',
+      secondThrew || secondReturn === 'DUPLICATE',
+      secondThrew ? 'correctly threw' : 'returned: ' + secondReturn);
+
+    var findingsAfterDupe = DAL.readWhere(
+      Config.TABLES.FACT_QC_FINDINGS,
+      { job_number: jobNumber },
+      { periodId: TH_PERIOD_ID, callerModule: 'QCHandlerTest' }
+    );
+    assertH_(results, counters, 'Still exactly 1 FACT_QC_FINDINGS row after duplicate replay',
+      findingsAfterDupe.length === 1, 'count=' + findingsAfterDupe.length);
+
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+
+  printResultsH_('testQCFindings_duplicateReplay', results, counters);
+  return counters;
+}
+
+// ============================================================
+// RUNNER — suite 12: findings-picker tests
+// ============================================================
+
+/**
+ * Run all QC findings-picker tests and return aggregate counters.
+ * Registered as suite 12 in runV3HandlerTests() in TestHarness.gs.
+ *
+ * @returns {{ passed: number, failed: number }}
+ */
+function runQCFindingsPickerTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
+  console.log('');
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('  QC FINDINGS-PICKER TEST SUITE');
+  console.log('═══════════════════════════════════════════════════════');
+
+  seedTestStaff();
+
+  var suiteCounters = { passed: 0, failed: 0 };
+  var tests = [
+    testQCFindings_happyPath,
+    testQCFindings_missingCodes,
+    testQCFindings_unknownCode,
+    testQCFindings_productInapplicable,
+    testQCFindings_duplicateReplay
   ];
 
   for (var i = 0; i < tests.length; i++) {

@@ -31,7 +31,7 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-08-10)
+## Session State (last updated: end of turn, 2026-08-11)
 
 **W2-1 — numeric conflicts resolved by user's managers, 2026-08-10.**
 All three blockers from the two NORSPAN-MB source docs (`SOP-NOR-TRS-003`
@@ -67,18 +67,48 @@ conflicting ACTIVE template already exists in `DIM_SOP_TEMPLATES` for
 NORSPAN-MB) still applies — check before flipping `SOP_ENABLED`.
 2026-08-17 pilot start date back on track.
 
-**W2-3 (findings-picker UI) — in progress, parallel thread.** Design
-spec written and self-reviewed:
-`docs/superpowers/specs/2026-08-10-qc-findings-picker-design.md`.
-Key decision: reuse the already-designed but unwired `FACT_QC_FINDINGS`
-table (one row per selected finding code) rather than a simpler inline
-column on `FACT_QC_EVENTS` — `FACT_QC_EVENTS.qc_session_id` (already
-in schema, never set today) becomes the FK, exactly what it was
-scaffolded for. Findings apply only to MINOR_REWORK/MAJOR_REWORK,
-required (≥1), filtered to the job's `product_code`, shared Rework
-Notes text duplicated onto each finding row's `comment`. **Next
-action:** advisor review of the spec, then user reviews the written
-spec, then `writing-plans` skill for the implementation plan.
+**W2-3 (findings-picker UI) — implementation complete, subagent-driven,
+4 tasks; NOT yet merged to main, NOT deployed.**
+Sits entirely on branch `qc-findings-picker` (a git worktree), commits
+`fb0728b..efd548c`. The 3 implementation tasks — Task 1
+(`portal_getQcFindingTypes` read endpoint), Task 2 (`QCHandler.gs`
+validation + `FACT_QC_FINDINGS` write, 5 new tests, suite 12
+registration), Task 3 (frontend picker on `#modal-qc-review` in
+`PortalView.html`) — were each independently reviewed by a task
+reviewer after implementation, 2 fix rounds total (Task 1: removed a
+debug helper; Task 3: added a missing scroll cap), both addressed,
+both re-verified clean. Task 4 (this session close-out) is undergoing
+its own review now — not yet confirmed clean. 4 actionable Minor
+findings deferred from Task 2's review + 2 Minor from Task 3's; a 5th
+item from Task 2's review was a pre-existing-code observation
+(`rework_notes` check ordering, unrelated to this branch, no action
+needed), not a deferred item — see `SESSION_LOG.md`'s 2026-08-11
+entry (not a complete re-listing here, kept lean).
+**GAS test execution still pending** — no live Apps Script editor in
+this environment, so `runQCFindingsPickerTests`/`runQCHandlerTests`/
+`runQCHandlerFlowTests` were verified by manual code trace only (by
+both implementer and reviewer, independently), never actually run.
+**Deployment-sequencing constraint (hard blocker on PROD, not just a
+should):** Task 2's backend unconditionally rejects any
+MINOR_REWORK/MAJOR_REWORK QC submission that lacks `finding_codes`;
+Task 3's frontend is the only thing that supplies that field from the
+real UI. **Tasks 2 and 3 must ship to PROD together, same push** — if
+Task 2's backend alone reaches PROD first, every live QC rework
+submission gets rejected until Task 3 follows. **Next action:** get a
+human to run the GAS suites live in DEV; then explicit user
+go-ahead before `npm run push:prod` (out of scope for this plan —
+deploy/merge decisions belong to the user).
+
+**Before deploying:** confirm `DIM_QC_FINDING_TYPES` has its 17 rows
+populated in the target environment (`QcFindingTypes.seed(<admin
+email>)`, idempotent, safe to re-run). If unpopulated, every QC
+rework submission will be silently rejected — the picker shows an
+empty list with no explanatory message, and there's no way to
+recover except reopening the modal (which just re-fetches the same
+empty result). No current production entry point exists for this
+seeder outside the Apps Script editor's function picker — a backlog
+item, not blocking this deploy, but the manual step itself is
+required.
 
 ---
 
@@ -100,7 +130,7 @@ Source: full CTO architecture/performance/tech-debt assessment,
 ### EPIC: Wave 2 — SOP/QC Finish & Activate (NOT a rebuild — `src/13-sop/` already exists, 3,725 lines, feature-flagged pilot infra) — **CURRENT FOCUS**
 - **TASK W2-1** | Design pilot rollout plan: which client(s) first, `WARN_ONLY` vs `BLOCK`, timeline | P2 | **Inputs confirmed 2026-08-10: client `NORSPAN-MB`, mode `WARN_ONLY`, start week of 2026-08-17 (Monday).** Rollout mechanics (`SopGate.gs`): set Script Properties `SOP_ENABLED='true'`, `SOP_MODE='WARN_ONLY'`, `SOP_PILOT_CLIENTS='NORSPAN-MB'` in the Apps Script editor (no code change needed — flags are already read live). WARN_ONLY means non-blocking — designers see nothing rejected, only `SOP_GATE_WARN` log entries land in `_SYS_LOGS` when a QC submission has incomplete checklist items. **Unblocked 2026-08-10** — all content decisions settled (software Alpine, ~9-item category-level checklist, job_type/scope_code, and the 3 numeric conflicts between the two source docs all resolved via user's managers). Full detail in Session State above. **Ready to build via `SopAdminEngine`** — pre-flight gap (verify no conflicting ACTIVE template already exists) still applies before flipping `SOP_ENABLED`.
 - **TASK W2-2** | Trace `QcFindingTypes.gs` (521 lines, defines a QC finding taxonomy) — confirm whether an internal-QC reviewer queue UI exists or still needs building | P2 | **DONE 2026-08-10.** Taxonomy (17 codes, `DIM_QC_FINDING_TYPES`) is fully seeded but has zero consumers anywhere — no reviewer UI reads it. Current QC review flow (`QCHandler.gs`/`#modal-qc-review`) only captures `qc_result` + free text, no structured findings. Confirmed: needs building, not reviving. See W2-3.
-- **TASK W2-3** | Build QC findings-picker UI: multi-select finding codes (from `DIM_QC_FINDING_TYPES`) on the `#modal-qc-review` modal, new `portal_getQcFindingTypes()` read endpoint (first-ever reader of that table), `QCHandler.gs` changes to accept/store selected finding code(s) on the QC event | P2 | Not started. Scoped 2026-08-10 from W2-2's trace finding. Design/sequencing TBD — likely bundles with W2-1's pilot plan since both touch the same review modal.
+- **TASK W2-3** | Build QC findings-picker UI: multi-select finding codes (from `DIM_QC_FINDING_TYPES`) on the `#modal-qc-review` modal, new `portal_getQcFindingTypes()` read endpoint (first-ever reader of that table), `QCHandler.gs` changes to accept/store selected finding code(s) on the QC event | P2 | **Implementation DONE 2026-08-11** on branch `qc-findings-picker` (commits `fb0728b..efd548c`) — the 3 implementation tasks (endpoint, handler, UI) are reviewed clean; this close-out task (Task 4) is in its own review now. NOT merged to main, NOT deployed — GAS test execution and PROD deploy both still pending. Tasks 2+3 must ship together (see Session State above). See `SESSION_LOG.md`'s 2026-08-11 entry.
 
 ### EPIC: Wave 3 — Client Feedback data-model extension
 - **TASK W3-1** | Add structured severity/root-cause/resubmission fields to the existing `ClientFeedback.gs` intake | P3 | Depends on Wave 2 producing real QC data. Not started.

@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-08-12 Session (Wave 2 task W2-3 — first live DEV execution, 2 real bugs found + fixed, full validation)
+
+### Work Completed
+- Resolved a real DEV-clobber risk before deploying: DEV was found to be running the uncommitted working tree of `payroll-automation/phase-b2` (confirmed via `clasp pull` byte-for-byte comparison), not any committed branch. Committed that work (`payroll-automation/phase-b2` `0786b49`) and took a backup snapshot (`~/blc-nexus-dev-snapshot-2026-08-12.tar.gz`) before repointing DEV to `qc-findings-picker`.
+- Ran `runQCFindingsPickerTests()` live in DEV for the first time (previously only manually traced) — surfaced 2 real defects no static review or trace caught:
+  1. `FACT_QC_FINDINGS` missing from `DAL.gs`'s `PARTITIONED_TABLES` map — every read/write resolved to a bare, never-created tab. One-line fix, commit `9656559`.
+  2. Google Sheets silently coerces a `"TRUE"` string into a real boolean on write; `String(true) === 'true'` (lowercase) failed the code's strict `=== 'TRUE'` check against `active_flag`, rejecting every finding code as inactive even though the table was correctly seeded. Root-caused jointly with the user via live sheet inspection (`=ISLOGICAL()`). Fixed in 2 call sites (`QCHandler.gs`, `Portal.gs`), commit `0ccac33`.
+- Re-ran all three suites after both fixes: `runQCFindingsPickerTests()` 23/23, `runQCHandlerTests()` 25/25, `runQCHandlerFlowTests()` 31/31 — **79/79 passing, 0 regressions**.
+- Updated PR #21 with live results and both bug writeups. Updated `CTO_TASK_QUEUE.md` throughout (DEV state, both bugs, final validation summary).
+
+### Key Takeaway
+The "verified by manual trace, never executed" caveat carried since W2-3's original close-out was not boilerplate — both bugs were invisible to code review and only surfaced by actually running the code against live Sheets data. Any future `DIM_*`/`FACT_*` table with a `TRUE`/`FALSE`-valued column will hit the same Sheets boolean-coercion gotcha.
+
+---
+
+## 2026-08-10 → 2026-08-11 Session (Wave 2 task W2-3 — findings-picker implemented, subagent-driven, 4 tasks)
+
+### Work Completed
+- Implemented W2-3 (QC findings-picker) end-to-end on branch `qc-findings-picker` via subagent-driven development, 4 tasks. The 3 implementation tasks were each independently reviewed and confirmed clean; this session-close-out entry (Task 4) is reviewed separately. Commits `fb0728b..efd548c`.
+- **Task 1**: new `portal_getQcFindingTypes` read endpoint (`Portal.gs`) — first-ever reader of `DIM_QC_FINDING_TYPES`. Reviewed clean after 1 fix round (removed a debug/manual-check helper that shipped by accident — write-before-RBAC, no `Config.isDev()` guard, testing-policy.md §3 violation).
+- **Task 2**: `QCHandler.gs` validation (rejects MINOR_REWORK/MAJOR_REWORK without `finding_codes`) + `FACT_QC_FINDINGS` write, 5 new tests, suite 12 registered in `TestHarness.gs`. Reviewed clean (0 Critical, 0 Important, 4 actionable Minor deferred + 1 pre-existing-code observation — below). Implementer itself caught and fixed a real pre-existing-test regression (3 fixtures needed `finding_codes` added) before review started.
+- **Task 3**: frontend picker UI on `#modal-qc-review` (`PortalView.html`). Reviewed clean after 1 fix round (added a missing scroll cap on the checklist, mirroring the existing `#sop-items-list` pattern).
+
+### Files Changed
+- `src/07-portal/Portal.gs`, `src/07-portal/PortalView.html`, `src/06-handlers/QCHandler.gs`, `src/setup/QCHandlerTest.gs`, `src/setup/TestHarness.gs`, `src/01-dal/DAL.gs` (1-line)
+
+### Tests Run
+- **Not literally executed** — this environment has no live Google Apps Script editor. `runQCFindingsPickerTests`/`runQCHandlerTests`/`runQCHandlerFlowTests` were verified by manual code trace only, by both each task's implementer and its independent task reviewer. This is real, accumulated evidence but is NOT the same as "ran green in DEV." Live GAS execution is still outstanding.
+- Jest: not touched by this work (GAS-only change surface).
+
+### Issues Found (deferred Minor findings — carried forward, not silently dropped)
+- Task 2 (4 actionable Minor findings deferred; a 5th observation from the review was a pre-existing-code note — the `rework_notes` check at `QCHandler.gs:250-252` runs before `RBAC.enforcePermission` at `:254`, not introduced by this branch and satisfying the constraint as scoped, so no action needed — not a deferred item): (1) no de-dup of `finding_codes` before write — dupes create duplicate append-only `FACT_QC_FINDINGS` rows; (2) 2 tests read `FACT_QC_FINDINGS` for a partition not guaranteed to exist standalone post-rollover, mitigated by setup-time partition creation; (3) inconsistent `DIM_QC_FINDING_TYPES` seeding convention between suite 9 (seeds once at runner, individual tests now silently depend on it) and suite 12 (seeds per-test) — breaks the direct-function-picker workflow testing-policy.md anticipates; (4) the duplicate-replay test doesn't actually re-exercise the findings write path (job already in a different state by replay time, hits a different pre-existing guard) — disclosed coverage gap, not a false pass.
+- Task 3 (2): (1) missing a flex wrapper div around each checkbox row's label (cosmetic, matches the plan's own literal spec — not implementer drift); (2) a product with zero applicable `DIM_QC_FINDING_TYPES` rows would show an empty picker and permanently block rework submission with no in-UI escape — currently unreachable (16/17 codes apply to all products today), backlog item for future data-entry mistakes.
+- **Deployment-sequencing constraint (not a code defect — a deploy-checklist item):** Task 2's backend and Task 3's frontend are not independently deployable. Backend unconditionally rejects rework submissions without `finding_codes`; only the Task 3 UI supplies that field. **Must ship to PROD together, same push**, or every live QC rework submission breaks the moment the backend alone lands.
+- **Deploy prerequisite found in final whole-branch review, 2026-08-11:** `DIM_QC_FINDING_TYPES` has no production seeding path — see `CTO_TASK_QUEUE.md` Session State for full detail.
+
+### Next Recommended Step
+- Run the live GAS test suites (`runQCFindingsPickerTests`, `runQCHandlerTests`, `runQCHandlerFlowTests`, or the full `runV3HandlerTests()`) in DEV via the Apps Script editor — first real execution, not just trace-verification.
+- Get explicit user approval before `npm run push:prod` (branch is not yet merged to main either — that's also a user decision).
+- Per R4.7: since `PortalView.html` and `Portal.gs` both changed, a New Version redeploy in the Apps Script editor is required after any PROD push — not yet applicable since no PROD push has happened.
+
+---
+
 ## 2026-08-10 Session Part 4 (Wave 2 task W2-1 — pilot rollout plan)
 
 ### Work Completed

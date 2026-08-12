@@ -267,10 +267,11 @@ function thSetupMinorFixJob_(tag) {
     formType:       Config.FORM_TYPES.QC_SUBMIT,
     submitterEmail: TH_QC_EMAIL,
     payload: {
-      job_number:   jn,
-      qc_result:    'MINOR_REWORK',
-      rework_notes: 'th-setup minor-fix' + (tag ? ':' + tag : ''),
-      notes:        'setup helper — drive to MINOR_FIX'
+      job_number:    jn,
+      qc_result:     'MINOR_REWORK',
+      rework_notes:  'th-setup minor-fix' + (tag ? ':' + tag : ''),
+      notes:         'setup helper — drive to MINOR_FIX',
+      finding_codes: ['LOAD_ERROR']
     },
     source: 'TEST'
   });
@@ -297,8 +298,9 @@ function thSetupMinorFixJob_(tag) {
 //   runQCHandlerFlowTests()      — suite  9    (~2 min)
 //   runQCReassignTests()         — suite  10   (~5.5 min, borderline — run solo)
 //   runWorkLogCorrectionTests()  — suite  11   (~1.5 min, estimated — run solo)
+//   runQCFindingsPickerTests()   — suite  12   (~2 min, estimated)
 //
-// runV3HandlerTests() runs all 11 — only reliable on 30-min Workspace accounts.
+// runV3HandlerTests() runs all 12 — only reliable on 30-min Workspace accounts.
 
 /**
  * Suites 1–3: JobCreate, JobAssign, JobStart.
@@ -392,14 +394,14 @@ function runSuiteGroup_(label, suites) {
 }
 
 /**
- * Runs all 11 V3 handler test suites and prints a combined summary.
+ * Runs all 12 V3 handler test suites and prints a combined summary.
  * Each suite runner (runJobCreateTests, runJobStartTests, etc.) is
  * defined in its own *HandlerTest.gs file and returns {passed, failed}.
  * NOTE: likely times out on 6-minute accounts — use runV3Tests_1to5()
  * and runV3Tests_6to10() instead.
  */
 function runV3HandlerTests() {
-  runSuiteGroup_('1–11', [
+  runSuiteGroup_('1–12', [
     { name: '1 — JobCreateHandler',      fn: runJobCreateTests       },
     { name: '2 — JobAssignHandler',      fn: runJobAssignTests       },
     { name: '3 — JobStartHandler',       fn: runJobStartTests        },
@@ -410,7 +412,8 @@ function runV3HandlerTests() {
     { name: '8 — JobUpdateHandler',      fn: runJobUpdateTests       },
     { name: '9 — QCHandler Flow B/C',    fn: runQCHandlerFlowTests   },
     { name: '10 — QCReassignHandler',    fn: runQCReassignTests      },
-    { name: '11 — WorkLogCorrectionHandler', fn: runWorkLogCorrectionTests }
+    { name: '11 — WorkLogCorrectionHandler', fn: runWorkLogCorrectionTests },
+    { name: '12 — QC Findings Picker',   fn: runQCFindingsPickerTests }
   ]);
 }
 
