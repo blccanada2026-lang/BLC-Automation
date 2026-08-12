@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-08-12 Session (Wave 2 task W2-3 — first live DEV execution, 2 real bugs found + fixed, full validation)
+
+### Work Completed
+- Resolved a real DEV-clobber risk before deploying: DEV was found to be running the uncommitted working tree of `payroll-automation/phase-b2` (confirmed via `clasp pull` byte-for-byte comparison), not any committed branch. Committed that work (`payroll-automation/phase-b2` `0786b49`) and took a backup snapshot (`~/blc-nexus-dev-snapshot-2026-08-12.tar.gz`) before repointing DEV to `qc-findings-picker`.
+- Ran `runQCFindingsPickerTests()` live in DEV for the first time (previously only manually traced) — surfaced 2 real defects no static review or trace caught:
+  1. `FACT_QC_FINDINGS` missing from `DAL.gs`'s `PARTITIONED_TABLES` map — every read/write resolved to a bare, never-created tab. One-line fix, commit `9656559`.
+  2. Google Sheets silently coerces a `"TRUE"` string into a real boolean on write; `String(true) === 'true'` (lowercase) failed the code's strict `=== 'TRUE'` check against `active_flag`, rejecting every finding code as inactive even though the table was correctly seeded. Root-caused jointly with the user via live sheet inspection (`=ISLOGICAL()`). Fixed in 2 call sites (`QCHandler.gs`, `Portal.gs`), commit `0ccac33`.
+- Re-ran all three suites after both fixes: `runQCFindingsPickerTests()` 23/23, `runQCHandlerTests()` 25/25, `runQCHandlerFlowTests()` 31/31 — **79/79 passing, 0 regressions**.
+- Updated PR #21 with live results and both bug writeups. Updated `CTO_TASK_QUEUE.md` throughout (DEV state, both bugs, final validation summary).
+
+### Key Takeaway
+The "verified by manual trace, never executed" caveat carried since W2-3's original close-out was not boilerplate — both bugs were invisible to code review and only surfaced by actually running the code against live Sheets data. Any future `DIM_*`/`FACT_*` table with a `TRUE`/`FALSE`-valued column will hit the same Sheets boolean-coercion gotcha.
+
+---
+
 ## 2026-08-10 → 2026-08-11 Session (Wave 2 task W2-3 — findings-picker implemented, subagent-driven, 4 tasks)
 
 ### Work Completed
