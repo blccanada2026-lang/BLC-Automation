@@ -1212,3 +1212,26 @@ function portal_getSopGateStatus(ptoken, jobNumber) {
     reason:     result.reason
   });
 }
+
+/**
+ * Uploads a source SOP document for structuring. CEO only.
+ * payload: { clientCode, productCode, docType }
+ * fileBlob comes separately as a Blob (not JSON-serializable).
+ *
+ * @param {string} ptoken
+ * @param {string} payloadJson
+ * @param {Blob}   fileBlob
+ * @returns {string} JSON: { uploadId, driveFileUrl }
+ */
+function portal_uploadSopDocument(ptoken, payloadJson, fileBlob) {
+  var email = PortalAuth.resolveEmail(ptoken);
+  var payload = JSON.parse(payloadJson);
+  var result = SopUploadEngine.createUpload(email, {
+    clientCode:  payload.clientCode,
+    productCode: payload.productCode,
+    docType:     payload.docType,
+    fileBlob:    fileBlob,
+    fileName:    payload.fileName
+  });
+  return JSON.stringify(result);
+}

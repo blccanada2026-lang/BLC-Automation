@@ -118,6 +118,8 @@ var DAL = (function () {
     'FACT_SOP_AUDITS':       ['SopChecklistHandler', 'MigrationEngine'],
     'FACT_SOP_CURRENT_STATUS': ['SopChecklistHandler'],
     'DIM_SOP_TEMPLATES':     ['SopAdminEngine'],
+    'DIM_SOP_UPLOADS':        ['SopUploadEngine'],
+    'FACT_SOP_REVIEW_FEEDBACK': ['SopUploadEngine'],
     'DIM_SOP_ITEMS':         ['SopAdminEngine'],
     'DIM_QC_FINDING_TYPES':  ['QcFindingTypes'],
 

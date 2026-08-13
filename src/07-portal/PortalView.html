@@ -493,6 +493,43 @@
           </div>
         </div>
       </div>
+
+      <!-- Upload SOP Document panel (CEO only) -->
+      <div class="dash-panel" style="margin-top:12px">
+        <div class="dash-panel-hdr">
+          <span>Upload SOP Document</span>
+        </div>
+        <div class="dash-panel-body">
+          <div id="sop-upload-error-banner" class="sop-error-banner" style="display:none"></div>
+          <div id="sop-upload-success-banner" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:var(--radius); padding:10px 14px; margin-bottom:12px; font-size:13px; color:#166534;"></div>
+          <div class="field-row">
+            <div class="field"><label>Client *</label>
+              <select id="sop-upload-client"><option value="">— Loading clients… —</option></select>
+            </div>
+            <div class="field"><label>Product *</label>
+              <select id="sop-upload-product">
+                <option value="">— Select product —</option>
+                <option value="TRUSS">Truss</option>
+                <option value="OPEN_WOOD_FLOOR">Open Wood Floor</option>
+                <option value="I_JOIST_FLOOR">I-Joist Floor</option>
+              </select>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Document Type *</label>
+              <select id="sop-upload-doctype">
+                <option value="">— Select doc type —</option>
+                <option value="DESIGNER_SOP">Designer SOP</option>
+                <option value="QC_REVIEW_SOP">QC-Review SOP</option>
+              </select>
+            </div>
+            <div class="field"><label>File *</label>
+              <input type="file" id="sop-upload-file">
+            </div>
+          </div>
+          <button class="btn-primary btn-sm" id="btn-submit-sop-upload">Upload</button>
+        </div>
+      </div>
     </div>
 
     <div class="dash-grid">
@@ -1312,6 +1349,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-submit-assign').addEventListener('click',    submitAssign);
   document.getElementById('btn-submit-start').addEventListener('click',     submitStart);
   document.getElementById('btn-submit-create').addEventListener('click',    submitCreateJob);
+  document.getElementById('btn-submit-sop-upload').addEventListener('click', submitSopUpload_);
   document.getElementById('btn-submit-work-log').addEventListener('click',  submitWorkLog);
   document.getElementById('work-log-date').addEventListener('change', refreshWorkLogDateSummary_);
   document.getElementById('btn-work-log-confirm-cancel').addEventListener('click', resetWorkLogFooter_);
@@ -1498,6 +1536,7 @@ function onDataLoaded(jsonStr) {
     if (_data.perms.canRunPayroll) {
       document.getElementById('dash-ceo-section').style.display = 'block';
       loadCEODashboard();
+      loadSopUploadClients_();
     }
   }
 
@@ -1785,6 +1824,7 @@ function renderPortal_(data) {
     if (perms.canRunPayroll) {
       document.getElementById('dash-ceo-section').style.display = 'block';
       loadCEODashboard();
+      loadSopUploadClients_();
     } else {
       document.getElementById('dash-ceo-section').style.display = 'none';
     }
@@ -4988,6 +5028,71 @@ function showSopError_(msg) {
   var banner = document.getElementById('sop-error-banner');
   banner.textContent = msg;  // textContent — never innerHTML
   banner.style.display = 'block';
+}
+
+// ── Upload SOP Document (CEO only) ──────────────────────────────
+function loadSopUploadClients_() {
+  var sel = document.getElementById('sop-upload-client');
+  if (!sel) return;
+  clearSelect(sel, '— Loading clients… —');
+  TOKEN_RUN
+    .withSuccessHandler(function (json) {
+      var clients = JSON.parse(json);
+      clearSelect(sel, '— Select client —');
+      for (var i = 0; i < clients.length; i++) {
+        sel.appendChild(buildOption(clients[i].client_code,
+          clients[i].client_name + ' (' + clients[i].client_code + ')'));
+      }
+    })
+    .withFailureHandler(function () {
+      clearSelect(sel, '— Error loading clients —');
+    })
+    .portal_getClientList();
+}
+
+function submitSopUpload_() {
+  var errBanner = document.getElementById('sop-upload-error-banner');
+  var okBanner  = document.getElementById('sop-upload-success-banner');
+  errBanner.style.display = 'none';
+  okBanner.style.display  = 'none';
+
+  var clientCode  = val('sop-upload-client');
+  var productCode = val('sop-upload-product');
+  var docType     = val('sop-upload-doctype');
+  var fileInput   = document.getElementById('sop-upload-file');
+  var file        = fileInput.files[0];
+
+  if (!clientCode || !productCode || !docType || !file) {
+    errBanner.textContent = 'Client, product, document type, and file are all required.';
+    errBanner.style.display = 'block';
+    return;
+  }
+
+  var btn = document.getElementById('btn-submit-sop-upload');
+  btn.disabled = true;
+  btn.textContent = 'Uploading…';
+
+  var payload = { clientCode: clientCode, productCode: productCode, docType: docType, fileName: file.name };
+
+  TOKEN_RUN
+    .withSuccessHandler(function (json) {
+      btn.disabled = false;
+      btn.textContent = 'Upload';
+      var result = {};
+      try { result = JSON.parse(json); } catch (e) { /* fall through with empty result */ }
+      okBanner.textContent = 'Uploaded successfully. Upload ID: ' + (result.uploadId || '(unknown)');
+      okBanner.style.display = 'block';
+      fileInput.value = '';
+      document.getElementById('sop-upload-product').value = '';
+      document.getElementById('sop-upload-doctype').value = '';
+    })
+    .withFailureHandler(function (err) {
+      btn.disabled = false;
+      btn.textContent = 'Upload';
+      errBanner.textContent = 'Upload failed: ' + (err.message || String(err));
+      errBanner.style.display = 'block';
+    })
+    .portal_uploadSopDocument(JSON.stringify(payload), file);
 }
 
 function renderSopItems_(data) {

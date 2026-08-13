@@ -1,0 +1,123 @@
+// ============================================================
+// SopUploadEngineTest.gs — T1 minimum for SopUploadEngine.createUpload
+//
+// Uses the existing TH_CLIENT_CODE ('TEST-CLIENT') and TH_CEO_EMAIL /
+// TH_DESIGNER_EMAIL constants from TestHarness.gs rather than
+// redeclaring a duplicate client-code constant (testing-policy.md §2
+// prefers referencing a shared constant over a second literal with
+// the same value).
+// ============================================================
+
+function testSopUpload_happyPath() {
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    var blob = Utilities.newBlob('fake sop content', 'text/plain', 'test-sop.txt');
+    var result = SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE,
+      productCode: Config.PRODUCT_CODES.TRUSS,
+      docType: 'DESIGNER_SOP',
+      fileBlob: blob,
+      fileName: 'test-sop.txt'
+    });
+    assertH_(results, counters, 'Returns an uploadId', !!result.uploadId, JSON.stringify(result));
+
+    var rows = DAL.readWhere(Config.TABLES.DIM_SOP_UPLOADS, { upload_id: result.uploadId });
+    assertH_(results, counters, 'DIM_SOP_UPLOADS row exists', rows.length === 1, 'count=' + rows.length);
+    if (rows.length === 1) {
+      assertH_(results, counters, 'status = PENDING', rows[0].status === 'PENDING', rows[0].status);
+      assertH_(results, counters, 'product_code stored', rows[0].product_code === Config.PRODUCT_CODES.TRUSS, rows[0].product_code);
+    }
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function testSopUpload_rbacDenial() {
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    var blob = Utilities.newBlob('fake sop content', 'text/plain', 'test-sop.txt');
+    var threw = false;
+    try {
+      SopUploadEngine.createUpload(TH_DESIGNER_EMAIL, {
+        clientCode: TH_CLIENT_CODE, productCode: Config.PRODUCT_CODES.TRUSS,
+        docType: 'DESIGNER_SOP', fileBlob: blob, fileName: 'x.txt'
+      });
+    } catch (e) { threw = true; }
+    assertH_(results, counters, 'Non-CEO actor rejected', threw, 'threw=' + threw);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function testSopUpload_invalidInput() {
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    var threw = false;
+    try {
+      SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+        clientCode: TH_CLIENT_CODE, productCode: 'NOT_A_REAL_PRODUCT',
+        docType: 'DESIGNER_SOP', fileBlob: Utilities.newBlob('x'), fileName: 'x.txt'
+      });
+    } catch (e) { threw = true; }
+    assertH_(results, counters, 'Invalid product_code rejected', threw, 'threw=' + threw);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function testSopUpload_unknownClient() {
+  // T1 calls for a "duplicate submission" case; this is a one-off admin
+  // action with no natural idempotency key, so this suite substitutes
+  // the other realistic rejection case: an unknown/inactive client_code.
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    var threw = false;
+    try {
+      SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+        clientCode: 'NOT-A-REAL-CLIENT', productCode: Config.PRODUCT_CODES.TRUSS,
+        docType: 'DESIGNER_SOP', fileBlob: Utilities.newBlob('x'), fileName: 'x.txt'
+      });
+    } catch (e) { threw = true; }
+    assertH_(results, counters, 'Unknown client_code rejected', threw, 'threw=' + threw);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function runSopUploadEngineTests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
+  console.log('');
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('  SOP UPLOAD ENGINE TEST SUITE');
+  console.log('═══════════════════════════════════════════════════════');
+
+  var suiteCounters = { passed: 0, failed: 0 };
+  var tests = [
+    testSopUpload_happyPath,
+    testSopUpload_rbacDenial,
+    testSopUpload_invalidInput,
+    testSopUpload_unknownClient
+  ];
+  for (var i = 0; i < tests.length; i++) {
+    var c = tests[i]();
+    suiteCounters.passed += c.passed;
+    suiteCounters.failed += c.failed;
+  }
+  console.log('SUITE TOTAL — passed: ' + suiteCounters.passed + '  failed: ' + suiteCounters.failed);
+  thCleanupTestArtifacts_();
+  return suiteCounters;
+}

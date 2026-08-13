@@ -413,7 +413,8 @@ function runV3HandlerTests() {
     { name: '9 — QCHandler Flow B/C',    fn: runQCHandlerFlowTests   },
     { name: '10 — QCReassignHandler',    fn: runQCReassignTests      },
     { name: '11 — WorkLogCorrectionHandler', fn: runWorkLogCorrectionTests },
-    { name: '12 — QC Findings Picker',   fn: runQCFindingsPickerTests }
+    { name: '12 — QC Findings Picker',   fn: runQCFindingsPickerTests },
+    { name: '13 — SopUploadEngine',      fn: runSopUploadEngineTests }
   ]);
 }
 

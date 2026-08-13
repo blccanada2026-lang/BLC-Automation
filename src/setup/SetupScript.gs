@@ -295,6 +295,26 @@ var SCHEMAS = {
     'requires_comment', 'requires_attachment', 'active_flag', 'created_at'
   ],
 
+  // DIM_SOP_UPLOADS — tracks an uploaded SOP source document through
+  // its lifecycle: PENDING (just uploaded) -> DRAFT_READY (Claude has
+  // structured it into a DRAFT template) -> PUBLISHED, or REJECTED.
+  // Not a FACT table — status is mutated in place via updateWhere,
+  // same pattern as DIM_SOP_TEMPLATES.
+  'DIM_SOP_UPLOADS': [
+    'upload_id', 'client_code', 'product_code', 'doc_type',
+    'drive_file_id', 'drive_file_url',
+    'uploaded_by', 'uploaded_at', 'status',
+    'resulting_template_id', 'notes'
+  ],
+
+  // FACT_SOP_REVIEW_FEEDBACK — one row per manager comment on a draft
+  // SOP upload. Append-only, flat (not partitioned — low volume, same
+  // class as FACT_CLIENT_FEEDBACK).
+  'FACT_SOP_REVIEW_FEEDBACK': [
+    'feedback_id', 'upload_id', 'reviewer_name',
+    'verdict', 'comment', 'submitted_at'
+  ],
+
   // FACT_SOP_AUDITS — append-only audit trail, one row per item-check event (partitioned)
   'FACT_SOP_AUDITS': [
     'audit_id', 'job_id', 'job_number', 'client_code',
@@ -541,7 +561,8 @@ var FLAT_FACT_TABLE_NAMES = [
   'FACT_CLIENT_FEEDBACK',
   'FACT_PERFORMANCE_RATINGS',
   'FACT_QUARTERLY_BONUS',
-  'FACT_SOP_CURRENT_STATUS'
+  'FACT_SOP_CURRENT_STATUS',
+  'FACT_SOP_REVIEW_FEEDBACK'
 ];
 
 // ============================================================
