@@ -8,6 +8,27 @@
 // the same value).
 // ============================================================
 
+/**
+ * Ensures an active TEST-CLIENT row exists in DIM_CLIENT_MASTER.
+ * Called before any test that exercises SopUploadEngine.createUpload,
+ * which validates client_code against an active DIM_CLIENT_MASTER row
+ * (no other test suite requires this — see task-1-report.md Concern 1).
+ * Idempotent — ClientOnboarding.onboardClient() leaves the existing
+ * master row unchanged and only appends a new rate row if TEST-CLIENT
+ * already exists.
+ */
+function thEnsureTestClient_() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
+  ClientOnboarding.onboardClient(TH_CEO_EMAIL, {
+    client_code: TH_CLIENT_CODE,
+    client_name: 'Test Client',
+    currency:    'CAD',
+    hourly_rate: 100
+  });
+}
+
 function testSopUpload_happyPath() {
   var results = [], counters = { passed: 0, failed: 0 };
   try {
@@ -104,6 +125,8 @@ function runSopUploadEngineTests() {
   console.log('═══════════════════════════════════════════════════════');
   console.log('  SOP UPLOAD ENGINE TEST SUITE');
   console.log('═══════════════════════════════════════════════════════');
+
+  thEnsureTestClient_();
 
   var suiteCounters = { passed: 0, failed: 0 };
   var tests = [
