@@ -44,6 +44,30 @@ immediate next project after this one (see "Out of scope" below). This
 spec's upload workflow is designed to support both doc types from day
 one, so no rework is needed once System 2's engine exists.
 
+**Sequencing note:** the NORSPAN-MB truss SOP (W2-1, pilot starting
+2026-08-17) proceeds now via the existing manual path — a Claude session
+calling `SopAdminEngine` directly — and does not wait for this workflow
+to be built. It doubles as the first real content this workflow's
+product-taxonomy patch (below) needs to stay compatible with.
+
+### Patch: `product_code` on `DIM_SOP_TEMPLATES`
+
+`DIM_SOP_TEMPLATES` has no `product_code` column today — it's keyed by
+`client_code + job_type + software + scope_code`, and `SopGate` resolves
+a job's checklist by those legacy keys at submit time, not by product.
+Tagging an upload `TRUSS` alone would produce a template `SopGate` can't
+find.
+
+Resolution: add a `product_code` column to `DIM_SOP_TEMPLATES`.
+Upload-created templates populate **both** `product_code` (the new
+taxonomy value) **and** the legacy `job_type` (via a fixed
+product→job_type label map, e.g. `TRUSS` → `'Roof Truss'`) so existing
+`SopGate` resolution keeps working unchanged. Moving `SopGate` itself to
+resolve by product instead of `job_type` is a separate, already-flagged
+follow-up (see "Out of scope"), not part of this spec — this keeps
+W2-1's template compatible and the plan buildable without touching
+`SopGate`'s resolution logic.
+
 ## Decisions made during brainstorming (do not re-litigate)
 
 - **Upload mechanism:** the CEO uploads the actual source document (not a
@@ -170,6 +194,11 @@ decision, not decided further here.
 - **Changing job creation's `product_code` field validation** to enforce
   the new enum — flagged as a needed follow-up, not designed or built
   here.
+- **Migrating `SopGate`'s resolution logic** from `job_type`-based lookup
+  to product-based lookup — this spec keeps `SopGate` untouched and
+  compatible by populating both fields on upload-created templates (see
+  the `product_code` patch above), not by changing how `SopGate` itself
+  resolves a checklist.
 
 ## Testing
 
