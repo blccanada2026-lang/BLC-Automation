@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BLC SOP Review</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #333; }
+    h1 { font-size: 1.4rem; margin-bottom: 4px; }
+    .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 32px; }
+    .sop-card { border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 4px; }
+    .field .value { font-size: 1rem; }
+    .field a { color: #1a73e8; }
+    input[type=text], textarea {
+      width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc;
+      border-radius: 6px; font-size: 0.95rem; font-family: inherit;
+    }
+    textarea { resize: vertical; min-height: 70px; }
+    .verdict-group { display: flex; gap: 20px; }
+    .verdict-group label { font-size: 0.95rem; color: #333; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .submit-btn { margin-top: 16px; background: #1a73e8; color: #fff; border: none;
+                  padding: 10px 24px; border-radius: 6px; cursor: pointer; font-size: 0.95rem; }
+    .submit-btn:disabled { background: #aaa; cursor: default; }
+    .status-msg { font-size: 0.85rem; margin-top: 8px; min-height: 20px; }
+    .status-msg.ok  { color: #2e7d32; }
+    .status-msg.err { color: #c62828; }
+    #loading { color: #666; }
+    #closed-msg { color: #c62828; display: none; }
+  </style>
+</head>
+<body>
+  <h1>SOP Manager Review</h1>
+  <p class="subtitle">Please review the draft SOP below and let us know if it looks correct.</p>
+  <div id="loading">Loading SOP details...</div>
+  <div id="closed-msg">This SOP is no longer open for review.</div>
+  <div id="card-container"></div>
+
+  <script>
+    var UPLOAD_ID = (typeof INJECTED_UPLOAD_ID !== 'undefined' ? INJECTED_UPLOAD_ID : '') || '';
+    var TOKEN     = (typeof INJECTED_TOKEN     !== 'undefined' ? INJECTED_TOKEN     : '') || '';
+
+    function loadUpload() {
+      if (!UPLOAD_ID || !TOKEN) {
+        document.getElementById('loading').textContent = 'Missing uploadId or token in URL.';
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(json) {
+          var upload = JSON.parse(json);
+          document.getElementById('loading').style.display = 'none';
+
+          if (upload.status !== 'DRAFT_READY') {
+            document.getElementById('closed-msg').style.display = 'block';
+            return;
+          }
+
+          document.getElementById('card-container').appendChild(buildCard(upload));
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('loading').style.display = 'none';
+          if (err && err.message && err.message.indexOf('no longer open for review') !== -1) {
+            document.getElementById('closed-msg').style.display = 'block';
+          } else {
+            document.getElementById('closed-msg').textContent = 'Error: ' + (err && err.message ? err.message : 'unable to load this SOP.');
+            document.getElementById('closed-msg').style.display = 'block';
+          }
+        })
+        .portal_getSopUploadForReview(UPLOAD_ID, TOKEN);
+    }
+
+    function buildCard(upload) {
+      var card = document.createElement('div');
+      card.className = 'sop-card';
+
+      function addField(labelText, valueEl) {
+        var field = document.createElement('div');
+        field.className = 'field';
+        var lbl = document.createElement('label');
+        lbl.textContent = labelText;
+        field.appendChild(lbl);
+        field.appendChild(valueEl);
+        card.appendChild(field);
+      }
+
+      var clientVal = document.createElement('div');
+      clientVal.className = 'value';
+      clientVal.textContent = upload.clientCode;
+      addField('Client', clientVal);
+
+      var productVal = document.createElement('div');
+      productVal.className = 'value';
+      productVal.textContent = upload.productCode;
+      addField('Product', productVal);
+
+      var docTypeVal = document.createElement('div');
+      docTypeVal.className = 'value';
+      docTypeVal.textContent = upload.docType;
+      addField('Document Type', docTypeVal);
+
+      var linkVal = document.createElement('div');
+      linkVal.className = 'value';
+      var link = document.createElement('a');
+      link.href = upload.driveFileUrl;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = 'View original document';
+      linkVal.appendChild(link);
+      addField('Original Document', linkVal);
+
+      var nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.id = 'reviewer-name';
+      nameInput.placeholder = 'Your name';
+      addField('Your Name', nameInput);
+
+      var verdictGroup = document.createElement('div');
+      verdictGroup.className = 'verdict-group';
+
+      var correctLabel = document.createElement('label');
+      var correctRadio = document.createElement('input');
+      correctRadio.type = 'radio';
+      correctRadio.name = 'verdict';
+      correctRadio.value = 'LOOKS_CORRECT';
+      correctLabel.appendChild(correctRadio);
+      correctLabel.appendChild(document.createTextNode('Looks Correct'));
+      verdictGroup.appendChild(correctLabel);
+
+      var issuesLabel = document.createElement('label');
+      var issuesRadio = document.createElement('input');
+      issuesRadio.type = 'radio';
+      issuesRadio.name = 'verdict';
+      issuesRadio.value = 'HAS_ISSUES';
+      issuesLabel.appendChild(issuesRadio);
+      issuesLabel.appendChild(document.createTextNode('Has Issues'));
+      verdictGroup.appendChild(issuesLabel);
+
+      addField('Verdict', verdictGroup);
+
+      var commentInput = document.createElement('textarea');
+      commentInput.id = 'reviewer-comment';
+      commentInput.placeholder = 'Optional comment';
+      addField('Comment (optional)', commentInput);
+
+      var btn = document.createElement('button');
+      btn.className = 'submit-btn';
+      btn.textContent = 'Submit Feedback';
+      btn.onclick = function() { submitFeedback(upload, card, btn); };
+      card.appendChild(btn);
+
+      var msg = document.createElement('div');
+      msg.className = 'status-msg';
+      card.appendChild(msg);
+
+      return card;
+    }
+
+    function submitFeedback(upload, card, btn) {
+      var msg = card.querySelector('.status-msg');
+      msg.textContent = '';
+      msg.className   = 'status-msg';
+
+      var reviewerName = card.querySelector('#reviewer-name').value.trim();
+      var verdictEl    = card.querySelector('input[name="verdict"]:checked');
+      var comment      = card.querySelector('#reviewer-comment').value.trim();
+
+      if (!reviewerName) {
+        msg.textContent = 'Please enter your name.';
+        msg.className   = 'status-msg err';
+        return;
+      }
+      if (!verdictEl) {
+        msg.textContent = 'Please select a verdict.';
+        msg.className   = 'status-msg err';
+        return;
+      }
+
+      btn.disabled    = true;
+      btn.textContent = 'Submitting...';
+
+      google.script.run
+        .withSuccessHandler(function() {
+          msg.textContent = 'Thank you — your feedback has been submitted.';
+          msg.className   = 'status-msg ok';
+          btn.textContent = 'Submitted ✓';
+        })
+        .withFailureHandler(function(err) {
+          if (err && err.message && err.message.indexOf('no longer open for review') !== -1) {
+            msg.textContent = 'This SOP is no longer open for review.';
+          } else {
+            msg.textContent = 'Error: ' + (err && err.message ? err.message : 'submission failed.');
+          }
+          msg.className   = 'status-msg err';
+          btn.disabled    = false;
+          btn.textContent = 'Retry';
+        })
+        .portal_submitSopReviewFeedback(UPLOAD_ID, TOKEN, reviewerName, verdictEl.value, comment);
+    }
+
+    window.addEventListener('load', loadUpload);
+  </script>
+</body>
+</html>

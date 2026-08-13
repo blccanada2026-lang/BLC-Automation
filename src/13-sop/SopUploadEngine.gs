@@ -118,8 +118,90 @@ var SopUploadEngine = (function () {
     }
   }
 
+  // ──────────────────────────────────────────────────────────
+  // Manager-review token — HMAC-SHA256(uploadId, SOP_REVIEW_LINK_SECRET).
+  // Same pattern as PortalData.gs's ratingToken_/requireValidRatingToken_
+  // (RATING_LINK_SECRET) — a dedicated secret per CLAUDE.md R9, never
+  // PORTAL_LINK_SECRET (global rotation = staff lockout event).
+  // ──────────────────────────────────────────────────────────
+  function tokenForUpload(uploadId) {
+    var secret = PropertiesService.getScriptProperties().getProperty('SOP_REVIEW_LINK_SECRET');
+    if (!secret) {
+      throw new Error('SOP_REVIEW_LINK_SECRET not set. Run runGenerateSopReviewSecret() once from the Apps Script editor.');
+    }
+    var bytes = Utilities.computeHmacSha256Signature(String(uploadId), secret);
+    return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, '');
+  }
+
+  function requireValidReviewToken_(uploadId, token) {
+    if (!token) {
+      throw SopUploadError_('SOP_REVIEW_TOKEN_MISSING', 'Review link token missing.', { uploadId: uploadId });
+    }
+    if (String(token) !== tokenForUpload(uploadId)) {
+      throw SopUploadError_('SOP_REVIEW_TOKEN_INVALID', 'Invalid review link token for upload ' + uploadId + '.', { uploadId: uploadId });
+    }
+  }
+
+  function getUploadRow_(uploadId) {
+    var rows = DAL.readWhere(Config.TABLES.DIM_SOP_UPLOADS, { upload_id: uploadId }, { callerModule: MODULE });
+    if (!rows || rows.length === 0) {
+      throw SopUploadError_('SOP_UPLOAD_NOT_FOUND', 'Upload not found: ' + uploadId, { uploadId: uploadId });
+    }
+    return rows[0];
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // getUploadForReview — token-gated, no actor resolution, no
+  // RBAC. Matches the quarterly-ratings external-reviewer model:
+  // the token itself is the credential.
+  // ──────────────────────────────────────────────────────────
+  function getUploadForReview(uploadId, token) {
+    requireValidReviewToken_(uploadId, token);
+    var row = getUploadRow_(uploadId);
+    return {
+      uploadId:     row.upload_id,
+      clientCode:   row.client_code,
+      productCode:  row.product_code,
+      docType:      row.doc_type,
+      driveFileUrl: row.drive_file_url,
+      status:       row.status
+    };
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // submitReviewFeedback — token-gated. Refuses once the upload
+  // has moved past DRAFT_READY (link "dies" after publish).
+  // ──────────────────────────────────────────────────────────
+  function submitReviewFeedback(uploadId, token, reviewerName, verdict, comment) {
+    requireValidReviewToken_(uploadId, token);
+    var row = getUploadRow_(uploadId);
+    if (row.status !== 'DRAFT_READY') {
+      throw SopUploadError_('SOP_REVIEW_NOT_OPEN',
+        'This SOP is no longer open for review (status: ' + row.status + ').', { uploadId: uploadId, status: row.status });
+    }
+    if (!reviewerName || (verdict !== 'LOOKS_CORRECT' && verdict !== 'HAS_ISSUES')) {
+      throw SopUploadError_('SOP_REVIEW_INVALID_FEEDBACK',
+        'reviewerName is required and verdict must be LOOKS_CORRECT or HAS_ISSUES.', { reviewerName: reviewerName, verdict: verdict });
+    }
+
+    DAL.appendRow(Config.TABLES.FACT_SOP_REVIEW_FEEDBACK, {
+      feedback_id:    Identifiers.generatePrefixedId(Config.ID_PREFIXES.SOP_FEEDBACK),
+      upload_id:      uploadId,
+      reviewer_name:  reviewerName,
+      verdict:        verdict,
+      comment:        comment || '',
+      submitted_at:   new Date().toISOString()
+    }, { callerModule: MODULE });
+
+    Logger.info('SOP_REVIEW_FEEDBACK_SUBMITTED', { module: MODULE, uploadId: uploadId, verdict: verdict });
+    return { ok: true };
+  }
+
   return {
-    createUpload: createUpload
+    createUpload:          createUpload,
+    tokenForUpload:        tokenForUpload,
+    getUploadForReview:    getUploadForReview,
+    submitReviewFeedback:  submitReviewFeedback
   };
 
 })();

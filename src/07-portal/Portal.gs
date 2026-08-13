@@ -58,6 +58,19 @@ function doGet(e) {
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
+  if (page === 'review-sop') {
+    var uploadId    = e && e.parameter && e.parameter.uploadId ? e.parameter.uploadId : '';
+    var reviewToken = e && e.parameter && e.parameter.token    ? e.parameter.token    : '';
+    var reviewHtml  = HtmlService.createHtmlOutputFromFile('07-portal/ReviewSop');
+    var reviewContent =
+        '<script>var INJECTED_UPLOAD_ID = ' + JSON.stringify(uploadId)    + ';<\/script>\n'
+      + '<script>var INJECTED_TOKEN = '     + JSON.stringify(reviewToken) + ';<\/script>\n'
+      + reviewHtml.getContent();
+    return HtmlService.createHtmlOutput(reviewContent)
+      .setTitle('BLC SOP Review')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
   // B1: pass the capability token (if present) into the page so the
   // client can attach it to every server call.
   var portalToken = e && e.parameter && e.parameter.pt ? e.parameter.pt : '';
@@ -959,6 +972,49 @@ function runGenerateRatingSecret() {
   );
   PropertiesService.getScriptProperties().setProperty('RATING_LINK_SECRET', secret);
   console.log('RATING_LINK_SECRET generated. Re-send rating links to take effect.');
+}
+
+// ============================================================
+// ONE-TIME SETUP: SOP manager-review link secret
+// Run once per script project, BEFORE the first manager-review
+// link is shared. Rotating the secret invalidates all
+// previously shared review links.
+// ============================================================
+function runGenerateSopReviewSecret() {
+  var secret = Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,
+      Utilities.getUuid() + Date.now() + Math.random())
+  );
+  PropertiesService.getScriptProperties().setProperty('SOP_REVIEW_LINK_SECRET', secret);
+  console.log('SOP_REVIEW_LINK_SECRET generated. Any previously-shared review links are now invalid.');
+}
+
+/**
+ * Returns a draft SOP upload's details for manager review. Token-gated,
+ * no portal login. Accessed directly from a shared review link, not the
+ * main portal flow — mirrors portal_getMyRatees's rater-link model.
+ *
+ * @param {string} uploadId
+ * @param {string} token
+ * @returns {string} JSON
+ */
+function portal_getSopUploadForReview(uploadId, token) {
+  return JSON.stringify(SopUploadEngine.getUploadForReview(uploadId, token));
+}
+
+/**
+ * Submits a manager's review feedback on a draft SOP upload.
+ * Token-gated, no portal login.
+ *
+ * @param {string} uploadId
+ * @param {string} token
+ * @param {string} reviewerName
+ * @param {string} verdict       'LOOKS_CORRECT' | 'HAS_ISSUES'
+ * @param {string} comment       optional
+ * @returns {string} JSON: { ok: true }
+ */
+function portal_submitSopReviewFeedback(uploadId, token, reviewerName, verdict, comment) {
+  return JSON.stringify(SopUploadEngine.submitReviewFeedback(uploadId, token, reviewerName, verdict, comment));
 }
 
 // ============================================================

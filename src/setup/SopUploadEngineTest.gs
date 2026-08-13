@@ -117,6 +117,84 @@ function testSopUpload_unknownClient() {
   return counters;
 }
 
+function testSopUpload_reviewFeedback_validToken() {
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    var blob = Utilities.newBlob('x', 'text/plain', 'x.txt');
+    var upload = SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, productCode: Config.PRODUCT_CODES.TRUSS,
+      docType: 'DESIGNER_SOP', fileBlob: blob, fileName: 'x.txt'
+    });
+    // Simulate Claude having structured it — move straight to DRAFT_READY for this test.
+    DAL.updateWhere(Config.TABLES.DIM_SOP_UPLOADS,
+      { upload_id: upload.uploadId }, { status: 'DRAFT_READY' }, { callerModule: 'SopUploadEngineTest' });
+
+    var token = SopUploadEngine.tokenForUpload(upload.uploadId);
+    var review = SopUploadEngine.getUploadForReview(upload.uploadId, token);
+    assertH_(results, counters, 'getUploadForReview returns status DRAFT_READY', review.status === 'DRAFT_READY', review.status);
+
+    var feedback = SopUploadEngine.submitReviewFeedback(upload.uploadId, token, 'Test Manager', 'LOOKS_CORRECT', 'looks fine');
+    assertH_(results, counters, 'submitReviewFeedback ok', feedback.ok === true, JSON.stringify(feedback));
+
+    var rows = DAL.readWhere(Config.TABLES.FACT_SOP_REVIEW_FEEDBACK, { upload_id: upload.uploadId });
+    assertH_(results, counters, 'FACT_SOP_REVIEW_FEEDBACK row written', rows.length === 1, 'count=' + rows.length);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function testSopUpload_reviewFeedback_invalidToken() {
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    var blob = Utilities.newBlob('x', 'text/plain', 'x.txt');
+    var upload = SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, productCode: Config.PRODUCT_CODES.TRUSS,
+      docType: 'DESIGNER_SOP', fileBlob: blob, fileName: 'x.txt'
+    });
+    DAL.updateWhere(Config.TABLES.DIM_SOP_UPLOADS,
+      { upload_id: upload.uploadId }, { status: 'DRAFT_READY' }, { callerModule: 'SopUploadEngineTest' });
+
+    var threw = false;
+    try {
+      SopUploadEngine.getUploadForReview(upload.uploadId, 'not-a-real-token');
+    } catch (e) { threw = true; }
+    assertH_(results, counters, 'Wrong token rejected', threw, 'threw=' + threw);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function testSopUpload_reviewFeedback_refusedAfterPublish() {
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    var blob = Utilities.newBlob('x', 'text/plain', 'x.txt');
+    var upload = SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, productCode: Config.PRODUCT_CODES.TRUSS,
+      docType: 'DESIGNER_SOP', fileBlob: blob, fileName: 'x.txt'
+    });
+    DAL.updateWhere(Config.TABLES.DIM_SOP_UPLOADS,
+      { upload_id: upload.uploadId }, { status: 'PUBLISHED' }, { callerModule: 'SopUploadEngineTest' });
+
+    var token = SopUploadEngine.tokenForUpload(upload.uploadId);
+    var threw = false;
+    try {
+      SopUploadEngine.submitReviewFeedback(upload.uploadId, token, 'Test Manager', 'LOOKS_CORRECT', '');
+    } catch (e) { threw = true; }
+    assertH_(results, counters, 'Feedback refused once status is PUBLISHED', threw, 'threw=' + threw);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
 function runSopUploadEngineTests() {
   if (!Config.isDev()) {
     throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
@@ -133,7 +211,10 @@ function runSopUploadEngineTests() {
     testSopUpload_happyPath,
     testSopUpload_rbacDenial,
     testSopUpload_invalidInput,
-    testSopUpload_unknownClient
+    testSopUpload_unknownClient,
+    testSopUpload_reviewFeedback_validToken,
+    testSopUpload_reviewFeedback_invalidToken,
+    testSopUpload_reviewFeedback_refusedAfterPublish
   ];
   for (var i = 0; i < tests.length; i++) {
     var c = tests[i]();
