@@ -530,6 +530,17 @@
           <button class="btn-primary btn-sm" id="btn-submit-sop-upload">Upload</button>
         </div>
       </div>
+
+      <!-- Pending SOP Uploads / Publish panel (CEO only) -->
+      <div class="dash-panel" style="margin-top:12px">
+        <div class="dash-panel-hdr">
+          <span>Pending SOP Uploads</span>
+          <button class="btn-muted btn-sm" id="btn-refresh-pending-sop-uploads">↻ Refresh</button>
+        </div>
+        <div class="dash-panel-body" id="pending-sop-uploads-body">
+          <div class="dash-empty">Loading…</div>
+        </div>
+      </div>
     </div>
 
     <div class="dash-grid">
@@ -1350,6 +1361,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-submit-start').addEventListener('click',     submitStart);
   document.getElementById('btn-submit-create').addEventListener('click',    submitCreateJob);
   document.getElementById('btn-submit-sop-upload').addEventListener('click', submitSopUpload_);
+  document.getElementById('btn-refresh-pending-sop-uploads').addEventListener('click', loadPendingSopUploads_);
   document.getElementById('btn-submit-work-log').addEventListener('click',  submitWorkLog);
   document.getElementById('work-log-date').addEventListener('change', refreshWorkLogDateSummary_);
   document.getElementById('btn-work-log-confirm-cancel').addEventListener('click', resetWorkLogFooter_);
@@ -1537,6 +1549,7 @@ function onDataLoaded(jsonStr) {
       document.getElementById('dash-ceo-section').style.display = 'block';
       loadCEODashboard();
       loadSopUploadClients_();
+      loadPendingSopUploads_();
     }
   }
 
@@ -1825,6 +1838,7 @@ function renderPortal_(data) {
       document.getElementById('dash-ceo-section').style.display = 'block';
       loadCEODashboard();
       loadSopUploadClients_();
+      loadPendingSopUploads_();
     } else {
       document.getElementById('dash-ceo-section').style.display = 'none';
     }
@@ -5093,6 +5107,173 @@ function submitSopUpload_() {
       errBanner.style.display = 'block';
     })
     .portal_uploadSopDocument(JSON.stringify(payload), file);
+}
+
+// ── Pending SOP Uploads / Publish (CEO only) ─────────────────────
+function loadPendingSopUploads_() {
+  var body = document.getElementById('pending-sop-uploads-body');
+  if (!body) return;
+  while (body.firstChild) body.removeChild(body.firstChild);
+  var loading = document.createElement('div');
+  loading.className = 'dash-empty';
+  loading.textContent = 'Loading…';
+  body.appendChild(loading);
+
+  TOKEN_RUN
+    .withSuccessHandler(function (json) {
+      var list = [];
+      try { list = JSON.parse(json); } catch (e) { /* fall through with empty list */ }
+      renderPendingSopUploads_(list);
+    })
+    .withFailureHandler(function (err) {
+      while (body.firstChild) body.removeChild(body.firstChild);
+      var errDiv = document.createElement('div');
+      errDiv.className = 'dash-empty';
+      errDiv.textContent = 'Could not load pending SOP uploads: ' + (err.message || String(err));
+      body.appendChild(errDiv);
+    })
+    .portal_getPendingSopUploads();
+}
+
+function renderPendingSopUploads_(list) {
+  var body = document.getElementById('pending-sop-uploads-body');
+  while (body.firstChild) body.removeChild(body.firstChild);
+
+  if (!list || list.length === 0) {
+    var empty = document.createElement('div');
+    empty.className = 'dash-empty';
+    empty.textContent = 'No pending SOP uploads.';
+    body.appendChild(empty);
+    return;
+  }
+
+  list.forEach(function (upload) {
+    body.appendChild(buildPendingSopUploadRow_(upload));
+  });
+}
+
+function buildPendingSopUploadRow_(upload) {
+  var row = document.createElement('div');
+  row.id = 'pending-sop-upload-' + upload.uploadId;
+  row.style.cssText = 'border:1px solid var(--c-border,#e2e8f0);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;';
+
+  // Header — client / product / doc type / status badge
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;';
+  var title = document.createElement('div');
+  title.style.cssText = 'font-weight:600;';
+  title.textContent = upload.clientCode + ' — ' + upload.productCode + ' — ' + upload.docType;
+  hdr.appendChild(title);
+
+  var badge = document.createElement('span');
+  badge.textContent = upload.status;
+  badge.style.cssText = 'padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;';
+  if (upload.status === 'DRAFT_READY') { badge.style.background = '#dbeafe'; badge.style.color = '#1d4ed8'; }
+  else if (upload.status === 'PENDING') { badge.style.background = '#f1f5f9'; badge.style.color = '#64748b'; }
+  else { badge.style.background = '#fef9c3'; badge.style.color = '#854d0e'; }
+  hdr.appendChild(badge);
+  row.appendChild(hdr);
+
+  // Source document link
+  if (upload.driveFileUrl) {
+    var docLink = document.createElement('a');
+    docLink.href = upload.driveFileUrl;
+    docLink.target = '_blank';
+    docLink.rel = 'noopener';
+    docLink.textContent = 'Source document';
+    docLink.style.cssText = 'display:inline-block;margin-top:6px;font-size:12px;';
+    row.appendChild(docLink);
+  }
+
+  // Manager feedback
+  if (upload.feedback && upload.feedback.length > 0) {
+    var fbWrap = document.createElement('div');
+    fbWrap.style.cssText = 'margin-top:8px;font-size:12px;';
+    var fbHdr = document.createElement('div');
+    fbHdr.style.cssText = 'font-weight:600;color:var(--c-muted,#64748b);margin-bottom:4px;';
+    fbHdr.textContent = 'Manager feedback';
+    fbWrap.appendChild(fbHdr);
+    upload.feedback.forEach(function (f) {
+      var fbRow = document.createElement('div');
+      fbRow.style.cssText = 'padding:6px 8px;background:#f8fafc;border-radius:4px;margin-bottom:4px;';
+      var fbLine = document.createElement('div');
+      fbLine.textContent = (f.reviewerName || 'Unknown') + ' — ' + f.verdict + (f.submittedAt ? ' (' + f.submittedAt + ')' : '');
+      fbLine.style.fontWeight = '600';
+      fbRow.appendChild(fbLine);
+      if (f.comment) {
+        var fbComment = document.createElement('div');
+        fbComment.textContent = f.comment;
+        fbComment.style.cssText = 'color:var(--c-muted,#64748b);margin-top:2px;';
+        fbRow.appendChild(fbComment);
+      }
+      fbWrap.appendChild(fbRow);
+    });
+    row.appendChild(fbWrap);
+  }
+
+  // Review link — copyable, only when DRAFT_READY
+  if (upload.status === 'DRAFT_READY' && upload.reviewLink) {
+    var linkWrap = document.createElement('div');
+    linkWrap.style.cssText = 'margin-top:8px;';
+    var linkLbl = document.createElement('label');
+    linkLbl.textContent = 'Share this link with managers';
+    linkLbl.style.cssText = 'display:block;font-size:11px;color:var(--c-muted,#64748b);margin-bottom:2px;';
+    linkWrap.appendChild(linkLbl);
+    var linkRow = document.createElement('div');
+    linkRow.style.cssText = 'display:flex;gap:6px;';
+    var linkInput = document.createElement('input');
+    linkInput.type = 'text';
+    linkInput.readOnly = true;
+    linkInput.value = upload.reviewLink;
+    linkInput.style.cssText = 'flex:1;font-size:12px;';
+    linkInput.addEventListener('click', function () { linkInput.select(); });
+    linkRow.appendChild(linkInput);
+    row.appendChild(linkWrap);
+    linkWrap.appendChild(linkRow);
+  }
+
+  // Inline error banner
+  var errBanner = document.createElement('div');
+  errBanner.className = 'sop-error-banner';
+  errBanner.style.display = 'none';
+  errBanner.style.marginTop = '8px';
+  row.appendChild(errBanner);
+
+  // Publish button
+  var actionsRow = document.createElement('div');
+  actionsRow.style.cssText = 'margin-top:8px;';
+  var publishBtn = document.createElement('button');
+  publishBtn.className = 'btn-primary btn-sm';
+  publishBtn.textContent = 'Publish';
+  publishBtn.disabled = upload.status !== 'DRAFT_READY';
+  publishBtn.addEventListener('click', function () {
+    publishSopUpload_(upload.uploadId, publishBtn, errBanner, row);
+  });
+  actionsRow.appendChild(publishBtn);
+  row.appendChild(actionsRow);
+
+  return row;
+}
+
+function publishSopUpload_(uploadId, btn, errBanner, row) {
+  if (!confirm('Publish this SOP template? It will immediately become the active template used for QC checklists.')) return;
+
+  errBanner.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Publishing…';
+
+  TOKEN_RUN
+    .withSuccessHandler(function () {
+      showToast('SOP template published.', 'success');
+      if (row && row.parentNode) row.parentNode.removeChild(row);
+    })
+    .withFailureHandler(function (err) {
+      btn.disabled = false;
+      btn.textContent = 'Publish';
+      errBanner.textContent = 'Publish failed: ' + (err.message || String(err));
+      errBanner.style.display = 'block';
+    })
+    .portal_publishSopUpload(uploadId);
 }
 
 function renderSopItems_(data) {

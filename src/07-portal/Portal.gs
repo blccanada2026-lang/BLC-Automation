@@ -1291,3 +1291,27 @@ function portal_uploadSopDocument(ptoken, payloadJson, fileBlob) {
   });
   return JSON.stringify(result);
 }
+
+/**
+ * Lists all non-published, non-rejected SOP uploads with their draft
+ * status, review link, and any manager feedback so far. CEO only.
+ *
+ * @param {string} ptoken
+ * @returns {string} JSON array
+ */
+function portal_getPendingSopUploads(ptoken) {
+  var email = PortalAuth.resolveEmail(ptoken);
+  return JSON.stringify(SopUploadEngine.listPendingUploads(email));
+}
+
+/**
+ * Publishes a structured SOP upload's underlying template. CEO only.
+ *
+ * @param {string} ptoken
+ * @param {string} uploadId
+ * @returns {string} JSON: { uploadId, status }
+ */
+function portal_publishSopUpload(ptoken, uploadId) {
+  var email = PortalAuth.resolveEmail(ptoken);
+  return JSON.stringify(SopUploadEngine.publishUpload(email, uploadId));
+}

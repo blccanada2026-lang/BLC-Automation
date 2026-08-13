@@ -195,6 +195,122 @@ function testSopUpload_reviewFeedback_refusedAfterPublish() {
   return counters;
 }
 
+// Retires any pre-existing ACTIVE template for this client+scope so
+// createTemplate() can run again on a repeat test run (Rule T3).
+function thRetireActiveSopTemplateIfAny_(clientCode, scopeCode) {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
+  var existing = SopDAL.findActiveTemplateForJob(clientCode, scopeCode);
+  if (existing) {
+    SopAdminEngine.retireTemplate(TH_CEO_EMAIL, existing.sop_template_id);
+  }
+}
+
+function testSopUpload_publish_happyPath() {
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    thRetireActiveSopTemplateIfAny_(TH_CLIENT_CODE, Config.PRODUCT_CODES.TRUSS);
+    var template = SopAdminEngine.createTemplate(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, jobType: Config.PRODUCT_LABELS.TRUSS,
+      software: 'TestSoftware', scopeCode: Config.PRODUCT_CODES.TRUSS
+    });
+    SopAdminEngine.addItem(TH_CEO_EMAIL, template.sopTemplateId, {
+      item_code: 'TEST_ITEM_1', item_label: 'Test item', is_required: 'TRUE'
+    });
+
+    var blob = Utilities.newBlob('x', 'text/plain', 'x.txt');
+    var upload = SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, productCode: Config.PRODUCT_CODES.TRUSS,
+      docType: 'DESIGNER_SOP', fileBlob: blob, fileName: 'x.txt'
+    });
+    SopUploadEngine.markDraftReady(upload.uploadId, template.sopTemplateId, 'test notes');
+
+    var result = SopUploadEngine.publishUpload(TH_CEO_EMAIL, upload.uploadId);
+    assertH_(results, counters, 'publishUpload returns PUBLISHED', result.status === 'PUBLISHED', result.status);
+
+    var rows = DAL.readWhere(Config.TABLES.DIM_SOP_UPLOADS, { upload_id: upload.uploadId });
+    assertH_(results, counters, 'DIM_SOP_UPLOADS row shows PUBLISHED', rows[0].status === 'PUBLISHED', rows[0].status);
+
+    var templateRow = SopDAL.getTemplateById(template.sopTemplateId);
+    assertH_(results, counters, 'Underlying template is ACTIVE', templateRow.status === 'ACTIVE', templateRow.status);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function testSopUpload_publish_rbacDenial() {
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    var threw = false;
+    try {
+      SopUploadEngine.listPendingUploads(TH_DESIGNER_EMAIL);
+    } catch (e) { threw = true; }
+    assertH_(results, counters, 'Non-CEO listPendingUploads rejected', threw, 'threw=' + threw);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function testSopUpload_publish_notStructured() {
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    var blob = Utilities.newBlob('x', 'text/plain', 'x.txt');
+    var upload = SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, productCode: Config.PRODUCT_CODES.TRUSS,
+      docType: 'DESIGNER_SOP', fileBlob: blob, fileName: 'x.txt'
+    });
+    var threw = false;
+    try {
+      SopUploadEngine.publishUpload(TH_CEO_EMAIL, upload.uploadId);
+    } catch (e) { threw = true; }
+    assertH_(results, counters, 'Publishing a not-yet-structured upload rejected', threw, 'threw=' + threw);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function testSopUpload_publish_doublePublish() {
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    thRetireActiveSopTemplateIfAny_(TH_CLIENT_CODE, Config.PRODUCT_CODES.OPEN_WOOD_FLOOR);
+    var template = SopAdminEngine.createTemplate(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, jobType: Config.PRODUCT_LABELS.OPEN_WOOD_FLOOR,
+      software: 'TestSoftware', scopeCode: Config.PRODUCT_CODES.OPEN_WOOD_FLOOR
+    });
+    SopAdminEngine.addItem(TH_CEO_EMAIL, template.sopTemplateId, {
+      item_code: 'TEST_ITEM_2', item_label: 'Test item 2', is_required: 'TRUE'
+    });
+    var blob = Utilities.newBlob('x', 'text/plain', 'x.txt');
+    var upload = SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, productCode: Config.PRODUCT_CODES.OPEN_WOOD_FLOOR,
+      docType: 'DESIGNER_SOP', fileBlob: blob, fileName: 'x.txt'
+    });
+    SopUploadEngine.markDraftReady(upload.uploadId, template.sopTemplateId, '');
+    SopUploadEngine.publishUpload(TH_CEO_EMAIL, upload.uploadId);
+
+    var threw = false;
+    try {
+      SopUploadEngine.publishUpload(TH_CEO_EMAIL, upload.uploadId);
+    } catch (e) { threw = true; }
+    assertH_(results, counters, 'Second publish rejected', threw, 'threw=' + threw);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
 function runSopUploadEngineTests() {
   if (!Config.isDev()) {
     throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
@@ -214,7 +330,11 @@ function runSopUploadEngineTests() {
     testSopUpload_unknownClient,
     testSopUpload_reviewFeedback_validToken,
     testSopUpload_reviewFeedback_invalidToken,
-    testSopUpload_reviewFeedback_refusedAfterPublish
+    testSopUpload_reviewFeedback_refusedAfterPublish,
+    testSopUpload_publish_happyPath,
+    testSopUpload_publish_rbacDenial,
+    testSopUpload_publish_notStructured,
+    testSopUpload_publish_doublePublish
   ];
   for (var i = 0; i < tests.length; i++) {
     var c = tests[i]();

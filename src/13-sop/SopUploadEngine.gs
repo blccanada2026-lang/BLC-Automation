@@ -197,11 +197,103 @@ var SopUploadEngine = (function () {
     return { ok: true };
   }
 
+  // ──────────────────────────────────────────────────────────
+  // markDraftReady — called by a Claude session (via the Apps
+  // Script editor) once it has structured an upload's source
+  // document into a DRAFT template via SopAdminEngine. Not
+  // portal-exposed — this is a manual, editor-run step.
+  // ──────────────────────────────────────────────────────────
+  function markDraftReady(uploadId, resultingTemplateId, notes) {
+    if (!resultingTemplateId) {
+      throw SopUploadError_('SOP_UPLOAD_MISSING_TEMPLATE_ID', 'resultingTemplateId is required.', { uploadId: uploadId });
+    }
+    DAL.updateWhere(Config.TABLES.DIM_SOP_UPLOADS,
+      { upload_id: uploadId },
+      { status: 'DRAFT_READY', resulting_template_id: resultingTemplateId, notes: notes || '' },
+      { callerModule: MODULE });
+    Logger.info('SOP_UPLOAD_DRAFT_READY', { module: MODULE, uploadId: uploadId, resultingTemplateId: resultingTemplateId });
+    return { uploadId: uploadId, status: 'DRAFT_READY' };
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // listPendingUploads — CEO publish screen. Everything not yet
+  // PUBLISHED or REJECTED, each with its feedback and review link.
+  // ──────────────────────────────────────────────────────────
+  function listPendingUploads(actorEmail) {
+    var actor = RBAC.resolveActor(actorEmail);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.SOP_UPLOAD);
+
+    var allUploads = DAL.readWhere(Config.TABLES.DIM_SOP_UPLOADS, {}, { callerModule: MODULE });
+    var pending = allUploads.filter(function (r) {
+      return r.status !== 'PUBLISHED' && r.status !== 'REJECTED';
+    });
+
+    var allFeedback = DAL.readWhere(Config.TABLES.FACT_SOP_REVIEW_FEEDBACK, {}, { callerModule: MODULE });
+
+    return pending.map(function (row) {
+      var feedback = allFeedback.filter(function (f) { return f.upload_id === row.upload_id; });
+      var reviewLink = row.status === 'DRAFT_READY'
+        ? buildReviewLink_(row.upload_id)
+        : '';
+      return {
+        uploadId:             row.upload_id,
+        clientCode:           row.client_code,
+        productCode:          row.product_code,
+        docType:              row.doc_type,
+        driveFileUrl:         row.drive_file_url,
+        status:               row.status,
+        resultingTemplateId:  row.resulting_template_id,
+        notes:                row.notes,
+        reviewLink:           reviewLink,
+        feedback:             feedback.map(function (f) {
+          return { reviewerName: f.reviewer_name, verdict: f.verdict, comment: f.comment, submittedAt: f.submitted_at };
+        })
+      };
+    });
+  }
+
+  function buildReviewLink_(uploadId) {
+    var base = PropertiesService.getScriptProperties().getProperty('PORTAL_BASE_URL') || '';
+    if (!base) return '';
+    var sep = base.indexOf('?') === -1 ? '?' : '&';
+    return base + sep + 'page=review-sop&uploadId=' + encodeURIComponent(uploadId) +
+      '&token=' + encodeURIComponent(tokenForUpload(uploadId));
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // publishUpload — publishes the linked DIM_SOP_TEMPLATES draft
+  // via the existing, unmodified SopAdminEngine.publishTemplate,
+  // then marks the upload PUBLISHED.
+  // ──────────────────────────────────────────────────────────
+  function publishUpload(actorEmail, uploadId) {
+    var actor = RBAC.resolveActor(actorEmail);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.SOP_UPLOAD);
+
+    var row = getUploadRow_(uploadId);
+    if (row.status === 'PUBLISHED') {
+      throw SopUploadError_('SOP_UPLOAD_ALREADY_PUBLISHED', 'This upload has already been published.', { uploadId: uploadId });
+    }
+    if (!row.resulting_template_id) {
+      throw SopUploadError_('SOP_UPLOAD_NOT_STRUCTURED', 'This upload has not been structured into a template yet.', { uploadId: uploadId });
+    }
+
+    SopAdminEngine.publishTemplate(actorEmail, row.resulting_template_id);
+
+    DAL.updateWhere(Config.TABLES.DIM_SOP_UPLOADS,
+      { upload_id: uploadId }, { status: 'PUBLISHED' }, { callerModule: MODULE });
+
+    Logger.info('SOP_UPLOAD_PUBLISHED', { module: MODULE, uploadId: uploadId, templateId: row.resulting_template_id });
+    return { uploadId: uploadId, status: 'PUBLISHED' };
+  }
+
   return {
     createUpload:          createUpload,
     tokenForUpload:        tokenForUpload,
     getUploadForReview:    getUploadForReview,
-    submitReviewFeedback:  submitReviewFeedback
+    submitReviewFeedback:  submitReviewFeedback,
+    markDraftReady:        markDraftReady,
+    listPendingUploads:    listPendingUploads,
+    publishUpload:         publishUpload
   };
 
 })();
