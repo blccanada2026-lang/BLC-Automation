@@ -31,7 +31,63 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-08-12)
+## Session State (last updated: end of turn, 2026-08-14)
+
+**SOP upload workflow — PR #22 open** (https://github.com/blccanada2026-lang/BLC-Automation/pull/22,
+`sop-upload-workflow` → `main`, NOT yet merged). Implementation complete
+(4 tasks + 1 final-review fix wave, commits `55ba9c7..0632b56`) — full
+detail in `SESSION_LOG.md`'s 2026-08-13 entry. New CEO-only
+structured-upload → manager-review → CEO-publish path for SOP documents
+(`SopUploadEngine.gs`, `DIM_SOP_UPLOADS`, `FACT_SOP_REVIEW_FEEDBACK`,
+`SOP_UPLOAD` RBAC action, `ReviewSop.html`).
+
+**Final whole-branch review found 1 Critical + 6 Important issues, all
+fixed and re-verified clean:** neither the manager review page nor the
+CEO publish screen originally showed the structured checklist/notes the
+human was meant to verify before approving — both now render it. Plus 6
+Important fixes (XSS escaping, template-mismatch validation, Drive file
+sharing, silent-missing-link error surfacing, `QC_REVIEW_SOP` publish
+guard).
+
+**LIVE DEV TESTING IN PROGRESS as of 2026-08-14, started this turn.**
+Branch pushed to DEV (167 files, includes `ReviewSop.html`/
+`SopUploadEngine.gs`) — confirmed no drift first (DEV matched `main`
+exactly before push, byte-for-byte). User wants a real end-to-end
+walkthrough, in this order:
+1. **Setup** (in progress — asked user to run `runSetupSchemas()` in the
+   DEV Apps Script editor, awaiting result): `runSetupSchemas()` →
+   `runGenerateSopReviewSecret()` → confirm the DEV web app's "Who has
+   access" deployment setting (checked-in `appsscript.json` says
+   `MYSELF`, almost certainly stale vs. reality since 100+ staff already
+   use no-login `?pt=` portal links — verify, don't assume).
+2. **Designer + QC flow, NOT YET STARTED — blocked on a real gap**: no
+   `DIM_SOP_TEMPLATES` row is `ACTIVE` for any product in DEV right now.
+   W2-1 (the real NORSPAN-MB truss SOP, content already resolved — see
+   below) was never actually built past "ready to build." Plan: create a
+   quick **synthetic** test SOP checklist directly via `SopAdminEngine`
+   (`TEST-CLIENT` + a test product, NOT the real NORSPAN-MB content) so
+   there's something for a designer to fill out during this walkthrough
+   — keep this decoupled from the real W2-1 build, which is a separate,
+   still-open task (see below). Then: create a job → designer submits
+   with the checklist filled in → QC reviews (exercising the
+   already-merged QC-findings-picker from PR #21 too).
+3. **SOP upload flow, NOT YET STARTED**: user (as CEO) uploads a real
+   document → Claude structures it → user gets a review link → user
+   plays the "manager" role, approves via the link → user publishes.
+   This is also where checklist items #2 (`runGenerateSopReviewSecret`),
+   #4 (`driveFile.setSharing` domain-policy check), and #5 (real
+   `google.script.run` file-transport check) actually get exercised.
+
+**`runSopUploadEngineTests()` (17 tests) still not executed live** —
+should be run as part of step 1 once schemas/secret are set up, same
+process as the QC-findings-picker feature (whose own live run found 2
+real bugs invisible to manual trace).
+
+Also note: the QC-review-SOP backend (`QcProcessAdminEngine`) remains
+unbuilt — `doc_type: 'QC_REVIEW_SOP'` uploads can be created and reviewed
+by managers through this workflow, but `publishUpload` explicitly rejects
+publishing them until that engine exists (out of scope for this PR,
+flagged as the next project).
 
 **W2-1 — numeric conflicts resolved by user's managers, 2026-08-10.**
 All three blockers from the two NORSPAN-MB source docs (`SOP-NOR-TRS-003`
