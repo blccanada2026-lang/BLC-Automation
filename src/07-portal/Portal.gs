@@ -333,7 +333,7 @@ function portal_getActiveDesigners(ptoken) {
 
 // ============================================================
 // portal_getQCReviewers — returns staff eligible to review QC
-// (QC_REVIEWER, TEAM_LEAD, PM, CEO) for the reassign modal
+// (QC, QC_REVIEWER, TEAM_LEAD, PM, CEO) for the reassign modal
 // ============================================================
 
 /**
@@ -343,7 +343,7 @@ function portal_getQCReviewers(ptoken) {
   var email = PortalAuth.resolveEmail(ptoken);
   var actor = RBAC.resolveActor(email);
   RBAC.enforcePermission(actor, RBAC.ACTIONS.JOB_ALLOCATE);
-  var QC_ROLES = { QC_REVIEWER: true, TEAM_LEAD: true, PM: true, CEO: true };
+  var QC_ROLES = { QC: true, QC_REVIEWER: true, TEAM_LEAD: true, PM: true, CEO: true };
   try {
     var rows = DAL.readAll('DIM_STAFF_ROSTER', { callerModule: 'Portal' });
     var result = [];
