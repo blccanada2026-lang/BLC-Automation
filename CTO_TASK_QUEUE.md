@@ -31,72 +31,63 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-08-13)
+## Session State (last updated: end of turn, 2026-08-14)
 
-**SOP upload workflow — implementation complete on branch `sop-upload-workflow`
-(4 tasks + 1 final-review fix wave, commits `55ba9c7..442aa7a`), NOT yet
-merged to main, NOT yet deployed to DEV or PROD.** New CEO-only
+**SOP upload workflow — PR #22 open** (https://github.com/blccanada2026-lang/BLC-Automation/pull/22,
+`sop-upload-workflow` → `main`, NOT yet merged). Implementation complete
+(4 tasks + 1 final-review fix wave, commits `55ba9c7..0632b56`) — full
+detail in `SESSION_LOG.md`'s 2026-08-13 entry. New CEO-only
 structured-upload → manager-review → CEO-publish path for SOP documents
 (`SopUploadEngine.gs`, `DIM_SOP_UPLOADS`, `FACT_SOP_REVIEW_FEEDBACK`,
-`SOP_UPLOAD` RBAC action, `ReviewSop.html`). Full detail in
-`SESSION_LOG.md`'s 2026-08-13 entry.
+`SOP_UPLOAD` RBAC action, `ReviewSop.html`).
 
 **Final whole-branch review found 1 Critical + 6 Important issues, all
-fixed and re-verified clean (2026-08-13):** the Critical finding was a
-real plan defect, faithfully implemented by every task and invisible to
-task-scoped review — neither the manager review page nor the CEO publish
-screen actually showed the structured checklist/notes the human was
-meant to verify before approving. Both now render it. The 6 Important
-fixes: XSS-unescaped `</script>` in the new `review-sop` doGet route (a
-no-login, link-distributed page — real risk, not cosmetic);
-`markDraftReady` now validates the linked template actually exists and
-matches the upload's client/product (previously a typo'd template ID
-would silently bind the wrong client's SOP); uploaded Drive files are now
-shared link-viewable so managers can actually open them; a missing
-secret/URL now shows a clear error instead of a silently-absent review
-link; `publishUpload` now explicitly rejects `QC_REVIEW_SOP` uploads
-instead of failing with a misleading error.
+fixed and re-verified clean:** neither the manager review page nor the
+CEO publish screen originally showed the structured checklist/notes the
+human was meant to verify before approving — both now render it. Plus 6
+Important fixes (XSS escaping, template-mismatch validation, Drive file
+sharing, silent-missing-link error surfacing, `QC_REVIEW_SOP` publish
+guard).
 
-`runSopUploadEngineTests()` (17 tests after the fix wave) verified by
-manual code trace only in this environment — **not yet executed live**,
-same caveat every prior GAS feature built without a live Apps Script
-editor has carried. Needs a live DEV run before being trusted, following
-the exact same process used for the QC-findings-picker feature (that
-feature's own live run found 2 real bugs invisible to manual trace).
+**LIVE DEV TESTING IN PROGRESS as of 2026-08-14, started this turn.**
+Branch pushed to DEV (167 files, includes `ReviewSop.html`/
+`SopUploadEngine.gs`) — confirmed no drift first (DEV matched `main`
+exactly before push, byte-for-byte). User wants a real end-to-end
+walkthrough, in this order:
+1. **Setup** (in progress — asked user to run `runSetupSchemas()` in the
+   DEV Apps Script editor, awaiting result): `runSetupSchemas()` →
+   `runGenerateSopReviewSecret()` → confirm the DEV web app's "Who has
+   access" deployment setting (checked-in `appsscript.json` says
+   `MYSELF`, almost certainly stale vs. reality since 100+ staff already
+   use no-login `?pt=` portal links — verify, don't assume).
+2. **Designer + QC flow, NOT YET STARTED — blocked on a real gap**: no
+   `DIM_SOP_TEMPLATES` row is `ACTIVE` for any product in DEV right now.
+   W2-1 (the real NORSPAN-MB truss SOP, content already resolved — see
+   below) was never actually built past "ready to build." Plan: create a
+   quick **synthetic** test SOP checklist directly via `SopAdminEngine`
+   (`TEST-CLIENT` + a test product, NOT the real NORSPAN-MB content) so
+   there's something for a designer to fill out during this walkthrough
+   — keep this decoupled from the real W2-1 build, which is a separate,
+   still-open task (see below). Then: create a job → designer submits
+   with the checklist filled in → QC reviews (exercising the
+   already-merged QC-findings-picker from PR #21 too).
+3. **SOP upload flow, NOT YET STARTED**: user (as CEO) uploads a real
+   document → Claude structures it → user gets a review link → user
+   plays the "manager" role, approves via the link → user publishes.
+   This is also where checklist items #2 (`runGenerateSopReviewSecret`),
+   #4 (`driveFile.setSharing` domain-policy check), and #5 (real
+   `google.script.run` file-transport check) actually get exercised.
 
-**Live-DEV-run checklist, in this order (5 items — 2 original deploy
-prerequisites + 3 more surfaced by the final review):**
-1. `runSetupSchemas()` once in the DEV Apps Script editor after the first
-   push — creates the `DIM_SOP_UPLOADS`/`FACT_SOP_REVIEW_FEEDBACK` tabs.
-   Declaring a table in `SCHEMAS` does not create its tab automatically.
-2. `runGenerateSopReviewSecret()` once — until run, `tokenForUpload()`
-   throws and no manager review link will work.
-3. **Confirm the deployed web app's "Who has access" setting.**
-   `appsscript.json` currently says `"access": "MYSELF"`, which would
-   make a no-login manager review link unusable — this contradicts known
-   live usage (100+ staff already use no-login `?pt=` portal links), so
-   the checked-in manifest is likely stale versus the actual deployment.
-   Verify, don't assume.
-4. **Verify `driveFile.setSharing(ANYONE_WITH_LINK, VIEW)` doesn't throw.**
-   No prior `setSharing` call exists anywhere else in this codebase to
-   confirm the Workspace domain's admin policy allows external
-   link-sharing. If it's blocked, every SOP upload will fail at creation
-   time. Test with one real upload before this reaches PROD.
-5. **Manually exercise a real file upload through the portal UI** (not
-   just the automated test suite, which constructs file blobs
-   server-side and never touches the actual `google.script.run`
-   file-transport path). The plan assumed — never verified — that
-   `google.script.run` accepts a bare `File` object from
-   `<input type="file">` directly; if that assumption is wrong, the
-   fallback is a client-side `FileReader` → base64 → server-side
-   `Utilities.newBlob(Utilities.base64Decode(...))` rebuild, confined to
-   `PortalView.html` + the `Portal.gs` wrapper.
+**`runSopUploadEngineTests()` (17 tests) still not executed live** —
+should be run as part of step 1 once schemas/secret are set up, same
+process as the QC-findings-picker feature (whose own live run found 2
+real bugs invisible to manual trace).
 
 Also note: the QC-review-SOP backend (`QcProcessAdminEngine`) remains
 unbuilt — `doc_type: 'QC_REVIEW_SOP'` uploads can be created and reviewed
-by managers through this workflow, but `publishUpload` now explicitly
-rejects publishing them (see above) until that engine exists (explicitly
-out of scope for this plan, flagged as the next project).
+by managers through this workflow, but `publishUpload` explicitly rejects
+publishing them until that engine exists (out of scope for this PR,
+flagged as the next project).
 
 **W2-1 — numeric conflicts resolved by user's managers, 2026-08-10.**
 All three blockers from the two NORSPAN-MB source docs (`SOP-NOR-TRS-003`
