@@ -404,6 +404,40 @@ walkthrough, in this order:
    upload→review→publish→job-checklist cycle isn't strictly required to
    close the loop, but is available if the user wants extra confidence.
 
+   **Post-fix confidence cycle (2026-08-14 ~15:00-15:25), user
+   requested:** fresh upload (`SU-4C72EED14204`, `TEST-CLIENT`/
+   `FLOOR_TRUSS`, avoided retiring Step 2's `ROOF_TRUSS` template) →
+   structured (`ST-` template, 3 items) → reviewed → published → job
+   `BLC-00292` created/assigned to DS1 → **checklist loaded correctly
+   for the designer** (confirms the vocabulary fix works end-to-end,
+   not just analytically) → submitted for QC → reassigned to QC1 →
+   QC1 reviewed with MINOR_REWORK.
+
+   **Investigated, NOT a bug: findings-picker checkboxes appeared
+   visually all-ticked on open (even after hard refresh).** Code
+   review (`renderQcFindingTypes_`) showed no app-side path to produce
+   this — checkboxes are freshly created, never explicitly checked, no
+   prior-state read-back exists. Consulted advisor for a structured
+   report given the user asked for one; confirmed via actual submitted
+   data (`FACT_QC_FINDINGS` for `BLC-00292`) that only 2 findings
+   really landed (`LOAD_ERROR`, `DRAFTING_ERROR`) — not all 16. **Real
+   underlying state was correct; only the visual rendering was
+   misleading** — cosmetic CSS/checkbox-styling issue, not a
+   data-integrity risk. Worth a low-priority follow-up fix, not
+   blocking.
+
+   **Performance/latency question also raised and answered via
+   advisor:** portal action slowness (multi-second per action) is a
+   pre-existing, deliberate architectural tradeoff (every action
+   synchronously drains the full processing queue — Portal.gs, "so the
+   user sees the result on refresh"), already measured in PROD
+   (W0-4: p95≈8.8s, 2,900+ calls) — not something introduced by this
+   session's changes. Real answer lives in **task W0-2's
+   `PerfBaselineReport`**, which has had 4 days of real PROD traffic
+   sitting unread (was already a pending backlog item, now more
+   relevant) — DEV additionally reads slower right now because this
+   session's test data has bloated the queue/log tables.
+
    ## Session summary — all 3 planned live-DEV-testing steps complete
    Three real pre-existing bugs found and fixed: QC_ROLES dropdown
    filter (committed `d439f4c`), SOP-upload file-transport (committed
@@ -523,6 +557,20 @@ Source: full CTO architecture/performance/tech-debt assessment,
 
 ## Other Still-Open Items
 
+- **`PLATE_ERROR` finding code has stale `product_applicability`
+  (`'TRUSS'`)** — needs to become `'ROOF_TRUSS'` in both DEV and PROD
+  `DIM_QC_FINDING_TYPES` seed/live data, direct consequence of the
+  2026-08-14 SOP-upload/job-creation vocabulary unification fix. Not
+  yet done.
+- **Findings-picker checkboxes render visually all-ticked on open**
+  (cosmetic only — confirmed via live data that actual submissions are
+  correct, not a data bug) — low-priority CSS/rendering fix, not
+  scoped/scheduled.
+- **W0-2's `PerfBaselineReport` has 4 days of unread real PROD
+  traffic** (since 2026-08-10) — read it before deciding whether portal
+  action latency needs work; raised again 2026-08-14 during live DEV
+  testing (DEV's own latency is not representative — bloated by test
+  data).
 - **Task 3 — QC assignment mapping** (`DIM_QC_ASSIGNMENTS`) — unblocked since 2026-07-26, **explicit go-ahead still required before starting.** Two settled design decisions, don't re-litigate: date-ranged from day one (same `asOfDate` pattern as the supervisor_code work); must replace `QCHandler.gs`'s `sendReworkNotification_()`'s current `supervisor_code`-based CC logic with real QC-assignment data — see `PROJECT_MEMORY.md` §3.3 for the TL-vs-QC business rule this depends on.
 - **Task 4 — Staff lifecycle management** — **not started, explicit instruction not to begin.** Promotions/pay changes/account allocation. Depends on `StaffOnboarding.scd2FieldChange_()` (already built, generalized for reuse). Open question: what "account allocation" means — not resolved.
 - **DAL date-column matching audit** — `DAL.gs`'s `matchesConditions_()` uses loose `!=`, breaks on Date-object-vs-Date-object comparison (see `PROJECT_MEMORY.md` §3.1/§3.4 for the confirmed bug class). Full blast-radius sweep (2026-07-26): 242/243 call sites safe, one low-confidence unconfirmed case (`Job260337DuplicateFixer.gs:184`, string-vs-Date, likely coincidentally safe). Not urgent — proper fix is scoping `matchesConditions_()` itself as its own task.
