@@ -207,6 +207,7 @@ var SopUploadEngine = (function () {
     if (!resultingTemplateId) {
       throw SopUploadError_('SOP_UPLOAD_MISSING_TEMPLATE_ID', 'resultingTemplateId is required.', { uploadId: uploadId });
     }
+    getUploadRow_(uploadId);
     DAL.updateWhere(Config.TABLES.DIM_SOP_UPLOADS,
       { upload_id: uploadId },
       { status: 'DRAFT_READY', resulting_template_id: resultingTemplateId, notes: notes || '' },
@@ -232,9 +233,15 @@ var SopUploadEngine = (function () {
 
     return pending.map(function (row) {
       var feedback = allFeedback.filter(function (f) { return f.upload_id === row.upload_id; });
-      var reviewLink = row.status === 'DRAFT_READY'
-        ? buildReviewLink_(row.upload_id)
-        : '';
+      var reviewLink = '';
+      if (row.status === 'DRAFT_READY') {
+        try {
+          reviewLink = buildReviewLink_(row.upload_id);
+        } catch (e) {
+          Logger.warn('SOP_REVIEW_LINK_BUILD_FAILED', { module: MODULE, uploadId: row.upload_id, error: e.message });
+          reviewLink = '';
+        }
+      }
       return {
         uploadId:             row.upload_id,
         clientCode:           row.client_code,

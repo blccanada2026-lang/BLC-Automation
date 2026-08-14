@@ -242,6 +242,80 @@ function testSopUpload_publish_happyPath() {
   return counters;
 }
 
+function testSopUpload_listPendingUploads_reviewLinkFailureIsolated() {
+  // Regression test for the fix-round Finding 2: buildReviewLink_ throwing
+  // for one DRAFT_READY row (e.g. SOP_REVIEW_LINK_SECRET unset) must not
+  // abort listPendingUploads for the whole CEO publish screen — the row
+  // should still render with reviewLink: '' and its other fields intact.
+  var results = [], counters = { passed: 0, failed: 0 };
+  var props = PropertiesService.getScriptProperties();
+  var savedSecret = props.getProperty('SOP_REVIEW_LINK_SECRET');
+  // buildReviewLink_ short-circuits to '' before ever calling tokenForUpload
+  // if PORTAL_BASE_URL is unset — force it set here so this test actually
+  // reaches (and exercises) the tokenForUpload throw / try-catch fix,
+  // regardless of whether PORTAL_BASE_URL happens to be set in this DEV env.
+  var savedBaseUrl = props.getProperty('PORTAL_BASE_URL');
+  try {
+    props.deleteProperty('SOP_REVIEW_LINK_SECRET');
+    props.setProperty('PORTAL_BASE_URL', 'https://example.com/exec');
+
+    var blob = Utilities.newBlob('x', 'text/plain', 'x.txt');
+    var upload = SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, productCode: Config.PRODUCT_CODES.TRUSS,
+      docType: 'DESIGNER_SOP', fileBlob: blob, fileName: 'x.txt'
+    });
+    DAL.updateWhere(Config.TABLES.DIM_SOP_UPLOADS,
+      { upload_id: upload.uploadId }, { status: 'DRAFT_READY' }, { callerModule: 'SopUploadEngineTest' });
+
+    var threw = false;
+    var list;
+    try {
+      list = SopUploadEngine.listPendingUploads(TH_CEO_EMAIL);
+    } catch (e) { threw = true; }
+    assertH_(results, counters, 'listPendingUploads does not throw when SOP_REVIEW_LINK_SECRET is unset', !threw, 'threw=' + threw);
+
+    if (!threw) {
+      var row = list.filter(function (r) { return r.uploadId === upload.uploadId; })[0];
+      assertH_(results, counters, 'DRAFT_READY row is still present in the result', !!row, JSON.stringify(row));
+      if (row) {
+        assertH_(results, counters, 'reviewLink falls back to empty string', row.reviewLink === '', 'reviewLink=' + row.reviewLink);
+        assertH_(results, counters, 'Other row fields still populated', row.status === 'DRAFT_READY' && row.clientCode === TH_CLIENT_CODE, JSON.stringify(row));
+      }
+    }
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  } finally {
+    if (savedSecret !== null)  { props.setProperty('SOP_REVIEW_LINK_SECRET', savedSecret); }
+    else                       { props.deleteProperty('SOP_REVIEW_LINK_SECRET'); }
+    if (savedBaseUrl !== null) { props.setProperty('PORTAL_BASE_URL', savedBaseUrl); }
+    else                       { props.deleteProperty('PORTAL_BASE_URL'); }
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function testSopUpload_markDraftReady_notFound() {
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    var threw = false;
+    var errorCode = null;
+    try {
+      SopUploadEngine.markDraftReady('NOT-A-REAL-UPLOAD-ID', 'SOME-TEMPLATE-ID', 'notes');
+    } catch (e) {
+      threw = true;
+      errorCode = e.code;
+    }
+    assertH_(results, counters, 'markDraftReady on bogus uploadId throws', threw, 'threw=' + threw);
+    assertH_(results, counters, 'Throws SOP_UPLOAD_NOT_FOUND', errorCode === 'SOP_UPLOAD_NOT_FOUND', 'code=' + errorCode);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
 function testSopUpload_publish_rbacDenial() {
   var results = [], counters = { passed: 0, failed: 0 };
   try {
@@ -331,6 +405,8 @@ function runSopUploadEngineTests() {
     testSopUpload_reviewFeedback_validToken,
     testSopUpload_reviewFeedback_invalidToken,
     testSopUpload_reviewFeedback_refusedAfterPublish,
+    testSopUpload_markDraftReady_notFound,
+    testSopUpload_listPendingUploads_reviewLinkFailureIsolated,
     testSopUpload_publish_happyPath,
     testSopUpload_publish_rbacDenial,
     testSopUpload_publish_notStructured,
