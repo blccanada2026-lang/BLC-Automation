@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-08-13 Session (SOP upload workflow — implemented + final-reviewed, subagent-driven, NOT yet merged/deployed)
+
+### Work Completed
+- Implemented the SOP upload workflow end-to-end on branch `sop-upload-workflow`, 4 tasks + 1 final-review fix wave. Commits `55ba9c7..442aa7a`.
+- **Final whole-branch review** found 1 Critical + 6 Important issues invisible to task-scoped review, all fixed and re-verified clean (`442aa7a`). Critical: neither the manager review page nor the CEO publish screen actually showed the structured checklist/notes — a real plan defect (Task 2's own step list omitted it), faithfully implemented by every task. Both now render it. Important fixes: unescaped `</script>` XSS in the new no-login `review-sop` route; `markDraftReady` now validates the linked template exists and matches the upload's client/product; uploaded Drive files now shared link-viewable; missing secret/URL now shows a clear error instead of a silent absence; `publishUpload` now explicitly rejects `QC_REVIEW_SOP`. Test count after the fix wave: 17.
+- **Task 1** (`55ba9c7`, fix `19285b1`): new upload endpoint. `src/13-sop/SopUploadEngine.gs` (`createUpload`, `markDraftReady`, `tokenForUpload`, `getUploadForReview`, `submitReviewFeedback`, `listPendingUploads`, `publishUpload`); new tables `DIM_SOP_UPLOADS` and `FACT_SOP_REVIEW_FEEDBACK` registered in `SetupScript.gs` `SCHEMAS`; new RBAC action `SOP_UPLOAD` (CEO-only); `portal_uploadSopDocument` in `Portal.gs` + CEO-only upload form in `PortalView.html`. Needed a fix round: `TEST-CLIENT` had never been seeded via `ClientOnboarding.onboardClient` before (no prior module had validated `client_code` against `DIM_CLIENT_MASTER`).
+- **Task 2** (`c134121`): manager review link, token-gated, no login required — `portal_getSopUploadForReview`, `portal_submitSopReviewFeedback`, new standalone page `src/07-portal/ReviewSop.html` served via a new `doGet` route (`page=review-sop`).
+- **Task 3** (`c2f4371`, fix `85bd751`): CEO publish screen — `portal_getPendingSopUploads`, `portal_publishSopUpload`, pending-uploads/publish panel in `PortalView.html`. Fix round: `markDraftReady` now validates the upload exists before writing (previously silently no-op'd on a bad id); `listPendingUploads` now isolates a missing `SOP_REVIEW_LINK_SECRET` to just one row's review link instead of breaking the entire CEO screen.
+- **Corrected architecture finding, recorded during this feature's own design** (`docs/superpowers/specs/2026-08-13-sop-upload-workflow-design.md` "Correction" section): the spec initially proposed adding a `product_code` column to `DIM_SOP_TEMPLATES` — wrong, based on an incomplete reading. Direct verification against `SopGate.evaluate_()` showed `DIM_SOP_TEMPLATES.scope_code` already IS the product-matching field. No schema change was made or needed; upload-created templates set `scope_code` directly to the product value.
+- **QC-review-SOP backend remains unbuilt** — `doc_type: 'QC_REVIEW_SOP'` uploads can be created/reviewed through this workflow, but `markDraftReady`/`publishUpload` have no `QcProcessAdminEngine`-equivalent to link to (that engine doesn't exist — explicitly out of scope for this plan, flagged as the next project).
+
+### Deploy Prerequisites (not yet done — this branch has NOT been pushed to DEV)
+5-item live-DEV checklist, in order — see `CTO_TASK_QUEUE.md`'s Session State for full detail: (1) `runSetupSchemas()`, (2) `runGenerateSopReviewSecret()`, (3) confirm the deployed web app's access setting (manifest says `MYSELF`, likely stale vs. actual deployment), (4) verify `driveFile.setSharing(ANYONE_WITH_LINK, VIEW)` doesn't throw (no prior `setSharing` precedent in this codebase — domain policy unverified), (5) manually exercise a real file upload through the portal UI (the automated suite never touches the actual `google.script.run` file-transport path).
+
+### Tests Run
+- **Not literally executed** — no live Apps Script editor in this environment. `runSopUploadEngineTests()` (17 tests after the final-review fix wave) was written and manually traced against the actual current source by every implementer and reviewer, but never actually run. Same honest limitation the immediately-prior feature (QC findings-picker, merged 2026-08-12) had — that feature's live-DEV run afterward found and fixed 2 real bugs invisible to manual trace, so this needs the same live-DEV run treatment before being trusted.
+
+### Next Recommended Step
+- Push to DEV and work through the 5-item checklist above, then run `runSopUploadEngineTests()` live from the Apps Script editor's function picker — same process as W2-3's live-DEV validation.
+- Get explicit user approval before merge/PROD push (not yet merged to main).
+
+---
+
 ## 2026-08-12 Session (Wave 2 task W2-3 — first live DEV execution, 2 real bugs found + fixed, full validation)
 
 ### Work Completed

@@ -195,6 +195,7 @@ var RBAC = (function () {
     // ── SOP checklist ────────────────────────────────────────
     SOP_SAVE:           'SOP_SAVE',        // Save SOP checklist item state (designer, TL, PM, CEO)
     SOP_ADMIN:          'SOP_ADMIN',       // Manage SOP templates and items (PM, CEO, ADMIN)
+    SOP_UPLOAD:          'SOP_UPLOAD',      // Upload a source SOP document for structuring (CEO only)
   };
 
   // ============================================================
@@ -290,7 +291,8 @@ var RBAC = (function () {
       DATA_EXPORT:     false,
       RATE_STAFF:      false,
       SOP_SAVE:        true,   // designers fill in their own SOP checklist
-      SOP_ADMIN:       false
+      SOP_ADMIN:       false,
+      SOP_UPLOAD:      false
     },
 
     // ── TEAM_LEAD ─────────────────────────────────────────────
@@ -327,7 +329,8 @@ var RBAC = (function () {
       DATA_EXPORT:     false,
       RATE_STAFF:      true,
       SOP_SAVE:        true,   // TLs fill in SOP checklist on behalf of their team
-      SOP_ADMIN:       false
+      SOP_ADMIN:       false,
+      SOP_UPLOAD:      false
     },
 
     // ── QC ────────────────────────────────────────────────────
@@ -372,7 +375,8 @@ var RBAC = (function () {
       DATA_EXPORT:     false,
       RATE_STAFF:      false,
       SOP_SAVE:        true,   // QC staff also do design work and fill in checklists
-      SOP_ADMIN:       false
+      SOP_ADMIN:       false,
+      SOP_UPLOAD:      false
     },
 
     // ── PM (Project Manager) ──────────────────────────────────
@@ -409,7 +413,8 @@ var RBAC = (function () {
       DATA_EXPORT:     true,
       RATE_STAFF:      true,
       SOP_SAVE:        true,
-      SOP_ADMIN:       true    // PMs manage SOP templates for their accounts
+      SOP_ADMIN:       true,    // PMs manage SOP templates for their accounts
+      SOP_UPLOAD:      false
     },
 
     // ── CEO ───────────────────────────────────────────────────
@@ -446,7 +451,8 @@ var RBAC = (function () {
       DATA_EXPORT:     true,
       RATE_STAFF:      true,
       SOP_SAVE:        true,
-      SOP_ADMIN:       true
+      SOP_ADMIN:       true,
+      SOP_UPLOAD:      true
     },
 
     // ── ADMIN ─────────────────────────────────────────────────
@@ -483,7 +489,8 @@ var RBAC = (function () {
       DATA_EXPORT:     true,
       RATE_STAFF:      false,
       SOP_SAVE:        false,  // admin manages templates, does not fill checklists
-      SOP_ADMIN:       true    // admin can manage SOP templates via admin console
+      SOP_ADMIN:       true,    // admin can manage SOP templates via admin console
+      SOP_UPLOAD:      false
     },
 
     // ── SYSTEM ────────────────────────────────────────────────
@@ -526,7 +533,8 @@ var RBAC = (function () {
       DATA_EXPORT:     true,
       RATE_STAFF:      true,
       SOP_SAVE:        true,
-      SOP_ADMIN:       true
+      SOP_ADMIN:       true,
+      SOP_UPLOAD:      false
     },
 
     // ── CLIENT ────────────────────────────────────────────────
@@ -562,7 +570,8 @@ var RBAC = (function () {
       DATA_EXPORT:     false,
       RATE_STAFF:      false,
       SOP_SAVE:        false,
-      SOP_ADMIN:       false
+      SOP_ADMIN:       false,
+      SOP_UPLOAD:      false
     },
 
     // ── HR_ACCOUNTING ─────────────────────────────────────────
@@ -603,7 +612,8 @@ var RBAC = (function () {
       DATA_EXPORT:     true,   // report operations imply exporting
       RATE_STAFF:      false,
       SOP_SAVE:        false,
-      SOP_ADMIN:       false
+      SOP_ADMIN:       false,
+      SOP_UPLOAD:      false
     }
 
   };
