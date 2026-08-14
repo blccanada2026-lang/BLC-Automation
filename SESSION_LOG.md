@@ -5,6 +5,30 @@
 
 ---
 
+## 2026-08-14 Session (SOP upload workflow — live DEV walkthrough, 4 real bugs found + fixed, merged deploy prerequisites now clear)
+
+### Work Completed
+- Ran the full 5-item DEV deploy checklist from 2026-08-13's entry: schemas, `runGenerateSopReviewSecret()`, confirmed DEV web app access = "Anyone with the link", `runSopUploadEngineTests()` 37/37 live (was never run before), manually exercised the real portal upload UI.
+- **Live-walked all three PR #22/#21 flows end-to-end**: designer SOP checklist gate → QC submit → QC findings-picker review (`BLC-00288`), and the full SOP upload workflow (CEO upload → Claude structures a real source doc → token-gated no-login manager review → CEO publish), confirmed twice — once with a synthetic checklist, once with the actual Norspan-MB truss submission form the user provided (kept scoped to `TEST-CLIENT`, decoupled from the real W2-1 pilot per explicit user choice).
+- **4 real pre-existing bugs found and fixed, all committed to `main` and pushed to `origin`:**
+  1. `portal_getQCReviewers`'s `QC_ROLES` filter excluded plain `QC` role from the Reassign-QC dropdown despite `RBAC.gs` treating `QC`/`QC_REVIEWER` as equivalent everywhere else (`d439f4c`).
+  2. SOP upload's file transport: `google.script.run` cannot serialize a raw `File` object — silently never reached the server, no error surfaced. Client now sends base64 via `FileReader`; server reconstructs the blob (`7e33e48`).
+  3. **Architectural**: `Config.PRODUCT_CODES` (SOP-upload vocabulary) and the job-creation Product Code dropdown were completely disjoint vocabularies — any SOP-upload-published template could never match a real job, in PROD too, not just this test. Unified to the job-creation vocabulary per user-confirmed domain mapping (`25af809`).
+  4. `PLATE_ERROR`'s `product_applicability` was stale after fix #3 (`TRUSS`→`ROOF_TRUSS`), fixed in seed + live DEV data (`2cb7d8d`).
+- Diagnosed and fixed two DEV-environment issues along the way, now recorded as standing lessons in `PROJECT_MEMORY.md`: Apps Script owner-session silently overrides `?pt=` portal tokens (every non-owner test identity needs a fully-fresh Incognito window), and `PORTAL_BASE_URL` had drifted to a deployment that no longer existed.
+- Verified the "all findings ticked" visual on the QC review modal is cosmetic only (confirmed via `FACT_QC_FINDINGS` — actual submitted data was correct); flagged as low-priority follow-up, not a data bug.
+- Consulted advisor twice for structured findings/next-steps reports at the user's request; both are reflected in `CTO_TASK_QUEUE.md`.
+
+### Key Takeaway
+Every one of the 4 real bugs was invisible to the prior "manually traced, never executed" test suites — same pattern as W2-3's 2026-08-12 live run. The architectural product-vocabulary mismatch (#3) is the highest-value catch of this session: it would have silently made the entire SOP-upload feature non-functional in PROD.
+
+### Next Recommended Step
+- `PLATE_ERROR` and the vocabulary fix still need the PROD equivalent applied whenever PROD deploy is approved (separate explicit approval required, not done this session).
+- W0-2's `PerfBaselineReport` (4 days of unread real PROD traffic) should be read before any portal-latency work is considered.
+- Next feature request queued: CEO/HR-admin portal paystub generation → email to `HR@bluelotuscanada.ca` for review before team distribution. See `CTO_TASK_QUEUE.md` for requirements as given; not yet designed.
+
+---
+
 ## 2026-08-13 Session (SOP upload workflow — implemented + final-reviewed, subagent-driven, NOT yet merged/deployed)
 
 ### Work Completed

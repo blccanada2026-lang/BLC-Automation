@@ -191,6 +191,20 @@ The three all-type rules exist specifically because `BCH`/`SDA`/`SVN` report to 
 
 ---
 
+## 3.9 Standing Rules — Live-DEV Portal Testing Gotchas (from the 2026-08-14 SOP-upload-workflow live walkthrough)
+
+Four durable lessons from the first real live-DEV testing pass of PR #21/#22, each of which cost real back-and-forth to diagnose before being understood:
+
+**(a) Apps Script owner session silently overrides `?pt=` portal tokens.** `PortalAuth.resolveEmail()` checks `Session.getActiveUser().getEmail()` before the signed token — for the script owner (CEO) this is always non-empty, so it wins regardless of which `?pt=` link was opened, with no error or warning. Only non-owner Google accounts get `''` from `Session` and correctly fall through to the token. **Rule: every non-owner test identity (`DS1`, `QC1`, `NTL`, etc.) needs its own fully-fresh Incognito window — closed and reopened, not just a new tab — for every session, not just once per test run.** Reusing one Incognito window across identities silently carries over whichever Google account was last signed into it. Always verify via the portal header's displayed name/role before trusting an action, not just once per window.
+
+**(b) `google.script.run` cannot serialize a raw `File` object.** Passing a `<input type="file">` File directly as an RPC argument fails completely silently — no success handler, no failure handler, no server-side execution log entry at all, just an indefinitely stuck UI. Any future file-upload feature must send the file as base64 (`FileReader.readAsDataURL`, strip the `data:...;base64,` prefix) and reconstruct server-side via `Utilities.newBlob(Utilities.base64Decode(...))`. See `portal_uploadSopDocument`/`submitSopUpload_` for the reference implementation.
+
+**(c) DEV Apps Script projects can accumulate multiple deployments, and `PORTAL_BASE_URL` can drift to point at one that no longer matches reality (or no longer exists at all).** A "New Version" redeploy only takes effect if performed on the deployment entry whose URL is what `PORTAL_BASE_URL` (and therefore every `?pt=` link and review link) actually resolves to — not necessarily the first/only entry visible in "Manage deployments." Before trusting any redeploy of `Portal.gs`/`PortalView.html` changes: confirm the Script ID in Project Settings matches `.clasp.dev.json`'s `scriptId`, and confirm the deployment entry's URL matches the current `PORTAL_BASE_URL` value — don't assume. If they've drifted, `setPortalBaseUrl(realUrl)` and regenerate all outstanding portal links, since old ones silently become invalid.
+
+**(d) Any future `SopAdminEngine.createTemplate()` call must use `scopeCode` values from the job-creation Product Code vocabulary** (`ROOF_TRUSS`/`FLOOR_JOIST`/`FLOOR_TRUSS`/`WALL_PANEL`/`LUMBER_TAKEOFF` — `PortalView.html`'s `#create-product` dropdown), never an invented or different-source value. `SopGate` matches jobs to templates purely on `client_code + product_code`, and a real job's `product_code` can only ever be one of those 5 values. This was violated by the SOP-upload workflow's own `Config.PRODUCT_CODES` until fixed 2026-08-14 (commit `25af809`) — the two vocabularies were completely disjoint, meaning every template the upload workflow ever produced was structurally unreachable by any real job, in PROD too. If a new product type is ever needed, add it to the job-creation dropdown first, then everything downstream (SOP templates, uploads) follows the same set.
+
+---
+
 ## 4. Database / Sheet / Table Structure
 
 Key tables only. Full list in `.claude/context/architecture.md §Key Tables`.
