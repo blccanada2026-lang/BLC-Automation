@@ -355,16 +355,22 @@ var Config = (function () {
   // for DIM_SOP_TEMPLATES.job_type — job_type plays no role in
   // template resolution, it is metadata only.
   // ──────────────────────────────────────────────────────────
+  // Values must match the job-creation Product Code dropdown
+  // (PortalView.html #create-product) exactly, so a template built
+  // from an SOP upload can actually be matched to a real job by
+  // SopGate (which keys purely on job.product_code). Key names kept
+  // stable (not renamed to match) so existing symbolic references
+  // (Config.PRODUCT_CODES.TRUSS etc.) don't need updating.
   var PRODUCT_CODES = {
-    TRUSS:           'TRUSS',
-    OPEN_WOOD_FLOOR: 'OPEN_WOOD_FLOOR',
-    I_JOIST_FLOOR:   'I_JOIST_FLOOR'
+    TRUSS:           'ROOF_TRUSS',
+    OPEN_WOOD_FLOOR: 'FLOOR_TRUSS',
+    I_JOIST_FLOOR:   'FLOOR_JOIST'
   };
 
   var PRODUCT_LABELS = {
     TRUSS:           'Roof Truss',
-    OPEN_WOOD_FLOOR:  'Open Wood Floor',
-    I_JOIST_FLOOR:    'I-Joist Floor'
+    OPEN_WOOD_FLOOR:  'Floor Truss',
+    I_JOIST_FLOOR:    'Floor Joist'
   };
 
   // ──────────────────────────────────────────────────────────
