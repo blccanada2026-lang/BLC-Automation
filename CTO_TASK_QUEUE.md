@@ -361,14 +361,59 @@ walkthrough, in this order:
 
    ---
 
+   **Real bug #3 found — architectural, not a display glitch — user
+   asked "will the SOP checklist actually show up for a real TRUSS job"
+   as a sanity check, which surfaced it before even running anything.**
+   `SopUploadEngine.createUpload`'s product-code validation used
+   `Config.PRODUCT_CODES` (`TRUSS`/`OPEN_WOOD_FLOOR`/`I_JOIST_FLOOR`),
+   and `markDraftReady` hard-requires the resulting template's
+   `scope_code` to exactly equal the upload's `product_code`. But
+   `SopGate` matches jobs to templates purely on
+   `client_code + product_code`, and a real job's `product_code` can
+   only ever be one of the job-creation dropdown's 5 values
+   (`ROOF_TRUSS`/`FLOOR_JOIST`/`FLOOR_TRUSS`/`WALL_PANEL`/
+   `LUMBER_TAKEOFF`) — a **completely disjoint vocabulary**. Structural
+   consequence: any template published via the SOP-upload workflow
+   (PR #22's whole point) could never gate any real job, for any
+   client, in PROD, ever — not a test-data artifact, a real design
+   defect. Grepped confirmed `Config.PRODUCT_CODES` has exactly one
+   real (non-test) call site, so low blast radius to fix.
+
+   **User-confirmed domain mapping** (I couldn't infer this — asked
+   rather than guess): `TRUSS→ROOF_TRUSS` (clean), `OPEN_WOOD_FLOOR→
+   FLOOR_TRUSS` (open-web wood floor truss is itself a truss product),
+   `I_JOIST_FLOOR→FLOOR_JOIST` (engineered joist maps to the broader
+   floor-joist category). **Fixed:** changed `Config.PRODUCT_CODES`/
+   `PRODUCT_LABELS` values (`Config.gs`) to the job-creation vocabulary
+   — kept the existing key names so `SopUploadEngineTest.gs`'s ~25
+   symbolic references (`Config.PRODUCT_CODES.TRUSS` etc.) keep working
+   unchanged. Updated the upload form's Product dropdown
+   (`PortalView.html`) to match. Pushed to DEV (167 files, 14:28) —
+   **needs one more New Version redeploy + hard refresh, not yet
+   re-verified live, not yet committed.**
+
+   Note: the Step 3 test artifacts (`SU-C1C00BAC5F12`,
+   `ST-FABBE4FD9D40`) used the OLD `TRUSS` value — harmless leftover
+   test data, permanently unreachable by any job either way, no
+   cleanup needed. Step 2's mechanism (does SopGate correctly serve a
+   `ROOF_TRUSS`-scoped template into the Checklist modal) was already
+   proven end-to-end with `BLC-00288` — since template provenance
+   (upload-workflow vs. direct `SopAdminEngine` call) doesn't affect
+   `SopGate`'s lookup, that proof carries over once a future upload
+   uses one of the 3 now-compatible codes. A full fresh
+   upload→review→publish→job-checklist cycle isn't strictly required to
+   close the loop, but is available if the user wants extra confidence.
+
    ## Session summary — all 3 planned live-DEV-testing steps complete
-   Two real pre-existing bugs found and fixed (QC_ROLES dropdown filter,
-   committed `d439f4c`; SOP-upload file-transport, pushed to DEV only)
-   plus one wrong Script Property (`PORTAL_BASE_URL`, now corrected).
-   Remaining before this thread is fully closed: commit the
-   file-transport fix, then get explicit go-ahead for a PROD deploy of
-   both fixes (separate from this DEV walkthrough per standing PROD
-   approval rule).
+   Three real pre-existing bugs found and fixed: QC_ROLES dropdown
+   filter (committed `d439f4c`), SOP-upload file-transport (committed
+   `7e33e48`), and the SOP-upload/job-creation product-vocabulary
+   mismatch (pushed to DEV, not yet committed) — plus one wrong Script
+   Property (`PORTAL_BASE_URL`, corrected). Remaining before this
+   thread is fully closed: redeploy + verify the vocabulary fix, commit
+   it, then get explicit go-ahead for a PROD deploy of all three fixes
+   (separate from this DEV walkthrough per standing PROD approval
+   rule).
 3. **SOP upload flow, NOT YET STARTED**: user (as CEO) uploads a real
    document → Claude structures it → user gets a review link → user
    plays the "manager" role, approves via the link → user publishes.
