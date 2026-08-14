@@ -33,13 +33,14 @@ lacks, that silently deletes it from DEV.
 
 ## Session State (last updated: end of turn, 2026-08-14)
 
-**SOP upload workflow — PR #22 open** (https://github.com/blccanada2026-lang/BLC-Automation/pull/22,
-`sop-upload-workflow` → `main`, NOT yet merged). Implementation complete
-(4 tasks + 1 final-review fix wave, commits `55ba9c7..0632b56`) — full
-detail in `SESSION_LOG.md`'s 2026-08-13 entry. New CEO-only
-structured-upload → manager-review → CEO-publish path for SOP documents
-(`SopUploadEngine.gs`, `DIM_SOP_UPLOADS`, `FACT_SOP_REVIEW_FEEDBACK`,
-`SOP_UPLOAD` RBAC action, `ReviewSop.html`).
+**SOP upload workflow — PR #22 MERGED to main** (https://github.com/blccanada2026-lang/BLC-Automation/pull/22,
+merge commit `c0835de`, merged 2026-08-14 12:10 UTC via GitHub directly —
+not a Claude action). Implementation complete (4 tasks + 1 final-review
+fix wave, commits `55ba9c7..0632b56`) — full detail in `SESSION_LOG.md`'s
+2026-08-13 entry. New CEO-only structured-upload → manager-review →
+CEO-publish path for SOP documents (`SopUploadEngine.gs`,
+`DIM_SOP_UPLOADS`, `FACT_SOP_REVIEW_FEEDBACK`, `SOP_UPLOAD` RBAC action,
+`ReviewSop.html`).
 
 **Final whole-branch review found 1 Critical + 6 Important issues, all
 fixed and re-verified clean:** neither the manager review page nor the
@@ -162,6 +163,7 @@ Source: full CTO architecture/performance/tech-debt assessment,
 - **TASK W2-1** | Design pilot rollout plan: which client(s) first, `WARN_ONLY` vs `BLOCK`, timeline | P2 | **Inputs confirmed 2026-08-10: client `NORSPAN-MB`, mode `WARN_ONLY`, start week of 2026-08-17 (Monday).** Rollout mechanics (`SopGate.gs`): set Script Properties `SOP_ENABLED='true'`, `SOP_MODE='WARN_ONLY'`, `SOP_PILOT_CLIENTS='NORSPAN-MB'` in the Apps Script editor (no code change needed — flags are already read live). WARN_ONLY means non-blocking — designers see nothing rejected, only `SOP_GATE_WARN` log entries land in `_SYS_LOGS` when a QC submission has incomplete checklist items. **Unblocked 2026-08-10** — all content decisions settled (software Alpine, ~9-item category-level checklist, job_type/scope_code, and the 3 numeric conflicts between the two source docs all resolved via user's managers). Full detail in Session State above. **Ready to build via `SopAdminEngine`** — pre-flight gap (verify no conflicting ACTIVE template already exists) still applies before flipping `SOP_ENABLED`.
 - **TASK W2-2** | Trace `QcFindingTypes.gs` (521 lines, defines a QC finding taxonomy) — confirm whether an internal-QC reviewer queue UI exists or still needs building | P2 | **DONE 2026-08-10.** At the time, taxonomy (17 codes, `DIM_QC_FINDING_TYPES`) was fully seeded but had zero consumers — confirmed needing a UI, not a revival. **W2-3 (below) built and merged that consumer 2026-08-12** — no longer zero consumers.
 - **TASK W2-3** | Build QC findings-picker UI: multi-select finding codes (from `DIM_QC_FINDING_TYPES`) on the `#modal-qc-review` modal, new `portal_getQcFindingTypes()` read endpoint (first-ever reader of that table), `QCHandler.gs` changes to accept/store selected finding code(s) on the QC event | P2 | **DONE 2026-08-12 — merged to main (PR #21), 79/79 tests passing live in DEV.** Only remaining step is a PROD deploy, which needs separate explicit user approval. See Session State above.
+- **TASK W2-4** | Build SOP upload workflow: CEO-only structured upload → manager review link (no login) → CEO publish, for both SOP designer docs and (partially) QC-review SOP docs | P2 | **Implementation DONE 2026-08-13 on branch `sop-upload-workflow` (4 tasks + final-review fix wave, commits `55ba9c7..442aa7a`) — NOT yet merged, NOT yet deployed to DEV or PROD.** Final whole-branch review found and fixed 1 Critical (manager/CEO review screens didn't show the structured checklist) + 6 Important issues. `runSopUploadEngineTests()` (17 tests) manually traced only, needs a live DEV run per the 5-item checklist in Session State above before trusted.
 
 ### EPIC: Wave 3 — Client Feedback data-model extension
 - **TASK W3-1** | Add structured severity/root-cause/resubmission fields to the existing `ClientFeedback.gs` intake | P3 | Depends on Wave 2 producing real QC data. Not started.

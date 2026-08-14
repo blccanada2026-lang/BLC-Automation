@@ -200,6 +200,8 @@ var Config = (function () {
     FACT_QC_FINDINGS:          'FACT_QC_FINDINGS',           // QC structured defect findings — partitioned (T13 QMS Layer 3)
     FACT_PERFORMANCE_RATINGS: 'FACT_PERFORMANCE_RATINGS',
     FACT_QUARTERLY_BONUS:     'FACT_QUARTERLY_BONUS',     // quarterly + annual bonus calculations (separate from payroll)
+    DIM_SOP_UPLOADS:            'DIM_SOP_UPLOADS',           // uploaded SOP source documents pending structuring (T13)
+    FACT_SOP_REVIEW_FEEDBACK:   'FACT_SOP_REVIEW_FEEDBACK',  // manager review comments on draft SOP uploads (T13)
 
     // View tables — projections rebuilt by EventReplayEngine
     // Not source of truth — can be fully replaced at any time
@@ -338,7 +340,31 @@ var Config = (function () {
     QC_PROCESS_ITEM:     'QPI', // QPI-{ts}-{rand} (QC process item — DIM_QC_PROCESS_ITEMS)
     QC_SESSION:          'QS',  // QS-{ts}-{rand}  (QC review session — FACT_QC_REVIEW_SESSIONS)
     QC_RESPONSE:         'QR',  // QR-{ts}-{rand}  (QC checklist response — FACT_QC_REVIEW_CHECKLISTS)
-    QC_FINDING:          'QF'   // QF-{ts}-{rand}  (QC finding — FACT_QC_FINDINGS)
+    QC_FINDING:          'QF',  // QF-{ts}-{rand}  (QC finding — FACT_QC_FINDINGS)
+    SOP_UPLOAD:   'SU',   // SU-{ts}-{rand}  (SOP document upload — DIM_SOP_UPLOADS)
+    SOP_FEEDBACK: 'SF'    // SF-{ts}-{rand}  (SOP manager review feedback — FACT_SOP_REVIEW_FEEDBACK)
+  };
+
+  // ──────────────────────────────────────────────────────────
+  // PRODUCT TAXONOMY
+  // The 3 products BLC designs. Used as DIM_SOP_TEMPLATES.scope_code
+  // (designer SOPs — already the product-matching field, see
+  // docs/superpowers/specs/2026-08-13-sop-upload-workflow-design.md)
+  // and DIM_QC_PROCESS_TEMPLATES.product_code (QC-review SOPs, once
+  // that system is built). PRODUCT_LABELS is a display-only label used
+  // for DIM_SOP_TEMPLATES.job_type — job_type plays no role in
+  // template resolution, it is metadata only.
+  // ──────────────────────────────────────────────────────────
+  var PRODUCT_CODES = {
+    TRUSS:           'TRUSS',
+    OPEN_WOOD_FLOOR: 'OPEN_WOOD_FLOOR',
+    I_JOIST_FLOOR:   'I_JOIST_FLOOR'
+  };
+
+  var PRODUCT_LABELS = {
+    TRUSS:           'Roof Truss',
+    OPEN_WOOD_FLOOR:  'Open Wood Floor',
+    I_JOIST_FLOOR:    'I-Joist Floor'
   };
 
   // ──────────────────────────────────────────────────────────
@@ -672,6 +698,10 @@ var Config = (function () {
     // Routing / ID constants
     FORM_TYPES:          FORM_TYPES,
     ID_PREFIXES:         ID_PREFIXES,
+
+    // Product taxonomy
+    PRODUCT_CODES:       PRODUCT_CODES,
+    PRODUCT_LABELS:      PRODUCT_LABELS,
 
     // SOP feature flag Script Property key names
     SOP_FLAGS:           SOP_FLAGS,
