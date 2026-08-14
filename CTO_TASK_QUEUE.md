@@ -279,9 +279,96 @@ walkthrough, in this order:
    — always confirm the deployment URL matches `PORTAL_BASE_URL` before
    trusting a redeploy.
 
-   **Still open, not urgent:** the `QC_ROLES` fix (#3 above) is pushed
-   to DEV but **not committed to git and not deployed to PROD** — needs
-   explicit user go-ahead for both, separate from this walkthrough.
+   **`QC_ROLES` fix committed 2026-08-14 (`d439f4c`)** — not yet
+   deployed to PROD, needs separate explicit approval.
+
+   ---
+
+   ## Step 3 — SOP upload flow (CEO uploads → Claude structures →
+   manager review → publish)
+
+   User provided the real `Norspan-MB Truss Design Submission Form`
+   PDF (28-question Google Form export) — confirmed this is one of the
+   actual W2-1 source documents (deflection ≥L/360, 40'/75' span caps,
+   2x6 chords ≥48' span all match W2-1's already-resolved numeric
+   conflicts). **User explicitly chose to keep this decoupled: upload
+   scoped to `TEST-CLIENT`, not `NORSPAN-MB`** — does not advance/touch
+   the real W2-1 pilot build, which remains separately queued.
+
+   **Real bug #2 found ~11:30, root-caused via advisor: portal file
+   upload never reached the server at all.** `google.script.run`
+   cannot serialize a raw `File` object — silently fails with no
+   success handler, no failure handler, and no server execution log
+   entry (confirmed via `livetest_diagnoseSopUpload` showing the same
+   13 leftover `runSopUploadEngineTests()` artifact rows across two
+   attempts, no new row). This is exactly the "#5 — real
+   `google.script.run` file-transport check" item flagged as untested
+   in the very first Session State entry for this PR. **Fixed:**
+   `submitSopUpload_` (`PortalView.html`) now reads the file via
+   `FileReader.readAsDataURL` and sends base64; `portal_uploadSopDocument`
+   (`Portal.gs:1285`) reconstructs the blob via
+   `Utilities.newBlob(Utilities.base64Decode(...))`. Pushed to DEV
+   (167 files, 12:21pm). **NOT yet committed to git, NOT redeployed to
+   the correct DEV web app version, NOT re-verified live** — remember
+   the multi-deployment gotcha from earlier: redeploy the entry whose
+   URL matches `PORTAL_BASE_URL` (`AKfycbxJ_hEMbcw2.../exec`), not
+   whichever is listed first.
+
+   **Parallel path while that verifies:** an earlier real upload
+   attempt DID land server-side before the bug — `SU-C1C00BAC5F12`
+   (`TEST-CLIENT`/`TRUSS`/`DESIGNER_SOP`, status `PENDING`) is real,
+   usable. Structuring it doesn't need the Drive file — the PDF was
+   already read directly. Note: `runSopUploadEngineTests()` (Step 1)
+   left an ACTIVE template at `TEST-CLIENT`+`TRUSS` from its own test
+   run (`ST-B7D2DBC10840`) — since `markDraftReady` requires the new
+   template's `scope_code` to exactly equal the upload's `product_code`
+   (`TRUSS`), that leftover must be retired first via
+   `SopAdminEngine.retireTemplate` before creating the new one (no
+   real-world impact — synthetic test artifact, not real content).
+
+   Template `ST-FABBE4FD9D40` (10 items, structured from the real PDF)
+   built and linked via `markDraftReady` — worked cleanly.
+
+   **Real gap #3 found ~14:00 — `PORTAL_BASE_URL` itself was wrong,
+   not just "which deployment entry."** The review link (built from
+   `PORTAL_BASE_URL`) opened but rendered the plain portal, not the
+   review page — traced by checking Manage Deployments and finding
+   **only one deployment exists** in the correct project (confirmed
+   via Project Settings Script ID matching `.clasp.dev.json`), and its
+   URL (`AKfycbzKvVKZsGL9O9to1n1P.../exec`) **did not match**
+   `PORTAL_BASE_URL`'s stored value (`AKfycbxJ_hEMbcw2.../exec`) at
+   all. That earlier URL almost certainly belonged to a deployment
+   that no longer exists (deleted at some point during this session's
+   deployment fiddling, or possibly never valid) — everything that
+   "worked" against it earlier (identity resolution, findings-picker)
+   was likely served from Google's edge cache of stale content, not a
+   live deployment; the cache simply hadn't caught up to the review-sop
+   route yet. **Fix:** redeployed the one real deployment to New
+   Version, then `setPortalBaseUrl()` to the real URL, then regenerated
+   all portal links (NTL/DS1/QC1 `?pt=` links and the SOP review link)
+   from that corrected base — this invalidates any old links handed
+   out earlier in this session. Confirmed working: review page loaded
+   correctly ("SOP Manager Review"), manager feedback submitted, CEO
+   published successfully.
+
+   **STEP 3 COMPLETE (2026-08-14 ~14:05).** Full SOP upload workflow
+   validated end-to-end live in DEV: CEO upload → Claude structures →
+   token-gated no-login manager review → CEO publish → template
+   `ST-FABBE4FD9D40` now `ACTIVE` for `TEST-CLIENT`/`TRUSS`. One real
+   bug found and fixed along the way (`google.script.run` file-blob
+   transport — real gap #2 for this session, `Portal.gs`/`PortalView.html`,
+   pushed to DEV, **not yet committed to git or PROD-deployed**).
+
+   ---
+
+   ## Session summary — all 3 planned live-DEV-testing steps complete
+   Two real pre-existing bugs found and fixed (QC_ROLES dropdown filter,
+   committed `d439f4c`; SOP-upload file-transport, pushed to DEV only)
+   plus one wrong Script Property (`PORTAL_BASE_URL`, now corrected).
+   Remaining before this thread is fully closed: commit the
+   file-transport fix, then get explicit go-ahead for a PROD deploy of
+   both fixes (separate from this DEV walkthrough per standing PROD
+   approval rule).
 3. **SOP upload flow, NOT YET STARTED**: user (as CEO) uploads a real
    document → Claude structures it → user gets a review link → user
    plays the "manager" role, approves via the link → user publishes.
