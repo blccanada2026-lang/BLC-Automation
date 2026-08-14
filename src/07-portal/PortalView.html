@@ -5185,6 +5185,21 @@ function buildPendingSopUploadRow_(upload) {
     row.appendChild(docLink);
   }
 
+  // Claude's structuring notes
+  if (upload.notes) {
+    var notesWrap = document.createElement('div');
+    notesWrap.style.cssText = 'margin-top:8px;font-size:12px;';
+    var notesLbl = document.createElement('div');
+    notesLbl.style.cssText = 'font-weight:600;color:var(--c-muted,#64748b);margin-bottom:2px;';
+    notesLbl.textContent = "Claude's structuring notes";
+    notesWrap.appendChild(notesLbl);
+    var notesVal = document.createElement('div');
+    notesVal.style.cssText = 'padding:6px 8px;background:#f8fafc;border-radius:4px;white-space:pre-wrap;';
+    notesVal.textContent = upload.notes;
+    notesWrap.appendChild(notesVal);
+    row.appendChild(notesWrap);
+  }
+
   // Manager feedback
   if (upload.feedback && upload.feedback.length > 0) {
     var fbWrap = document.createElement('div');
@@ -5230,6 +5245,18 @@ function buildPendingSopUploadRow_(upload) {
     linkRow.appendChild(linkInput);
     row.appendChild(linkWrap);
     linkWrap.appendChild(linkRow);
+  } else if (upload.status === 'DRAFT_READY' && upload.reviewLinkError) {
+    var linkErrWrap = document.createElement('div');
+    linkErrWrap.style.cssText = 'margin-top:8px;';
+    var linkErrLbl = document.createElement('label');
+    linkErrLbl.textContent = 'Review link unavailable';
+    linkErrLbl.style.cssText = 'display:block;font-size:11px;color:var(--c-muted,#64748b);margin-bottom:2px;';
+    linkErrWrap.appendChild(linkErrLbl);
+    var linkErrMsg = document.createElement('div');
+    linkErrMsg.textContent = upload.reviewLinkError;
+    linkErrMsg.style.cssText = 'font-size:12px;color:#c62828;';
+    linkErrWrap.appendChild(linkErrMsg);
+    row.appendChild(linkErrWrap);
   }
 
   // Inline error banner

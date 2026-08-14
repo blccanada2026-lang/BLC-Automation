@@ -353,6 +353,162 @@ function testSopUpload_publish_notStructured() {
   return counters;
 }
 
+function testSopUpload_getUploadForReview_includesItems() {
+  // Regression test for final-review Finding 1: the review page must
+  // receive the structured checklist items for a DESIGNER_SOP upload
+  // whose resulting_template_id is set.
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    thRetireActiveSopTemplateIfAny_(TH_CLIENT_CODE, Config.PRODUCT_CODES.I_JOIST_FLOOR);
+    var template = SopAdminEngine.createTemplate(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, jobType: Config.PRODUCT_LABELS.I_JOIST_FLOOR,
+      software: 'TestSoftware', scopeCode: Config.PRODUCT_CODES.I_JOIST_FLOOR
+    });
+    SopAdminEngine.addItem(TH_CEO_EMAIL, template.sopTemplateId, {
+      item_code: 'TEST_ITEM_REVIEW', item_label: 'Test review item',
+      item_description: 'Check this thing carefully', is_required: 'TRUE'
+    });
+
+    var blob = Utilities.newBlob('x', 'text/plain', 'x.txt');
+    var upload = SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, productCode: Config.PRODUCT_CODES.I_JOIST_FLOOR,
+      docType: 'DESIGNER_SOP', fileBlob: blob, fileName: 'x.txt'
+    });
+    SopUploadEngine.markDraftReady(upload.uploadId, template.sopTemplateId, 'structuring notes');
+
+    var token = SopUploadEngine.tokenForUpload(upload.uploadId);
+    var review = SopUploadEngine.getUploadForReview(upload.uploadId, token);
+
+    assertH_(results, counters, 'items array present', Array.isArray(review.items), JSON.stringify(review.items));
+    assertH_(results, counters, 'items array has the one added item', review.items && review.items.length === 1, 'length=' + (review.items && review.items.length));
+    if (review.items && review.items.length === 1) {
+      var item = review.items[0];
+      assertH_(results, counters, 'item_code matches', item.item_code === 'TEST_ITEM_REVIEW', item.item_code);
+      assertH_(results, counters, 'item_label matches', item.item_label === 'Test review item', item.item_label);
+      assertH_(results, counters, 'item_description matches', item.item_description === 'Check this thing carefully', item.item_description);
+    }
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function testSopUpload_getUploadForReview_emptyItemsWhenNoTemplate() {
+  // Defensive case: DRAFT_READY row with no resulting_template_id (shouldn't
+  // normally happen) must return items: [] rather than throw.
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    var blob = Utilities.newBlob('x', 'text/plain', 'x.txt');
+    var upload = SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, productCode: Config.PRODUCT_CODES.TRUSS,
+      docType: 'DESIGNER_SOP', fileBlob: blob, fileName: 'x.txt'
+    });
+    DAL.updateWhere(Config.TABLES.DIM_SOP_UPLOADS,
+      { upload_id: upload.uploadId }, { status: 'DRAFT_READY' }, { callerModule: 'SopUploadEngineTest' });
+
+    var token = SopUploadEngine.tokenForUpload(upload.uploadId);
+    var review = SopUploadEngine.getUploadForReview(upload.uploadId, token);
+    assertH_(results, counters, 'items is an empty array when no resulting_template_id', Array.isArray(review.items) && review.items.length === 0, JSON.stringify(review.items));
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function testSopUpload_markDraftReady_templateNotFound() {
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    var blob = Utilities.newBlob('x', 'text/plain', 'x.txt');
+    var upload = SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, productCode: Config.PRODUCT_CODES.TRUSS,
+      docType: 'DESIGNER_SOP', fileBlob: blob, fileName: 'x.txt'
+    });
+
+    var threw = false, errorCode = null;
+    try {
+      SopUploadEngine.markDraftReady(upload.uploadId, 'NOT-A-REAL-TEMPLATE-ID', 'notes');
+    } catch (e) { threw = true; errorCode = e.code; }
+    assertH_(results, counters, 'markDraftReady throws for a nonexistent template', threw, 'threw=' + threw);
+    assertH_(results, counters, 'Throws SOP_UPLOAD_TEMPLATE_NOT_FOUND', errorCode === 'SOP_UPLOAD_TEMPLATE_NOT_FOUND', 'code=' + errorCode);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function testSopUpload_markDraftReady_templateMismatch() {
+  // Regression test for final-review Finding 4: a template whose scope_code
+  // doesn't match the upload's product_code must be rejected — otherwise a
+  // transposed template ID silently binds one client/product's upload to
+  // another client/product's template.
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    thRetireActiveSopTemplateIfAny_(TH_CLIENT_CODE, Config.PRODUCT_CODES.OPEN_WOOD_FLOOR);
+    var mismatchedTemplate = SopAdminEngine.createTemplate(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, jobType: Config.PRODUCT_LABELS.OPEN_WOOD_FLOOR,
+      software: 'TestSoftware', scopeCode: Config.PRODUCT_CODES.OPEN_WOOD_FLOOR
+    });
+
+    var blob = Utilities.newBlob('x', 'text/plain', 'x.txt');
+    var upload = SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, productCode: Config.PRODUCT_CODES.TRUSS,
+      docType: 'DESIGNER_SOP', fileBlob: blob, fileName: 'x.txt'
+    });
+
+    var threw = false, errorCode = null;
+    try {
+      SopUploadEngine.markDraftReady(upload.uploadId, mismatchedTemplate.sopTemplateId, 'notes');
+    } catch (e) { threw = true; errorCode = e.code; }
+    assertH_(results, counters, 'markDraftReady throws for a mismatched template', threw, 'threw=' + threw);
+    assertH_(results, counters, 'Throws SOP_UPLOAD_TEMPLATE_MISMATCH', errorCode === 'SOP_UPLOAD_TEMPLATE_MISMATCH', 'code=' + errorCode);
+
+    var rows = DAL.readWhere(Config.TABLES.DIM_SOP_UPLOADS, { upload_id: upload.uploadId });
+    assertH_(results, counters, 'Upload was not mutated to DRAFT_READY on rejection', rows[0].status === 'PENDING', rows[0].status);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
+function testSopUpload_publish_qcReviewSopRejected() {
+  // Regression test for final-review Finding 7: QC_REVIEW_SOP has no
+  // backing engine yet — publishUpload must reject it explicitly rather
+  // than falling through to SopAdminEngine.publishTemplate and failing
+  // with a misleading SOP_TEMPLATE_NOT_FOUND.
+  var results = [], counters = { passed: 0, failed: 0 };
+  try {
+    var blob = Utilities.newBlob('x', 'text/plain', 'x.txt');
+    var upload = SopUploadEngine.createUpload(TH_CEO_EMAIL, {
+      clientCode: TH_CLIENT_CODE, productCode: Config.PRODUCT_CODES.TRUSS,
+      docType: 'QC_REVIEW_SOP', fileBlob: blob, fileName: 'x.txt'
+    });
+    // Simulate a QC_REVIEW_SOP that somehow reached DRAFT_READY.
+    DAL.updateWhere(Config.TABLES.DIM_SOP_UPLOADS,
+      { upload_id: upload.uploadId }, { status: 'DRAFT_READY', resulting_template_id: 'FAKE-ID' },
+      { callerModule: 'SopUploadEngineTest' });
+
+    var threw = false, errorCode = null;
+    try {
+      SopUploadEngine.publishUpload(TH_CEO_EMAIL, upload.uploadId);
+    } catch (e) { threw = true; errorCode = e.code; }
+    assertH_(results, counters, 'publishUpload rejects QC_REVIEW_SOP', threw, 'threw=' + threw);
+    assertH_(results, counters, 'Throws SOP_UPLOAD_UNSUPPORTED_DOC_TYPE', errorCode === 'SOP_UPLOAD_UNSUPPORTED_DOC_TYPE', 'code=' + errorCode);
+  } catch (e) {
+    results.push('  FAIL: unexpected exception — ' + e.message);
+    counters.failed++;
+  }
+  results.forEach(function (r) { console.log(r); });
+  return counters;
+}
+
 function testSopUpload_publish_doublePublish() {
   var results = [], counters = { passed: 0, failed: 0 };
   try {
@@ -407,6 +563,11 @@ function runSopUploadEngineTests() {
     testSopUpload_reviewFeedback_refusedAfterPublish,
     testSopUpload_markDraftReady_notFound,
     testSopUpload_listPendingUploads_reviewLinkFailureIsolated,
+    testSopUpload_getUploadForReview_includesItems,
+    testSopUpload_getUploadForReview_emptyItemsWhenNoTemplate,
+    testSopUpload_markDraftReady_templateNotFound,
+    testSopUpload_markDraftReady_templateMismatch,
+    testSopUpload_publish_qcReviewSopRejected,
     testSopUpload_publish_happyPath,
     testSopUpload_publish_rbacDenial,
     testSopUpload_publish_notStructured,

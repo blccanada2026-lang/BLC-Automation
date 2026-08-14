@@ -63,6 +63,10 @@ var SopUploadEngine = (function () {
 
     var folder = getOrCreateUploadFolder_();
     var driveFile = folder.createFile(params.fileBlob.setName(params.fileName || 'sop-upload'));
+    // Review link is no-login/token-gated by design (see requireValidReviewToken_) —
+    // the source document must be reachable the same way, or an unauthenticated
+    // manager hits Google's "Request access" page instead of the file.
+    driveFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     var uploadId = Identifiers.generatePrefixedId(Config.ID_PREFIXES.SOP_UPLOAD);
     var now = new Date().toISOString();
 
@@ -158,13 +162,25 @@ var SopUploadEngine = (function () {
   function getUploadForReview(uploadId, token) {
     requireValidReviewToken_(uploadId, token);
     var row = getUploadRow_(uploadId);
+    var items = [];
+    if (row.doc_type === 'DESIGNER_SOP' && row.resulting_template_id) {
+      items = SopDAL.getSopItems(row.resulting_template_id).map(function (item) {
+        return {
+          item_code:        item.item_code,
+          item_label:       item.item_label,
+          item_description: item.item_description,
+          is_required:      item.is_required
+        };
+      });
+    }
     return {
       uploadId:     row.upload_id,
       clientCode:   row.client_code,
       productCode:  row.product_code,
       docType:      row.doc_type,
       driveFileUrl: row.drive_file_url,
-      status:       row.status
+      status:       row.status,
+      items:        items
     };
   }
 
@@ -207,7 +223,21 @@ var SopUploadEngine = (function () {
     if (!resultingTemplateId) {
       throw SopUploadError_('SOP_UPLOAD_MISSING_TEMPLATE_ID', 'resultingTemplateId is required.', { uploadId: uploadId });
     }
-    getUploadRow_(uploadId);
+    var uploadRow = getUploadRow_(uploadId);
+
+    var template = SopDAL.getTemplateById(resultingTemplateId);
+    if (!template) {
+      throw SopUploadError_('SOP_UPLOAD_TEMPLATE_NOT_FOUND',
+        'resultingTemplateId "' + resultingTemplateId + '" does not resolve to a DIM_SOP_TEMPLATES row.',
+        { uploadId: uploadId, resultingTemplateId: resultingTemplateId });
+    }
+    if (template.client_code !== uploadRow.client_code || template.scope_code !== uploadRow.product_code) {
+      throw SopUploadError_('SOP_UPLOAD_TEMPLATE_MISMATCH',
+        'Template ' + resultingTemplateId + ' (client=' + template.client_code + ', scope=' + template.scope_code + ') ' +
+        'does not match upload ' + uploadId + ' (client=' + uploadRow.client_code + ', product=' + uploadRow.product_code + ').',
+        { uploadId: uploadId, resultingTemplateId: resultingTemplateId });
+    }
+
     DAL.updateWhere(Config.TABLES.DIM_SOP_UPLOADS,
       { upload_id: uploadId },
       { status: 'DRAFT_READY', resulting_template_id: resultingTemplateId, notes: notes || '' },
@@ -234,12 +264,17 @@ var SopUploadEngine = (function () {
     return pending.map(function (row) {
       var feedback = allFeedback.filter(function (f) { return f.upload_id === row.upload_id; });
       var reviewLink = '';
+      var reviewLinkError = '';
       if (row.status === 'DRAFT_READY') {
         try {
           reviewLink = buildReviewLink_(row.upload_id);
+          if (!reviewLink) {
+            reviewLinkError = 'PORTAL_BASE_URL is not set — run setPortalBaseUrl(url) from the Apps Script editor.';
+          }
         } catch (e) {
           Logger.warn('SOP_REVIEW_LINK_BUILD_FAILED', { module: MODULE, uploadId: row.upload_id, error: e.message });
           reviewLink = '';
+          reviewLinkError = e.message;
         }
       }
       return {
@@ -252,6 +287,7 @@ var SopUploadEngine = (function () {
         resultingTemplateId:  row.resulting_template_id,
         notes:                row.notes,
         reviewLink:           reviewLink,
+        reviewLinkError:      reviewLinkError,
         feedback:             feedback.map(function (f) {
           return { reviewerName: f.reviewer_name, verdict: f.verdict, comment: f.comment, submittedAt: f.submitted_at };
         })
@@ -277,6 +313,11 @@ var SopUploadEngine = (function () {
     RBAC.enforcePermission(actor, RBAC.ACTIONS.SOP_UPLOAD);
 
     var row = getUploadRow_(uploadId);
+    if (row.doc_type === 'QC_REVIEW_SOP') {
+      throw SopUploadError_('SOP_UPLOAD_UNSUPPORTED_DOC_TYPE',
+        'QC_REVIEW_SOP publishing is not supported yet — there is no backing engine for QC-review SOPs.',
+        { uploadId: uploadId, docType: row.doc_type });
+    }
     if (row.status === 'PUBLISHED') {
       throw SopUploadError_('SOP_UPLOAD_ALREADY_PUBLISHED', 'This upload has already been published.', { uploadId: uploadId });
     }

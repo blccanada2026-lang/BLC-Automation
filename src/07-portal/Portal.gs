@@ -62,9 +62,12 @@ function doGet(e) {
     var uploadId    = e && e.parameter && e.parameter.uploadId ? e.parameter.uploadId : '';
     var reviewToken = e && e.parameter && e.parameter.token    ? e.parameter.token    : '';
     var reviewHtml  = HtmlService.createHtmlOutputFromFile('07-portal/ReviewSop');
+    // Escape </script> sequences — this page is reached via an unauthenticated,
+    // link-distributed URL (no login), so uploadId/token are attacker-controlled
+    // and JSON.stringify alone does not escape '<'.
     var reviewContent =
-        '<script>var INJECTED_UPLOAD_ID = ' + JSON.stringify(uploadId)    + ';<\/script>\n'
-      + '<script>var INJECTED_TOKEN = '     + JSON.stringify(reviewToken) + ';<\/script>\n'
+        '<script>var INJECTED_UPLOAD_ID = ' + JSON.stringify(uploadId).replace(/</g, '\\u003c')    + ';<\/script>\n'
+      + '<script>var INJECTED_TOKEN = '     + JSON.stringify(reviewToken).replace(/</g, '\\u003c') + ';<\/script>\n'
       + reviewHtml.getContent();
     return HtmlService.createHtmlOutput(reviewContent)
       .setTitle('BLC SOP Review')

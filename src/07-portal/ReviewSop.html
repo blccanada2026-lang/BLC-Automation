@@ -110,6 +110,34 @@
       linkVal.appendChild(link);
       addField('Original Document', linkVal);
 
+      if (upload.items && upload.items.length > 0) {
+        var itemsVal = document.createElement('div');
+        itemsVal.className = 'value';
+        var itemsList = document.createElement('ul');
+        itemsList.style.cssText = 'margin:0; padding-left: 18px;';
+        upload.items.forEach(function (item) {
+          var li = document.createElement('li');
+          li.style.marginBottom = '8px';
+
+          var labelLine = document.createElement('div');
+          var isRequired = String(item.is_required).toUpperCase() === 'TRUE';
+          labelLine.textContent = item.item_label + (isRequired ? ' (required)' : ' (optional)');
+          labelLine.style.fontWeight = '600';
+          li.appendChild(labelLine);
+
+          if (item.item_description) {
+            var descLine = document.createElement('div');
+            descLine.textContent = item.item_description;
+            descLine.style.cssText = 'color:#666; font-size:0.9rem;';
+            li.appendChild(descLine);
+          }
+
+          itemsList.appendChild(li);
+        });
+        itemsVal.appendChild(itemsList);
+        addField('Checklist Items', itemsVal);
+      }
+
       var nameInput = document.createElement('input');
       nameInput.type = 'text';
       nameInput.id = 'reviewer-name';
