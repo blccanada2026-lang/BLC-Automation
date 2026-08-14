@@ -5086,27 +5086,44 @@ function submitSopUpload_() {
   btn.disabled = true;
   btn.textContent = 'Uploading…';
 
-  var payload = { clientCode: clientCode, productCode: productCode, docType: docType, fileName: file.name };
+  var payload = { clientCode: clientCode, productCode: productCode, docType: docType, fileName: file.name, mimeType: file.type };
 
-  TOKEN_RUN
-    .withSuccessHandler(function (json) {
-      btn.disabled = false;
-      btn.textContent = 'Upload';
-      var result = {};
-      try { result = JSON.parse(json); } catch (e) { /* fall through with empty result */ }
-      okBanner.textContent = 'Uploaded successfully. Upload ID: ' + (result.uploadId || '(unknown)');
-      okBanner.style.display = 'block';
-      fileInput.value = '';
-      document.getElementById('sop-upload-product').value = '';
-      document.getElementById('sop-upload-doctype').value = '';
-    })
-    .withFailureHandler(function (err) {
-      btn.disabled = false;
-      btn.textContent = 'Upload';
-      errBanner.textContent = 'Upload failed: ' + (err.message || String(err));
-      errBanner.style.display = 'block';
-    })
-    .portal_uploadSopDocument(JSON.stringify(payload), file);
+  function resetUploadBtn_() {
+    btn.disabled = false;
+    btn.textContent = 'Upload';
+  }
+
+  // google.script.run cannot serialize a raw File object (it silently
+  // never reaches the server — no success handler, no failure handler,
+  // no execution log entry) — send it as a base64 string instead.
+  var reader = new FileReader();
+  reader.onerror = function () {
+    resetUploadBtn_();
+    errBanner.textContent = 'Could not read the selected file.';
+    errBanner.style.display = 'block';
+  };
+  reader.onload = function () {
+    var base64 = reader.result.split(',')[1]; // strip the data:...;base64, prefix
+
+    TOKEN_RUN
+      .withSuccessHandler(function (json) {
+        resetUploadBtn_();
+        var result = {};
+        try { result = JSON.parse(json); } catch (e) { /* fall through with empty result */ }
+        okBanner.textContent = 'Uploaded successfully. Upload ID: ' + (result.uploadId || '(unknown)');
+        okBanner.style.display = 'block';
+        fileInput.value = '';
+        document.getElementById('sop-upload-product').value = '';
+        document.getElementById('sop-upload-doctype').value = '';
+      })
+      .withFailureHandler(function (err) {
+        resetUploadBtn_();
+        errBanner.textContent = 'Upload failed: ' + (err.message || String(err));
+        errBanner.style.display = 'block';
+      })
+      .portal_uploadSopDocument(JSON.stringify(payload), base64);
+  };
+  reader.readAsDataURL(file);
 }
 
 // ── Pending SOP Uploads / Publish (CEO only) ─────────────────────

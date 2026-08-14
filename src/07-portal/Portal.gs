@@ -1282,9 +1282,14 @@ function portal_getSopGateStatus(ptoken, jobNumber) {
  * @param {Blob}   fileBlob
  * @returns {string} JSON: { uploadId, driveFileUrl }
  */
-function portal_uploadSopDocument(ptoken, payloadJson, fileBlob) {
+function portal_uploadSopDocument(ptoken, payloadJson, fileBase64) {
   var email = PortalAuth.resolveEmail(ptoken);
   var payload = JSON.parse(payloadJson);
+  // google.script.run cannot serialize a raw File object — the client
+  // sends the file as a base64 string instead; reconstruct the blob here.
+  var fileBlob = Utilities.newBlob(
+    Utilities.base64Decode(fileBase64), payload.mimeType, payload.fileName
+  );
   var result = SopUploadEngine.createUpload(email, {
     clientCode:  payload.clientCode,
     productCode: payload.productCode,
