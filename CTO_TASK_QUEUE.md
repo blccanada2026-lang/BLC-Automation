@@ -31,7 +31,36 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-08-12)
+## Session State (last updated: end of turn, 2026-08-13)
+
+**SOP upload workflow — implementation complete on branch `sop-upload-workflow`
+(4 tasks, commits `55ba9c7..85bd751`), NOT yet merged to main, NOT yet
+deployed to DEV or PROD.** New CEO-only structured-upload → manager-review
+→ CEO-publish path for SOP documents (`SopUploadEngine.gs`,
+`DIM_SOP_UPLOADS`, `FACT_SOP_REVIEW_FEEDBACK`, `SOP_UPLOAD` RBAC action,
+`ReviewSop.html`). Full detail in `SESSION_LOG.md`'s 2026-08-13 entry.
+
+`runSopUploadEngineTests()` (13 tests) verified by manual code trace only
+in this environment — **not yet executed live**, same caveat every prior
+GAS feature built without a live Apps Script editor has carried. Needs a
+live DEV run before being trusted, following the exact same process used
+for the QC-findings-picker feature (push to DEV, run the suite from the
+editor's function picker, fix anything that only surfaces at runtime —
+that feature's own live run found 2 real bugs invisible to manual trace).
+
+**Two real deploy prerequisites, not yet done:**
+1. `runSetupSchemas()` must be run once in the DEV Apps Script editor
+   after the first push — to actually create the `DIM_SOP_UPLOADS` and
+   `FACT_SOP_REVIEW_FEEDBACK` tabs. Declaring a table in `SCHEMAS` does
+   not create its tab automatically.
+2. `runGenerateSopReviewSecret()` must be run once before any manager
+   review link will work — until then `tokenForUpload()` throws.
+
+Also note: the QC-review-SOP backend (`QcProcessAdminEngine`) remains
+unbuilt — `doc_type: 'QC_REVIEW_SOP'` uploads can be created and reviewed
+by managers through this workflow, but `markDraftReady`/`publishUpload`
+have nothing to link to until that engine exists (explicitly out of scope
+for this plan, flagged as the next project).
 
 **W2-1 — numeric conflicts resolved by user's managers, 2026-08-10.**
 All three blockers from the two NORSPAN-MB source docs (`SOP-NOR-TRS-003`
@@ -106,6 +135,7 @@ Source: full CTO architecture/performance/tech-debt assessment,
 - **TASK W2-1** | Design pilot rollout plan: which client(s) first, `WARN_ONLY` vs `BLOCK`, timeline | P2 | **Inputs confirmed 2026-08-10: client `NORSPAN-MB`, mode `WARN_ONLY`, start week of 2026-08-17 (Monday).** Rollout mechanics (`SopGate.gs`): set Script Properties `SOP_ENABLED='true'`, `SOP_MODE='WARN_ONLY'`, `SOP_PILOT_CLIENTS='NORSPAN-MB'` in the Apps Script editor (no code change needed — flags are already read live). WARN_ONLY means non-blocking — designers see nothing rejected, only `SOP_GATE_WARN` log entries land in `_SYS_LOGS` when a QC submission has incomplete checklist items. **Unblocked 2026-08-10** — all content decisions settled (software Alpine, ~9-item category-level checklist, job_type/scope_code, and the 3 numeric conflicts between the two source docs all resolved via user's managers). Full detail in Session State above. **Ready to build via `SopAdminEngine`** — pre-flight gap (verify no conflicting ACTIVE template already exists) still applies before flipping `SOP_ENABLED`.
 - **TASK W2-2** | Trace `QcFindingTypes.gs` (521 lines, defines a QC finding taxonomy) — confirm whether an internal-QC reviewer queue UI exists or still needs building | P2 | **DONE 2026-08-10.** At the time, taxonomy (17 codes, `DIM_QC_FINDING_TYPES`) was fully seeded but had zero consumers — confirmed needing a UI, not a revival. **W2-3 (below) built and merged that consumer 2026-08-12** — no longer zero consumers.
 - **TASK W2-3** | Build QC findings-picker UI: multi-select finding codes (from `DIM_QC_FINDING_TYPES`) on the `#modal-qc-review` modal, new `portal_getQcFindingTypes()` read endpoint (first-ever reader of that table), `QCHandler.gs` changes to accept/store selected finding code(s) on the QC event | P2 | **DONE 2026-08-12 — merged to main (PR #21), 79/79 tests passing live in DEV.** Only remaining step is a PROD deploy, which needs separate explicit user approval. See Session State above.
+- **TASK W2-4** | Build SOP upload workflow: CEO-only structured upload → manager review link (no login) → CEO publish, for both SOP designer docs and (partially) QC-review SOP docs | P2 | **Implementation DONE 2026-08-13 on branch `sop-upload-workflow` (4 tasks, commits `55ba9c7..85bd751`) — NOT yet merged, NOT yet deployed to DEV or PROD.** `runSopUploadEngineTests()` (13 tests) manually traced only, needs live DEV run + `runSetupSchemas()` + `runGenerateSopReviewSecret()` before trusted. See Session State above and `SESSION_LOG.md` 2026-08-13 entry for full detail.
 
 ### EPIC: Wave 3 — Client Feedback data-model extension
 - **TASK W3-1** | Add structured severity/root-cause/resubmission fields to the existing `ClientFeedback.gs` intake | P3 | Depends on Wave 2 producing real QC data. Not started.
