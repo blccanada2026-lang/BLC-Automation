@@ -50,28 +50,238 @@ Important fixes (XSS escaping, template-mismatch validation, Drive file
 sharing, silent-missing-link error surfacing, `QC_REVIEW_SOP` publish
 guard).
 
-**LIVE DEV TESTING IN PROGRESS as of 2026-08-14, started this turn.**
+**LIVE DEV TESTING IN PROGRESS as of 2026-08-14, resumed this session.**
 Branch pushed to DEV (167 files, includes `ReviewSop.html`/
 `SopUploadEngine.gs`) — confirmed no drift first (DEV matched `main`
 exactly before push, byte-for-byte). User wants a real end-to-end
 walkthrough, in this order:
-1. **Setup** (in progress — asked user to run `runSetupSchemas()` in the
-   DEV Apps Script editor, awaiting result): `runSetupSchemas()` →
-   `runGenerateSopReviewSecret()` → confirm the DEV web app's "Who has
-   access" deployment setting (checked-in `appsscript.json` says
-   `MYSELF`, almost certainly stale vs. reality since 100+ staff already
-   use no-login `?pt=` portal links — verify, don't assume).
-2. **Designer + QC flow, NOT YET STARTED — blocked on a real gap**: no
-   `DIM_SOP_TEMPLATES` row is `ACTIVE` for any product in DEV right now.
-   W2-1 (the real NORSPAN-MB truss SOP, content already resolved — see
-   below) was never actually built past "ready to build." Plan: create a
-   quick **synthetic** test SOP checklist directly via `SopAdminEngine`
-   (`TEST-CLIENT` + a test product, NOT the real NORSPAN-MB content) so
-   there's something for a designer to fill out during this walkthrough
-   — keep this decoupled from the real W2-1 build, which is a separate,
-   still-open task (see below). Then: create a job → designer submits
-   with the checklist filled in → QC reviews (exercising the
-   already-merged QC-findings-picker from PR #21 too).
+1. **Setup (in progress):** `runSetupSchemas()` — **DONE**, confirmed clean
+   (first attempt hit a transient `Service Spreadsheets timed out` on
+   `ensureHeaders_`, `setup/SetupScript.gs:633`; re-run succeeded, all
+   tabs ✅ EXISTS including `DIM_SOP_UPLOADS`/`FACT_SOP_REVIEW_FEEDBACK`/QC
+   partitions — `setupSchemas_()` is idempotent so the retry was safe).
+   Next: `runGenerateSopReviewSecret()` (`src/07-portal/Portal.gs:986`) —
+   awaiting result. Then confirm the DEV web app's "Who has access"
+   deployment setting (checked-in `appsscript.json` says `MYSELF`, almost
+   certainly stale vs. reality since 100+ staff already use no-login
+   `?pt=` portal links — verify, don't assume).
+2. **Designer + QC flow — IN PROGRESS.** Step 1 fully done: schemas
+   confirmed, `SOP_REVIEW_LINK_SECRET` generated (separate Script
+   Property from the R9-protected `PORTAL_LINK_SECRET` — no conflict),
+   DEV web app access confirmed "Anyone with the link",
+   `runSopUploadEngineTests()` 37/37 passing live (also confirmed
+   `TEST-CLIENT` already exists in `DIM_CLIENT_MASTER` via
+   `thEnsureTestClient_()`, run as part of that suite).
+
+   Researched the mechanism before scripting instructions: `SopGate`
+   matches a job to a template by `(client_code, product_code)` only —
+   `SopAdminEngine.createTemplate`'s `scopeCode` param IS what gets
+   matched against the job's `product_code` (`job_type`/`software` are
+   stored but not part of the lookup key). Portal identity
+   (`PortalAuth.resolveEmail`) requires either a same-domain Google
+   session or a signed `?pt=` token resolving to an **active
+   `DIM_STAFF_ROSTER` row** — consumer Gmail accounts (all current DEV
+   test actors) don't reliably get a session identity, so `?pt=` links
+   are required even for the real-Gmail dev actors (RND/NTL/RPM), not
+   just synthetic ones. `seedTestStaff()` (`src/setup/TestRunner.gs:309`,
+   idempotent) creates the roster rows DS1/QC1/RND/NTL need to make
+   those tokens resolve. `PortalAuth.buildPersonalLink(personCode)`
+   (`src/02-security/PortalAuth.gs:247`) builds the link directly.
+
+   Gave user a single paste-and-run GAS editor script
+   (`livetest_seedStep2`, not committed — ephemeral, next `push:dev`
+   wipes it per the clasp-clobber behavior) that: runs `seedTestStaff()`
+   → creates+publishes a synthetic template (`TEST-CLIENT` /
+   `TEST_JOB_TYPE` / `TEST_SOFTWARE` / `TEST_SCOPE`, 3 items) → sets
+   `SOP_ENABLED='true'`, `SOP_MODE='WARN_ONLY'`,
+   `SOP_PILOT_CLIENTS='TEST-CLIENT'` (scoped only to the synthetic
+   client — does not touch/enable the real NORSPAN-MB W2-1 pilot config)
+   → prints `?pt=` links for NTL (create+assign job), DS1 (designer,
+   fills checklist), QC1 (QC, reviews).
+
+   **Seed script run 2026-08-14 07:06 — succeeded.** Template
+   `ST-7E2750DAC142` published (3 items). Gate flags set
+   (`SOP_ENABLED=true`/`SOP_MODE=WARN_ONLY`/`SOP_PILOT_CLIENTS=TEST-CLIENT`).
+   `?pt=` links generated for NTL/DS1/QC1 (not recorded here — signed
+   tokens, regenerate via `PortalAuth.buildPersonalLink(code)` if
+   needed again; they don't expire unless `PORTAL_LINK_SECRET` rotates).
+   **Real gap found & fixed 2026-08-14 07:27:** the portal's Create Job
+   modal (`PortalView.html:829-846`) uses **fixed dropdowns**, not free
+   text, for Job Type (`DESIGN|REVISION|PRINT|RUSH`) and Product Code
+   (`ROOF_TRUSS|FLOOR_JOIST|FLOOR_TRUSS|WALL_PANEL|LUMBER_TAKEOFF`) —
+   these don't match `Config.PRODUCT_CODES` (`TRUSS|OPEN_WOOD_FLOOR|
+   I_JOIST_FLOOR`, a separate, inconsistent vocabulary used elsewhere,
+   e.g. `SopUploadEngineTest.gs`) and don't match the original synthetic
+   `scopeCode='TEST_SCOPE'` template — that template could never be
+   reached since `TEST_SCOPE` isn't a selectable product. User's first
+   test job used product_code `ROOF_TRUSS` (real dropdown value); built
+   a second template for `TEST-CLIENT`/`ROOF_TRUSS`
+   (`ST-AA97BEA3CBC9`, published) to match it. First bad template
+   (`ST-7E2750DAC142`, scope `TEST_SCOPE`) left as harmless orphan, not
+   retired — no collision risk, different scope_code.
+
+   Checklist loaded fine, all 3 items checked — but no "Submit QC"
+   button appeared. **Second real gap found 2026-08-14 ~07:35:** user
+   was browsing the DS1 `?pt=` link while signed into the CEO's own
+   Google account. `PortalAuth.resolveEmail()` checks
+   `Session.getActiveUser().getEmail()` BEFORE the token
+   (`src/02-security/PortalAuth.gs:113-117`) — for the script owner
+   this is always non-empty, so it silently overrides any `?pt=` token
+   and resolves as CEO regardless of which link was opened (only
+   non-owner Google accounts get '' from Session and correctly fall
+   through to the token). Checklist still loaded because CEO bypasses
+   all RBAC; but `canSubmitQC` (`PortalData.gs:305`) deliberately
+   excludes CEO, so the button never rendered. **Not a code bug** —
+   inherent Apps Script owner-session behavior. Fix: user must open
+   `?pt=` links (DS1, QC1) in a context NOT signed into the CEO Google
+   account (Incognito / separate Chrome profile).
+
+   **Third real gap found & fixed 2026-08-14 ~07:50:** same
+   session-overrides-token issue recurred with NTL instead of CEO —
+   reusing the same Incognito window across identities (NTL to create
+   the job, then DS1 in the same window) kept the NTL Google session
+   active, which again silently overrode the DS1 `?pt=` token. Fix:
+   each identity needs its own fresh Incognito window (close
+   completely, reopen, go straight to the link with no Google sign-in
+   first) — confirmed working once done that way (header showed "Test
+   Designer"). **General lesson for any future portal walkthrough with
+   multiple non-owner test identities: one full Incognito
+   window-close-and-reopen per identity, not just a new tab.**
+
+   Along the way, confirmed 3 leftover `TEST-CLIENT`/`ROOF_TRUSS` jobs
+   exist from this session's trial-and-error: `BLC-00288` (used for the
+   real walkthrough), `BLC-00289`/`BLC-00290` (harmless duplicates,
+   never started — can be ignored/left as-is, DEV-only).
+
+   **`BLC-00288`: checklist filled (3/3 items) → Submit QC completed as
+   DS1 → job now shows QC_REVIEW state.** SOP gate should have logged
+   `SOP_GATE_PASSED` (all required items were checked) — not yet
+   independently confirmed in `_SYS_LOGS`, optional to verify later.
+
+   **Fourth real gap found ~08:05:** QC1 (fresh Incognito, correctly
+   resolved) couldn't see `BLC-00288` in its list. `loadJobs_`'s
+   QC-scope filter (`PortalData.gs:188-202`) only shows a QC actor jobs
+   where the designer is on their team (`REF_ACCOUNT_DESIGNER_MAP` or
+   `supervisor_code` — DS1's `supervisor_code` is `SDA`, not `QC1`, and
+   no account-map row links them) OR `qc_reviewer_code` already equals
+   their own code. `QC_SUBMIT` does not auto-assign a reviewer — that's
+   the separate `QC_REASSIGN` action (`QCReassignHandler.gs`,
+   `new_reviewer_code` payload field, TL/PM/CEO permission). **Not a
+   bug** — by design a QC reviewer must be explicitly assigned. Fix in
+   progress: NTL (fresh Incognito) running "Reassign QC" on `BLC-00288`
+   → `QC1`, then QC1 refreshes.
+
+   **Real pre-existing bug found & fixed, user approved fixing
+   immediately (2026-08-14 08:48):** the "Reassign QC" dropdown
+   (`portal_getQCReviewers`, `Portal.gs:342-360`) filtered
+   `QC_ROLES = { QC_REVIEWER, TEAM_LEAD, PM, CEO }` — **plain `QC` role
+   was never included**, even though `RBAC.gs:93` aliases
+   `QC_REVIEWER` → `QC` for all permission purposes and every other
+   scope/visibility check in `PortalData.gs` treats them as
+   equivalent. Net effect: any staff member with role exactly `QC`
+   (not `QC_REVIEWER`) could never be assigned as a job's QC reviewer
+   through the portal — possibly a live PROD gap, not confirmed either
+   way whether any real QC-role staff exist in PROD roster (worth a
+   follow-up check, not blocking). Not part of PR #22's scope — a
+   pre-existing latent bug this walkthrough surfaced (same pattern as
+   the 2 bugs W2-3's first live run found). **Fix:** added `QC: true`
+   to `QC_ROLES` (one line). Pushed to DEV — `npm run push:dev`,
+   "Pushed 167 files" 2026-08-14 08:48. **NOT committed to git yet**
+   (only create commits when explicitly asked) and **NOT pushed to
+   PROD** (needs separate explicit approval per standing practice).
+   Reminder: get user's go-ahead to commit + eventually PROD-deploy
+   this once the DEV walkthrough confirms it works.
+
+   QC1 still didn't appear in the dropdown after the push — root cause:
+   `clasp push` updates script *source*, but the DEV web app `/exec`
+   URL (all `?pt=` links) serves a pinned **Version**, same mechanic as
+   the R4.7/R5 PROD rule ("serves the last manually deployed version,
+   NOT the latest clasp push") — just never previously hit for DEV in
+   this session since earlier changes (schema/properties) don't need a
+   redeploy, only `Portal.gs`/`PortalView.html` changes do. User did a
+   New Version redeploy — but then NTL's own job list came back empty.
+
+   **Diagnosed via `PortalData.getViewData('nairscanada@gmail.com')`
+   direct call: NTL's actor/scope resolved correctly
+   (`personCode:NTL, role:TEAM_LEAD, scope:TEAM`), but `job count: 0`.
+   Root cause — correct RBAC behavior, not a bug:** `TEAM_LEAD` scope
+   only shows jobs where the designer is a team member
+   (`supervisor_code === 'NTL'` or a `REF_ACCOUNT_DESIGNER_MAP` link).
+   `DS1`'s seeded `supervisor_code` is `SDA`, not `NTL` — so NTL
+   genuinely never had visibility into DS1's jobs. **This means the
+   earlier "successful" Reassign QC attempt (before this) was almost
+   certainly still running on the CEO session** — header was never
+   re-verified right before that specific step. Lesson: re-verify the
+   header every time before trusting an action, not just once per
+   window.
+
+   **Fix for the walkthrough: use the CEO's own regular (non-incognito)
+   browser session for admin actions on `BLC-00288`** — CEO scope is
+   `ALL`, no team filter, no token dance needed (script owner). The QC
+   scope filter has an OR-escape-hatch independent of team membership
+   (`reviewer === qcCode`), so once `qc_reviewer_code` is set to `QC1`
+   via Reassign QC, QC1 will see the job regardless of the team-scope
+   restriction that blocked NTL.
+
+   CEO could see + reassign the job and open Review, but the
+   findings-picker didn't appear at all when MINOR_REWORK was selected
+   (Rework Notes did appear — same toggle handler, so this was a real
+   split, not user error).
+
+   **Fifth real gap found ~09:50 — genuinely stale deployment, distinct
+   from the earlier PROD-vs-clasp-source rule.** Diagnosed by checking
+   the live DOM (not View Source — Apps Script serves content inside a
+   `*.googleusercontent.com` iframe, so View Source / default-frame
+   console both show Google's outer wrapper, not the actual page — a
+   dead end that cost a few rounds before catching it). Confirmed via
+   the "Finding(s)" label being visually absent entirely (not just an
+   empty list) that the served page predated PR #21. Root cause: **the
+   DEV Apps Script project has more than one deployment entry** — the
+   one the user had been editing (bumped to "version 49") was NOT the
+   one `PORTAL_BASE_URL` / the `?pt=` links actually point to
+   (`.../AKfycbxJ_hEMbcw2.../exec`). Editing/redeploying the wrong
+   entry explains why the earlier `QC_ROLES` fix verification was also
+   never actually confirmed against the real served app. **Fix: user
+   located the correct deployment (matching the known URL) and
+   confirmed the findings-picker now renders.** Standing lesson for any
+   future `Portal.gs`/`PortalView.html` DEV redeploy: always confirm
+   which deployment entry's URL matches `PORTAL_BASE_URL` before
+   trusting a "New Version" redeploy — don't assume there's only one.
+
+   Also note: 16 of 17 seeded `DIM_QC_FINDING_TYPES` rows have
+   `product_applicability='ALL'`; only `PLATE_ERROR` is
+   product-specific (`'TRUSS'`, the `Config.PRODUCT_CODES` vocabulary,
+   not the portal dropdown's `ROOF_TRUSS`) — so the vocabulary mismatch
+   already logged above would only ever hide that one code, not empty
+   the whole list. Not the cause of this gap, but worth remembering if
+   `PLATE_ERROR` specifically seems to never appear during future
+   testing with a `ROOF_TRUSS`-product job.
+
+   **STEP 2 COMPLETE (2026-08-14 ~10:00).** Findings selected,
+   MINOR_REWORK submitted → `BLC-00288` correctly transitioned to
+   `MINOR_FIX` state (Log Work / Mark Sent to Client actions now
+   available) — this transition only happens if the backend accepted
+   `finding_codes`, confirming the PR #21 findings-picker works
+   end-to-end live in DEV (UI → queue → `QCHandler` → state machine).
+
+   **Real gaps found & fixed this step (all now resolved):** (1)
+   portal Product Code dropdown uses a fixed real vocabulary, not free
+   text — synthetic template had to target `ROOF_TRUSS` not an
+   invented code; (2) Apps Script owner/session identity silently
+   overrides `?pt=` tokens — every non-owner test identity needs its
+   own fully-fresh Incognito window, not just a new tab/link; (3)
+   `portal_getQCReviewers` excluded plain `QC` role from the
+   reassign-dropdown (real pre-existing bug, fixed, pushed to DEV —
+   `QC: true` added to `QC_ROLES` in `Portal.gs:346`); (4) TEAM_LEAD's
+   job-list scope is genuinely team-restricted (correct behavior, not a
+   bug — DS1 isn't NTL's report); (5) the DEV Apps Script project has
+   multiple deployment entries and it's easy to redeploy the wrong one
+   — always confirm the deployment URL matches `PORTAL_BASE_URL` before
+   trusting a redeploy.
+
+   **Still open, not urgent:** the `QC_ROLES` fix (#3 above) is pushed
+   to DEV but **not committed to git and not deployed to PROD** — needs
+   explicit user go-ahead for both, separate from this walkthrough.
 3. **SOP upload flow, NOT YET STARTED**: user (as CEO) uploads a real
    document → Claude structures it → user gets a review link → user
    plays the "manager" role, approves via the link → user publishes.
