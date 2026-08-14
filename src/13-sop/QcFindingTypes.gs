@@ -174,7 +174,7 @@ var QcFindingTypes = (function () {
         severity_default:     'MAJOR',
         kpi_weight:           7.0,
         is_structural_risk:   'TRUE',
-        product_applicability:'TRUSS',
+        product_applicability:'ROOF_TRUSS',
         requires_comment:     'N',
         common_in_rework:     'FALSE',
         active_flag:          'TRUE',
