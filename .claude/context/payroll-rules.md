@@ -38,9 +38,16 @@
 ## Supervisor Bonus (INR 25 per supervised design hour)
 - **TEAM_LEAD**: `bonus = INR 25 × Σ(design_hours of designers directly managed by this TL)`
   - Designers linked to TL via `supervisor_code` in DIM_STAFF_ROSTER
-- **PM**: `bonus = INR 25 × Σ(design_hours of ALL designers + TLs mapped to this PM, excluding PM's own hours)`
-  - Staff linked to PM via `pm_code` in DIM_STAFF_ROSTER
-  - Per-PM calculation — each PM only gets bonus for their own mapped staff
+  - `buildSupervisorBonusMap_()`, `PayrollEngine.gs`
+- **PM**: `bonus = INR 25 × Σ(design_hours of every non-PM staff member, company-wide)`
+  - **Flat, roster-wide — NOT scoped by `pm_code`.** Rewritten this way in
+    Phase B1 (2026-07) to remove a data-integrity dependency the old
+    `pm_code`-scoped rule had; this doc previously still described that old
+    rule (fixed 2026-08-26). `buildPmBonusMap_()`, `PayrollEngine.gs`.
+  - **Caveat**: if more than one PM is active simultaneously, every PM is
+    credited the identical company-wide total — there is no per-PM
+    attribution mechanism. Not a concern with a single active PM (today:
+    Sarty/`SGO`), but a real implication if a second PM is ever added.
 - Supervisor bonus always in **INR** regardless of supervisor's own pay_currency
 
 ---
