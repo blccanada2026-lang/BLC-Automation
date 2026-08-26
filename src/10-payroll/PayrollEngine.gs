@@ -249,6 +249,43 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
+  // SECTION 4a: PER-PERSON PAY CALCULATION (pure)
+  //
+  // Extracted from runPayrollRun()'s per-person loop (Payout Statement
+  // feature, 2026-08) so the same math is reused by both the real commit
+  // run and the no-write preview path (previewPayoutStatement, Task 3).
+  // Deliberately excludes everything row-assembly-related (event_id,
+  // actor_code, idempotency_key, status, payload_json) — those stay in
+  // runPayrollRun's own loop, which wraps this function's result into the
+  // full FACT_PAYROLL_LEDGER row exactly as it always has. See
+  // docs/superpowers/specs/2026-08-26-payout-statement-design.md §4.1 for
+  // why the signature is scoped this way — an earlier draft that included
+  // actor/idempotencyKey here would have silently broken the idempotency
+  // check in hasEvent_() if that field were ever dropped by mistake.
+  // ============================================================
+
+  function computePersonPay_(staff, personCode, hours, fxCache) {
+    // Rounding must match exactly: design_pay and qc_pay are each rounded
+    // independently inside toInr_(), then total_pay is rounded again after
+    // summing the two already-rounded values — do not collapse this into a
+    // single rounding pass, it changes totals by a cent in edge cases.
+    var designPayInr = toInr_(hours.design_hours * staff.pay_design, staff.pay_currency, fxCache);
+    var qcPayInr     = toInr_(hours.qc_hours     * staff.pay_qc,     staff.pay_currency, fxCache);
+    var totalInr     = Math.round((designPayInr + qcPayInr) * 100) / 100;
+
+    return {
+      person_code:  personCode,
+      name:         staff.name,
+      design_hours: hours.design_hours,
+      qc_hours:     hours.qc_hours,
+      design_pay:   designPayInr,
+      qc_pay:       qcPayInr,
+      total_pay:    totalInr,
+      currency:     'INR'
+    };
+  }
+
+  // ============================================================
   // SECTION 5: SUPERVISOR BONUS CALCULATION (TEAM_LEAD only)
   //
   // Returns: { personCode → bonusAmountINR }
@@ -647,12 +684,8 @@ var PayrollEngine = (function () {
             continue;
           }
 
-          var hours = hoursMap[personCode];
-
-          // Convert pay rates to INR
-          var designPayInr = toInr_(hours.design_hours * staff.pay_design, staff.pay_currency, fxCache);
-          var qcPayInr     = toInr_(hours.qc_hours     * staff.pay_qc,     staff.pay_currency, fxCache);
-          var totalInr     = Math.round((designPayInr + qcPayInr) * 100) / 100;
+          var hours   = hoursMap[personCode];
+          var payCalc = computePersonPay_(staff, personCode, hours, fxCache);
 
           var payrollRow = {
             event_id:        Identifiers.generateId(),
@@ -662,12 +695,12 @@ var PayrollEngine = (function () {
             actor_code:      actor.personCode || '',
             actor_role:      actor.role       || '',
             person_code:     personCode,
-            design_hours:    hours.design_hours,
-            qc_hours:        hours.qc_hours,
-            design_pay:      designPayInr,
-            qc_pay:          qcPayInr,
+            design_hours:    payCalc.design_hours,
+            qc_hours:        payCalc.qc_hours,
+            design_pay:      payCalc.design_pay,
+            qc_pay:          payCalc.qc_pay,
             bonus_amount:    0,
-            total_pay:       totalInr,
+            total_pay:       payCalc.total_pay,
             status:          'PENDING_CONFIRMATION',
             notes:           'Base pay (' + staff.pay_currency + '→INR)',
             idempotency_key: idempotencyKey,
@@ -685,22 +718,13 @@ var PayrollEngine = (function () {
 
           sendPaystubEmail_(staff, personCode, periodId, payrollRow);
 
-          byPerson.push({
-            person_code:  personCode,
-            name:         staff.name,
-            design_hours: hours.design_hours,
-            qc_hours:     hours.qc_hours,
-            design_pay:   designPayInr,
-            qc_pay:       qcPayInr,
-            total_pay:    totalInr,
-            currency:     'INR'
-          });
+          byPerson.push(payCalc);
           processed++;
 
           Logger.info('PAYROLL_PERSON_CALCULATED', {
             module: MODULE, person_code: personCode, name: staff.name,
-            design_hours: hours.design_hours, qc_hours: hours.qc_hours,
-            total_inr: totalInr
+            design_hours: payCalc.design_hours, qc_hours: payCalc.qc_hours,
+            total_inr: payCalc.total_pay
           });
 
         } catch (personErr) {
@@ -1105,7 +1129,13 @@ var PayrollEngine = (function () {
     // precedent as buildSupervisorBonusMap_ above, so the Jest suite
     // can test the real, flat PM bonus calculation runBonusRun()
     // actually uses, not a reimplementation.
-    buildPmBonusMap_: buildPmBonusMap_
+    buildPmBonusMap_: buildPmBonusMap_,
+
+    // Exposed 2026-08-26 (Payout Statement feature) — same precedent as
+    // buildPmBonusMap_ above, so the Jest suite can test the real
+    // per-person pay math both runPayrollRun() and previewPayoutStatement()
+    // (Task 3) use, not a reimplementation. Pure — no DAL/Logger calls.
+    computePersonPay_: computePersonPay_
   };
 
 }());
