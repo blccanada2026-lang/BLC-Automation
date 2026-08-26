@@ -784,6 +784,32 @@ function portal_approveAllPayroll(ptoken, periodId) {
 }
 
 // ============================================================
+// portal_previewPayoutStatement — CEO/HR_ACCOUNTING preview & send to HR
+// ============================================================
+
+/**
+ * Computes base pay + supervisor bonus (+ optional quarterly bonus) for a
+ * period and sends ONE combined review summary to the HR review
+ * recipient. No FACT write, no per-consultant/per-supervisor email,
+ * repeatable.
+ *
+ * @param {string} periodId          'YYYY-MM', blank = current period
+ * @param {boolean} includeQuarterly Include a quarterly bonus preview section
+ * @param {string} quarter           'Q1'|'Q2'|'Q3'|'Q4', only read when includeQuarterly
+ * @param {string|number} year       e.g. 2026, only read when includeQuarterly
+ * @returns {string}  JSON: { previewed, period_id, by_person, by_supervisor, quarterly }
+ */
+function portal_previewPayoutStatement(ptoken, periodId, includeQuarterly, quarter, year) {
+  var email  = PortalAuth.resolveEmail(ptoken);
+  var result = PayrollEngine.previewPayoutStatement(email, periodId || '', {
+    includeQuarterly: !!includeQuarterly,
+    quarter:          quarter || '',
+    year:             parseInt(year, 10) || null
+  });
+  return JSON.stringify(result);
+}
+
+// ============================================================
 // portal_getMyRatees — returns staff the current user should rate
 // ============================================================
 

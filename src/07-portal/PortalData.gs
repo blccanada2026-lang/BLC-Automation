@@ -322,6 +322,10 @@ var PortalData = (function () {
       // Timesheet-for-any-period feature, CEO/HR_ACCOUNTING only — RBAC
       // matrix already gates TIMESHEET_GENERATE to CEO/SYSTEM/HR_ACCOUNTING.
       canGenerateTimesheet: RBAC.hasPermission(actor, RBAC.ACTIONS.TIMESHEET_GENERATE),
+      // Payout Statement preview, CEO/HR_ACCOUNTING only — RBAC matrix
+      // already gates PAYROLL_PREVIEW to CEO/SYSTEM/HR_ACCOUNTING (no
+      // matrix change needed, see design spec §6).
+      canPreviewPayoutStatement: RBAC.hasPermission(actor, RBAC.ACTIONS.PAYROLL_PREVIEW),
       // Work log corrections. Raw role !== 'QC' excludes plain QC actors
       // even though RBAC.PERMISSION_MATRIX['QC'] must say true for
       // WORK_LOG_AMEND/VOID so the QC_REVIEWER alias (same canonical row)
