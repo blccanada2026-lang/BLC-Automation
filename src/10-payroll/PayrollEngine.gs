@@ -1179,6 +1179,94 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
+  // SECTION 14: previewPayoutStatement — no-write preview for HR review
+  //
+  // CEO/HR_ACCOUNTING trigger. Computes base pay + supervisor bonus (and,
+  // optionally, a quarterly bonus preview) for a period WITHOUT writing
+  // to FACT_PAYROLL_LEDGER and WITHOUT sending any per-consultant/
+  // per-supervisor confirm-gate email — only the one combined HR review
+  // summary (sendPayoutStatementSummary_, Task 2). Fully repeatable: no
+  // idempotency marking, same period can be previewed any number of
+  // times. See docs/superpowers/specs/2026-08-26-payout-statement-design.md
+  // §4.2.
+  // ============================================================
+
+  /**
+   * @param {string} actorEmail
+   * @param {string} periodId  'YYYY-MM'
+   * @param {{ includeQuarterly: boolean, quarter: string, year: number }} options
+   * @returns {{ previewed: boolean, period_id: string, by_person: Object[],
+   *   by_supervisor: Object[], quarterly: Object[]|null }}
+   */
+  function previewPayoutStatement(actorEmail, periodId, options) {
+    options = options || {};
+
+    var actor = RBAC.resolveActor(actorEmail);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_PREVIEW);
+    RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.PAYROLL_PREVIEW);
+
+    periodId = periodId || Identifiers.generateCurrentPeriodId();
+
+    var staffCache = buildStaffCache_(periodId + '-01');
+    var fxCache    = buildFxRateCache_();
+    var hoursMap   = aggregateHours_(periodId);
+
+    var basePay      = [];
+    var personCodes  = Object.keys(hoursMap);
+
+    for (var i = 0; i < personCodes.length; i++) {
+      if (i % 20 === 0 && HealthMonitor.isApproachingLimit()) {
+        Logger.warn('PAYOUT_STATEMENT_PREVIEW_PARTIAL', {
+          module: MODULE, message: 'Stopping preview — quota limit approaching',
+          processed: i, remaining: personCodes.length - i
+        });
+        break;
+      }
+      var personCode = personCodes[i];
+      var staff       = staffCache[personCode];
+      if (!staff) continue;
+      basePay.push(computePersonPay_(staff, personCode, hoursMap[personCode], fxCache));
+    }
+
+    var tlBonusMap = buildSupervisorBonusMap_(staffCache, hoursMap);
+    var pmBonusMap = buildPmBonusMap_(staffCache, hoursMap);
+    var bonusMap   = {};
+    Object.keys(tlBonusMap).forEach(function (code) { bonusMap[code] = tlBonusMap[code]; });
+    Object.keys(pmBonusMap).forEach(function (code) { bonusMap[code] = pmBonusMap[code]; });
+
+    var supervisorBonus = Object.keys(bonusMap).map(function (code) {
+      var staff = staffCache[code];
+      return { person_code: code, name: staff.name, role: staff.role, bonus_amount: bonusMap[code] };
+    });
+
+    var quarterlyBonus     = null;
+    var quarterPeriodId    = null;
+    if (options.includeQuarterly) {
+      quarterlyBonus  = QuarterlyBonusEngine.previewQuarterlyBonus(actorEmail, options.quarter, options.year);
+      quarterPeriodId = options.quarter + '-' + options.year;
+    }
+
+    sendPayoutStatementSummary_(periodId, {
+      basePay:         basePay,
+      supervisorBonus: supervisorBonus,
+      quarterlyBonus:  quarterlyBonus
+    }, { committed: false, quarterPeriodId: quarterPeriodId });
+
+    Logger.info('PAYOUT_STATEMENT_PREVIEWED', {
+      module: MODULE, message: 'Payout statement previewed', period_id: periodId,
+      base_pay_count: basePay.length, supervisor_bonus_count: supervisorBonus.length
+    });
+
+    return {
+      previewed:     true,
+      period_id:     periodId,
+      by_person:     basePay,
+      by_supervisor: supervisorBonus,
+      quarterly:     quarterlyBonus
+    };
+  }
+
+  // ============================================================
   // PUBLIC API
   // ============================================================
   return {
@@ -1206,6 +1294,14 @@ var PayrollEngine = (function () {
      * Only processes staff who have confirmed their paystub.
      */
     approveAllPayroll: approveAllPayroll,
+
+    /**
+     * CEO/HR_ACCOUNTING preview trigger — computes base pay + supervisor
+     * bonus (+ optional quarterly bonus) for a period and sends ONE
+     * combined summary to the HR review recipient. No FACT write, no
+     * per-consultant/per-supervisor email, fully repeatable.
+     */
+    previewPayoutStatement: previewPayoutStatement,
 
     // Exposed 2026-07-23 (payroll-hardening effort, Phase 4 promotion
     // dry-run) — same precedent as QuarterlyBonusEngine.aggregateQuarterHours_

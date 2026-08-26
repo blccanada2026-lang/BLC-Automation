@@ -177,3 +177,108 @@ describe('PayrollEngine.sendPayoutStatementSummary_() — HR review email builde
     expect(Logger.warn).toHaveBeenCalledWith('PAYOUT_STATEMENT_SUMMARY_FAILED', expect.any(Object));
   });
 });
+
+describe('PayrollEngine.previewPayoutStatement() — no-write HR/CEO preview trigger', () => {
+  function seedRoster(rows) {
+    mocks.store['DIM_STAFF_ROSTER'] = rows.map(r => Object.assign({
+      person_code: '', name: '', email: '', role: 'DESIGNER',
+      supervisor_code: '', pm_code: '', pay_currency: 'INR',
+      pay_design: 0, pay_qc: 0, bonus_eligible: 'FALSE',
+      active: 'TRUE', effective_from: '2025-01-01', effective_to: ''
+    }, r));
+  }
+  function seedWorkLogs(rows) { mocks.store['FACT_WORK_LOGS'] = rows; }
+
+  beforeEach(() => {
+    global.PropertiesService.getScriptProperties = function () { return { getProperty: function () { return null; } }; };
+    global.QuarterlyBonusEngine = { previewQuarterlyBonus: jest.fn(function () { return []; }) };
+    mocks.DAL.appendRow = jest.fn();
+  });
+
+  test('happy path: computes base pay + supervisor bonus, sends one HR email, writes nothing', () => {
+    seedRoster([
+      { person_code: 'TL1', role: 'TEAM_LEAD', pay_design: 300, pay_qc: 0, email: 'tl1@test.blc.internal' },
+      { person_code: 'DES1', role: 'DESIGNER', supervisor_code: 'TL1', pay_design: 300, pay_qc: 0, email: 'des1@test.blc.internal' }
+    ]);
+    seedWorkLogs([
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' }
+    ]);
+
+    var result = PayrollEngine.previewPayoutStatement('test-ceo@test.blc.internal', '2026-08', { includeQuarterly: false });
+
+    expect(result.previewed).toBe(true);
+    expect(result.by_person.find(p => p.person_code === 'DES1').total_pay).toBe(3000);
+    expect(result.by_supervisor.find(s => s.person_code === 'TL1').bonus_amount).toBe(250);
+    expect(result.quarterly).toBeNull();
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(1);
+    expect(mocks.DAL.appendRow).not.toHaveBeenCalled();
+  });
+
+  test('calls RBAC.enforcePermission and enforceFinancialAccess with PAYROLL_PREVIEW', () => {
+    seedRoster([{ person_code: 'DES1', role: 'DESIGNER', pay_design: 300, pay_qc: 0 }]);
+    seedWorkLogs([{ event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      event_type: 'WORK_LOG_SUBMITTED', hours: 1, work_date: '2026-08-05', period_id: '2026-08' }]);
+    mocks.RBAC.enforcePermission     = jest.fn();
+    mocks.RBAC.enforceFinancialAccess = jest.fn();
+
+    PayrollEngine.previewPayoutStatement('test-hr@test.blc.internal', '2026-08', { includeQuarterly: false });
+
+    expect(mocks.RBAC.enforcePermission).toHaveBeenCalledWith(expect.any(Object), 'PAYROLL_PREVIEW');
+    expect(mocks.RBAC.enforceFinancialAccess).toHaveBeenCalledWith(expect.any(Object), 'PAYROLL_PREVIEW');
+    // NOTE: gas-v3-staff-mocks.js's RBAC mock always resolves the actor as
+    // CEO and always passes both calls — it cannot simulate a denied,
+    // non-CEO/HR_ACCOUNTING role. This test proves the gate is wired with
+    // the correct action constant (a real regression catch if the call is
+    // ever removed or mis-specified); true role-based denial can only be
+    // verified live in DEV, per PROJECT_MEMORY.md §3.1 — see Task 8.
+  });
+
+  test('repeatable: same period previewed twice gives identical results, no skip/dedup applied', () => {
+    seedRoster([{ person_code: 'DES1', role: 'DESIGNER', pay_design: 300, pay_qc: 0 }]);
+    seedWorkLogs([{ event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' }]);
+
+    var first  = PayrollEngine.previewPayoutStatement('test-ceo@test.blc.internal', '2026-08', { includeQuarterly: false });
+    var second = PayrollEngine.previewPayoutStatement('test-ceo@test.blc.internal', '2026-08', { includeQuarterly: false });
+
+    expect(second.by_person).toEqual(first.by_person);
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(2); // both calls actually sent, no dedup
+  });
+
+  test('empty-hours period returns a graceful empty summary, not a thrown error', () => {
+    seedRoster([{ person_code: 'DES1', role: 'DESIGNER', pay_design: 300, pay_qc: 0 }]);
+    seedWorkLogs([]);
+
+    var result = PayrollEngine.previewPayoutStatement('test-ceo@test.blc.internal', '2026-08', { includeQuarterly: false });
+
+    expect(result.previewed).toBe(true);
+    expect(result.by_person).toEqual([]);
+  });
+
+  test('includeQuarterly=true calls previewQuarterlyBonus and includes its result', () => {
+    seedRoster([{ person_code: 'DES1', role: 'DESIGNER', pay_design: 300, pay_qc: 0 }]);
+    seedWorkLogs([{ event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      event_type: 'WORK_LOG_SUBMITTED', hours: 5, work_date: '2026-09-05', period_id: '2026-09' }]);
+    QuarterlyBonusEngine.previewQuarterlyBonus.mockReturnValue([
+      { person_code: 'DES1', name: 'Des One', role: 'DESIGNER', status: 'CALCULATED', bonus_inr: 500 }
+    ]);
+
+    var result = PayrollEngine.previewPayoutStatement('test-ceo@test.blc.internal', '2026-09',
+      { includeQuarterly: true, quarter: 'Q3', year: 2026 });
+
+    expect(QuarterlyBonusEngine.previewQuarterlyBonus).toHaveBeenCalledWith('test-ceo@test.blc.internal', 'Q3', 2026);
+    expect(result.quarterly).toEqual([{ person_code: 'DES1', name: 'Des One', role: 'DESIGNER', status: 'CALCULATED', bonus_inr: 500 }]);
+  });
+
+  test('includeQuarterly=false (default) never calls previewQuarterlyBonus, quarterly is null', () => {
+    seedRoster([{ person_code: 'DES1', role: 'DESIGNER', pay_design: 300, pay_qc: 0 }]);
+    seedWorkLogs([{ event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      event_type: 'WORK_LOG_SUBMITTED', hours: 5, work_date: '2026-08-05', period_id: '2026-08' }]);
+
+    var result = PayrollEngine.previewPayoutStatement('test-ceo@test.blc.internal', '2026-08', { includeQuarterly: false });
+
+    expect(QuarterlyBonusEngine.previewQuarterlyBonus).not.toHaveBeenCalled();
+    expect(result.quarterly).toBeNull();
+  });
+});
