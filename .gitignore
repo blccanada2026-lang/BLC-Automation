@@ -3,6 +3,7 @@ node_modules/
 
 # Workspace management
 .worktrees/
+.superpowers/
 
 # Local tooling — not application source
 .mcp.json
