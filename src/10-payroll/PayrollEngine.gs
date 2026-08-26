@@ -502,6 +502,104 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
+  // SECTION 8b: PAYOUT STATEMENT SUMMARY EMAIL
+  //
+  // Sends one combined review email to PAYOUT_STATEMENT_REVIEW_RECIPIENT
+  // covering whichever of base pay / supervisor bonus / quarterly bonus
+  // preview are present. Called by previewPayoutStatement (Task 3, no
+  // write) and, additively, by runPayrollRun/runBonusRun (Task 4, on
+  // real commit) — each caller passes only the section(s) it has data
+  // for. Non-fatal on MailApp failure, same convention as
+  // sendPaystubEmail_/sendBonusEmail_ above.
+  // ============================================================
+
+  function sendPayoutStatementSummary_(periodId, sections, meta) {
+    var recipient = PropertiesService.getScriptProperties().getProperty('PAYOUT_STATEMENT_REVIEW_RECIPIENT')
+      || 'HR@bluelotuscanada.ca';
+
+    if (!recipient) {
+      Logger.warn('PAYOUT_STATEMENT_NO_RECIPIENT', {
+        module: MODULE, message: 'No recipient resolved — summary not sent', period_id: periodId
+      });
+      return;
+    }
+
+    try {
+      var lines = ['Hi,', '', 'Payout statement summary for period: ' + periodId, ''];
+
+      if (sections.basePay && sections.basePay.length > 0) {
+        lines = lines.concat(formatBasePaySection_(sections.basePay));
+      }
+      if (sections.supervisorBonus && sections.supervisorBonus.length > 0) {
+        lines = lines.concat(formatSupervisorBonusSection_(sections.supervisorBonus));
+      }
+      if (sections.quarterlyBonus && sections.quarterlyBonus.length > 0) {
+        lines = lines.concat(formatQuarterlyBonusSection_(sections.quarterlyBonus, meta.quarterPeriodId));
+      }
+
+      lines.push(meta.committed
+        ? 'This reflects payroll already committed for this period; confirmation emails have already been sent to affected staff.'
+        : 'This is a review summary only. No payroll has been committed yet.');
+      lines.push('');
+      lines.push('— BLC Payout System');
+
+      MailApp.sendEmail({
+        to:      recipient,
+        subject: 'BLC Payout Statement Summary — ' + periodId + ' (Review)',
+        body:    lines.join('\n')
+      });
+
+      Logger.info('PAYOUT_STATEMENT_SUMMARY_SENT', {
+        module: MODULE, message: 'Payout statement summary sent', period_id: periodId, recipient: recipient
+      });
+    } catch (emailErr) {
+      Logger.warn('PAYOUT_STATEMENT_SUMMARY_FAILED', {
+        module: MODULE, message: 'Payout statement summary email failed', period_id: periodId, error: emailErr.message
+      });
+    }
+  }
+
+  function formatBasePaySection_(basePay) {
+    var lines = ['BASE PAY', '───────────────────────────────'];
+    var total = 0;
+    basePay.forEach(function (row) {
+      lines.push(row.person_code + '  ' + row.name + '  Design ' + row.design_hours + 'h  QC ' +
+        row.qc_hours + 'h  Design Pay INR ' + row.design_pay.toFixed(2) + '  QC Pay INR ' +
+        row.qc_pay.toFixed(2) + '  Total INR ' + row.total_pay.toFixed(2));
+      total += row.total_pay;
+    });
+    lines.push('Period Total: INR ' + (Math.round(total * 100) / 100).toFixed(2));
+    lines.push('───────────────────────────────');
+    lines.push('');
+    return lines;
+  }
+
+  function formatSupervisorBonusSection_(supervisorBonus) {
+    var lines = ['SUPERVISOR BONUS', '───────────────────────────────'];
+    var total = 0;
+    supervisorBonus.forEach(function (row) {
+      lines.push(row.person_code + '  ' + row.name + '  ' + row.role + '  INR ' + row.bonus_amount.toFixed(2));
+      total += row.bonus_amount;
+    });
+    lines.push('Total: INR ' + (Math.round(total * 100) / 100).toFixed(2));
+    lines.push('───────────────────────────────');
+    lines.push('');
+    return lines;
+  }
+
+  function formatQuarterlyBonusSection_(quarterlyBonus, quarterPeriodId) {
+    var lines = ['QUARTERLY BONUS PREVIEW — ' + quarterPeriodId + ' (preview, not yet committed)',
+                 '───────────────────────────────'];
+    quarterlyBonus.forEach(function (row) {
+      lines.push(row.person_code + '  ' + row.name + '  ' + row.role + '  status=' + row.status +
+        '  INR ' + (row.bonus_inr || 0).toFixed(2));
+    });
+    lines.push('───────────────────────────────');
+    lines.push('');
+    return lines;
+  }
+
+  // ============================================================
   // SECTION 9: MART REFRESH
   //
   // Reads FACT_PAYROLL_LEDGER for the period, aggregates by
@@ -1135,7 +1233,13 @@ var PayrollEngine = (function () {
     // buildPmBonusMap_ above, so the Jest suite can test the real
     // per-person pay math both runPayrollRun() and previewPayoutStatement()
     // (Task 3) use, not a reimplementation. Pure — no DAL/Logger calls.
-    computePersonPay_: computePersonPay_
+    computePersonPay_: computePersonPay_,
+
+    // Exposed 2026-08-26 (Payout Statement feature) — same precedent as
+    // computePersonPay_ above, so the Jest suite can test the real email
+    // builder both previewPayoutStatement (Task 3) and the runPayrollRun/
+    // runBonusRun commit-path wiring (Task 4) use.
+    sendPayoutStatementSummary_: sendPayoutStatementSummary_
   };
 
 }());

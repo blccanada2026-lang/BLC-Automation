@@ -100,3 +100,80 @@ describe('PayrollEngine.computePersonPay_() — pure per-person pay math', () =>
     expect(result.total_pay).toBe(0);
   });
 });
+
+describe('PayrollEngine.sendPayoutStatementSummary_() — HR review email builder', () => {
+  function basePayRow(overrides) {
+    return Object.assign({
+      person_code: 'RND', name: 'Rita Nair', design_hours: 10, qc_hours: 0,
+      design_pay: 3000, qc_pay: 0, total_pay: 3000, currency: 'INR'
+    }, overrides);
+  }
+  function supervisorRow(overrides) {
+    return Object.assign({ person_code: 'TL1', name: 'TL One', role: 'TEAM_LEAD', bonus_amount: 250 }, overrides);
+  }
+  function quarterlyRow(overrides) {
+    return Object.assign({ person_code: 'DES1', name: 'Des One', role: 'DESIGNER', status: 'CALCULATED', bonus_inr: 500 }, overrides);
+  }
+
+  test('sends one email to the Script Property recipient with subject including the period', () => {
+    global.PropertiesService.getScriptProperties = function () {
+      return { getProperty: function (k) { return k === 'PAYOUT_STATEMENT_REVIEW_RECIPIENT' ? 'hr-test@test.blc.internal' : null; } };
+    };
+
+    PayrollEngine.sendPayoutStatementSummary_('2026-08', { basePay: [basePayRow()] }, { committed: false, quarterPeriodId: null });
+
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(1);
+    var call = MailApp.sendEmail.mock.calls[0][0];
+    expect(call.to).toBe('hr-test@test.blc.internal');
+    expect(call.subject).toBe('BLC Payout Statement Summary — 2026-08 (Review)');
+  });
+
+  test('defaults to HR@bluelotuscanada.ca when the Script Property is unset', () => {
+    global.PropertiesService.getScriptProperties = function () { return { getProperty: function () { return null; } }; };
+
+    PayrollEngine.sendPayoutStatementSummary_('2026-08', { basePay: [basePayRow()] }, { committed: false, quarterPeriodId: null });
+
+    expect(MailApp.sendEmail.mock.calls[0][0].to).toBe('HR@bluelotuscanada.ca');
+  });
+
+  test('body includes only the sections actually present', () => {
+    global.PropertiesService.getScriptProperties = function () { return { getProperty: function () { return null; } }; };
+
+    PayrollEngine.sendPayoutStatementSummary_('2026-08', { basePay: [basePayRow()] }, { committed: false, quarterPeriodId: null });
+    var body1 = MailApp.sendEmail.mock.calls[0][0].body;
+    expect(body1).toContain('BASE PAY');
+    expect(body1).not.toContain('SUPERVISOR BONUS');
+    expect(body1).not.toContain('QUARTERLY BONUS');
+
+    MailApp.sendEmail.mockClear();
+    PayrollEngine.sendPayoutStatementSummary_('2026-08', {
+      basePay: [basePayRow()], supervisorBonus: [supervisorRow()], quarterlyBonus: [quarterlyRow()]
+    }, { committed: false, quarterPeriodId: 'Q3-2026' });
+    var body2 = MailApp.sendEmail.mock.calls[0][0].body;
+    expect(body2).toContain('BASE PAY');
+    expect(body2).toContain('SUPERVISOR BONUS');
+    expect(body2).toContain('QUARTERLY BONUS PREVIEW — Q3-2026');
+  });
+
+  test('closing line differs based on meta.committed', () => {
+    global.PropertiesService.getScriptProperties = function () { return { getProperty: function () { return null; } }; };
+
+    PayrollEngine.sendPayoutStatementSummary_('2026-08', { basePay: [basePayRow()] }, { committed: false, quarterPeriodId: null });
+    expect(MailApp.sendEmail.mock.calls[0][0].body).toContain('This is a review summary only. No payroll has been committed yet.');
+
+    MailApp.sendEmail.mockClear();
+    PayrollEngine.sendPayoutStatementSummary_('2026-08', { basePay: [basePayRow()] }, { committed: true, quarterPeriodId: null });
+    expect(MailApp.sendEmail.mock.calls[0][0].body).toContain('This reflects payroll already committed for this period');
+  });
+
+  test('MailApp failure is non-fatal — logs a warning, does not throw', () => {
+    global.PropertiesService.getScriptProperties = function () { return { getProperty: function () { return null; } }; };
+    global.MailApp.sendEmail = jest.fn(function () { throw new Error('quota exceeded'); });
+    global.Logger.warn = jest.fn();
+
+    expect(function () {
+      PayrollEngine.sendPayoutStatementSummary_('2026-08', { basePay: [basePayRow()] }, { committed: false, quarterPeriodId: null });
+    }).not.toThrow();
+    expect(Logger.warn).toHaveBeenCalledWith('PAYOUT_STATEMENT_SUMMARY_FAILED', expect.any(Object));
+  });
+});
