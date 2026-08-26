@@ -354,6 +354,7 @@
       <button class="btn-muted btn-sm" id="btn-sbs-intake" style="display:none">⬆ Process SBS Jobs</button>
       <button class="btn-muted btn-sm" id="btn-preview-as" style="display:none">👁 Preview As</button>
       <button class="btn-muted btn-sm" id="btn-generate-timesheet" style="display:none">📄 Generate Timesheet</button>
+      <button class="btn-muted btn-sm" id="btn-preview-payout-statement" style="display:none">📧 Generate Payout Statement</button>
       <button class="btn-warning btn-sm" id="btn-run-billing" style="display:none">🧾 Run Billing</button>
       <button class="btn-primary btn-sm" id="btn-create-job" style="display:none">+ New Job</button>
     </div>
@@ -1393,6 +1394,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-sbs-intake').addEventListener('click',        processSbsIntake);
   document.getElementById('btn-run-billing').addEventListener('click',       runBillingRun);
   document.getElementById('btn-generate-timesheet').addEventListener('click', openGenerateTimesheetModal);
+  document.getElementById('btn-preview-payout-statement').addEventListener('click', previewPayoutStatement);
   document.getElementById('btn-submit-generate-timesheet').addEventListener('click', submitGenerateTimesheet);
   document.getElementById('btn-run-bonus').addEventListener('click',         runBonusRun);
   document.getElementById('btn-run-quarterly-bonus').addEventListener('click', runQuarterlyBonus);
@@ -1512,6 +1514,7 @@ function onDataLoaded(jsonStr) {
   // canGenerateTimesheet but is not a leader (isLeader = CEO/PM/TEAM_LEAD),
   // so this must be reachable from the always-evaluated main toolbar.
   if (_data.perms.canGenerateTimesheet) document.getElementById('btn-generate-timesheet').style.display = 'inline-block';
+  if (_data.perms.canPreviewPayoutStatement) document.getElementById('btn-preview-payout-statement').style.display = 'inline-block';
 
   // Leader dashboard payroll action buttons
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-briefing').style.display  = 'inline-block';
@@ -1807,6 +1810,7 @@ function renderPortal_(data) {
   if (perms.canRunPayroll)   document.getElementById('btn-process-queue').style.display = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-clients').style.display       = 'inline-block';
   if (perms.canGenerateTimesheet) document.getElementById('btn-generate-timesheet').style.display = 'inline-block';
+  if (perms.canPreviewPayoutStatement) document.getElementById('btn-preview-payout-statement').style.display = 'inline-block';
   if (perms.isLeader)        document.getElementById('btn-leader-dash').style.display   = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-staff-panel').style.display   = 'inline-block';
   if (perms.canRunBilling)   document.getElementById('btn-run-billing').style.display         = 'inline-block';
@@ -4489,6 +4493,35 @@ function submitGenerateTimesheet() {
       showToast('Timesheet generation error: ' + (err.message || String(err)), 'error');
     })
     .portal_generateTimesheetPdf(clientCode, startDate, endDate);
+}
+
+function previewPayoutStatement() {
+  var periodId = window.prompt('Period to preview (YYYY-MM), blank = current period:', '');
+  if (periodId === null) return; // user cancelled
+
+  var includeQuarterly = false;
+  var quarter = '', year = '';
+  var now = new Date();
+  var monthIndex = periodId ? (parseInt(periodId.split('-')[1], 10) - 1) : now.getMonth();
+  var yearGuess   = periodId ? periodId.split('-')[0] : String(now.getFullYear());
+  var quarterGuess = 'Q' + (Math.floor(monthIndex / 3) + 1);
+
+  if (window.confirm('Also include quarterly bonus preview for ' + quarterGuess + ' ' + yearGuess + '?')) {
+    includeQuarterly = true;
+    quarter = quarterGuess;
+    year    = yearGuess;
+  }
+
+  TOKEN_RUN
+    .withSuccessHandler(function (json) {
+      var result = JSON.parse(json);
+      showToast('Payout statement preview sent for ' + result.period_id + ' — ' +
+        result.by_person.length + ' base pay, ' + result.by_supervisor.length + ' bonus rows.', 'success');
+    })
+    .withFailureHandler(function (err) {
+      showToast('Could not generate payout statement preview: ' + err.message, 'error');
+    })
+    .portal_previewPayoutStatement(periodId, includeQuarterly, quarter, year);
 }
 
 function renderTimesheetResults(results) {
