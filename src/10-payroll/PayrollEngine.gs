@@ -834,7 +834,10 @@ var PayrollEngine = (function () {
         }
       }
 
-      // ── 6. Refresh MART ───────────────────────────────────
+      // ── 6. Send HR summary ────────────────────────────────
+      sendPayoutStatementSummary_(periodId, { basePay: byPerson }, { committed: true, quarterPeriodId: null });
+
+      // ── 7. Refresh MART ───────────────────────────────────
       if (processed > 0) refreshMartPayrollSummary_(periodId);
 
       var result = { processed: processed, skipped: skipped, errors: errors,
@@ -979,6 +982,8 @@ var PayrollEngine = (function () {
           });
         }
       }
+
+      sendPayoutStatementSummary_(periodId, { supervisorBonus: bySupervisor }, { committed: true, quarterPeriodId: null });
 
       if (processed > 0) refreshMartPayrollSummary_(periodId);
 

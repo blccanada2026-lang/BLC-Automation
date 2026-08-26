@@ -39,6 +39,10 @@ beforeEach(() => {
   global.HealthMonitor = {
     startExecution: function () {}, endExecution: function () {}, isApproachingLimit: function () { return false; }
   };
+  global.MailApp = { sendEmail: jest.fn() };
+  global.PropertiesService = {
+    getScriptProperties: function () { return { getProperty: function () { return null; } }; }
+  };
   mocks.DAL.ensurePartition = function () {}; // no-op — this mock has no real partition concept
   mocks.DAL.appendRows = function (t, rows) { rows.forEach(function (r) { mocks.DAL.appendRow(t, r); }); };
   // aggregateHours_() delegates to the shared aggregateNetWorkLogHours(),
@@ -217,5 +221,24 @@ describe('PayrollEngine.runBonusRun() — TL and PM bonuses both written, no dou
     result.by_supervisor.forEach(function (s) { bySupervisor[s.person_code] = s.bonus_amount; });
     expect(bySupervisor.TL1).toBe(250); // 10 hrs × 25 (direct report)
     expect(bySupervisor.PM1).toBe(250); // same 10 hrs × 25 (flat roster-wide, no pm_code dependency now)
+  });
+
+  test('a successful bonus commit sends exactly one HR summary email covering only supervisor bonus', () => {
+    seedRoster([
+      { person_code: 'TL1', role: 'TEAM_LEAD', email: 'tl1@test.blc.internal' },
+      { person_code: 'DES1', role: 'DESIGNER', supervisor_code: 'TL1', email: 'des1@test.blc.internal' }
+    ]);
+    seedWorkLogs('2026-08', [
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 8, work_date: '2026-08-05', period_id: '2026-08' }
+    ]);
+
+    PayrollEngine.runBonusRun('ceo@test.blc.internal', { periodId: '2026-08' });
+
+    // 1 per-supervisor bonus email (sendBonusEmail_) + 1 HR summary = 2.
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(2);
+    var hrCall = MailApp.sendEmail.mock.calls.find(c => c[0].subject.indexOf('Payout Statement Summary') !== -1);
+    expect(hrCall[0].body).toContain('SUPERVISOR BONUS');
+    expect(hrCall[0].body).not.toContain('BASE PAY');
   });
 });

@@ -178,6 +178,46 @@ describe('PayrollEngine.sendPayoutStatementSummary_() — HR review email builde
   });
 });
 
+describe('PayrollEngine.runPayrollRun() — additive HR summary on commit (Task 4)', () => {
+  function seedRoster(rows) {
+    mocks.store['DIM_STAFF_ROSTER'] = rows.map(r => Object.assign({
+      person_code: '', name: '', email: '', role: 'DESIGNER',
+      supervisor_code: '', pm_code: '', pay_currency: 'INR',
+      pay_design: 0, pay_qc: 0, bonus_eligible: 'FALSE',
+      active: 'TRUE', effective_from: '2025-01-01', effective_to: ''
+    }, r));
+  }
+  function seedWorkLogs(rows) { mocks.store['FACT_WORK_LOGS'] = rows; }
+
+  beforeEach(() => {
+    global.PropertiesService.getScriptProperties = function () { return { getProperty: function () { return null; } }; };
+  });
+
+  test('a successful commit sends exactly one HR summary email with committed:true wording, in addition to per-consultant emails', () => {
+    seedRoster([{ person_code: 'DES1', role: 'DESIGNER', pay_design: 300, pay_qc: 0, email: 'des1@test.blc.internal' }]);
+    seedWorkLogs([{ event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' }]);
+
+    var result = PayrollEngine.runPayrollRun('test-ceo@test.blc.internal', { periodId: '2026-08' });
+
+    expect(result.processed).toBe(1);
+    // 1 per-consultant paystub email (sendPaystubEmail_) + 1 HR summary
+    // (sendPayoutStatementSummary_) = 2 total MailApp calls.
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(2);
+    var hrCall = MailApp.sendEmail.mock.calls.find(c => c[0].subject.indexOf('Payout Statement Summary') !== -1);
+    expect(hrCall[0].body).toContain('This reflects payroll already committed for this period');
+  });
+
+  test('a period with zero hours does not send an HR summary at all (matches existing PAYROLL_NO_HOURS early return)', () => {
+    seedRoster([{ person_code: 'DES1', role: 'DESIGNER', pay_design: 300, pay_qc: 0 }]);
+    seedWorkLogs([]);
+
+    PayrollEngine.runPayrollRun('test-ceo@test.blc.internal', { periodId: '2026-08' });
+
+    expect(MailApp.sendEmail).not.toHaveBeenCalled();
+  });
+});
+
 describe('PayrollEngine.previewPayoutStatement() — no-write HR/CEO preview trigger', () => {
   function seedRoster(rows) {
     mocks.store['DIM_STAFF_ROSTER'] = rows.map(r => Object.assign({
