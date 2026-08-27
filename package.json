@@ -8,7 +8,8 @@
     "test:watch": "jest --watch",
     "test:verbose": "jest --verbose",
     "push:prod": "cp .clasp.prod.json .clasp.json && clasp push --force",
-    "push:dev": "cp .clasp.dev.json .clasp.json && clasp push --force"
+    "push:dev": "cp .clasp.dev.json .clasp.json && clasp push --force",
+    "rollback:payout-statement": "bash scripts/rollback-payout-statement.sh"
   },
   "repository": {
     "type": "git",
