@@ -74,6 +74,40 @@ Set it explicitly to the real HR mailbox (`HR@bluelotuscanada.ca`, or wherever i
 
 ---
 
-## 5. My actual verdict
+## 5. Emergency rollback — what to do if something breaks
+
+**First: this deploy is structurally low-risk for a full outage, and that's by design, not luck.** Everything in this feature is additive — new functions, new buttons, one new guarded line each in `runPayrollRun`/`runBonusRun`. Nothing existing was rewritten. No schema change, no data migration, nothing touches `FACT_WORK_LOGS`/`FACT_JOB_EVENTS`/QC/billing at all. So the realistic failure modes split into two very different severities — diagnose which one you're in before picking a remedy:
+
+**Case A — only the new pieces misbehave (most likely if anything goes wrong).**
+Symptoms: "Generate Payout Statement" / "Run Payroll" / "Run Bonus" throws an error, or the HR email doesn't arrive, or looks wrong — but job creation, work log submission, QC, billing, and everyone's normal day-to-day portal use are unaffected.
+**This is not a system-down situation, and does not need an emergency rollback.** The rest of the team keeps working normally. Just stop using the broken button, tell me what you saw, and we fix it properly (new commit, new deploy) at normal pace — no pressure to rush a fix live. This is the expected shape of *any* real issue here, precisely because every new email-sending path is independently wrapped so it can't take anything else down with it (verified in review, not just claimed).
+
+**Case B — the portal itself won't load, or something clearly outside this feature breaks (e.g. a JS error blocks the whole page).**
+This would mean something unexpected slipped through everything above — unlikely, but here's the exact remedy, straight from `CLAUDE.md` R7, with the one nuance that matters for *this specific* deploy:
+
+1. **Stop.** Don't make more changes, don't try to hot-fix live. Tell me and we execute the rollback below.
+2. **Revert the merge commit** — because this landed as a merge (not a single commit), a plain `git revert` will fail; it needs `-m 1` to tell git which side is the "real" history:
+   ```bash
+   git revert -m 1 4d14ac9
+   ```
+   (`4d14ac9` is the actual merge commit — confirm with `git log --oneline` first in case anything's landed on top of it by then.)
+3. **Push the revert:**
+   ```bash
+   git push origin main
+   ```
+4. **Redeploy:**
+   ```bash
+   npm run push:prod
+   ```
+   then a **New Version redeploy** in the Apps Script editor (mandatory — this touched `Portal.gs`/`PortalView.html`, same as the original deploy).
+5. **Verify:** portal loads, a real (non-test) job round-trips correctly, `HealthMonitor` shows no new critical alerts.
+
+This restores the exact pre-deploy state. Nothing is lost — the revert is itself a new commit, so the broken version stays in history and nothing needs to be force-pushed or discarded.
+
+**One more scenario worth naming, because it's different from both above — a real financial mistake, not a code bug** (e.g. "Run Payroll" gets clicked for the wrong period, or by mistake). This is *not* a code rollback situation at all: `FACT_PAYROLL_LEDGER` is append-only by architectural rule (A5, `.claude/rules/architecture.md`) — nothing gets deleted or overwritten to fix it, ever. The remedy is the same pattern already used elsewhere in this codebase for payroll/work-log corrections: a new adjustment/void event on top, never touching the original row. Tell me what actually happened and I'll help construct the correction — this is a data-correctness conversation, not a rollback, and it doesn't require reverting any code.
+
+---
+
+## 6. My actual verdict
 
 Ready to deploy once §2's pre-flight steps pass. The code is well-tested (535/535, live DEV-verified across every real path including the exact failure mode of an idempotent re-run), reviewed twice over (per-task plus a whole-branch pass that caught and fixed 4 real issues before you ever saw it), and additive by design everywhere that matters. The one thing I'd treat with real operational caution — not because of a bug, but because we just watched it happen — is the reduced friction on triggering a real payroll run from the portal. Supervise the first real click on that specific button; everything else is routine.
