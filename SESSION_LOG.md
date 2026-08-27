@@ -5,6 +5,37 @@
 
 ---
 
+## 2026-08-26 → 2026-08-27 Session (Payout Statement Summary — brainstormed, designed, implemented via subagent-driven-development, final review clean)
+
+### Work Completed
+- **Brainstormed and designed** the Payout Statement Summary feature (TASK NEW-1, requested 2026-08-14): a CEO/HR_ACCOUNTING portal trigger that previews base pay + supervisor bonus (+ optional quarterly bonus) for any period and emails one combined summary to an HR review address, additive to (never replacing) the existing per-consultant confirm-gate payroll flow. Design spec: `docs/superpowers/specs/2026-08-26-payout-statement-design.md`.
+- **Verified payment rules at the user's request before finalizing the design**: hourly rate calc and TL supervisor bonus both correct as-is. Found a real doc/code drift on PM bonus — `.claude/context/payroll-rules.md` described a stale `pm_code`-scoped rule; live code (`buildPmBonusMap_`) is a deliberate flat, company-wide calculation shipped in Phase B1. User decided: keep the code, fix the doc (done, committed separately before implementation).
+- **Terminology**: renamed all user-facing "Paystub" text to "Payout Statement" (contractor CRA/legal concern — BLC's consultants are not employees) across both the new feature's own copy and the pre-existing consultant-facing confirm-gate flow. Internal identifiers (`sendPaystubEmail_`, `confirmPaystub`, CSS ids) deliberately left unrenamed.
+- **Implemented via `subagent-driven-development`** on an isolated worktree/branch (`worktree-payout-statement`, `.claude/worktrees/payout-statement`): 8 sequential tasks (extract `computePersonPay_`, add `sendPayoutStatementSummary_`, add `previewPayoutStatement`, wire additive HR summary into `runPayrollRun`/`runBonusRun`, portal endpoint, portal UI button, rename sweep, final review), each independently reviewed and approved before the next started. Full plan: `docs/superpowers/plans/2026-08-26-payout-statement.md`.
+- **Final whole-branch review (Opus) found 4 Important issues, all fixed in one fix wave, re-review clean**: (1) the preview function's quota guard was dead code — missing `HealthMonitor.startExecution()` lifecycle; (2) the new "committed" HR email fired even on a fully-idempotent re-run with nothing actually processed; (3) an all-empty summary didn't say it was empty; (4) the preview email's "not committed yet" closing line could be factually false if HR previewed a period the CEO had already committed — reworded. One missed rename target from the earlier sweep was also caught and fixed in the same pass.
+- 533/533 Jest passing (full repo suite) at completion. Working tree clean, branch never pushed to a remote — no PROD/DEV deploy of any kind this session, per CLAUDE.md R9.
+
+### Files Changed
+- `src/10-payroll/PayrollEngine.gs` (new: `computePersonPay_`, `sendPayoutStatementSummary_` + 3 formatters, `previewPayoutStatement`; modified: `runPayrollRun`, `runBonusRun`; rename sweep)
+- `src/07-portal/Portal.gs` (new: `portal_previewPayoutStatement`), `src/07-portal/PortalData.gs` (new: `canPreviewPayoutStatement` perm)
+- `src/07-portal/PortalView.html` (new toolbar button + handler; rename sweep)
+- `src/08-staff/StaffOnboarding.gs` (rename sweep — contract boilerplate text)
+- `.claude/context/payroll-rules.md` (PM bonus doc fix)
+- New: `tests/payroll-engine-payout-statement.test.js`, `tests/portal-preview-payout-statement.test.js`; extended: `tests/payroll-engine-pm-bonus.test.js`
+
+### Tests Run
+- Jest: 533/533 passing across 35 suites. No live DEV run yet — this is money/aggregation code, so per `PROJECT_MEMORY.md` §3.1 a live DEV run is required in addition to Jest before this is trusted, not a substitute for it.
+
+### Issues Found
+- All 4 Important findings from the final review are already fixed (see Work Completed) — nothing outstanding from this session's own review process.
+
+### Next Recommended Step
+- Live DEV verification (7-item checklist in the plan's Task 8: push to DEV, set `PAYOUT_STATEMENT_REVIEW_RECIPIENT` to a real checkable inbox first, click through as both CEO and HR_ACCOUNTING in fresh Incognito windows, confirm quarterly-bonus section, confirm a real commit still sends exactly one HR email, confirm renamed strings read correctly live).
+- After DEV verification passes: get explicit user approval before merge to `main`, before `git push origin`, and before any `npm run push:prod` — none of those are authorized yet.
+- Optional low-priority follow-ups noted by the final review, not blocking: register `PAYOUT_STATEMENT_REVIEW_RECIPIENT` in `PROJECT_MEMORY.md` §9's Script Properties list; consider a `showLoading()`/dedup guard on the new UI button to avoid a double-click sending two HR emails; consider basic periodId format validation in the UI prompt.
+
+---
+
 ## 2026-08-14 Session (SOP upload workflow — live DEV walkthrough, 4 real bugs found + fixed, merged deploy prerequisites now clear)
 
 ### Work Completed

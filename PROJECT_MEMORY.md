@@ -318,8 +318,9 @@ clasp push --force                        # force push all 78 files
 https://script.google.com/macros/s/AKfycbxAlO81jXcpRnuIuiSoEH6thjh1Ta_9wnrnhgJBT35w7fZrS7XDhT4_CKDDtZ2dohjW/exec
 
 # Script Properties to verify/set in PROD
-CEO_BRIEFING_RECIPIENT = raj.nair@bluelotuscanada.ca
-PORTAL_BASE_URL        = <the /exec URL above>
+CEO_BRIEFING_RECIPIENT           = raj.nair@bluelotuscanada.ca
+PORTAL_BASE_URL                  = <the /exec URL above>
+PAYOUT_STATEMENT_REVIEW_RECIPIENT = HR@bluelotuscanada.ca  # default if unset; set explicitly before trusting DEV/PROD test traffic — see TASK NEW-1
 
 # PROD readiness check (run before any deployment)
 grep -r "whoAmI\|isDev\|rajeshnair\|rajnaircanada\|nairscanada" src/
