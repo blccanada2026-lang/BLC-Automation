@@ -526,20 +526,28 @@ var PayrollEngine = (function () {
 
     try {
       var lines = ['Hi,', '', 'Payout statement summary for period: ' + periodId, ''];
+      var anySectionRendered = false;
 
       if (sections.basePay && sections.basePay.length > 0) {
         lines = lines.concat(formatBasePaySection_(sections.basePay));
+        anySectionRendered = true;
       }
       if (sections.supervisorBonus && sections.supervisorBonus.length > 0) {
         lines = lines.concat(formatSupervisorBonusSection_(sections.supervisorBonus));
+        anySectionRendered = true;
       }
       if (sections.quarterlyBonus && sections.quarterlyBonus.length > 0) {
         lines = lines.concat(formatQuarterlyBonusSection_(sections.quarterlyBonus, meta.quarterPeriodId));
+        anySectionRendered = true;
+      }
+
+      if (!anySectionRendered) {
+        lines.push('No amounts to report for this period.');
       }
 
       lines.push(meta.committed
         ? 'This reflects payroll already committed for this period; confirmation emails have already been sent to affected staff.'
-        : 'This is a review summary only. No payroll has been committed yet.');
+        : 'This is a review summary only — generating it did not commit any payroll.');
       lines.push('');
       lines.push('— BLC Payout System');
 
@@ -690,7 +698,7 @@ var PayrollEngine = (function () {
   // SECTION 10: runPayrollRun — BASE PAY ONLY
   //
   // Calculates design_pay + qc_pay in INR for all staff with
-  // work log hours in the period. Sends paystub email to each.
+  // work log hours in the period. Sends payout statement email to each.
   // Writes PAYROLL_CALCULATED rows with status=PENDING_CONFIRMATION.
   //
   // Run SEPARATELY from runBonusRun().
@@ -835,7 +843,7 @@ var PayrollEngine = (function () {
       }
 
       // ── 6. Send HR summary ────────────────────────────────
-      sendPayoutStatementSummary_(periodId, { basePay: byPerson }, { committed: true, quarterPeriodId: null });
+      if (processed > 0) sendPayoutStatementSummary_(periodId, { basePay: byPerson }, { committed: true, quarterPeriodId: null });
 
       // ── 7. Refresh MART ───────────────────────────────────
       if (processed > 0) refreshMartPayrollSummary_(periodId);
@@ -983,7 +991,7 @@ var PayrollEngine = (function () {
         }
       }
 
-      sendPayoutStatementSummary_(periodId, { supervisorBonus: bySupervisor }, { committed: true, quarterPeriodId: null });
+      if (processed > 0) sendPayoutStatementSummary_(periodId, { supervisorBonus: bySupervisor }, { committed: true, quarterPeriodId: null });
 
       if (processed > 0) refreshMartPayrollSummary_(periodId);
 
@@ -1205,70 +1213,76 @@ var PayrollEngine = (function () {
    */
   function previewPayoutStatement(actorEmail, periodId, options) {
     options = options || {};
+    HealthMonitor.startExecution(MODULE);
 
-    var actor = RBAC.resolveActor(actorEmail);
-    RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_PREVIEW);
-    RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.PAYROLL_PREVIEW);
+    try {
+      var actor = RBAC.resolveActor(actorEmail);
+      RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_PREVIEW);
+      RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.PAYROLL_PREVIEW);
 
-    periodId = periodId || Identifiers.generateCurrentPeriodId();
+      periodId = periodId || Identifiers.generateCurrentPeriodId();
 
-    var staffCache = buildStaffCache_(periodId + '-01');
-    var fxCache    = buildFxRateCache_();
-    var hoursMap   = aggregateHours_(periodId);
+      var staffCache = buildStaffCache_(periodId + '-01');
+      var fxCache    = buildFxRateCache_();
+      var hoursMap   = aggregateHours_(periodId);
 
-    var basePay      = [];
-    var personCodes  = Object.keys(hoursMap);
+      var basePay      = [];
+      var personCodes  = Object.keys(hoursMap);
 
-    for (var i = 0; i < personCodes.length; i++) {
-      if (i % 20 === 0 && HealthMonitor.isApproachingLimit()) {
-        Logger.warn('PAYOUT_STATEMENT_PREVIEW_PARTIAL', {
-          module: MODULE, message: 'Stopping preview — quota limit approaching',
-          processed: i, remaining: personCodes.length - i
-        });
-        break;
+      for (var i = 0; i < personCodes.length; i++) {
+        if (i % 20 === 0 && HealthMonitor.isApproachingLimit()) {
+          Logger.warn('PAYOUT_STATEMENT_PREVIEW_PARTIAL', {
+            module: MODULE, message: 'Stopping preview — quota limit approaching',
+            processed: i, remaining: personCodes.length - i
+          });
+          break;
+        }
+        var personCode = personCodes[i];
+        var staff       = staffCache[personCode];
+        if (!staff) continue;
+        basePay.push(computePersonPay_(staff, personCode, hoursMap[personCode], fxCache));
       }
-      var personCode = personCodes[i];
-      var staff       = staffCache[personCode];
-      if (!staff) continue;
-      basePay.push(computePersonPay_(staff, personCode, hoursMap[personCode], fxCache));
+
+      var tlBonusMap = buildSupervisorBonusMap_(staffCache, hoursMap);
+      var pmBonusMap = buildPmBonusMap_(staffCache, hoursMap);
+      var bonusMap   = {};
+      Object.keys(tlBonusMap).forEach(function (code) { bonusMap[code] = tlBonusMap[code]; });
+      Object.keys(pmBonusMap).forEach(function (code) { bonusMap[code] = pmBonusMap[code]; });
+
+      var supervisorBonus = Object.keys(bonusMap).map(function (code) {
+        var staff = staffCache[code];
+        return { person_code: code, name: staff.name, role: staff.role, bonus_amount: bonusMap[code] };
+      });
+
+      var quarterlyBonus     = null;
+      var quarterPeriodId    = null;
+      if (options.includeQuarterly) {
+        quarterlyBonus  = QuarterlyBonusEngine.previewQuarterlyBonus(actorEmail, options.quarter, options.year);
+        quarterPeriodId = options.quarter + '-' + options.year;
+      }
+
+      sendPayoutStatementSummary_(periodId, {
+        basePay:         basePay,
+        supervisorBonus: supervisorBonus,
+        quarterlyBonus:  quarterlyBonus
+      }, { committed: false, quarterPeriodId: quarterPeriodId });
+
+      Logger.info('PAYOUT_STATEMENT_PREVIEWED', {
+        module: MODULE, message: 'Payout statement previewed', period_id: periodId,
+        base_pay_count: basePay.length, supervisor_bonus_count: supervisorBonus.length
+      });
+
+      return {
+        previewed:     true,
+        period_id:     periodId,
+        by_person:     basePay,
+        by_supervisor: supervisorBonus,
+        quarterly:     quarterlyBonus
+      };
+
+    } finally {
+      HealthMonitor.endExecution();
     }
-
-    var tlBonusMap = buildSupervisorBonusMap_(staffCache, hoursMap);
-    var pmBonusMap = buildPmBonusMap_(staffCache, hoursMap);
-    var bonusMap   = {};
-    Object.keys(tlBonusMap).forEach(function (code) { bonusMap[code] = tlBonusMap[code]; });
-    Object.keys(pmBonusMap).forEach(function (code) { bonusMap[code] = pmBonusMap[code]; });
-
-    var supervisorBonus = Object.keys(bonusMap).map(function (code) {
-      var staff = staffCache[code];
-      return { person_code: code, name: staff.name, role: staff.role, bonus_amount: bonusMap[code] };
-    });
-
-    var quarterlyBonus     = null;
-    var quarterPeriodId    = null;
-    if (options.includeQuarterly) {
-      quarterlyBonus  = QuarterlyBonusEngine.previewQuarterlyBonus(actorEmail, options.quarter, options.year);
-      quarterPeriodId = options.quarter + '-' + options.year;
-    }
-
-    sendPayoutStatementSummary_(periodId, {
-      basePay:         basePay,
-      supervisorBonus: supervisorBonus,
-      quarterlyBonus:  quarterlyBonus
-    }, { committed: false, quarterPeriodId: quarterPeriodId });
-
-    Logger.info('PAYOUT_STATEMENT_PREVIEWED', {
-      module: MODULE, message: 'Payout statement previewed', period_id: periodId,
-      base_pay_count: basePay.length, supervisor_bonus_count: supervisorBonus.length
-    });
-
-    return {
-      previewed:     true,
-      period_id:     periodId,
-      by_person:     basePay,
-      by_supervisor: supervisorBonus,
-      quarterly:     quarterlyBonus
-    };
   }
 
   // ============================================================

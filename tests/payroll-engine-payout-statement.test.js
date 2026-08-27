@@ -159,11 +159,30 @@ describe('PayrollEngine.sendPayoutStatementSummary_() — HR review email builde
     global.PropertiesService.getScriptProperties = function () { return { getProperty: function () { return null; } }; };
 
     PayrollEngine.sendPayoutStatementSummary_('2026-08', { basePay: [basePayRow()] }, { committed: false, quarterPeriodId: null });
-    expect(MailApp.sendEmail.mock.calls[0][0].body).toContain('This is a review summary only. No payroll has been committed yet.');
+    expect(MailApp.sendEmail.mock.calls[0][0].body).toContain('This is a review summary only — generating it did not commit any payroll.');
 
     MailApp.sendEmail.mockClear();
     PayrollEngine.sendPayoutStatementSummary_('2026-08', { basePay: [basePayRow()] }, { committed: true, quarterPeriodId: null });
     expect(MailApp.sendEmail.mock.calls[0][0].body).toContain('This reflects payroll already committed for this period');
+  });
+
+  test('all sections empty/missing — body says so explicitly instead of rendering as just a greeting', () => {
+    global.PropertiesService.getScriptProperties = function () { return { getProperty: function () { return null; } }; };
+
+    PayrollEngine.sendPayoutStatementSummary_('2026-08', {}, { committed: false, quarterPeriodId: null });
+    var body = MailApp.sendEmail.mock.calls[0][0].body;
+    expect(body).toContain('No amounts to report for this period.');
+    expect(body).not.toContain('BASE PAY');
+    expect(body).not.toContain('SUPERVISOR BONUS');
+    expect(body).not.toContain('QUARTERLY BONUS');
+  });
+
+  test('at least one section present — does NOT add the all-empty line', () => {
+    global.PropertiesService.getScriptProperties = function () { return { getProperty: function () { return null; } }; };
+
+    PayrollEngine.sendPayoutStatementSummary_('2026-08', { basePay: [basePayRow()] }, { committed: false, quarterPeriodId: null });
+    var body = MailApp.sendEmail.mock.calls[0][0].body;
+    expect(body).not.toContain('No amounts to report for this period.');
   });
 
   test('MailApp failure is non-fatal — logs a warning, does not throw', () => {
@@ -216,6 +235,27 @@ describe('PayrollEngine.runPayrollRun() — additive HR summary on commit (Task 
 
     expect(MailApp.sendEmail).not.toHaveBeenCalled();
   });
+
+  test('a fully-idempotent re-run (everyone already calculated) does NOT send a second HR summary', () => {
+    seedRoster([{ person_code: 'DES1', role: 'DESIGNER', pay_design: 300, pay_qc: 0, email: 'des1@test.blc.internal' }]);
+    seedWorkLogs([{ event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' }]);
+
+    var first = PayrollEngine.runPayrollRun('test-ceo@test.blc.internal', { periodId: '2026-08' });
+    expect(first.processed).toBe(1);
+    var firstCallCount = MailApp.sendEmail.mock.calls.length; // 1 paystub + 1 HR summary = 2
+
+    MailApp.sendEmail.mockClear();
+
+    var second = PayrollEngine.runPayrollRun('test-ceo@test.blc.internal', { periodId: '2026-08' });
+
+    expect(second.processed).toBe(0); // DES1 already has a PAYROLL_BASE|DES1|2026-08 row — skipped
+    // Second, fully-skipped run sends 1 fewer MailApp call than the first
+    // (no per-consultant paystub AND no HR summary, since nothing was
+    // newly processed).
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(0);
+    expect(firstCallCount).toBe(2);
+  });
 });
 
 describe('PayrollEngine.previewPayoutStatement() — no-write HR/CEO preview trigger', () => {
@@ -253,6 +293,42 @@ describe('PayrollEngine.previewPayoutStatement() — no-write HR/CEO preview tri
     expect(result.quarterly).toBeNull();
     expect(MailApp.sendEmail).toHaveBeenCalledTimes(1);
     expect(mocks.DAL.appendRow).not.toHaveBeenCalled();
+  });
+
+  test('wraps its body in HealthMonitor.startExecution/endExecution, same pattern as runPayrollRun — makes the isApproachingLimit() quota guard live instead of dead code', () => {
+    seedRoster([{ person_code: 'DES1', role: 'DESIGNER', pay_design: 300, pay_qc: 0 }]);
+    seedWorkLogs([{ event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      event_type: 'WORK_LOG_SUBMITTED', hours: 5, work_date: '2026-08-05', period_id: '2026-08' }]);
+    global.HealthMonitor.startExecution  = jest.fn();
+    global.HealthMonitor.endExecution    = jest.fn();
+    global.HealthMonitor.isApproachingLimit = jest.fn(function () { return false; });
+
+    PayrollEngine.previewPayoutStatement('test-ceo@test.blc.internal', '2026-08', { includeQuarterly: false });
+
+    expect(HealthMonitor.startExecution).toHaveBeenCalledWith('PayrollEngine');
+    expect(HealthMonitor.endExecution).toHaveBeenCalledTimes(1);
+    // startExecution must fire BEFORE isApproachingLimit is ever consulted —
+    // otherwise isApproachingLimit() short-circuits to false unconditionally
+    // (no execution window open) and the guard is dead code, per HealthMonitor.gs.
+    var startOrder = HealthMonitor.startExecution.mock.invocationCallOrder[0];
+    var limitCalls  = HealthMonitor.isApproachingLimit.mock.invocationCallOrder;
+    if (limitCalls.length > 0) {
+      expect(startOrder).toBeLessThan(limitCalls[0]);
+    }
+  });
+
+  test('endExecution still fires even if the body throws (finally block, matching runPayrollRun)', () => {
+    seedRoster([{ person_code: 'DES1', role: 'DESIGNER', pay_design: 300, pay_qc: 0 }]);
+    mocks.RBAC.enforcePermission = jest.fn(function () { throw new Error('denied'); });
+    global.HealthMonitor.startExecution = jest.fn();
+    global.HealthMonitor.endExecution   = jest.fn();
+
+    expect(function () {
+      PayrollEngine.previewPayoutStatement('test-hr@test.blc.internal', '2026-08', { includeQuarterly: false });
+    }).toThrow('denied');
+
+    expect(HealthMonitor.startExecution).toHaveBeenCalledTimes(1);
+    expect(HealthMonitor.endExecution).toHaveBeenCalledTimes(1);
   });
 
   test('calls RBAC.enforcePermission and enforceFinancialAccess with PAYROLL_PREVIEW', () => {

@@ -241,4 +241,27 @@ describe('PayrollEngine.runBonusRun() — TL and PM bonuses both written, no dou
     expect(hrCall[0].body).toContain('SUPERVISOR BONUS');
     expect(hrCall[0].body).not.toContain('BASE PAY');
   });
+
+  test('a fully-idempotent re-run (bonus already written) does NOT send a second HR summary', () => {
+    seedRoster([
+      { person_code: 'TL1', role: 'TEAM_LEAD', email: 'tl1@test.blc.internal' },
+      { person_code: 'DES1', role: 'DESIGNER', supervisor_code: 'TL1', email: 'des1@test.blc.internal' }
+    ]);
+    seedWorkLogs('2026-08', [
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 8, work_date: '2026-08-05', period_id: '2026-08' }
+    ]);
+
+    var first = PayrollEngine.runBonusRun('ceo@test.blc.internal', { periodId: '2026-08' });
+    expect(first.processed).toBe(1);
+    var firstCallCount = MailApp.sendEmail.mock.calls.length; // 1 bonus email + 1 HR summary = 2
+
+    MailApp.sendEmail.mockClear();
+
+    var second = PayrollEngine.runBonusRun('ceo@test.blc.internal', { periodId: '2026-08' });
+
+    expect(second.processed).toBe(0); // TL1 already has a PAYROLL_BONUS|TL1|2026-08 row — skipped
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(0);
+    expect(firstCallCount).toBe(2);
+  });
 });
