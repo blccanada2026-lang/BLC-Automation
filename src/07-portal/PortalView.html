@@ -327,10 +327,10 @@
        border-radius:var(--radius); padding:14px 20px; margin-bottom:16px;
        align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
     <div class="paystub-banner-msg">
-      <strong>⚠ Paystub Confirmation Required</strong>
+      <strong>⚠ Payout Statement Confirmation Required</strong>
       Your payroll for <span id="banner-period"></span> is ready. Please review and confirm.
     </div>
-    <button class="btn-success btn-sm" id="btn-confirm-paystub">✓ Confirm My Paystub</button>
+    <button class="btn-success btn-sm" id="btn-confirm-paystub">✓ Confirm My Payout Statement</button>
   </div>
 
   <!-- ══ PREVIEW MODE BANNER ═════════════════════════════════ -->
@@ -354,6 +354,7 @@
       <button class="btn-muted btn-sm" id="btn-sbs-intake" style="display:none">⬆ Process SBS Jobs</button>
       <button class="btn-muted btn-sm" id="btn-preview-as" style="display:none">👁 Preview As</button>
       <button class="btn-muted btn-sm" id="btn-generate-timesheet" style="display:none">📄 Generate Timesheet</button>
+      <button class="btn-muted btn-sm" id="btn-preview-payout-statement" style="display:none">📧 Generate Payout Statement</button>
       <button class="btn-warning btn-sm" id="btn-run-billing" style="display:none">🧾 Run Billing</button>
       <button class="btn-primary btn-sm" id="btn-create-job" style="display:none">+ New Job</button>
     </div>
@@ -440,6 +441,7 @@
         <button class="btn-muted btn-sm" id="btn-send-briefing" style="display:none">📧 Send Daily Briefing</button>
         <button class="btn-muted btn-sm" id="btn-send-feedback" style="display:none">✉ Send Feedback Requests</button>
         <button class="btn-muted btn-sm" id="btn-send-ratings" style="display:none">📋 Send Rating Requests</button>
+        <button class="btn-muted btn-sm" id="btn-run-payroll" style="display:none">💵 Run Payroll</button>
         <button class="btn-muted btn-sm" id="btn-run-bonus" style="display:none">💰 Run Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-quarterly-bonus" style="display:none">🏆 Run Quarterly Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-annual-bonus" style="display:none">🎁 Run Annual Bonus</button>
@@ -1393,7 +1395,9 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-sbs-intake').addEventListener('click',        processSbsIntake);
   document.getElementById('btn-run-billing').addEventListener('click',       runBillingRun);
   document.getElementById('btn-generate-timesheet').addEventListener('click', openGenerateTimesheetModal);
+  document.getElementById('btn-preview-payout-statement').addEventListener('click', previewPayoutStatement);
   document.getElementById('btn-submit-generate-timesheet').addEventListener('click', submitGenerateTimesheet);
+  document.getElementById('btn-run-payroll').addEventListener('click',       runPayrollRun);
   document.getElementById('btn-run-bonus').addEventListener('click',         runBonusRun);
   document.getElementById('btn-run-quarterly-bonus').addEventListener('click', runQuarterlyBonus);
   document.getElementById('btn-run-annual-bonus').addEventListener('click',    runAnnualBonus);
@@ -1512,12 +1516,14 @@ function onDataLoaded(jsonStr) {
   // canGenerateTimesheet but is not a leader (isLeader = CEO/PM/TEAM_LEAD),
   // so this must be reachable from the always-evaluated main toolbar.
   if (_data.perms.canGenerateTimesheet) document.getElementById('btn-generate-timesheet').style.display = 'inline-block';
+  if (_data.perms.canPreviewPayoutStatement) document.getElementById('btn-preview-payout-statement').style.display = 'inline-block';
 
   // Leader dashboard payroll action buttons
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-briefing').style.display  = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-feedback').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-ratings').style.display    = 'inline-block';
   if (_data.perms.canRunBilling)      document.getElementById('btn-run-billing').style.display            = 'inline-block';
+  if (_data.perms.canRunPayroll)     document.getElementById('btn-run-payroll').style.display            = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-bonus').style.display              = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-quarterly-bonus').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-annual-bonus').style.display      = 'inline-block';
@@ -1790,7 +1796,7 @@ function renderPortal_(data) {
   var allBtns = ['btn-create-job','btn-sbs-intake','btn-process-queue','btn-clients',
                  'btn-leader-dash','btn-staff-panel',
                  'btn-send-briefing','btn-send-feedback','btn-send-ratings','btn-run-billing',
-                 'btn-generate-timesheet','btn-run-bonus',
+                 'btn-generate-timesheet','btn-run-payroll','btn-run-bonus',
                  'btn-run-quarterly-bonus','btn-run-annual-bonus','btn-rebuild-views',
                  'btn-refresh-dashboard',
                  'btn-approve-payroll','lbl-test-mode'];
@@ -1807,6 +1813,7 @@ function renderPortal_(data) {
   if (perms.canRunPayroll)   document.getElementById('btn-process-queue').style.display = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-clients').style.display       = 'inline-block';
   if (perms.canGenerateTimesheet) document.getElementById('btn-generate-timesheet').style.display = 'inline-block';
+  if (perms.canPreviewPayoutStatement) document.getElementById('btn-preview-payout-statement').style.display = 'inline-block';
   if (perms.isLeader)        document.getElementById('btn-leader-dash').style.display   = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-staff-panel').style.display   = 'inline-block';
   if (perms.canRunBilling)   document.getElementById('btn-run-billing').style.display         = 'inline-block';
@@ -4396,7 +4403,7 @@ function confirmPaystub() {
       showLoading(false);
       try {
         var result = JSON.parse(json);
-        showToast(result.message || 'Paystub confirmed.', result.ok ? 'success' : 'error');
+        showToast(result.message || 'Payout statement confirmed.', result.ok ? 'success' : 'error');
         if (result.ok) {
           document.getElementById('paystub-banner').style.display = 'none';
           if (_data && _data.perms && _data.perms.isLeader) loadLeaderDashboard();
@@ -4491,6 +4498,35 @@ function submitGenerateTimesheet() {
     .portal_generateTimesheetPdf(clientCode, startDate, endDate);
 }
 
+function previewPayoutStatement() {
+  var periodId = window.prompt('Period to preview (YYYY-MM), blank = current period:', '');
+  if (periodId === null) return; // user cancelled
+
+  var includeQuarterly = false;
+  var quarter = '', year = '';
+  var now = new Date();
+  var monthIndex = periodId ? (parseInt(periodId.split('-')[1], 10) - 1) : now.getMonth();
+  var yearGuess   = periodId ? periodId.split('-')[0] : String(now.getFullYear());
+  var quarterGuess = 'Q' + (Math.floor(monthIndex / 3) + 1);
+
+  if (window.confirm('Also include quarterly bonus preview for ' + quarterGuess + ' ' + yearGuess + '?')) {
+    includeQuarterly = true;
+    quarter = quarterGuess;
+    year    = yearGuess;
+  }
+
+  TOKEN_RUN
+    .withSuccessHandler(function (json) {
+      var result = JSON.parse(json);
+      showToast('Payout statement preview sent for ' + result.period_id + ' — ' +
+        result.by_person.length + ' base pay, ' + result.by_supervisor.length + ' bonus rows.', 'success');
+    })
+    .withFailureHandler(function (err) {
+      showToast('Could not generate payout statement preview: ' + err.message, 'error');
+    })
+    .portal_previewPayoutStatement(periodId, includeQuarterly, quarter, year);
+}
+
 function renderTimesheetResults(results) {
   var container = document.getElementById('gts-results');
   clearResults('gts-results');
@@ -4509,6 +4545,25 @@ function renderTimesheetResults(results) {
     list.appendChild(li);
   });
   container.appendChild(list);
+}
+
+function runPayrollRun() {
+  if (!confirm('Run base pay calculations for the current period?\n\nThis will calculate design + QC pay for all staff and send each a payout statement email to confirm.')) return;
+  showLoading(true);
+  TOKEN_RUN
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      try {
+        var result = JSON.parse(json);
+        showToast('Payroll run complete: ' + result.processed + ' staff processed.', 'success');
+        loadLeaderDashboard();
+      } catch(e) { showToast('Payroll run complete.', 'success'); }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Payroll run error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_runPayrollRun('');
 }
 
 function runBonusRun() {

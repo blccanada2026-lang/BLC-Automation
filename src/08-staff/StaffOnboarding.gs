@@ -430,7 +430,7 @@ var StaffOnboarding = (function () {
     addHeading('3. PAYMENT SCHEDULE AND METHOD', H2);
     addPara('3.1  Payments shall be made within fifteen (15) calendar days following the end of each calendar month.');
     addPara('3.2  The Company shall process payment after the Contractor has reviewed and confirmed ' +
-            'their monthly paystub in the BLC Portal.');
+            'their monthly payout statement in the BLC Portal.');
     addPara('3.3  Payments shall be made via international bank transfer to the Contractor\'s designated account ' +
             'as recorded in the Company\'s payment system.');
     addPara('3.4  The Company shall use commercially reasonable efforts to process transfers promptly via OFX, ' +

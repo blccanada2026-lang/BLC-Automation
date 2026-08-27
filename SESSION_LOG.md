@@ -5,6 +5,38 @@
 
 ---
 
+## 2026-08-26 → 2026-08-27 Session (Payout Statement Summary — designed, implemented via subagent-driven-development, live DEV verified)
+
+### Work Completed
+- **Brainstormed, designed, and implemented** the Payout Statement Summary feature (TASK NEW-1, requested 2026-08-14): a CEO/HR_ACCOUNTING portal trigger that previews base pay + supervisor bonus (+ optional quarterly bonus) and emails one combined summary to an HR review address, additive to the existing per-consultant confirm-gate payroll flow. Spec: `docs/superpowers/specs/2026-08-26-payout-statement-design.md`. Plan (8 tasks via `subagent-driven-development`, all reviewed clean): `docs/superpowers/plans/2026-08-26-payout-statement.md`.
+- **Verified payment rules before finalizing the design** (user request): hourly rate + TL bonus correct as-is; found `.claude/context/payroll-rules.md` stale on PM bonus (described an old `pm_code`-scoped rule; live code is a deliberate flat, company-wide calc from Phase B1) — kept the code, fixed the doc.
+- **Renamed** all user-facing "Paystub" text to "Payout Statement" (contractor CRA/legal concern) across the new feature and the pre-existing consultant confirm-gate flow; internal identifiers left unrenamed.
+- **Final whole-branch review (Opus) found 4 Important issues, fixed in one wave, re-review clean**: dead quota-guard lifecycle in the preview function; "committed" HR email firing on a fully-idempotent re-run; an all-empty summary not saying so; a preview closing line that could be factually false — all fixed.
+- **Same-session follow-on**: added a "💵 Run Payroll" CEO-only portal button (base pay previously had no portal trigger at all), mirroring the existing "Run Bonus" button exactly, no RBAC change.
+- **Live DEV verification, all 5 checklist items confirmed**: Run Payroll (1 ledger row, correct HR summary), Run Bonus (correct HR summary), HR_ACCOUNTING access (header + button visibility both correct), quarterly bonus opt-in section, renamed strings live.
+- **Real incident found and fixed as a side effect, unrelated to this feature**: DEV was running source older than `main`, missing all 4 fixes from the 2026-08-14 session — discovered via `clasp pull` + diff before pushing (cause unknown, no worktree showed activity since 2026-08-14); this feature's `push:dev` also restored those fixes.
+- **Real test-infra gap found**: `RBAC.gs`'s `getDevTestActors_()` defines a synthetic HR_ACCOUNTING actor (`test-hr@test.blc.internal`/`THR`) that `seedTestStaff()` never seeds a roster row for — worked around with an ephemeral, uncommitted `livetest_seedThr()` script; `seedTestStaff()` should get a proper `THR` entry as a follow-up.
+- 535/535 Jest passing at completion. Branch never pushed to a remote, no merge, no PROD deploy — DEV push only, per CLAUDE.md R9.
+
+### Files Changed
+- `src/10-payroll/PayrollEngine.gs` (new: `computePersonPay_`, `sendPayoutStatementSummary_` + formatters, `previewPayoutStatement`; modified: `runPayrollRun`, `runBonusRun`; rename sweep)
+- `src/07-portal/Portal.gs` (new: `portal_previewPayoutStatement`, `portal_runPayrollRun`), `src/07-portal/PortalData.gs` (new: `canPreviewPayoutStatement` perm)
+- `src/07-portal/PortalView.html` (new buttons + handlers; rename sweep), `src/08-staff/StaffOnboarding.gs` (rename sweep)
+- `.claude/context/payroll-rules.md` (PM bonus doc fix)
+- New: `tests/payroll-engine-payout-statement.test.js`, `tests/portal-preview-payout-statement.test.js`, `tests/portal-run-payroll-run.test.js`; extended: `tests/payroll-engine-pm-bonus.test.js`
+
+### Tests Run
+- Jest: 535/535 passing across 36 suites, plus live DEV verification (see Work Completed) — both required per `PROJECT_MEMORY.md` §3.1 for money/aggregation code, neither a substitute for the other.
+
+### Issues Found
+- All findings from the final review and DEV verification are already fixed or explicitly deferred (see Work Completed) — nothing outstanding from this session's own process.
+
+### Next Recommended Step
+- Get explicit user approval before merge to `main`, before `git push origin`, and before any `npm run push:prod` — none of those are authorized yet.
+- Follow-ups, not blocking: add a proper `THR`/HR_ACCOUNTING entry to `seedTestStaff()`; register `PAYOUT_STATEMENT_REVIEW_RECIPIENT` in `PROJECT_MEMORY.md` §9; investigate what caused DEV's 2026-08-14 fixes to regress (root cause still unknown).
+
+---
+
 ## 2026-08-14 Session (SOP upload workflow — live DEV walkthrough, 4 real bugs found + fixed, merged deploy prerequisites now clear)
 
 ### Work Completed
