@@ -13,7 +13,7 @@
 // ║  runPayrollRun(actorEmail, options)                     ║
 // ║    → Base pay (design + QC) in INR for all staff        ║
 // ║    → Converts CAD/USD rates via DIM_FX_RATES at runtime ║
-// ║    → Sends paystub email to each staff member           ║
+// ║    → Sends payout statement email to each staff member           ║
 // ║    → Writes PAYROLL_CALCULATED rows, status=PENDING     ║
 // ║                                                         ║
 // ║  runBonusRun(actorEmail, options)                       ║
@@ -22,7 +22,7 @@
 // ║    → PM: Σ(design_hours of all mapped staff, excl. PM)  ║
 // ║    → Writes PAYROLL_BONUS_SUPERVISOR rows                ║
 // ║                                                         ║
-// ║  Paystub approval workflow:                             ║
+// ║  Payout statement approval workflow:                             ║
 // ║    1. PayrollEngine writes PAYROLL_CALCULATED            ║
 // ║    2. Email sent to staff                               ║
 // ║    3. Staff confirms via portal → PAYROLL_CONFIRMED      ║
@@ -402,9 +402,9 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
-  // SECTION 7: PAYSTUB EMAIL
+  // SECTION 7: PAYOUT STATEMENT EMAIL
   //
-  // Sends a paystub summary to the staff member via MailApp.
+  // Sends a payout statement summary to the staff member via MailApp.
   // Non-fatal — if email fails, payroll row is still written.
   // ============================================================
 
@@ -412,20 +412,20 @@ var PayrollEngine = (function () {
     if (!staff.email) {
       Logger.warn('PAYROLL_NO_EMAIL', {
         module:      MODULE,
-        message:     'No email for staff member — paystub not sent',
+        message:     'No email for staff member — payout statement not sent',
         person_code: personCode
       });
       return;
     }
 
     try {
-      var subject = 'BLC Paystub — ' + periodId + ' (Action Required)';
+      var subject = 'BLC Payout Statement — ' + periodId + ' (Action Required)';
       var body = [
         'Hi ' + staff.name + ',',
         '',
         'Your payroll has been calculated for period: ' + periodId,
         '',
-        'PAYSTUB SUMMARY',
+        'PAYOUT STATEMENT SUMMARY',
         '───────────────────────────────',
         'Period:          ' + periodId,
         'Design Hours:    ' + (row.design_hours || 0) + ' hrs',
@@ -436,7 +436,7 @@ var PayrollEngine = (function () {
         '───────────────────────────────',
         '',
         'ACTION REQUIRED:',
-        'Please review and confirm your paystub by logging in to the BLC Portal.',
+        'Please review and confirm your payout statement by logging in to the BLC Portal.',
         'Payroll will not be processed until you confirm.',
         '',
         'If you have any questions, contact your PM or CEO.',
@@ -452,7 +452,7 @@ var PayrollEngine = (function () {
 
       Logger.info('PAYROLL_EMAIL_SENT', {
         module:      MODULE,
-        message:     'Paystub email sent',
+        message:     'Payout statement email sent',
         person_code: personCode,
         email:       staff.email,
         period_id:   periodId
@@ -460,7 +460,7 @@ var PayrollEngine = (function () {
     } catch (emailErr) {
       Logger.warn('PAYROLL_EMAIL_FAILED', {
         module:      MODULE,
-        message:     'Paystub email failed — payroll row still written',
+        message:     'Payout statement email failed — payroll row still written',
         person_code: personCode,
         error:       emailErr.message
       });
@@ -488,7 +488,7 @@ var PayrollEngine = (function () {
         '───────────────────────────────',
         '',
         'ACTION REQUIRED:',
-        'Please confirm your paystub in the BLC Portal.',
+        'Please confirm your payout statement in the BLC Portal.',
         '',
         '— BLC Payroll System'
       ].join('\n');
@@ -1004,7 +1004,7 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
-  // SECTION 12: confirmPaystub — Staff confirms their paystub
+  // SECTION 12: confirmPaystub — Staff confirms their payout statement
   //
   // Called from the portal by the staff member themselves.
   // Writes a PAYROLL_CONFIRMED event row.
@@ -1040,7 +1040,7 @@ var PayrollEngine = (function () {
     }
 
     if (hasEvent_(idempotencyKey, periodId)) {
-      return { ok: true, message: 'Paystub already confirmed for ' + periodId + '.' };
+      return { ok: true, message: 'Payout statement already confirmed for ' + periodId + '.' };
     }
 
     var confirmRow = {
@@ -1073,7 +1073,7 @@ var PayrollEngine = (function () {
       module: MODULE, person_code: personCode, period_id: periodId
     });
 
-    return { ok: true, message: 'Paystub confirmed for ' + periodId + '. Thank you!' };
+    return { ok: true, message: 'Payout statement confirmed for ' + periodId + '. Thank you!' };
   }
 
   // ============================================================
@@ -1277,7 +1277,7 @@ var PayrollEngine = (function () {
   return {
     /**
      * Run base pay (design + QC) for all staff in the period.
-     * CEO only. Idempotent. Sends paystub emails.
+     * CEO only. Idempotent. Sends payout statement emails.
      * Run SEPARATELY from runBonusRun().
      */
     runPayrollRun: runPayrollRun,
@@ -1289,14 +1289,14 @@ var PayrollEngine = (function () {
     runBonusRun: runBonusRun,
 
     /**
-     * Staff member confirms their own paystub for the period.
+     * Staff member confirms their own payout statement for the period.
      * Called from portal by the staff member.
      */
     confirmPaystub: confirmPaystub,
 
     /**
      * CEO final approval — marks all CONFIRMED records as PROCESSED.
-     * Only processes staff who have confirmed their paystub.
+     * Only processes staff who have confirmed their payout statement.
      */
     approveAllPayroll: approveAllPayroll,
 

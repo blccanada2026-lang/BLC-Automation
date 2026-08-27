@@ -327,10 +327,10 @@
        border-radius:var(--radius); padding:14px 20px; margin-bottom:16px;
        align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
     <div class="paystub-banner-msg">
-      <strong>⚠ Paystub Confirmation Required</strong>
+      <strong>⚠ Payout Statement Confirmation Required</strong>
       Your payroll for <span id="banner-period"></span> is ready. Please review and confirm.
     </div>
-    <button class="btn-success btn-sm" id="btn-confirm-paystub">✓ Confirm My Paystub</button>
+    <button class="btn-success btn-sm" id="btn-confirm-paystub">✓ Confirm My Payout Statement</button>
   </div>
 
   <!-- ══ PREVIEW MODE BANNER ═════════════════════════════════ -->
@@ -4400,7 +4400,7 @@ function confirmPaystub() {
       showLoading(false);
       try {
         var result = JSON.parse(json);
-        showToast(result.message || 'Paystub confirmed.', result.ok ? 'success' : 'error');
+        showToast(result.message || 'Payout statement confirmed.', result.ok ? 'success' : 'error');
         if (result.ok) {
           document.getElementById('paystub-banner').style.display = 'none';
           if (_data && _data.perms && _data.perms.isLeader) loadLeaderDashboard();
