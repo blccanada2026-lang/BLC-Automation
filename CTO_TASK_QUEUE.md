@@ -33,14 +33,18 @@ lacks, that silently deletes it from DEV.
 
 ## Session State (last updated: end of turn, 2026-08-27)
 
-**Payout Statement Summary (TASK NEW-1) — implementation + live DEV
-verification both complete, on branch `worktree-payout-statement`, NOT
-merged/pushed/deployed.** Full detail in that task's entry below (Wave
-Backlog section) and in `docs/superpowers/plans/2026-08-26-payout-statement.md`'s
-SDD ledger. 8 tasks + 1 final-review fix wave + 1 same-session follow-on
-(Run Payroll button), all reviewed clean, 535/535 Jest passing, all 5 DEV
-checklist items confirmed live 2026-08-27. **Next step is user-driven:
-explicit approval to merge/deploy per CLAUDE.md R9** — not yet given.
+**Payout Statement Summary (TASK NEW-1) — implementation, live DEV
+verification, and merge to local `main` all complete (commit `4d14ac9`).**
+NOT pushed to origin, NOT deployed to PROD. Full detail in that task's
+entry below (Wave Backlog section) and in
+`docs/superpowers/plans/2026-08-26-payout-statement.md`'s SDD ledger. 8
+tasks + 1 final-review fix wave + 1 same-session follow-on (Run Payroll
+button), all reviewed clean, 535/535 Jest passing, all 5 DEV checklist
+items confirmed live 2026-08-27. **Next step is user-driven: explicit
+approval to `git push origin main` and `npm run push:prod`** per CLAUDE.md
+R9 — not yet given. CTO PROD-readiness assessment delivered same session
+(see chat — not yet copied into a durable doc; do that if this thread is
+picked up fresh before PROD deploy happens).
 
 Prior session (2026-08-14, SOP upload workflow + QC findings-picker live
 DEV walkthrough) is fully closed — durable outcomes already in
@@ -79,13 +83,14 @@ Source: full CTO architecture/performance/tech-debt assessment,
 - **TASK W5-1** | Design content/tagging model | P4 | Sequenced after Wave 2 produces real error-classification data. Not started.
 
 ### EPIC: New — Portal Payout Statement Generation for CEO/HR Review
-- **TASK NEW-1** | Build a portal-triggered Payout Statement generation feature for CEO + HR admin, routing output to `HR@bluelotuscanada.ca` for review before team distribution | **LIVE DEV VERIFICATION COMPLETE 2026-08-27, awaiting explicit merge/PROD approval** | Requested 2026-08-14, brainstormed and designed 2026-08-26 (design questions (a)-(d) all resolved — see spec), implemented via subagent-driven-development on branch `worktree-payout-statement` (`.claude/worktrees/payout-statement`), live-verified in DEV 2026-08-27.
+- **TASK NEW-1** | Build a portal-triggered Payout Statement generation feature for CEO + HR admin, routing output to `HR@bluelotuscanada.ca` for review before team distribution | **MERGED TO MAIN LOCALLY 2026-08-27 (commit `4d14ac9`), awaiting explicit PROD approval** | Requested 2026-08-14, brainstormed and designed 2026-08-26 (design questions (a)-(d) all resolved — see spec), implemented via subagent-driven-development on branch `worktree-payout-statement` (`.claude/worktrees/payout-statement`), live-verified in DEV 2026-08-27, merged to local `main` same day (clean merge, no conflicts, 535/535 passing on the merged result — worktree left on disk post-merge, harness's own EnterWorktree tracking had already ended so it wasn't auto-removed, harmless to leave or delete manually).
   **Design spec:** `docs/superpowers/specs/2026-08-26-payout-statement-design.md`. **Implementation plan:** `docs/superpowers/plans/2026-08-26-payout-statement.md` (8 tasks, all individually reviewed clean, plus a final whole-branch review that found and fixed 4 Important issues — see that plan's Global Constraints and the SDD ledger at `.claude/worktrees/payout-statement/.superpowers/sdd/2026-08-26-payout-statement/progress.md` for full detail).
   **What shipped:** `PayrollEngine.previewPayoutStatement(actorEmail, periodId, options)` — a new no-write CEO/HR_ACCOUNTING preview trigger (reuses the existing `PAYROLL_PREVIEW`/`PAYROLL_VIEW` RBAC actions, no matrix change) that computes base pay + supervisor bonus (+ optional quarterly bonus) and emails one combined summary to the `PAYOUT_STATEMENT_REVIEW_RECIPIENT` Script Property (default `HR@bluelotuscanada.ca`). Additive only — the existing per-consultant confirm-gate email flow (`sendPaystubEmail_`/`confirmPaystub`) is completely unchanged in mechanism; `runPayrollRun`/`runBonusRun` now also send the same HR summary automatically on a real commit (guarded to only fire when something was actually processed, not on an idempotent re-run). New portal button "📧 Generate Payout Statement" (CEO/HR_ACCOUNTING only), plain-text batch email (no PDF), manual `prompt()`-based period entry (no scheduled trigger). Also renamed all pre-existing user-facing "Paystub" text to "Payout Statement" across `PayrollEngine.gs`/`PortalView.html`/`StaffOnboarding.gs` (contractor CRA/legal terminology — BLC's consultants are not employees) — internal identifiers (`sendPaystubEmail_`, `confirmPaystub`, CSS ids) deliberately left unrenamed. Also fixed a stale `.claude/context/payroll-rules.md` doc/code drift found during design: PM bonus is a flat, company-wide calculation (not `pm_code`-scoped as the doc incorrectly said) — confirmed as the correct, already-shipped Phase B1 behavior; kept as-is, doc corrected.
   **Follow-on, same session, same branch:** added a "💵 Run Payroll" portal button for CEO (base pay had no portal trigger at all before — Apps Script editor only), mirroring the existing "Run Bonus" button exactly. CEO-only, reuses the existing `canRunPayroll` flag, no RBAC change. Commit `dba5905`.
   **Tests:** 535/535 Jest passing (full repo suite), including new coverage for the double-rounding contract, RBAC gating, additive-not-replacing behavior, and the idempotent-re-run guard added during final review.
   **Live DEV verification — all 5 checklist items confirmed 2026-08-27:** (1) Run Payroll (CEO) — 1 ledger row written, committed HR summary arrived correctly; (2) Run Bonus (CEO) — bonus emails + committed HR summary arrived; (3) HR_ACCOUNTING access — header/button visibility all correct; (4) quarterly bonus opt-in section rendered correctly, separate from totals; (5) renamed strings confirmed live across every email seen. **Real incident found and fixed along the way, unrelated to this feature**: DEV was running source code older than `main`, missing all 4 fixes from the 2026-08-14 session (cause unknown, no worktree showed post-2026-08-14 activity) — the `npm run push:dev` for this feature also restored those fixes as a side effect; confirmed via `clasp pull` + diff against `main` before pushing. **Real gap found in test infra**: `RBAC.gs`'s `getDevTestActors_()` already defines a synthetic HR_ACCOUNTING test identity (`test-hr@test.blc.internal` → `THR`), but `seedTestStaff()` never seeds a matching `DIM_STAFF_ROSTER` row for it, so the `?pt=` link path couldn't resolve it — worked around with an ephemeral one-off `livetest_seedThr()` script (not committed, wiped by next `push:dev`); `seedTestStaff()` should get a proper `THR` entry as a follow-up so this doesn't need re-solving next time.
-  **NOT merged to main, NOT pushed to origin, NOT deployed to PROD** — needs explicit user approval per CLAUDE.md R9.
+  **Merged to local `main`; NOT pushed to origin, NOT deployed to PROD** — needs explicit user approval per CLAUDE.md R9. Local `main` is currently 2 commits ahead of `origin/main` (this feature's merge, plus an earlier design-spec commit from the same session) — `git push origin main` needed before `npm run push:prod` per R6's pre-deploy checklist, itself requiring explicit go-ahead first.
+  **Post-merge finding, not blocking:** a bare `npx jest` from the repo root double-counts/fails on unrelated content — `package.json`'s `testPathIgnorePatterns` excludes `.worktrees/` but not `.claude/worktrees/` (a second, harness-native worktree location this session used) or `code-review-graph/` (a local, gitignored tool with incompatible Vitest test files). Confirmed the actual suite is clean (536 → 535 real tests, 36 suites) once scoped past those two paths; worth adding both to the ignore list as a quick follow-up so `npm test` is reliable by default again.
 
 ### Parallel Track: BLC Growth Platform
 - **TASK GP-1** | Standalone project decision + architecture (own future CTO assessment, not folded into this backlog) | P4 | Not started, not scoped.

@@ -16,7 +16,8 @@
 - **Live DEV verification, all 5 checklist items confirmed**: Run Payroll (1 ledger row, correct HR summary), Run Bonus (correct HR summary), HR_ACCOUNTING access (header + button visibility both correct), quarterly bonus opt-in section, renamed strings live.
 - **Real incident found and fixed as a side effect, unrelated to this feature**: DEV was running source older than `main`, missing all 4 fixes from the 2026-08-14 session — discovered via `clasp pull` + diff before pushing (cause unknown, no worktree showed activity since 2026-08-14); this feature's `push:dev` also restored those fixes.
 - **Real test-infra gap found**: `RBAC.gs`'s `getDevTestActors_()` defines a synthetic HR_ACCOUNTING actor (`test-hr@test.blc.internal`/`THR`) that `seedTestStaff()` never seeds a roster row for — worked around with an ephemeral, uncommitted `livetest_seedThr()` script; `seedTestStaff()` should get a proper `THR` entry as a follow-up.
-- 535/535 Jest passing at completion. Branch never pushed to a remote, no merge, no PROD deploy — DEV push only, per CLAUDE.md R9.
+- **Merged to local `main`** (commit `4d14ac9`), clean merge no conflicts, 535/535 passing on the merged result (verified after discovering a pre-existing, unrelated jest-scoping gap — see Other Still-Open Items). Never pushed to origin, no PROD deploy — per CLAUDE.md R9.
+- **Delivered a full CTO PROD-readiness assessment** for this feature, given it's a live system with an active team — see `docs/PROD_READINESS_PAYOUT_STATEMENT.md`.
 
 ### Files Changed
 - `src/10-payroll/PayrollEngine.gs` (new: `computePersonPay_`, `sendPayoutStatementSummary_` + formatters, `previewPayoutStatement`; modified: `runPayrollRun`, `runBonusRun`; rename sweep)
@@ -32,8 +33,8 @@
 - All findings from the final review and DEV verification are already fixed or explicitly deferred (see Work Completed) — nothing outstanding from this session's own process.
 
 ### Next Recommended Step
-- Get explicit user approval before merge to `main`, before `git push origin`, and before any `npm run push:prod` — none of those are authorized yet.
-- Follow-ups, not blocking: add a proper `THR`/HR_ACCOUNTING entry to `seedTestStaff()`; register `PAYOUT_STATEMENT_REVIEW_RECIPIENT` in `PROJECT_MEMORY.md` §9; investigate what caused DEV's 2026-08-14 fixes to regress (root cause still unknown).
+- Read `docs/PROD_READINESS_PAYOUT_STATEMENT.md` before deploying — get explicit user approval before `git push origin main` and before `npm run push:prod`; neither is authorized yet.
+- Follow-ups, not blocking: add a proper `THR`/HR_ACCOUNTING entry to `seedTestStaff()`; register `PAYOUT_STATEMENT_REVIEW_RECIPIENT` in `PROJECT_MEMORY.md` §9 (done); investigate what caused DEV's 2026-08-14 fixes to regress (root cause still unknown); add `.claude/worktrees/` and `code-review-graph/` to `package.json`'s jest `testPathIgnorePatterns`.
 
 ---
 
