@@ -750,6 +750,23 @@ function portal_runBillingRun(ptoken, periodId) {
   return JSON.stringify(result);
 }
 
+// portal_runPayrollRun — CEO triggers base pay run
+// ============================================================
+
+/**
+ * Triggers the base pay (design + QC) run for the given period.
+ * CEO only.
+ *
+ * @param {string} periodId  e.g. '2026-04' (pass '' for current period)
+ * @returns {string}  JSON run result
+ */
+function portal_runPayrollRun(ptoken, periodId) {
+  var email  = PortalAuth.resolveEmail(ptoken);
+  var result = PayrollEngine.runPayrollRun(email, { periodId: periodId || '' });
+  return JSON.stringify(result);
+}
+
+// ============================================================
 // portal_runBonusRun — CEO triggers supervisor bonus run
 // ============================================================
 

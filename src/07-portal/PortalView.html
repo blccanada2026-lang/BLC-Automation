@@ -441,6 +441,7 @@
         <button class="btn-muted btn-sm" id="btn-send-briefing" style="display:none">📧 Send Daily Briefing</button>
         <button class="btn-muted btn-sm" id="btn-send-feedback" style="display:none">✉ Send Feedback Requests</button>
         <button class="btn-muted btn-sm" id="btn-send-ratings" style="display:none">📋 Send Rating Requests</button>
+        <button class="btn-muted btn-sm" id="btn-run-payroll" style="display:none">💵 Run Payroll</button>
         <button class="btn-muted btn-sm" id="btn-run-bonus" style="display:none">💰 Run Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-quarterly-bonus" style="display:none">🏆 Run Quarterly Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-annual-bonus" style="display:none">🎁 Run Annual Bonus</button>
@@ -1396,6 +1397,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-generate-timesheet').addEventListener('click', openGenerateTimesheetModal);
   document.getElementById('btn-preview-payout-statement').addEventListener('click', previewPayoutStatement);
   document.getElementById('btn-submit-generate-timesheet').addEventListener('click', submitGenerateTimesheet);
+  document.getElementById('btn-run-payroll').addEventListener('click',       runPayrollRun);
   document.getElementById('btn-run-bonus').addEventListener('click',         runBonusRun);
   document.getElementById('btn-run-quarterly-bonus').addEventListener('click', runQuarterlyBonus);
   document.getElementById('btn-run-annual-bonus').addEventListener('click',    runAnnualBonus);
@@ -1521,6 +1523,7 @@ function onDataLoaded(jsonStr) {
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-feedback').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-send-ratings').style.display    = 'inline-block';
   if (_data.perms.canRunBilling)      document.getElementById('btn-run-billing').style.display            = 'inline-block';
+  if (_data.perms.canRunPayroll)     document.getElementById('btn-run-payroll').style.display            = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-bonus').style.display              = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-quarterly-bonus').style.display   = 'inline-block';
   if (_data.perms.canRunPayroll)     document.getElementById('btn-run-annual-bonus').style.display      = 'inline-block';
@@ -1793,7 +1796,7 @@ function renderPortal_(data) {
   var allBtns = ['btn-create-job','btn-sbs-intake','btn-process-queue','btn-clients',
                  'btn-leader-dash','btn-staff-panel',
                  'btn-send-briefing','btn-send-feedback','btn-send-ratings','btn-run-billing',
-                 'btn-generate-timesheet','btn-run-bonus',
+                 'btn-generate-timesheet','btn-run-payroll','btn-run-bonus',
                  'btn-run-quarterly-bonus','btn-run-annual-bonus','btn-rebuild-views',
                  'btn-refresh-dashboard',
                  'btn-approve-payroll','lbl-test-mode'];
@@ -4542,6 +4545,25 @@ function renderTimesheetResults(results) {
     list.appendChild(li);
   });
   container.appendChild(list);
+}
+
+function runPayrollRun() {
+  if (!confirm('Run base pay calculations for the current period?\n\nThis will calculate design + QC pay for all staff and send each a payout statement email to confirm.')) return;
+  showLoading(true);
+  TOKEN_RUN
+    .withSuccessHandler(function(json) {
+      showLoading(false);
+      try {
+        var result = JSON.parse(json);
+        showToast('Payroll run complete: ' + result.processed + ' staff processed.', 'success');
+        loadLeaderDashboard();
+      } catch(e) { showToast('Payroll run complete.', 'success'); }
+    })
+    .withFailureHandler(function(err) {
+      showLoading(false);
+      showToast('Payroll run error: ' + (err.message || String(err)), 'error');
+    })
+    .portal_runPayrollRun('');
 }
 
 function runBonusRun() {
