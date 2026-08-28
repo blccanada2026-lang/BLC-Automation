@@ -31,20 +31,29 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-08-27)
+## Session State (last updated: end of turn, 2026-08-28)
 
 **Payout Statement Summary (TASK NEW-1) — implementation, live DEV
-verification, and merge to local `main` all complete (commit `4d14ac9`).**
-NOT pushed to origin, NOT deployed to PROD. Full detail in that task's
-entry below (Wave Backlog section) and in
+verification, merge to local `main`, AND push to `origin/main` all
+complete.** Local `main` and `origin/main` are identical at `af71c81`
+(confirmed via real `git fetch origin` 2026-08-28 — prior note that this
+was "2 commits ahead of origin" is stale, corrected here). **Still NOT
+deployed to PROD** — `.clasp.json` currently mirrors `.clasp.dev.json`
+(last local clasp push targeted DEV, not PROD). Full detail in that
+task's entry below (Wave Backlog section) and in
 `docs/superpowers/plans/2026-08-26-payout-statement.md`'s SDD ledger. 8
 tasks + 1 final-review fix wave + 1 same-session follow-on (Run Payroll
-button), all reviewed clean, 535/535 Jest passing, all 5 DEV checklist
-items confirmed live 2026-08-27. **Next step is user-driven: explicit
-approval to `git push origin main` and `npm run push:prod`** per CLAUDE.md
-R9 — not yet given. CTO PROD-readiness assessment delivered same session
-(see chat — not yet copied into a durable doc; do that if this thread is
-picked up fresh before PROD deploy happens).
+button), all reviewed clean, 535/535 Jest passing as of 2026-08-27 (not
+re-verified since — bare `npx jest` is currently unreliable, see
+`testPathIgnorePatterns` gap below), all 5 DEV checklist items confirmed
+live 2026-08-27. CTO PROD-readiness assessment is a durable doc:
+`docs/PROD_READINESS_PAYOUT_STATEMENT.md` (§2.3 and §5 need a small
+correction — the "git push required first" gate it names is already
+satisfied; see doc). **Next step is user-driven: explicit approval to run
+`npm run push:prod`** per CLAUDE.md R9 — not yet given. Remaining
+pre-flight per the doc: §2.1 (verify PROD's actual live source hasn't
+drifted, same check that caught DEV drift this session) + §2.2 (confirm
+`PAYOUT_STATEMENT_REVIEW_RECIPIENT` Script Property in PROD).
 
 Prior session (2026-08-14, SOP upload workflow + QC findings-picker live
 DEV walkthrough) is fully closed — durable outcomes already in

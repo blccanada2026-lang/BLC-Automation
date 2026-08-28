@@ -43,7 +43,7 @@ If PROD has drifted the same way DEV did, that needs to be understood *before* d
 Set it explicitly to the real HR mailbox (`HR@bluelotuscanada.ca`, or wherever it should actually land) via Script Properties — don't rely on the hardcoded fallback silently being correct. Confirm someone actually monitors that inbox before the first real run.
 
 ### 2.3 Standard R5/R6 checklist (already in `CLAUDE.md`, not new — just restating as part of this specific deploy)
-- `git status` clean, `git log origin/main..HEAD` — currently **not** empty (local `main` is 2 commits ahead of `origin/main`), so `git push origin main` is required first, itself needing your explicit go-ahead separately from the PROD push.
+- **Update, 2026-08-28: `git push origin main` already happened** — local `main` and `origin/main` are identical at `af71c81` (confirmed via real `git fetch`). `git status` clean, `git log origin/main..HEAD` empty. This gate is satisfied — the only remaining approval needed is for `npm run push:prod` itself.
 - `.clasp.json` matches `.clasp.prod.json` (handled by `npm run push:prod` itself).
 - `grep -r "whoAmI\|isDev\|rajeshnair\|rajnaircanada\|nairscanada" src/` — the R5 dev-actor leak check. Worth noting: this feature's tests use `test-hr@test.blc.internal`/`THR`-style synthetic identities that only resolve under `Config.isDev()` — they should not appear in this grep's real hits, but run it as always.
 
