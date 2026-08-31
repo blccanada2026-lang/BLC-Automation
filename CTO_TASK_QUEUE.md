@@ -31,7 +31,15 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-08-28)
+## Session State (last updated: end of turn, 2026-08-31)
+
+**TASK CF-1 update:** PROD deploy reversion incident (stale Apps Script
+editor tab autosaving over `clasp push`) found and resolved; both
+ClientFeedback fixes durably confirmed live in PROD. Nelson Lumber backfill
+complete and verified correct. Only remaining step in this thread: trash
+the 65 confirmed-safe orphan forms (hand list to business owner). Full
+detail in the CF-1 section below.
+
 
 **IMPORTANT — PROD is in a split state as of 2026-08-28, read before touching Portal.gs/PortalView.html or the Apps Script editor.**
 `npm run push:prod` was run 2026-08-28 with user approval for Payout Statement (TASK NEW-1) + QC findings-picker (PR #21, W2-3) — **but PROD's Apps Script *source* also picked up the SOP upload workflow (PR #22, TASK W2-4)**, because that branch was already merged into `main` (confirmed: merge commit `c0835de` is an ancestor of current `main` — the task queue's prior claim that W2-4 was "NOT yet merged" was stale/wrong, corrected below) and `clasp push --force` pushes the whole `src/` tree, not per-feature. **The user explicitly chose NOT to do the "New Version" redeploy yet** — PROD's live `/exec` URL is still serving the old version (`0014b58`, 2026-08-10) and nothing user-facing has changed.
@@ -106,8 +114,47 @@ the payload `onFeedbackFormSubmit` would have produced and run it through
 this doesn't diverge from what the trigger would have written.
 `submitted_at` must be the real `2026-04-13T20:08:09.445Z`, not today.
 
+**Third root cause found and fixed, same thread — `ClientFeedbackTrigger.gs`
+used a hardcoded system actor email (`system@blc-nexus.internal`) that
+`RBAC.gs` never registered (only `system@blclotus.com` is registered),
+causing every real `CLIENT_FEEDBACK` queue item to dead-letter at
+actor-resolution before ever reaching the handler — this, not the two
+causes above, was the actual reason `FACT_CLIENT_FEEDBACK` had zero rows.
+Fixed alongside a `submitted_at` override param on
+`processFeedbackResponse()` (for backfilling historical responses), commit
+`5e895d5`.
+
+**PROD deploy reversion incident, found and resolved 2026-08-31.** After
+pushing `5e895d5`, repeated `clasp pull` verifications showed PROD's actual
+source alternating between fixed and reverted-to-old, including a fully
+deleted `test.js` reappearing — i.e. a whole-project revert, not a
+single-file issue. Root cause: the user had an Apps Script editor browser
+tab open on this project; its autosave was pushing the tab's stale
+in-memory buffer (old `ClientFeedback.gs` + a stale `test.js`) back over
+`clasp push`'s output. Ruled out on Claude's side first (`.clasp.json`
+correctly pointed at PROD's scriptId, no stray background push process).
+**Fix: close every Apps Script editor tab for this project completely
+(not just reload) before/during any `clasp push`.** Re-pushed after tabs
+closed, verified via fresh `clasp pull` into a scratch dir — both fixes
+durably present, byte-identical to git HEAD. Standing risk for future
+sessions: **always confirm no Apps Script editor tab is open before a PROD
+push**, and verify via a scratch-dir `clasp pull` after, never trust a
+`clasp push` success message alone.
+
+**Nelson Lumber Ltd. backfill — DONE, 2026-08-31.** Designer codes
+confirmed as `DBS` and `AR001` (from the form's grid row labels), `period_id`
+confirmed as `'2026-04'` (user's explicit choice). Two rows written via the
+real queue/handler path (`PortalData.writeQueueItem` →
+`QueueProcessor.processQueue()`), both `status=COMPLETED`, both
+`submitted_at=2026-04-13T20:08:09.445Z` (the true historical value, not the
+processing date) — verified directly against `FACT_CLIENT_FEEDBACK`.
+(Two earlier attempts had produced rows with the wrong `submitted_at`
+because the fix wasn't durably deployed yet per the reversion incident
+above — those bad rows were found and deleted before the final correct
+write.)
+
 **65 orphan Google Forms confirmed safe to trash (zero responses each) —
-NOT YET TRASHED, do this LAST, after the Nelson backfill lands.** Full
+NOT YET TRASHED, this is the only remaining step in this thread.** Full
 list not repeated here (regenerate any time via the read-only
 `analyzeFeedbackForms()` script — pastable into any `.gs` file, discovers
 everything live from Drive + Script Properties, no hand-maintained list
@@ -116,12 +163,15 @@ Script Properties) — never trash those. Only the business owner should
 execute the actual trash operation; hand them the ID list, don't script
 a bulk-delete loop.
 
-**Session sequencing, in order (per explicit user request 2026-08-31):**
-1. `git push origin main` + `npm run push:prod` for commit `7f8cce8` —
-   in progress this turn. **No New Version redeploy** (see above).
-2. Nelson Lumber backfill — blocked until designer codes + period_id
-   confirmed per above.
-3. Trash the 65 safe orphans — blocked until step 2 lands.
+**Still open, deferred (not urgent):** `src/setup/TestRunner.gs`'s missing
+`Config.isDev()` guards (see above) — not yet fixed.
+
+**Session sequencing status (2026-08-31): steps 1 and 2 done, step 3 remains.**
+1. ✅ `git push origin main` + `npm run push:prod` for commits `7f8cce8` and
+   `5e895d5` — done, verified durable after the reversion incident above.
+   **No New Version redeploy** (still correct — see deployment nuance above).
+2. ✅ Nelson Lumber backfill — done, verified correct.
+3. ⬜ Trash the 65 safe orphans — next step.
 
 ---
 

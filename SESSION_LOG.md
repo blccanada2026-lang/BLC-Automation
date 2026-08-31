@@ -14,22 +14,26 @@
 - **Ruled out real-client mass-spam**: traced every call site (`runSendFeedbackRequestsTest/Live`, `runSendQ2FeedbackRequestsToHR`, `portal_sendFeedbackRequests`, `TestRunner.gs`'s `testFeedback()`/`clearFeedbackFormCache()`) — the bulk of the duplicate forms trace to safe test/HR-redirected paths or a legitimate cache-clearing test helper (itself missing a `Config.isDev()` guard — separate finding, not yet fixed, flagged in `CTO_TASK_QUEUE.md`).
 - **Found one real, substantive client response that was never captured**: Nelson Lumber Ltd., submitted 2026-04-13, sitting in an orphaned form, never reaching `FACT_CLIENT_FEEDBACK` (which has **zero rows in PROD, total** — no client feedback has ever been captured live). Full detail, form ID, and backfill plan recorded in `CTO_TASK_QUEUE.md`'s new CF-1 section.
 - **Built and ran read-only diagnostic scripts** (not committed — one-off, run directly from the Apps Script editor): confirmed PROD's `_SYS_LOGS` had zero relevant entries (explained by PROD's WARN-only log level swallowing the INFO-level send-confirmation log — a real observability gap, also worth a follow-up); `analyzeFeedbackForms()` authoritatively discovered every matching Form via Drive search + cross-referenced against live `FEEDBACK_FORM_*` Script Properties — 13 live, 65 confirmed zero-response orphans (safe to trash), 1 orphan with a real response (Nelson Lumber, above).
-- Consulted advisor twice this thread — once before starting the Drive cleanup (corrected scope: verify the trigger mechanism, finish pagination, don't conflate the two uncommitted changes), once before executing today's push+backfill+trash sequence (corrected sequencing: don't redeploy PROD for this fix given the W2-4 hold, don't backfill without confirming designer codes/period_id, write through the queue not a raw DAL insert, trash last).
+- **Found and fixed a third, more serious root cause**: `ClientFeedbackTrigger.gs` hardcoded a system actor email (`system@blc-nexus.internal`) that `RBAC.gs` never registered — every real `CLIENT_FEEDBACK` queue item was dead-lettering at actor-resolution before reaching the handler, which was the actual reason `FACT_CLIENT_FEEDBACK` had zero rows (not just the two bugs above). Fixed alongside a `submitted_at` override param on `processFeedbackResponse()`, commit `5e895d5`.
+- **Hit and resolved a real PROD deploy-reversion incident**: after pushing `5e895d5`, repeated `clasp pull` checks showed PROD's source flip-flopping between fixed and fully reverted (including a deleted `test.js` reappearing — a whole-project revert, not a single-file issue). Ruled out a mistake on Claude's side first (`.clasp.json` correctly PROD-pointed, no stray background push). Root cause: an open Apps Script editor browser tab's autosave was pushing its stale in-memory buffer back over `clasp push`'s output. Fix: close every editor tab for the project completely before/during a push. Re-pushed after tabs closed, verified via a scratch-dir `clasp pull` — both fixes durably present, byte-identical to git HEAD.
+- **Completed the Nelson Lumber Ltd. backfill**: designer codes confirmed (`DBS`, `AR001`), `period_id` confirmed (`'2026-04'`, user's choice), written via the real `PortalData.writeQueueItem()` → `QueueProcessor.processQueue()` path. Two earlier attempts had produced rows with the wrong `submitted_at` (today's date) because of the deploy-reversion incident above; those were found and deleted before the final write. Final verification: both rows `status=COMPLETED`, `submitted_at=2026-04-13T20:08:09.445Z` (correct historical value), `raw_score=3` each.
+- Consulted advisor three times this thread — before starting the Drive cleanup (corrected scope), before executing the push+backfill+trash sequence (corrected sequencing), and during the deploy-reversion troubleshooting (correctly redirected from a "browser autosave" theory to checking `.clasp.json`/stray processes first, which ruled out Claude-side error before pointing at the editor-tab cause).
 
 ### Files Changed
-- `src/09-feedback/ClientFeedback.gs` — both fixes above, commit `7f8cce8`.
+- `src/09-feedback/ClientFeedback.gs` — cache-invalidation + spreadsheet-linking fixes (`7f8cce8`) plus `submitted_at` override (`5e895d5`).
+- `src/09-feedback/ClientFeedbackTrigger.gs` — system email fix (`5e895d5`).
 - `CTO_TASK_QUEUE.md`, `SESSION_LOG.md` — this entry + the CF-1 Session State section (full detail, not duplicated here).
 
 ### Tests Run
-- Full `tests/` suite: 1070/1070 passing after each fix, both times. Syntax-checked directly (`node --check`) since no Jest coverage exists for this GAS-service-heavy file.
+- Full `tests/` suite: 1070/1070 passing after each fix. Syntax-checked directly (`node --check`) since no Jest coverage exists for this GAS-service-heavy file.
+- PROD verification: scratch-dir `clasp pull` confirming byte-identical match to git HEAD, after the reversion incident above.
 
 ### Issues Found
-- See "Real finding" bullets above — the `Config.isDev()` gap in `TestRunner.gs`'s feedback test helpers, and PROD's WARN log level silently swallowing send-confirmation logs, are both real but explicitly deferred as follow-ups, not fixed this session.
+- The `Config.isDev()` gap in `TestRunner.gs`'s feedback test helpers and PROD's WARN log level silently swallowing send-confirmation logs are both real but explicitly deferred, not fixed this session.
+- Deploy-reversion incident above is now a standing risk to watch for in any future PROD push: always confirm no Apps Script editor tab is open on the project before pushing, and verify via a scratch-dir `clasp pull` after — never trust the `clasp push` success message alone.
 
 ### Next Recommended Step
-- Push `7f8cce8` to origin + `npm run push:prod` (no New Version redeploy — see CTO_TASK_QUEUE.md).
-- Confirm Nelson Lumber's designer codes (read the form's grid row labels) and period_id (check DEV's spreadsheet for a `FBRESP_*_NELSON` tab) before backfilling via the real queue path.
-- Trash the 65 confirmed-safe orphans only after the backfill lands — hand the business owner the ID list (regenerable via `analyzeFeedbackForms()`), don't script a bulk-delete.
+- Trash the 65 confirmed-safe orphan forms — the only remaining step in TASK CF-1. Hand the business owner the ID list (regenerable via `analyzeFeedbackForms()`), don't script a bulk-delete loop.
 
 ---
 
