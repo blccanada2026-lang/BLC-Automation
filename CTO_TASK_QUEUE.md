@@ -33,13 +33,102 @@ lacks, that silently deletes it from DEV.
 
 ## Session State (last updated: end of turn, 2026-08-28)
 
+**IMPORTANT — PROD is in a split state as of 2026-08-28, read before touching Portal.gs/PortalView.html or the Apps Script editor.**
+`npm run push:prod` was run 2026-08-28 with user approval for Payout Statement (TASK NEW-1) + QC findings-picker (PR #21, W2-3) — **but PROD's Apps Script *source* also picked up the SOP upload workflow (PR #22, TASK W2-4)**, because that branch was already merged into `main` (confirmed: merge commit `c0835de` is an ancestor of current `main` — the task queue's prior claim that W2-4 was "NOT yet merged" was stale/wrong, corrected below) and `clasp push --force` pushes the whole `src/` tree, not per-feature. **The user explicitly chose NOT to do the "New Version" redeploy yet** — PROD's live `/exec` URL is still serving the old version (`0014b58`, 2026-08-10) and nothing user-facing has changed.
+**CORRECTION, same day:** W2-4 does NOT need a live-DEV verification pass — that already happened in full on 2026-08-14 (see `SESSION_LOG.md`'s 2026-08-14 entry and the corrected W2-4 line below; an earlier note in this file claiming otherwise was itself stale and has been fixed). What's actually still open before the New Version redeploy is PROD-side one-time setup (`runSetupSchemas()`, `runGenerateSopReviewSecret()`, confirming PROD's web-app access setting, the `PLATE_ERROR` PROD data fix) — see W2-4 below for the full list.
+**Next step:** run the W2-4 PROD-setup checklist below, get explicit go-ahead, then do the New Version redeploy for all three bundled features at once (they can't be un-bundled from PROD's source at this point without a separate targeted push).
+
+---
+
+**NEW THREAD, 2026-08-28/31 — ClientFeedback.gs duplicate-form + lost-response investigation (TASK CF-1).**
+Found ~70 duplicate "BLC Performance Feedback" Google Forms in Drive while
+investigating an unrelated question. Root causes identified and fixed,
+commit `7f8cce8` on local `main` (**NOT yet pushed to origin, NOT yet
+deployed** — that's this session's next step):
+1. `getOrCreateClientForm_()` treated ANY exception during form-reuse as
+   "form deleted", silently wiping a valid Script Properties cache entry
+   and creating a duplicate Form. Fixed via new `isFormGone_()` — only a
+   confirmed Drive-level trashed/missing check now triggers recreation;
+   any other error propagates instead of being swallowed.
+2. The response-destination link used `SpreadsheetApp.getActiveSpreadsheet()`
+   (browser-tab-dependent) instead of `Config.getSpreadsheetId()` — this is
+   how one real client response got silently routed into DEV's spreadsheet
+   while the form was created against PROD. Fixed.
+
+**Deployment nuance, IMPORTANT — do not do a New Version redeploy for this
+fix.** `ClientFeedback.gs` changes only reach the portal-invoked path
+(`portal_sendFeedbackRequests`) via a New Version redeploy (Apps Script
+Versions are full-project snapshots) — but PROD is currently mid-hold on
+exactly that redeploy because of the W2-4/SOP-upload bundling above. **Do
+not redeploy PROD to get this fix live for the portal button** — that would
+also promote the untested SOP upload workflow, which the user explicitly
+declined. Editor-run functions (`runSendQ2FeedbackRequestsToHR()`, etc.)
+pick up the fix immediately from a plain `clasp push`, no redeploy needed.
+The portal's "✉ Send Feedback Requests" button stays on old (buggy) code
+until the W2-4 redeploy decision is resolved — acceptable, since that
+button isn't in active use.
+
+**Real finding, separate, not yet fixed:** `src/setup/TestRunner.gs`'s
+`clearFeedbackFormCache()`, `testFeedback()`, `testRatingRequests()`,
+`dryRunRatingRequests()`, `dryRunFeedbackRequests()` have **no
+`Config.isDev()` guard** — an R10.4/testing-policy.md violation (the exact
+rule written after the 2026-07-08 incident). `clearFeedbackFormCache()`
+explains much of the observed form-duplication clustering (a legitimate
+dev workflow — deliberately clearing the cache between test iterations —
+just missing its required safety guard). Needs a follow-up fix.
+
+**Real finding, more serious — `FACT_CLIENT_FEEDBACK` has ZERO rows in
+PROD, total.** No client feedback has ever been captured in production via
+this feature, as far as the table shows. One genuine, substantive real
+response exists (Nelson Lumber Ltd., see below) sitting orphaned outside
+the table — everything else ever created was either test data (redirected
+to HR/internal addresses) or never responded to.
+
+**Nelson Lumber Ltd. orphan response — needs backfill, NOT YET DONE.**
+Form ID `1aZhedgW08SLN60yQJesxXINOFcZbfA1aBbMmQ2bkKhI`
+("BLC Performance Feedback — Nelson Lumber Ltd. — Q2 2026", created
+2026-04-13). Real, substantive client feedback, submitted
+`2026-04-13T20:08:09.445Z`, response ID
+`2_ABaOnuddOv5vmJJUoDzdj3gAyRS9hVHNiVN7er9cWWJvySjS7NUYVnQLSHB2NAOexBaD9ys`.
+Grid scores `["3","3"]` for two designers — **designer codes not yet
+identified** (need to read the form's grid row labels — same order as the
+response array — before backfilling). **`period_id` not yet confirmed** —
+inferred as `'2026-04'` (matches `sendFeedbackRequests()`'s
+`Identifiers.generateCurrentPeriodId()` default if triggered via the portal
+button with an empty periodId around that date; every hardcoded editor
+runner's periodId — `'2026-01'`, `'2026-03'`, `'2026-06'` — is ruled out
+since none produce the observed "Q2 2026" label except a blank/default
+call) — **not confirmed, needs verification** (check for a
+`FBRESP_*_NELSON` tab in DEV's spreadsheet `18f2sSSYhlK9vDAZ9-zbPf4mFOsVmBNDjofSYN6-b1CA`
+before assuming). **Do not hand-write a `DAL.appendRow` FACT row** — build
+the payload `onFeedbackFormSubmit` would have produced and run it through
+`processFeedbackResponse` (the real queue/idempotency/validation path) so
+this doesn't diverge from what the trigger would have written.
+`submitted_at` must be the real `2026-04-13T20:08:09.445Z`, not today.
+
+**65 orphan Google Forms confirmed safe to trash (zero responses each) —
+NOT YET TRASHED, do this LAST, after the Nelson backfill lands.** Full
+list not repeated here (regenerate any time via the read-only
+`analyzeFeedbackForms()` script — pastable into any `.gs` file, discovers
+everything live from Drive + Script Properties, no hand-maintained list
+needed). 13 other forms are currently live/cached (`FEEDBACK_FORM_*`
+Script Properties) — never trash those. Only the business owner should
+execute the actual trash operation; hand them the ID list, don't script
+a bulk-delete loop.
+
+**Session sequencing, in order (per explicit user request 2026-08-31):**
+1. `git push origin main` + `npm run push:prod` for commit `7f8cce8` —
+   in progress this turn. **No New Version redeploy** (see above).
+2. Nelson Lumber backfill — blocked until designer codes + period_id
+   confirmed per above.
+3. Trash the 65 safe orphans — blocked until step 2 lands.
+
+---
+
 **Payout Statement Summary (TASK NEW-1) — implementation, live DEV
-verification, merge to local `main`, AND push to `origin/main` all
-complete.** Local `main` and `origin/main` are identical at `af71c81`
-(confirmed via real `git fetch origin` 2026-08-28 — prior note that this
-was "2 commits ahead of origin" is stale, corrected here). **Still NOT
-deployed to PROD** — `.clasp.json` currently mirrors `.clasp.dev.json`
-(last local clasp push targeted DEV, not PROD). Full detail in that
+verification, merge to local `main`, push to `origin/main`, and `clasp push` to PROD's source all
+complete.** Local `main` and `origin/main` are identical at `032e390`
+(confirmed via real `git fetch origin` 2026-08-28). Full detail in that
 task's entry below (Wave Backlog section) and in
 `docs/superpowers/plans/2026-08-26-payout-statement.md`'s SDD ledger. 8
 tasks + 1 final-review fix wave + 1 same-session follow-on (Run Payroll
@@ -79,8 +168,8 @@ Source: full CTO architecture/performance/tech-debt assessment,
 ### EPIC: Wave 2 — SOP/QC Finish & Activate (NOT a rebuild — `src/13-sop/` already exists, 3,725 lines, feature-flagged pilot infra) — **CURRENT FOCUS**
 - **TASK W2-1** | Design pilot rollout plan: which client(s) first, `WARN_ONLY` vs `BLOCK`, timeline | P2 | **Inputs confirmed 2026-08-10: client `NORSPAN-MB`, mode `WARN_ONLY`, start week of 2026-08-17 (Monday).** Rollout mechanics (`SopGate.gs`): set Script Properties `SOP_ENABLED='true'`, `SOP_MODE='WARN_ONLY'`, `SOP_PILOT_CLIENTS='NORSPAN-MB'` in the Apps Script editor (no code change needed — flags are already read live). WARN_ONLY means non-blocking — designers see nothing rejected, only `SOP_GATE_WARN` log entries land in `_SYS_LOGS` when a QC submission has incomplete checklist items. **Unblocked 2026-08-10** — all content decisions settled (software Alpine, ~9-item category-level checklist, job_type/scope_code, and the 3 numeric conflicts between the two source docs all resolved via user's managers). Full detail in Session State above. **Ready to build via `SopAdminEngine`** — pre-flight gap (verify no conflicting ACTIVE template already exists) still applies before flipping `SOP_ENABLED`.
 - **TASK W2-2** | Trace `QcFindingTypes.gs` (521 lines, defines a QC finding taxonomy) — confirm whether an internal-QC reviewer queue UI exists or still needs building | P2 | **DONE 2026-08-10.** At the time, taxonomy (17 codes, `DIM_QC_FINDING_TYPES`) was fully seeded but had zero consumers — confirmed needing a UI, not a revival. **W2-3 (below) built and merged that consumer 2026-08-12** — no longer zero consumers.
-- **TASK W2-3** | Build QC findings-picker UI: multi-select finding codes (from `DIM_QC_FINDING_TYPES`) on the `#modal-qc-review` modal, new `portal_getQcFindingTypes()` read endpoint (first-ever reader of that table), `QCHandler.gs` changes to accept/store selected finding code(s) on the QC event | P2 | **DONE 2026-08-12 — merged to main (PR #21), 79/79 tests passing live in DEV.** Only remaining step is a PROD deploy, which needs separate explicit user approval. See Session State above.
-- **TASK W2-4** | Build SOP upload workflow: CEO-only structured upload → manager review link (no login) → CEO publish, for both SOP designer docs and (partially) QC-review SOP docs | P2 | **Implementation DONE 2026-08-13 on branch `sop-upload-workflow` (4 tasks + final-review fix wave, commits `55ba9c7..442aa7a`) — NOT yet merged, NOT yet deployed to DEV or PROD.** Final whole-branch review found and fixed 1 Critical (manager/CEO review screens didn't show the structured checklist) + 6 Important issues. `runSopUploadEngineTests()` (17 tests) manually traced only, needs a live DEV run per the 5-item checklist in Session State above before trusted.
+- **TASK W2-3** | Build QC findings-picker UI: multi-select finding codes (from `DIM_QC_FINDING_TYPES`) on the `#modal-qc-review` modal, new `portal_getQcFindingTypes()` read endpoint (first-ever reader of that table), `QCHandler.gs` changes to accept/store selected finding code(s) on the QC event | P2 | **DONE 2026-08-12 — merged to main (PR #21), 79/79 tests passing live in DEV.** `npm run push:prod` ran 2026-08-28 (source now on PROD's Apps Script project) — **New Version redeploy still pending**, held pending W2-4 below. See Session State above.
+- **TASK W2-4** | Build SOP upload workflow: CEO-only structured upload → manager review link (no login) → CEO publish, for both SOP designer docs and (partially) QC-review SOP docs | P2 | **SECOND CORRECTION 2026-08-28 — the "never run live in DEV" note added earlier today was ALSO wrong; I propagated a stale claim without checking `SESSION_LOG.md`'s own already-accurate record.** Ground truth, confirmed via `SESSION_LOG.md`'s 2026-08-14 entry + git ancestry checks: **this was fully live-DEV-verified end-to-end on 2026-08-14** — all 3 phases (setup, designer+QC flow, and the SOP upload/review/publish flow itself using a real Norspan-MB source PDF) confirmed working live. 4 real bugs found that session, all fixed and confirmed on `main` today: `d439f4c` (QC_ROLES dropdown), `7e33e48` (base64 file-transport fix), `25af809` (product-vocabulary unification), `2cb7d8d` (PLATE_ERROR seed fix). **This task is NOT an open live-verification item.** What's actually still open, because PROD is a separate Apps Script project that's never had this feature's setup run: (1) `runSetupSchemas()` once in PROD — creates `DIM_SOP_UPLOADS`/`FACT_SOP_REVIEW_FEEDBACK` tabs; (2) `runGenerateSopReviewSecret()` once in PROD — without it every review link throws; (3) confirm PROD's deployed web app "Who has access" setting allows the no-login review link (manifest says `MYSELF`, confirmed stale for DEV — verify PROD separately); (4) apply the `PLATE_ERROR` product_applicability data fix (`TRUSS`→`ROOF_TRUSS`) to PROD's live `DIM_QC_FINDING_TYPES` sheet — code fix already on `main`, live PROD row still needs it (same item as "Other Still-Open Items" below); (5) lower-risk, worth a quick real confirmation: Drive `setSharing(ANYONE_WITH_LINK, VIEW)` succeeded in DEV under the same Workspace org — should hold in PROD too, not separately proven. **Do not touch `SOP_ENABLED`/`SOP_MODE`/`SOP_PILOT_CLIENTS`** — those gate the separate, deliberately-still-off W2-1 pilot decision; none of the above requires flipping them, and `SopUploadEngine`/its endpoints don't check `SOP_ENABLED` at all (confirmed via grep). Source is already sitting in PROD's Apps Script project (2026-08-28 `clasp push`, bundled with W2-3 + NEW-1) but not yet live — New Version redeploy still deliberately held pending items 1-4 above.
 
 ### EPIC: Wave 3 — Client Feedback data-model extension
 - **TASK W3-1** | Add structured severity/root-cause/resubmission fields to the existing `ClientFeedback.gs` intake | P3 | Depends on Wave 2 producing real QC data. Not started.

@@ -5,6 +5,62 @@
 
 ---
 
+## 2026-08-31 Session (ClientFeedback.gs duplicate-form bug found + fixed, real lost client response found, cleanup in progress — TASK CF-1)
+
+### Work Completed
+- **Investigated ~70 duplicate "BLC Performance Feedback" Google Forms found in Drive** (surfaced incidentally, not the original task). Root-caused two real bugs in `src/09-feedback/ClientFeedback.gs`, both fixed and committed (`7f8cce8`, not yet pushed/deployed):
+  1. `getOrCreateClientForm_()` treated any exception during form-reuse as "form deleted" and silently recreated — fixed with a new `isFormGone_()` Drive-level trashed/missing check; other errors now propagate instead of being swallowed.
+  2. Response-destination linking used `SpreadsheetApp.getActiveSpreadsheet()` (browser-tab-dependent) instead of `Config.getSpreadsheetId()` — this is how one real client response got routed into DEV's spreadsheet while running against PROD.
+- **Ruled out real-client mass-spam**: traced every call site (`runSendFeedbackRequestsTest/Live`, `runSendQ2FeedbackRequestsToHR`, `portal_sendFeedbackRequests`, `TestRunner.gs`'s `testFeedback()`/`clearFeedbackFormCache()`) — the bulk of the duplicate forms trace to safe test/HR-redirected paths or a legitimate cache-clearing test helper (itself missing a `Config.isDev()` guard — separate finding, not yet fixed, flagged in `CTO_TASK_QUEUE.md`).
+- **Found one real, substantive client response that was never captured**: Nelson Lumber Ltd., submitted 2026-04-13, sitting in an orphaned form, never reaching `FACT_CLIENT_FEEDBACK` (which has **zero rows in PROD, total** — no client feedback has ever been captured live). Full detail, form ID, and backfill plan recorded in `CTO_TASK_QUEUE.md`'s new CF-1 section.
+- **Built and ran read-only diagnostic scripts** (not committed — one-off, run directly from the Apps Script editor): confirmed PROD's `_SYS_LOGS` had zero relevant entries (explained by PROD's WARN-only log level swallowing the INFO-level send-confirmation log — a real observability gap, also worth a follow-up); `analyzeFeedbackForms()` authoritatively discovered every matching Form via Drive search + cross-referenced against live `FEEDBACK_FORM_*` Script Properties — 13 live, 65 confirmed zero-response orphans (safe to trash), 1 orphan with a real response (Nelson Lumber, above).
+- Consulted advisor twice this thread — once before starting the Drive cleanup (corrected scope: verify the trigger mechanism, finish pagination, don't conflate the two uncommitted changes), once before executing today's push+backfill+trash sequence (corrected sequencing: don't redeploy PROD for this fix given the W2-4 hold, don't backfill without confirming designer codes/period_id, write through the queue not a raw DAL insert, trash last).
+
+### Files Changed
+- `src/09-feedback/ClientFeedback.gs` — both fixes above, commit `7f8cce8`.
+- `CTO_TASK_QUEUE.md`, `SESSION_LOG.md` — this entry + the CF-1 Session State section (full detail, not duplicated here).
+
+### Tests Run
+- Full `tests/` suite: 1070/1070 passing after each fix, both times. Syntax-checked directly (`node --check`) since no Jest coverage exists for this GAS-service-heavy file.
+
+### Issues Found
+- See "Real finding" bullets above — the `Config.isDev()` gap in `TestRunner.gs`'s feedback test helpers, and PROD's WARN log level silently swallowing send-confirmation logs, are both real but explicitly deferred as follow-ups, not fixed this session.
+
+### Next Recommended Step
+- Push `7f8cce8` to origin + `npm run push:prod` (no New Version redeploy — see CTO_TASK_QUEUE.md).
+- Confirm Nelson Lumber's designer codes (read the form's grid row labels) and period_id (check DEV's spreadsheet for a `FBRESP_*_NELSON` tab) before backfilling via the real queue path.
+- Trash the 65 confirmed-safe orphans only after the backfill lands — hand the business owner the ID list (regenerable via `analyzeFeedbackForms()`), don't script a bulk-delete.
+
+---
+
+## 2026-08-28 Session (CTO consult, task-queue staleness fixes, PROD source push — New Version redeploy deliberately held)
+
+### Work Completed
+- **Delivered a follow-up CTO consult** on top of 2026-08-27's readiness assessment: found `CTO_TASK_QUEUE.md`'s "2 commits ahead of origin" claim was stale (confirmed via real `git fetch` that `main`/`origin/main` were already identical) — corrected the task queue and `docs/PROD_READINESS_PAYOUT_STATEMENT.md` §2.3.
+- **Ran the §2.1/§2.2 pre-flight checks**: pulled PROD's live source via `clasp pull`, confirmed it matched commit `0014b58` (last known deploy, 2026-08-10) exactly — zero unexplained drift, unlike the 2026-08-27 DEV-drift incident. R5 dev-actor grep also clean (standing gated pattern, nothing new). HR mailbox (`PAYOUT_STATEMENT_REVIEW_RECIPIENT`) confirmed directly by user (not verifiable from CLI without executing code in PROD).
+- **User approved deploying Payout Statement (NEW-1) bundled with QC findings-picker (W2-3/PR #21)**, since PROD hadn't been touched since `0014b58` and both were riding on `main` together.
+- **Committed + pushed the doc corrections** (`032e390`), then ran `npm run push:prod`.
+- **Found during the push: the SOP upload workflow (W2-4/PR #22) was ALSO on `main` and got pushed to PROD's Apps Script source, unintentionally.** The task queue's "NOT yet merged" note for W2-4 was stale/wrong — merge commit `c0835de` is confirmed an ancestor of `main`. This wasn't part of what was discussed/approved for today's deploy, and W2-4's 17 tests are still only manually traced, never run live in DEV.
+- **Flagged this immediately, before the "New Version" redeploy step** — `clasp push` only updates the Apps Script project's source, not what real users hit (`/exec` stays pinned to the last manually-promoted version), so nothing was actually user-facing yet. **User chose to hold off on the New Version redeploy** rather than accept the full three-feature bundle.
+- Corrected W2-3/W2-4 entries in `CTO_TASK_QUEUE.md` to reflect the real state and added an explicit split-state warning at the top of Session State.
+
+### Files Changed
+- `CTO_TASK_QUEUE.md`, `docs/PROD_READINESS_PAYOUT_STATEMENT.md` (doc corrections, committed as `032e390`)
+- No `src/` files changed this session — PROD's Apps Script *source* was updated via `clasp push` (not a git commit; that's expected, `src/` already matched `main` beforehand), but no code was written or edited.
+
+### Tests Run
+- None new. Relied on 2026-08-27's 535/535 Jest result and DEV-verification for NEW-1/W2-3 (cited with that date, not re-verified — bare `npx jest` is currently unreliable, see the `testPathIgnorePatterns` gap). W2-4 explicitly has **no** live-DEV verification yet — that's the open gap blocking the New Version redeploy.
+
+### Issues Found
+- **Process miss, self-identified**: the §2.1 drift diff showed 3 files present only in `main` (the W2-4 files) before the push; I noted them but didn't trace which task they belonged to before running `npm run push:prod`. Caught and surfaced immediately after, before any user-facing exposure, but should have been checked before pushing, not after.
+- Task queue had a second stale-state bug this session (W2-4 "not yet merged"), on top of the git-push staleness found earlier — same class of problem as `[[feedback_task_queue_sync]]`, now doubly relevant here.
+
+### Next Recommended Step
+- **Live-DEV-verify the SOP upload workflow (W2-4)** — run `runSopUploadEngineTests()` for real and walk its own checklist (see corrected W2-4 entry in `CTO_TASK_QUEUE.md`) — then get explicit separate approval before doing the PROD "New Version" redeploy, which will expose all three bundled features (NEW-1 + W2-3 + W2-4) at once.
+- Until that redeploy happens, PROD's live `/exec` URL is unchanged (still `0014b58`) — safe to leave as-is indefinitely.
+
+---
+
 ## 2026-08-26 → 2026-08-27 Session (Payout Statement Summary — designed, implemented via subagent-driven-development, live DEV verified)
 
 ### Work Completed
