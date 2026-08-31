@@ -375,6 +375,19 @@ var ClientFeedback = (function () {
   }
 
   /**
+   * True only if the underlying Drive file is genuinely gone or trashed —
+   * distinct from any other Drive/FormApp error, which should propagate
+   * instead of being silently treated as "the form no longer exists".
+   */
+  function isFormGone_(fileId) {
+    try {
+      return DriveApp.getFileById(fileId).isTrashed();
+    } catch (e) {
+      return true; // DriveApp throws when the file truly doesn't exist / is inaccessible
+    }
+  }
+
+  /**
    * Creates a per-client Google Form with a grid question.
    * Stores form ID and entry IDs in Script Properties.
    * Returns existing form if already created for this period+client.
@@ -388,25 +401,35 @@ var ClientFeedback = (function () {
     var existingMeta = props.getProperty(entryIdsKey);
 
     if (existingId && existingMeta) {
+      var meta = null;
       try {
-        var meta = JSON.parse(existingMeta);
-        // Update grid rows in case designers changed since last call
-        var formStillValid = false;
-        try {
-          var existingForm = FormApp.openById(existingId);
-          var items = existingForm.getItems(FormApp.ItemType.GRID);
-          if (items.length > 0) items[0].asGridItem().setRows(designerRows);
-          formStillValid = true;
-        } catch (e) {
-          // Form was deleted or is inaccessible — clear cache and fall through to recreate
+        meta = JSON.parse(existingMeta);
+      } catch (e) {
+        // Corrupt cached metadata — distinct from form-existence; safe to recreate.
+        Logger.warn('FEEDBACK_FORM_STALE', {
+          module: MODULE, message: 'Cached entry_ids metadata corrupt — recreating', client_code: clientCode
+        });
+      }
+
+      if (meta) {
+        if (isFormGone_(existingId)) {
+          // Genuinely deleted/trashed in Drive — safe to clear cache and recreate.
           props.deleteProperty(formKey);
           props.deleteProperty(entryIdsKey);
           Logger.warn('FEEDBACK_FORM_STALE', {
-            module: MODULE, message: 'Cached form inaccessible — recreating', client_code: clientCode
+            module: MODULE, message: 'Cached form deleted/trashed — recreating', client_code: clientCode
           });
+        } else {
+          // File still exists — any error past this point is a real bug or
+          // transient fault, not evidence the form is gone. Let it propagate
+          // rather than silently wiping a valid cache entry and creating a
+          // duplicate form (the root cause of the 2026-04..07 form pileup).
+          var existingForm = FormApp.openById(existingId);
+          var items = existingForm.getItems(FormApp.ItemType.GRID);
+          if (items.length > 0) items[0].asGridItem().setRows(designerRows);
+          return { formId: existingId, entryIds: meta };
         }
-        if (formStillValid) return { formId: existingId, entryIds: meta };
-      } catch (e) { /* corrupt meta — recreate */ }
+      }
     }
 
     // ── Create new form ───────────────────────────────────────
@@ -477,10 +500,17 @@ var ClientFeedback = (function () {
     // onFeedbackFormSubmit trigger can identify client + period
     // without relying on pre-filled form fields.
     // NOTE: SpreadsheetApp used here as a known A2 exception — FormApp's
-    // setDestination() requires the active spreadsheet reference, and the
-    // response sheet discovery (before/after diff) has no DAL equivalent.
+    // setDestination() requires a Spreadsheet reference, and the response
+    // sheet discovery (before/after diff) has no DAL equivalent. Opened by
+    // Config.getSpreadsheetId() (the same environment-correct ID DAL itself
+    // uses) — NOT SpreadsheetApp.getActiveSpreadsheet(), which depends on
+    // whatever spreadsheet tab happens to have browser focus and can silently
+    // link a form's responses to the wrong environment entirely (confirmed:
+    // a real 2026-04-13 client response was lost this way, landing in DEV's
+    // spreadsheet while running against PROD — see FACT_CLIENT_FEEDBACK
+    // reconciliation notes).
     try {
-      var ss           = SpreadsheetApp.getActiveSpreadsheet();
+      var ss           = SpreadsheetApp.openById(Config.getSpreadsheetId());
       var sheetsBefore = ss.getSheets().map(function(s) { return s.getName(); });
       form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
       Utilities.sleep(2000); // wait for response sheet to be created
