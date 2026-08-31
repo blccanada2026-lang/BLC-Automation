@@ -91,7 +91,10 @@ function onFeedbackFormSubmit(e) {
     var gridPrefix = ClientFeedback.GRID_QUESTION_TITLE;
     var rowPattern = /\[(.+)\]$/;
     var queued     = 0;
-    var systemEmail = 'system@blc-nexus.internal';
+    // Must match RBAC.gs's registered SYSTEM actor exactly, or
+    // QueueProcessor.processQueue() dead-letters every item at the
+    // actor-resolution step before it ever reaches the handler.
+    var systemEmail = 'system@blclotus.com';
 
     var keys = Object.keys(nv);
     for (var k = 0; k < keys.length; k++) {

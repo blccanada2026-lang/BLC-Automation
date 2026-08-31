@@ -251,7 +251,11 @@ var ClientFeedback = (function () {
       quarter:               buildQuarterLabel_(periodId),
       client_code:           clientCode,
       designer_code:         designerCode,
-      submitted_at:          new Date().toISOString(),
+      // Optional override for backfilling a historical response whose real
+      // submission predates when it's actually being processed (e.g. a
+      // response recovered from an orphaned form) — absent on every live
+      // trigger-driven call, which always gets the current timestamp.
+      submitted_at:          payload.submitted_at || new Date().toISOString(),
       raw_score:             rawScore,
       normalized_score:      normalizedScore,
       comments:              comments,
