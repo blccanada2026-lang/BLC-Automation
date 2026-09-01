@@ -32,8 +32,13 @@
 - The `Config.isDev()` gap in `TestRunner.gs`'s feedback test helpers and PROD's WARN log level silently swallowing send-confirmation logs are both real but explicitly deferred, not fixed this session.
 - Deploy-reversion incident above is now a standing risk to watch for in any future PROD push: always confirm no Apps Script editor tab is open on the project before pushing, and verify via a scratch-dir `clasp pull` after — never trust the `clasp push` success message alone.
 
+- **Re-verifying the orphan list surfaced 3 MORE real, uncaptured client responses** (2026-09-01): Alberta Truss, MATIX-SK, and SBS, all period `2026-01` — same root cause as Nelson (system-email dead-letter bug existed for this feature's entire history until the fix). This was actually caught via a bug in the *first* re-verification script (assumed `FEEDBACK_FORM_*` Script Properties store a JSON object with `.formId`, when they're actually a plain string Form ID — see `ClientFeedback.gs` header comment) which silently misclassified all 13 live forms as non-live, inflating "orphans with responses" from 1 to 4 and exposing the 3 real lost responses in the process. Corrected script confirmed the 65-safe-to-trash count is accurate and unaffected.
+- **Backfilled all 13 designer rows** (Alberta Truss: PRS/DBS; MATIX-SK: DBG/DBS; SBS: BCH/SDA/SVN/PBG/JYS/ABB/SYR/DBG/BIT — BSG intentionally skipped, blank on the client's form) via the same real queue/handler path as Nelson. Verified correct: `client_code`/`designer_code`/`raw_score` all match the source Form responses, all 13 queue items `COMPLETED`.
+- **Confirmed a latent bug advisor had flagged earlier is real**: `period_id` is stored as a Date object, not the `"YYYY-MM"` string written (`"2026-01"` → `2026-01-01T06:00:00.000Z`). First verification attempt filtered on `period_id` string equality and silently returned zero rows even though 6 of 13 writes had already succeeded — switching to a `client_code`-only filter (same as the Nelson verification) fixed it. Also confirmed `QueueProcessor.processQueue()` has a per-run batch limit — 13 queued items needed 3 separate `processQueue()` calls to fully drain.
+- Confirmed `ALBERTA TRUSS` (with a space) is genuinely the correct `client_code` in `DIM_CLIENT_MASTER` — not a Norspan-style code mismatch, just an unusual naming convention for that one client.
+
 ### Next Recommended Step
-- Trash the 65 confirmed-safe orphan forms — the only remaining step in TASK CF-1. Hand the business owner the ID list (regenerable via `analyzeFeedbackForms()`), don't script a bulk-delete loop.
+- Trash the 65 confirmed-safe orphan forms — the only remaining step in TASK CF-1. Hand the business owner the ID list (regenerable via the corrected orphan-verification script — see CTO_TASK_QUEUE.md for the raw-string property-value fix), don't script a bulk-delete loop.
 
 ---
 

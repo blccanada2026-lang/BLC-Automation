@@ -33,10 +33,12 @@ lacks, that silently deletes it from DEV.
 
 ## Session State (last updated: end of turn, 2026-08-31)
 
-**TASK CF-1 update:** PROD deploy reversion incident (stale Apps Script
-editor tab autosaving over `clasp push`) found and resolved; both
-ClientFeedback fixes durably confirmed live in PROD. Nelson Lumber backfill
-complete and verified correct. Only remaining step in this thread: trash
+**TASK CF-1 update, 2026-09-01:** PROD deploy reversion incident resolved;
+Nelson Lumber backfill complete. Re-verifying the orphan list caught a bug
+in the first verification script and, as a result, surfaced 3 MORE real
+uncaptured client responses (Alberta Truss, MATIX-SK, SBS — all Q1 2026) —
+same root cause as Nelson. All 13 designer rows across those 3 clients now
+backfilled and verified correct. Only remaining step in this thread: trash
 the 65 confirmed-safe orphan forms (hand list to business owner). Full
 detail in the CF-1 section below.
 
@@ -153,15 +155,56 @@ because the fix wasn't durably deployed yet per the reversion incident
 above — those bad rows were found and deleted before the final correct
 write.)
 
-**65 orphan Google Forms confirmed safe to trash (zero responses each) —
-NOT YET TRASHED, this is the only remaining step in this thread.** Full
-list not repeated here (regenerate any time via the read-only
-`analyzeFeedbackForms()` script — pastable into any `.gs` file, discovers
-everything live from Drive + Script Properties, no hand-maintained list
-needed). 13 other forms are currently live/cached (`FEEDBACK_FORM_*`
-Script Properties) — never trash those. Only the business owner should
-execute the actual trash operation; hand them the ID list, don't script
-a bulk-delete loop.
+**Three more real, uncaptured client responses found and backfilled,
+2026-09-01 — same root cause as Nelson.** Re-verifying the orphan list
+(needed after discovering the first verification script's live-form
+detection was broken — see below) surfaced 3 more responses sitting on
+still-*live* forms (not orphans) that never reached
+`FACT_CLIENT_FEEDBACK`, because the system-email dead-letter bug existed
+for this feature's entire history until the fix landed:
+- Alberta Truss, period `2026-01`: designers PRS (4), DBS (4)
+- MATIX-SK, period `2026-01`: designers DBG (4), DBS (4)
+- SBS, period `2026-01`: designers BCH (5), SDA (5), SVN (4), PBG (4),
+  JYS (4), ABB (4), SYR (4), DBG (4), BIT (4) — **BSG intentionally
+  skipped**, left blank on the client's form, matches the trigger's own
+  skip-blank-rows logic.
+
+All 13 rows backfilled via the real queue/handler path (same pattern as
+Nelson), verified correct: `client_code`/`designer_code`/`raw_score` all
+match the source form responses, all 13 queue items `COMPLETED`.
+**Confirms the `period_id` Date-coercion landmine is real** (flagged
+earlier, not yet fixed) — verification had to switch from `period_id`
+string-equality (which silently returned zero rows) to filtering by
+`client_code` only, since `period_id` is stored as a Date object
+(`2026-01` → `2026-01-01T06:00:00.000Z`), not the string written. Also
+confirmed `QueueProcessor.processQueue()` has some per-run batch limit —
+13 items needed 3 separate `processQueue()` calls to fully drain (6, then
+0 more progress, then the remaining 7 completed on a further call).
+
+**First verification script had a real bug, caught before any damage —
+worth remembering for next time.** `FEEDBACK_FORM_{periodId}_{clientCode}`
+Script Properties store the Google Form ID as a **plain string**, not a
+JSON object with a `.formId` field (see `ClientFeedback.gs` header comment,
+"SCRIPT PROPERTIES KEYS" section) — the first re-verification script
+assumed the JSON shape, silently failed `JSON.parse` on every entry, and
+reported 0 live forms instead of 13. This inflated the "orphans with
+responses" count from 1 (Nelson) to 4, which is what surfaced the 3 new
+lost responses above — a lucky catch from a bug, but the corrected script
+(`liveIds[fileId] = key` using the raw string value) is the one to reuse
+going forward. Also confirmed: `ALBERTA TRUSS` (with a space) is the real,
+correct `client_code` in `DIM_CLIENT_MASTER` — not a Norspan-style
+mismatch, just an unusual naming convention for that one client.
+
+**65 orphan Google Forms confirmed safe to trash (zero responses each,
+independently re-verified twice) — this is the only remaining step in
+this thread.** Full list not repeated here (regenerate any time via the
+read-only `analyzeFeedbackForms()` script — pastable into any `.gs` file,
+discovers everything live from Drive + Script Properties, no
+hand-maintained list needed; use the corrected raw-string property-value
+logic above, not the JSON-shape assumption). 13 forms are currently
+live/cached (`FEEDBACK_FORM_*` Script Properties) — never trash those.
+Only the business owner should execute the actual trash operation; hand
+them the ID list, don't script a bulk-delete loop.
 
 **Still open, deferred (not urgent):** `src/setup/TestRunner.gs`'s missing
 `Config.isDev()` guards (see above) — not yet fixed.
