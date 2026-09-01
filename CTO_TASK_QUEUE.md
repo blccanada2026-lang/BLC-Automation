@@ -125,7 +125,44 @@ must be measured directly in `FACT_WORK_LOGS`/`FACT_JOB_EVENTS`** (group by
     resulted in an actual duplicate FACT row** — no data remediation
     workstream needed behind this finding. Only the storage cleanup below
     remains.
-4. Purge only the ~8,948 stale `IDEM_MIGR-WL-*` migration keys (frees ~70%
+4. ⏸️ **PAUSED before deletion, 2026-09-01 — user asked to re-check with
+   advisor first, which caught a real problem.** `previewIdemMigrKeyPurge()`
+   confirmed exact count = **4,184** keys matching `IDEM_MIGR-WL-` (fewer
+   than the rough ~8,948 upper-bound estimate from the original diagnostic —
+   that number included other prefixes too). **NOT all 4,184 are safe to
+   delete — batch tags matter.** Traced `MigrationReplayEngine.gs` +
+   importer files directly and confirmed:
+   - `BATCH-001` = default/general cutover batch
+     (`MigrationConfig.CURRENT_BATCH`)
+   - `BATCH-002` = `MayTimesheetImporter.gs`
+   - `BATCH-003` = `Q1TimesheetImporter.gs` — task queue's own "raw Q1
+     `FACT_WORK_LOGS` dedup... still uncleaned" note means this isn't
+     fully closed out either, some caution warranted
+   - **`BATCH-004` = `JuneWorkLogImporter.gs` — ACTIVELY BEING RECONCILED,
+     DO NOT PURGE.** That file contains live `BATCH-004-HOURS-FIX`
+     correction functions explicitly referencing "BATCH-004 idempotency
+     gaps" — matches the task queue's own open "June billing... status
+     not rechecked recently" item. These markers are still load-bearing.
+   - **Why it matters even though `MigrationReplayEngine.gs:375`'s
+     `replay_status='REPLAYED'` sheet flag is the primary duplicate
+     guard** (checked before the handler runs at all): `batchMarkReplayed_()`
+     has a try/catch that logs and swallows a write failure rather than
+     throwing — if that sheet flag ever silently failed to get set for a
+     row, the `IDEM_MIGR-WL-*` Script Property is the ONLY remaining
+     guard against a duplicate `FACT_WORK_LOGS` row on a future re-run of
+     that batch.
+   `purgeIdemMigrKeysBatch()` has been rewritten with a hard
+   `SAFE_BATCH_TAGS` allowlist that defaults to **empty** (refuses to
+   delete anything until populated) — deployed to PROD, verified durable.
+   Added `censusIdemMigrKeys()` (bucket matched keys by BATCH tag +
+   census the ~4,700-key residual tail that isn't fully explained yet) and
+   `exportIdemMigrKeysBeforePurge()` (dumps all 4,184 keys to Drive before
+   any deletion — this was missing before, asymmetric with the `IDEM_TEST`
+   export). **Next: run `censusIdemMigrKeys()`, get explicit per-batch
+   confirmation (BATCH-001/002 likely safe, BATCH-003 needs the Q1 dedup
+   question resolved first, BATCH-004 excluded until June reconciliation
+   is confirmed closed), then populate `SAFE_BATCH_TAGS` and redeploy
+   before purging.** Purge only the stale
    of the space) — export the full key list first, delete one-at-a-time
    with a fresh-recount-and-hard-stop-on-mismatch gate (same pattern that
    worked for the 65-form trash), batched (~1,000/run) to stay under the
