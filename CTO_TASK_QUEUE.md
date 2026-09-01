@@ -48,6 +48,103 @@ section below, kept for reference — nothing further to action.
 
 ---
 
+**NEW THREAD, 2026-09-01 — PROD Script Properties quota, root cause in IdempotencyEngine (TASK PQ-1). ACTIVE, mid-investigation, nothing purged or deleted yet.**
+`diagnosePropertiesQuota()` run against PROD: 12,081 properties, ~524,258 bytes by the
+script's own UTF-16-length accounting, against Apps Script's documented 500KB
+(512,000-byte) hard total-storage limit for PropertiesService (source:
+https://developers.google.com/apps-script/guides/services/quotas). **Not yet
+independently confirmed as an active "store is full" incident** — the script's
+own byte math may not match Google's internal accounting; a write-probe and a
+`_SYS_LOGS` check (below) are needed before treating this as more than "near
+the limit."
+
+**Root cause:** `IdempotencyEngine.checkAndMark()`
+(`src/03-infrastructure/IdempotencyEngine.gs:29`) writes a permanent
+`IDEM_<key>` Script Property for every processed job/work-log/QC event and
+never expires or bulk-cleans them. Only `clear(key)` (line 60) removes one,
+and only on a handler retry — not routine cleanup. Breakdown: `IDEM_WORK`
+1,180 / `IDEM_QC` 913 / `IDEM_JOB` 568 / `IDEM_TEST` 155 / `IDEM_MIGRATED` 121
+/ `IDEM_ORPHAN` 53 / `IDEM_PERF` 37 / `IDEM_WL` 20 (all ongoing, still
+growing) + **~8,948 near-unique `IDEM_MIGR-WL-*` keys** — one-time historical
+migration idempotency markers; those migrations are done and will never
+replay, so these are pure permanent cruft, roughly 70% of total bytes.
+`FEEDBACK_FORM` = 13, matching CF-1's "13 live forms" exactly — confirms this
+run was against the same PROD store CF-1 investigated.
+
+**Real-but-unverified risk:** if the store is actually full, any new
+`props.setProperty()` write (including new `IDEM_*` keys) may be silently
+failing — `checkAndMark()`'s catch block (lines 44-48) logs
+`IDEMPOTENCY_STORE_FULL` and returns `true` (treats as non-duplicate), which
+would mean new duplicate submissions aren't currently being caught. The read
+path (line 37) is unaffected — existing keys still dedupe fine; exposure
+would be limited to events first seen after the store filled, not
+"idempotency is off" globally.
+
+**Flagged separately — do NOT sweep into the delete set:** `IDEM_TEST` (155
+keys) is test-idempotency data sitting in PROD's live Properties store. Per
+R10.8 this class of finding is a stop-work condition (same root-cause
+pattern as the 2026-07-08 incident `testing-policy.md` exists to prevent) —
+needs its own explanation, not just deletion. **Must be exported (key+value)
+before any purge** — both to preserve evidence of when/how it got there and
+because purging destroys that evidence.
+
+**CORRECTION, same day — the write-probe result above was misleading, NOT
+resolved as "nearing limit only."** `_SYS_LOGS` (ground truth, not a
+point-in-time probe) shows **2,705 `IDEMPOTENCY_STORE_FULL` failures since
+2026-07-22T06:18:13Z, most recent 2026-09-01T18:21:08Z (hours before this
+check)** — the store has been intermittently hovering at/over the 512,000-
+byte limit for ~6 weeks, not a new development. A point-in-time write-probe
+can succeed even when the store fails moments later — it isn't the
+authoritative signal, `_SYS_LOGS` is.
+
+**Actual blast radius is narrower than 2,705, still unmeasured.** A failed
+mark does NOT by itself create a duplicate FACT row — `checkAndMark()`
+returning `true` just means that one event processed correctly, once, with
+no dedup marker persisted. A duplicate only materializes if that exact same
+`idempotency_key` is delivered again later and finds no marker. **Real harm
+must be measured directly in `FACT_WORK_LOGS`/`FACT_JOB_EVENTS`** (group by
+`idempotency_key`, count > 1, since 2026-07-22) — not inferred from the
+2,705 figure. Audit script pending, results not yet in.
+
+**Next steps, in order:**
+1. ✅ **DONE 2026-09-01** — write-probe succeeded (store had headroom at
+   that instant) — **superseded by the `_SYS_LOGS` finding above, do not
+   rely on this result for incident framing.**
+2. ✅ **DONE 2026-09-01** — `_SYS_LOGS` check: 2,705 `IDEMPOTENCY_STORE_FULL`
+   entries, 2026-07-22 → 2026-09-01 (ongoing, see correction above).
+3. ✅ **DONE 2026-09-01** — 155 `IDEM_TEST` keys exported (name+value) to a
+   Drive file before any purge touches the store. **This unblocks the
+   purge** (`IDEM_TEST` itself is explicitly excluded from the delete set —
+   real explanation for test data in PROD's Properties store still owed,
+   separate from this cleanup).
+3b. ✅ **DONE 2026-09-01 — CLEAN.** Duplicate-`idempotency_key` audit
+    against `FACT_WORK_LOGS`/`FACT_JOB_EVENTS`, July-Sept 2026 partitions:
+    **0 duplicate keys in either table** (2,132 distinct keys in
+    FACT_WORK_LOGS, 2,307 in FACT_JOB_EVENTS, none appearing more than
+    once). **Confirms none of the 2,705 failed idempotency marks ever
+    resulted in an actual duplicate FACT row** — no data remediation
+    workstream needed behind this finding. Only the storage cleanup below
+    remains.
+4. Purge only the ~8,948 stale `IDEM_MIGR-WL-*` migration keys (frees ~70%
+   of the space) — export the full key list first, delete one-at-a-time
+   with a fresh-recount-and-hard-stop-on-mismatch gate (same pattern that
+   worked for the 65-form trash), batched (~1,000/run) to stay under the
+   6-min execution ceiling. **Do NOT use `setProperties(keepObj, true)`** —
+   a bug in the keep-filter would silently wipe `PORTAL_BASE_URL` /
+   `PORTAL_LINK_SECRET` / `FEEDBACK_FORM_*` / `SOP_*` / `HM_ALERT_RECIPIENT`.
+5. Deploy the purge script via `npm run push:prod` (not pasted into the Apps
+   Script editor) — re-opens the exact autosave-clobber failure mode from
+   the 2026-08-31 reversion incident if done via editor paste-and-run for a
+   mutating script. Confirmed safe re: the held New Version redeploy:
+   editor-run functions pick up a plain `clasp push` immediately without
+   disturbing what's live at `/exec`.
+6. **Separate follow-up, not this task:** `IdempotencyEngine` has no
+   TTL/expiry design at all — will refill given time even after this purge.
+   Needs its own task (e.g. period-partitioned idempotency keys instead of
+   unbounded flat Script Properties). Not scoping it now.
+
+---
+
 **NEW THREAD, 2026-08-28/31 — ClientFeedback.gs duplicate-form + lost-response investigation (TASK CF-1).**
 Found ~70 duplicate "BLC Performance Feedback" Google Forms in Drive while
 investigating an unrelated question. Root causes identified and fixed,
