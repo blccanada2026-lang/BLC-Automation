@@ -330,6 +330,11 @@ var ClientTimesheetEngine = (function () {
   function resolveBlockerClientCodes_(blocker, jobMap) {
     var d = (blocker && blocker.data) || {};
 
+    // NOTE for future checks: an empty d.clients array or empty d.combos
+    // object resolves to zero exclusions (neither blocks nor errors) —
+    // harmless today since all 5 current checks only push an issue when
+    // their list is non-empty, but keep that invariant if this resolver
+    // ever needs to recognize a 6th check's attribution shape.
     if (d.client_code) {
       return [String(d.client_code).toUpperCase().trim()];
     }
@@ -348,7 +353,11 @@ var ClientTimesheetEngine = (function () {
       for (var i = 0; i < d.all_job_numbers.length; i++) {
         var job = jobMap[d.all_job_numbers[i]];
         if (!job) return null; // unmappable job — can't safely scope, block everything
-        codes.push(String(job.client_code || '').toUpperCase().trim());
+        // Must match the byClient grouping loop's own blank-client_code
+        // default ('UNKNOWN') below — otherwise a flagged job with no
+        // client_code silently slips through unskipped instead of being
+        // excluded like every other attributable blocker.
+        codes.push(String(job.client_code || 'UNKNOWN').toUpperCase().trim());
       }
       return codes;
     }
@@ -468,7 +477,7 @@ var ClientTimesheetEngine = (function () {
     }
 
     // Write to sheet tab TIMESHEET|{periodId}
-    writeTimesheetSheet_(periodId, label, byClient);
+    writeTimesheetSheet_(periodId, label, byClient, blockedClients);
 
     Logger.info('TIMESHEET_GEN_COMPLETE', {
       module:    MODULE,
@@ -488,7 +497,7 @@ var ClientTimesheetEngine = (function () {
 
   // ── Sheet output ─────────────────────────────────────────────
 
-  function writeTimesheetSheet_(periodId, label, byClient) {
+  function writeTimesheetSheet_(periodId, label, byClient, blockedClients) {
     var ss      = SpreadsheetApp.getActiveSpreadsheet();
     var tabName = 'TIMESHEET_EXPORT';  // single overwriting tab — no tab proliferation
 
@@ -506,6 +515,18 @@ var ClientTimesheetEngine = (function () {
     allRows.push(['BLC Nexus — Client Timesheet', label, '', '', '', '', '', '', '']);
     allRows.push(['Generated: ' + new Date().toLocaleString(), '', '', '', '', '', '', '', '']);
     allRows.push(['', '', '', '', '', '', '', '', '']);
+
+    // Skipped clients — a partial run must not look identical to a
+    // complete one to anyone opening this sheet later without
+    // cross-referencing execution logs (billing-adjacent artifact of record).
+    var blockedCodes = blockedClients ? Object.keys(blockedClients).sort() : [];
+    if (blockedCodes.length > 0) {
+      allRows.push(['SKIPPED (data integrity)', '', '', '', '', '', '', '', '']);
+      blockedCodes.forEach(function (cc) {
+        allRows.push([cc, blockedClients[cc].join('; '), '', '', '', '', '', '', '']);
+      });
+      allRows.push(['', '', '', '', '', '', '', '', '']);
+    }
 
     // Column headers
     var COL_HEADERS = ['Job #', 'Client Ref', 'Type', 'Designer(s)', 'Hours', 'Rate', 'Currency', 'Amount', 'Status'];
@@ -798,6 +819,13 @@ function runGenerateClientTimesheets(periodId) {
   var pid    = periodId;
   var result = ClientTimesheetEngine.generate(pid);
   var clients = Object.keys(result.clients).sort();
+
+  if (result.skipped_clients.length > 0) {
+    console.log('=== SKIPPED — data integrity gate (' + result.skipped_clients.length + ' client(s)) ===');
+    result.skipped_clients.forEach(function (cc) {
+      console.log('  ' + cc + ': ' + result.skipped_reasons[cc].join('; '));
+    });
+  }
 
   console.log('=== Flat Timesheet: ' + pid + ' (' + clients.length + ' clients) ===');
   for (var i = 0; i < clients.length; i++) {

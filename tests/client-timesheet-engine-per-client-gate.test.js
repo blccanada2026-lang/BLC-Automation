@@ -22,8 +22,12 @@ function loadSrc(relPath) {
 }
 
 class FakeSheet {
+  constructor() { this.writtenRows = null; }
   clearContents() {}
-  getRange() { return { setValues: function () {} }; }
+  getRange() {
+    var self = this;
+    return { setValues: function (rows) { self.writtenRows = rows; } };
+  }
   autoResizeColumn() {}
 }
 
@@ -47,16 +51,18 @@ function installMocks() {
     }
   };
   global.Logger = { info: function () {}, warn: function () {}, error: function () {} };
+  var fakeSheet = new FakeSheet();
   global.SpreadsheetApp = {
     getActiveSpreadsheet: function () {
       return {
-        getSheetByName: function () { return new FakeSheet(); },
-        insertSheet:    function () { return new FakeSheet(); }
+        getSheetByName: function () { return fakeSheet; },
+        insertSheet:    function () { return fakeSheet; }
       };
     }
   };
   global.isMigratedWorkLog = function () { return false; };
 
+  store.__sheet = fakeSheet;
   return store;
 }
 
@@ -171,6 +177,73 @@ describe('generate() — blocker attributable to one specific client', () => {
 
     expect(Object.keys(result.clients)).toEqual(['BETA']);
     expect(result.skipped_clients).toEqual(['ALPHA']);
+  });
+
+  test('a flagged job with a blank client_code is skipped, not silently billed into UNKNOWN', () => {
+    // generate()'s own byClient grouping buckets a blank client_code as
+    // 'UNKNOWN' (see the byClient loop) — the resolver must use the same
+    // default, or a flagged job with no client_code slips through
+    // unskipped and its hours get billed into the UNKNOWN bucket instead
+    // of being excluded like every other attributable blocker.
+    seedJobsAndHours('2026-08', [
+      { job_number: 'JOB-BLANK', client_code: '' },
+      { job_number: 'JOB-B', client_code: 'BETA' }
+    ]);
+    preBillingResult = {
+      cleared: false,
+      blockers: [{
+        check: 'CHECK_1_DUPLICATE_WORK_LOGS', message: 'dupes',
+        data: { all_job_numbers: ['JOB-BLANK'] }
+      }]
+    };
+
+    var result = ClientTimesheetEngine.generate('2026-08A');
+
+    expect(Object.keys(result.clients)).toEqual(['BETA']);
+    expect(result.skipped_clients).toEqual(['UNKNOWN']);
+  });
+
+  test('mixed blockers: one attributable + one unattributable in the same run still blocks the whole period', () => {
+    // The unattributable blocker (no recognized attribution shape) must
+    // still win and block everything, regardless of processing order or
+    // whether an earlier blocker in the array was cleanly attributable.
+    seedJobsAndHours('2026-08', [
+      { job_number: 'JOB-A', client_code: 'ALPHA' },
+      { job_number: 'JOB-B', client_code: 'BETA' }
+    ]);
+    preBillingResult = {
+      cleared: false,
+      blockers: [
+        { check: 'CHECK_3_CLIENT_CODE_CONSISTENCY', message: 'bad code', data: { client_code: 'ALPHA' } },
+        { check: 'CHECK_UNKNOWN', message: 'mystery blocker', data: {} }
+      ]
+    };
+
+    expect(() => ClientTimesheetEngine.generate('2026-08A')).toThrow(/Billing blocked/);
+  });
+
+  test('the written sheet itself records which clients were skipped and why', () => {
+    // TIMESHEET_EXPORT is a billing-adjacent artifact of record — a
+    // partial run must not look identical to a complete one to anyone
+    // who opens the sheet later without cross-referencing execution logs.
+    seedJobsAndHours('2026-08', [
+      { job_number: 'JOB-A', client_code: 'ALPHA' },
+      { job_number: 'JOB-B', client_code: 'BETA' }
+    ]);
+    preBillingResult = {
+      cleared: false,
+      blockers: [{
+        check: 'CHECK_3_CLIENT_CODE_CONSISTENCY', message: 'bad code',
+        data: { client_code: 'ALPHA' }
+      }]
+    };
+
+    ClientTimesheetEngine.generate('2026-08A');
+
+    var writtenText = store.__sheet.writtenRows.map(function (row) { return row.join(' '); }).join('\n');
+    expect(writtenText).toMatch(/SKIPPED/);
+    expect(writtenText).toMatch(/ALPHA/);
+    expect(writtenText).toMatch(/CHECK_3_CLIENT_CODE_CONSISTENCY/);
   });
 
   test('skipped_reasons reports WHY each skipped client was excluded', () => {
