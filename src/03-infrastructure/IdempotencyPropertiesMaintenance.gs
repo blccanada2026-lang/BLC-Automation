@@ -228,9 +228,16 @@ function selfTestRestoreRoundTrip() {
  */
 function purgeIdemMigrKeysBatch() {
   var PREFIX = 'IDEM_MIGR-WL-';
-  var SAFE_BATCH_TAGS = []; // INTENTIONALLY EMPTY — populate only after
-                            // per-batch confirmation from censusIdemMigrKeys()
-                            // output; see file header for batch mapping.
+  // Confirmed safe 2026-09-01, see CTO_TASK_QUEUE.md TASK PQ-1 for the
+  // full verification chain: no trigger reaches migration replay, both
+  // batches' MIGRATION_NORMALIZED.replay_status fully clean (BATCH-001's
+  // 14 apparent exceptions confirmed to be validation-rejected TEST-*
+  // fixtures with zero corresponding Script Properties), and the
+  // export/restore path proven via a real-data round-trip test.
+  // BATCH-004 (JuneWorkLogImporter, still under active reconciliation)
+  // deliberately excluded — do not add it without re-running that
+  // verification chain against its own current state.
+  var SAFE_BATCH_TAGS = ['BATCH-001', 'BATCH-002'];
   var BATCH_LIMIT = 1000;
 
   if (SAFE_BATCH_TAGS.length === 0) {

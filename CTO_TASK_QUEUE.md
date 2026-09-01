@@ -190,10 +190,20 @@ must be measured directly in `FACT_WORK_LOGS`/`FACT_JOB_EVENTS`** (group by
   space-neutral) instead of creating new dummy keys, since any new
   `setProperty()` can fail while the store is full — the purge itself is
   unaffected by this (`deleteProperty()` needs no headroom).
-- **Next: user to re-run `selfTestRestoreRoundTrip()` (updated version) to
-  get final `ROUND-TRIP TEST PASSED` confirmation, then populate
-  `SAFE_BATCH_TAGS = ['BATCH-001', 'BATCH-002']` in
-  `purgeIdemMigrKeysBatch()`, redeploy, and run the purge.**
+- ✅ **`selfTestRestoreRoundTrip()` — ROUND-TRIP TEST PASSED, 2026-09-01.**
+  Sampled 3 real BATCH-002 keys, exported, deleted, restored from export,
+  verified byte-identical to originals, cleaned up test export file. Real
+  keys left correctly restored, net-zero effect on real data. **The
+  restore path is proven, not just designed.**
+
+**All five verifications complete — purge is now ready to run, still not
+executed:** (1) no trigger reaches replay, (2) BATCH-002 fully clean,
+(3) BATCH-001 fully clean, (4) restore path proven via real-data
+round-trip, (5) full 4,184-key export already captured to Drive before
+any of this started. `SAFE_BATCH_TAGS` populated with
+`['BATCH-001', 'BATCH-002']` in `purgeIdemMigrKeysBatch()`, redeployed.
+**Next: explicit user go-ahead, then run `purgeIdemMigrKeysBatch()`
+repeatedly (~3 runs at 1,000/batch) until `PURGE COMPLETE`.**
 
 Purge only the stale
    of the space) — export the full key list first, delete one-at-a-time
