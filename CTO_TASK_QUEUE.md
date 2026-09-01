@@ -196,25 +196,38 @@ correct `client_code` in `DIM_CLIENT_MASTER` — not a Norspan-style
 mismatch, just an unusual naming convention for that one client.
 
 **65 orphan Google Forms confirmed safe to trash (zero responses each,
-independently re-verified twice) — this is the only remaining step in
-this thread.** Full list not repeated here (regenerate any time via the
-read-only `analyzeFeedbackForms()` script — pastable into any `.gs` file,
-discovers everything live from Drive + Script Properties, no
-hand-maintained list needed; use the corrected raw-string property-value
-logic above, not the JSON-shape assumption). 13 forms are currently
-live/cached (`FEEDBACK_FORM_*` Script Properties) — never trash those.
-Only the business owner should execute the actual trash operation; hand
-them the ID list, don't script a bulk-delete loop.
+independently re-verified three times) — final indexed list produced
+2026-09-01, awaiting manual trash by the business owner.** Regenerate any
+time via a read-only script that lists live Script Properties (raw string
+values, not JSON — see the property-shape note above) then cross-checks
+Drive forms against them, counting responses on each non-live one; only
+zero-response, non-live forms are safe. **Do not hand-transcribe this
+list by hand** — a manual retype attempt this session produced 69 IDs
+instead of 65 (no duplicates, just transcription drift from a long
+repetitive list) and was caught and discarded before being used. Always
+have the script itself print an indexed, self-consistent list
+(`N of TOTAL`, plus `array.length` printed separately as a cross-check)
+and work directly from that execution log — never from a re-typed copy.
+13 forms are currently live/cached (`FEEDBACK_FORM_*` Script Properties)
+— never trash those; 1 additional orphan (Nelson, already backfilled)
+still has its original real response on the form and is correctly
+excluded from the safe list. Only the business owner executes the actual
+trash operation, one by one via Drive search/URL — no bulk-delete script.
 
 **Still open, deferred (not urgent):** `src/setup/TestRunner.gs`'s missing
 `Config.isDev()` guards (see above) — not yet fixed.
 
-**Session sequencing status (2026-08-31): steps 1 and 2 done, step 3 remains.**
+**Session sequencing status (2026-09-01): steps 1 and 2 done, step 3 is
+now just a manual Drive action for the business owner.**
 1. ✅ `git push origin main` + `npm run push:prod` for commits `7f8cce8` and
    `5e895d5` — done, verified durable after the reversion incident above.
    **No New Version redeploy** (still correct — see deployment nuance above).
-2. ✅ Nelson Lumber backfill — done, verified correct.
-3. ⬜ Trash the 65 safe orphans — next step.
+2. ✅ Nelson Lumber backfill — done, verified correct. Extended: 3 more
+   real responses found + backfilled (Alberta Truss, MATIX-SK, SBS, all
+   Q1 2026 — 13 designer rows total), see above.
+3. ⬜ Trash the 65 safe orphans — final indexed list produced, awaiting
+   manual execution by the business owner via Drive. This is the only
+   open item left in TASK CF-1.
 
 ---
 

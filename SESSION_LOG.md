@@ -37,8 +37,10 @@
 - **Confirmed a latent bug advisor had flagged earlier is real**: `period_id` is stored as a Date object, not the `"YYYY-MM"` string written (`"2026-01"` → `2026-01-01T06:00:00.000Z`). First verification attempt filtered on `period_id` string equality and silently returned zero rows even though 6 of 13 writes had already succeeded — switching to a `client_code`-only filter (same as the Nelson verification) fixed it. Also confirmed `QueueProcessor.processQueue()` has a per-run batch limit — 13 queued items needed 3 separate `processQueue()` calls to fully drain.
 - Confirmed `ALBERTA TRUSS` (with a space) is genuinely the correct `client_code` in `DIM_CLIENT_MASTER` — not a Norspan-style code mismatch, just an unusual naming convention for that one client.
 
+- **Produced the final, indexed safe-to-trash list** (2026-09-01): 65 entries, `N of 65` per line plus `array.length` printed separately as a cross-check. Caught and discarded a hand-transcription attempt of an earlier (non-indexed) version of this list that produced 69 IDs instead of 65 — no duplicates, just drift from manually retyping a long repetitive list — before it was ever used. Lesson: never hand-copy a list like this between the execution log and the user; have the script itself produce a self-consistent, indexed final version and work directly from that log.
+
 ### Next Recommended Step
-- Trash the 65 confirmed-safe orphan forms — the only remaining step in TASK CF-1. Hand the business owner the ID list (regenerable via the corrected orphan-verification script — see CTO_TASK_QUEUE.md for the raw-string property-value fix), don't script a bulk-delete loop.
+- Trash the 65 confirmed-safe orphan forms using the final indexed list from this session's log — the only remaining step in TASK CF-1. This is a manual Drive action for the business owner (search each ID or visit `drive.google.com/open?id=<ID>`), not a script.
 
 ---
 
