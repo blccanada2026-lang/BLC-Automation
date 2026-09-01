@@ -77,10 +77,38 @@ further bundle with the already-held NEW-1/W2-3/W2-4 features in
 whatever "New Version" redeploy eventually happens — do not treat this
 as a small, independent, separately-deployable change once it reaches
 PROD's source.
-**Next steps, none done yet:** (1) act on code review findings, (2) live
-DEV verification (`npm run push:dev` from the worktree), (3) merge to
-local `main`, (4) explicit user go-ahead before `git push origin main` +
-`npm run push:prod` — do not skip DEV verification just because the unit
+**Code review — DONE, commit `76a34ed`.** Dispatched general-purpose
+reviewer against `cdb90a5..9ae6eb4`. Verdict: "ready to merge with fixes."
+Confirmed strengths (not just claimed): additive fields genuinely
+invisible to `DataIntegrityMonitor.gs` (read that file in full — it never
+enumerates `data`'s keys), `resolveBlockerClientCodes_` correctly matches
+all 4 real attribution shapes (traced each of the 5 real check functions'
+actual output, not just the Jest test doubles), RBAC byte-equivalent to
+the `portal_generateTimesheetPdf` precedent. **Found and fixed a real bug**
+(Important #1): the resolver defaulted a blank `client_code` to `''`
+while `generate()`'s own bucketing defaults to `'UNKNOWN'` — a flagged
+job with no `client_code` silently slipped through unskipped and got
+billed into the `UNKNOWN` bucket instead of excluded, the exact failure
+mode this feature exists to prevent. Reproduced with a failing test
+first, then one-line fix. Also fixed (Important #2): `TIMESHEET_EXPORT`
+previously gave no indication a run was partial — added a `SKIPPED (data
+integrity)` section to the sheet + matching console output for
+`runGenerateClientTimesheets`. Also added the two missing test cases
+(Important #3): blank `client_code`, and mixed attributable +
+unattributable blockers in the same run. **Not fixed, flagged instead
+per reviewer's own recommendation — needs your input:** (Important #4)
+the new `window.prompt()` period entry has no confirmation step before
+overwriting `TIMESHEET_EXPORT`, unlike `previewPayoutStatement()`'s
+quarterly-inclusion confirm — a typo (e.g. `2026-07A` instead of
+`2026-08A`) silently overwrites the shared tab with the wrong period's
+data. This is a UX/process tradeoff from moving the action to a portal
+button ("on demand" was your explicit choice), not a code bug — needs a
+decision, not a unilateral fix. 559 tests total, all green.
+**Next steps, none done yet:** (1) decide on the confirm-step question
+above, (2) live DEV verification (`npm run push:dev` from the worktree),
+(3) merge to local `main`, (4) explicit user go-ahead before
+`git push origin main` + `npm run push:prod` — do not skip DEV
+verification just because the unit
 tests are green. **Do not start TASK NEW-4 (payout-run review) or NEW-5
 (SOP activation) until this is at least merged** — user's explicit
 priority order was timesheet → payroll → SOP, one at a time.
