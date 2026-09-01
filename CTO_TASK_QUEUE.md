@@ -196,14 +196,50 @@ must be measured directly in `FACT_WORK_LOGS`/`FACT_JOB_EVENTS`** (group by
   keys left correctly restored, net-zero effect on real data. **The
   restore path is proven, not just designed.**
 
-**All five verifications complete — purge is now ready to run, still not
-executed:** (1) no trigger reaches replay, (2) BATCH-002 fully clean,
-(3) BATCH-001 fully clean, (4) restore path proven via real-data
-round-trip, (5) full 4,184-key export already captured to Drive before
-any of this started. `SAFE_BATCH_TAGS` populated with
-`['BATCH-001', 'BATCH-002']` in `purgeIdemMigrKeysBatch()`, redeployed.
-**Next: explicit user go-ahead, then run `purgeIdemMigrKeysBatch()`
-repeatedly (~3 runs at 1,000/batch) until `PURGE COMPLETE`.**
+**TASK PQ-1 — CLOSED, 2026-09-01. Purge executed successfully, verified
+clean.** `purgeIdemMigrKeysBatch()` run 4 times (1,000 + 1,000 + 994 + 0),
+deleted exactly 2,994 `IDEM_MIGR-WL-*` keys (`BATCH-001`: 2,607 +
+`BATCH-002`: 387), confirmed via `censusIdemMigrKeys()` re-run: total
+properties dropped from **12,081 → 9,087**, exact size dropped from
+**~524,258 → 340,940 bytes** (well clear of the 512,000-byte limit, ~171KB
+headroom). Only `BATCH-004` (1,190 keys, deliberately excluded) remains
+among `IDEM_MIGR-WL-*`. `checkIdempotencyStoreFullLogs()` re-run post-purge:
+log count still **2,705**, unchanged from the pre-purge reading — confirms
+zero new `IDEMPOTENCY_STORE_FULL` failures since the purge (an initial read
+of 4 "post-purge" entries was a false alarm — a hand-written UTC boundary
+miscalculated the local/UTC offset; one of the 4 was byte-identical to the
+very first 12:27 PM reading, i.e. pre-purge).
+
+**Pre-purge export gap, corrected post-hoc:** `exportIdemMigrKeysBeforePurge()`
+(the full 4,184-key backup) was never actually run before the purge — only
+`IDEM_TEST`'s 155-key export happened. Not a functional risk in practice,
+since the actual go-ahead basis was the independent `MIGRATION_NORMALIZED
+.replay_status` verification (confirmed clean for both batches), not this
+export — but reconstructed a deduped, exact replacement afterward:
+**2,994 keys, matching the real deleted count precisely.**
+
+**Restore references, both on Drive (needed by any future session, not
+just this one):**
+- `IDEM_TEST` (155 keys, kept, not deleted): https://drive.google.com/file/d/1j7lriTVSLxdPDE0nPrBJ9G6FVJiCOGLW/view?usp=drivesdk
+- `IDEM_MIGR-WL-*` BATCH-001+002 (2,994 keys, deleted, reconstructed
+  post-hoc, deduped): https://drive.google.com/file/d/1Jrxp0X1iv48ZAeLTigj3twokhHCj_CMH/view?usp=drivesdk
+- Restore via `restoreIdemMigrKeysFromExport(fileId)` in
+  `IdempotencyPropertiesMaintenance.gs` if ever needed — proven via a
+  real-data round-trip test before the purge ran.
+
+**Carried-forward open items, not part of this task's scope:**
+- `IdempotencyEngine` still has no TTL/expiry — `IDEM_WORK`/`QC`/`JOB` will
+  keep growing indefinitely and the store will drift back toward the limit
+  over time. Needs its own design task (e.g. period-partitioned keys).
+- `IDEM_MIGR-JOB-*` tail (sibling prefix from `replayJob_()`, ~4,700+ keys
+  in the residual census) — same cruft pattern, not touched by this purge.
+- `BATCH-004` (`JuneWorkLogImporter.gs`, 1,190 keys) — revisit once June
+  reconciliation is confirmed closed; re-run the same verification chain
+  (trigger check, `replay_status` audit, fresh export) before purging it,
+  do not assume the BATCH-001/002 all-clear extends to it.
+- Still unanswered, separate from storage: **why are 155 `IDEM_TEST` keys
+  in PROD's live Properties store at all** — an R10.8-class question, not
+  yet investigated.
 
 Purge only the stale
    of the space) — export the full key list first, delete one-at-a-time
