@@ -42,8 +42,10 @@
 - **Trashed all 65 confirmed-safe orphan forms** (2026-09-01): ran a script that recomputed the safe-to-trash list fresh in the same execution (no hand-copied IDs — advisor flagged backticks, not `test.gs`, as the likely cause of that script's syntax errors; switched to plain quotes and a new file, which fixed it), hard-stopped unless the count was exactly 65, then called `setTrashed(true)` per form. Result: 65/65 trashed, 0 failures, post-trash remaining count = 14 (13 live + Nelson's original orphan form) — exactly as predicted.
 - **TASK CF-1 is now fully closed**: 3 root causes fixed and durably deployed, 4 real client responses recovered and backfilled (Nelson + Alberta Truss/MATIX-SK/SBS, 13 rows total), 65 duplicate forms removed.
 
+- **Fixed the deferred `TestRunner.gs` guard gap** (2026-09-01, commit `4ce9f6f`): added the standard `Config.isDev()` guard to `clearFeedbackFormCache()`, `testFeedback()`, `testRatingRequests()`, `dryRunRatingRequests()`, `dryRunFeedbackRequests()`. R10.7 grep sweep clean. Pushed to DEV and PROD; PROD verified durable via scratch-dir `clasp pull`.
+
 ### Next Recommended Step
-- None for TASK CF-1 — fully closed. Only standing deferred item: add `Config.isDev()` guards to `TestRunner.gs`'s feedback test helpers (see "Issues Found" above).
+- None — TASK CF-1 and its one deferred follow-up are both fully closed.
 
 ---
 

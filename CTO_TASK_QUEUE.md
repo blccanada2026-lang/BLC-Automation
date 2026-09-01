@@ -78,12 +78,20 @@ button isn't in active use.
 
 **Real finding, separate, not yet fixed:** `src/setup/TestRunner.gs`'s
 `clearFeedbackFormCache()`, `testFeedback()`, `testRatingRequests()`,
-`dryRunRatingRequests()`, `dryRunFeedbackRequests()` have **no
+`dryRunRatingRequests()`, `dryRunFeedbackRequests()` had **no
 `Config.isDev()` guard** — an R10.4/testing-policy.md violation (the exact
 rule written after the 2026-07-08 incident). `clearFeedbackFormCache()`
 explains much of the observed form-duplication clustering (a legitimate
 dev workflow — deliberately clearing the cache between test iterations —
-just missing its required safety guard). Needs a follow-up fix.
+just missing its required safety guard).
+
+**FIXED, 2026-09-01 (commit `4ce9f6f`).** All 5 functions now have the
+standard guard (`if (!Config.isDev()) throw new Error(...)`) as their
+first statement, matching the existing pattern used elsewhere in
+`TestRunner.gs`. R10.7 grep sweep clean (no new hardcoded identities).
+Pushed to both DEV and PROD; PROD verified durable via a scratch-dir
+`clasp pull` — byte-identical to git HEAD, all 12 `isDev()` guard
+instances present (7 pre-existing + 5 new).
 
 **Real finding, more serious — `FACT_CLIENT_FEEDBACK` has ZERO rows in
 PROD, total.** No client feedback has ever been captured in production via
