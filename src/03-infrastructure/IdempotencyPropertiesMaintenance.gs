@@ -161,42 +161,57 @@ function restoreIdemMigrKeysFromExport(fileId) {
 }
 
 /**
- * Self-contained round-trip test of the export → delete → restore path,
- * using disposable IDEM_MIGR-WL-RESTORETEST-* keys that don't collide
- * with any real data. Creates them, exports, deletes (simulating the
- * purge), restores from the export, verifies, then cleans up both the
- * test keys and the test export file. Safe to run directly against PROD —
- * touches nothing but its own throwaway keys.
+ * Self-contained round-trip test of the export → delete → restore path.
+ * Samples 3 REAL, already-existing IDEM_MIGR-WL-*BATCH-002* keys (BATCH-002
+ * is fully confirmed replayed — see CTO_TASK_QUEUE.md TASK PQ-1) rather than
+ * creating new dummy keys: the store has been intermittently AT its 500KB
+ * limit (confirmed 2026-09-01), so any setProperty() of a brand-new key can
+ * fail. Deleting then restoring the SAME existing key is space-neutral —
+ * needs no spare quota — and still proves the exact mechanism the purge
+ * depends on. Ends net-zero on real data: the 3 sampled keys are deleted,
+ * then immediately restored to their original values, so nothing is
+ * actually lost even mid-test.
  */
 function selfTestRestoreRoundTrip() {
+  var PREFIX = 'IDEM_MIGR-WL-';
+  var TEST_BATCH_TAG = 'BATCH-002';
+  var SAMPLE_SIZE = 3;
+
   var props = PropertiesService.getScriptProperties();
-  var testKeys = [
-    'IDEM_MIGR-WL-RESTORETEST-1-BATCH-001',
-    'IDEM_MIGR-WL-RESTORETEST-2-BATCH-001',
-    'IDEM_MIGR-WL-RESTORETEST-3-BATCH-001'
-  ];
+  var allProps = props.getProperties();
+  var candidates = Object.keys(allProps).filter(function(k) {
+    return k.indexOf(PREFIX) === 0 && k.indexOf(TEST_BATCH_TAG) !== -1;
+  });
 
-  testKeys.forEach(function(k) { props.setProperty(k, '1'); });
-  console.log('Setup: created ' + testKeys.length + ' disposable test keys.');
+  if (candidates.length < SAMPLE_SIZE) {
+    console.log('Not enough ' + TEST_BATCH_TAG + ' keys to sample (' + candidates.length + ' found). Aborting.');
+    return;
+  }
 
-  var lines = ['SELF-TEST export — ' + new Date().toISOString(),
+  var testKeys = candidates.slice(0, SAMPLE_SIZE);
+  var originalValues = {};
+  testKeys.forEach(function(k) { originalValues[k] = allProps[k]; });
+
+  console.log('Sampling ' + testKeys.length + ' REAL existing ' + TEST_BATCH_TAG + ' keys:');
+  testKeys.forEach(function(k) { console.log('  ' + k + ' = ' + originalValues[k]); });
+
+  var lines = ['SELF-TEST export (real keys, will be restored) — ' + new Date().toISOString(),
                'Total keys: ' + testKeys.length, ''];
-  testKeys.forEach(function(k) { lines.push(k + ' = ' + props.getProperty(k)); });
+  testKeys.forEach(function(k) { lines.push(k + ' = ' + originalValues[k]); });
   var filename = 'selftest_restore_' + new Date().toISOString().replace(/[:.]/g, '-') + '.txt';
   var file = DriveApp.createFile(filename, lines.join('\n'), MimeType.PLAIN_TEXT);
-  console.log('Exported test keys to: ' + file.getUrl());
+  console.log('Exported to: ' + file.getUrl());
 
   testKeys.forEach(function(k) { props.deleteProperty(k); });
   var allGone = testKeys.every(function(k) { return props.getProperty(k) === null; });
-  console.log('Deleted test keys (simulating purge). All gone: ' + allGone);
+  console.log('Deleted (simulating purge). All gone: ' + allGone);
 
   var restoredCount = restoreIdemMigrKeysFromExport(file.getId());
-  var allRestored = testKeys.every(function(k) { return props.getProperty(k) === '1'; });
-  console.log('Restore reported ' + restoredCount + ' keys. All correctly restored: ' + allRestored);
+  var allRestored = testKeys.every(function(k) { return props.getProperty(k) === originalValues[k]; });
+  console.log('Restore reported ' + restoredCount + ' keys. All correctly restored to original values: ' + allRestored);
 
-  testKeys.forEach(function(k) { props.deleteProperty(k); });
   file.setTrashed(true);
-  console.log('Cleanup complete — test keys removed, test export file trashed.');
+  console.log('Cleanup: test export file trashed. Real keys left restored (not deleted again).');
   console.log('');
   console.log(allGone && allRestored && restoredCount === testKeys.length
     ? 'ROUND-TRIP TEST PASSED'

@@ -162,7 +162,40 @@ must be measured directly in `FACT_WORK_LOGS`/`FACT_JOB_EVENTS`** (group by
    confirmation (BATCH-001/002 likely safe, BATCH-003 needs the Q1 dedup
    question resolved first, BATCH-004 excluded until June reconciliation
    is confirmed closed), then populate `SAFE_BATCH_TAGS` and redeploy
-   before purging.** Purge only the stale
+   before purging.**
+
+**All verifications now complete, 2026-09-01 — SAFE_BATCH_TAGS =
+['BATCH-001','BATCH-002'] confirmed safe, purge not yet run.**
+- ✅ No installed trigger reaches `MigrationReplayEngine.replayAll` or any
+  Step-D importer function (checked every `ScriptApp.newTrigger` call in
+  the codebase) — replay is human/editor-invoked only, a controllable risk.
+- ✅ `censusIdemMigrKeys()`: BATCH-001 = 2,607, BATCH-002 = 387,
+  BATCH-004 = 1,190 (0 BATCH-003 — the Q1 dedup caution turned out moot,
+  no keys under that tag exist in this set). Residual ~4,700 gap explained:
+  mostly `IDEM_MIGR-JOB-*` (a sibling prefix from `replayJob_()`, out of
+  scope for this purge — separate cleanup opportunity for later).
+- ✅ `MIGRATION_NORMALIZED.replay_status` check: BATCH-002 = 0 unreplayed
+  WORK_LOG rows (fully clean). BATCH-001 = 14 unreplayed, but confirmed
+  via `checkIfTestRowsHaveProperties()` (0 matches) that all 14 are
+  validation-rejected `TEST-*` fixtures with NO corresponding Script
+  Property at all (`MigrationReplayEngine.gs:340-342` filters to
+  `validation_status==='VALID'` before the replay loop even runs, so
+  `checkAndMark()` was never called for them) — BATCH-001 fully clean too.
+- ✅ **Live confirmation the store is genuinely at/over the 500KB limit
+  right now**: `selfTestRestoreRoundTrip()`'s first attempt failed with
+  `"You have exceeded the property storage quota"` on its own test-key
+  setup — direct proof, not just historical `_SYS_LOGS`, that new writes
+  are failing at this moment. Rewrote the self-test to sample 3 REAL
+  existing BATCH-002 keys (delete + restore to original value, net-zero,
+  space-neutral) instead of creating new dummy keys, since any new
+  `setProperty()` can fail while the store is full — the purge itself is
+  unaffected by this (`deleteProperty()` needs no headroom).
+- **Next: user to re-run `selfTestRestoreRoundTrip()` (updated version) to
+  get final `ROUND-TRIP TEST PASSED` confirmation, then populate
+  `SAFE_BATCH_TAGS = ['BATCH-001', 'BATCH-002']` in
+  `purgeIdemMigrKeysBatch()`, redeploy, and run the purge.**
+
+Purge only the stale
    of the space) — export the full key list first, delete one-at-a-time
    with a fresh-recount-and-hard-stop-on-mismatch gate (same pattern that
    worked for the 65-form trash), batched (~1,000/run) to stay under the
