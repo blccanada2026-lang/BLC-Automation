@@ -1191,6 +1191,9 @@ function runTestSheetAdapterSBS() {
  * Run this once before re-running testFeedback().
  */
 function clearFeedbackFormCache() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var periodId = '2026-03';
   var props    = PropertiesService.getScriptProperties();
   var all      = props.getProperties();
@@ -1207,6 +1210,9 @@ function clearFeedbackFormCache() {
 }
 
 function testFeedback() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   // Sends one feedback email per active client to BLC Gmail (not real clients).
   // Designer-client pairs are derived from REF_ACCOUNT_DESIGNER_MAP for Q1 2026.
   // Period 2026-03 = last completed quarter (Jan/Feb/Mar).
@@ -1227,6 +1233,9 @@ function testFeedback() {
  * instead of real TL/PM addresses. Safe to run before go-live.
  */
 function testRatingRequests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var actorEmail = Session.getActiveUser().getEmail();
   var result = PortalData.sendRatingRequests(actorEmail, '2026-03', 'blccanada2026@gmail.com');
   console.log(JSON.stringify(result, null, 2));
@@ -1238,6 +1247,9 @@ function testRatingRequests() {
  * Run this to verify logic before quota is available.
  */
 function dryRunRatingRequests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var actorEmail = Session.getActiveUser().getEmail();
   var result = PortalData.sendRatingRequests(actorEmail, '2026-03', 'blccanada2026@gmail.com', true);
   console.log(JSON.stringify(result, null, 2));
@@ -1248,6 +1260,9 @@ function dryRunRatingRequests() {
  * — without sending any emails.
  */
 function dryRunFeedbackRequests() {
+  if (!Config.isDev()) {
+    throw new Error('Test suite cannot run in PROD. Switch to DEV environment.');
+  }
   var actorEmail = Session.getActiveUser().getEmail();
   var result = ClientFeedback.sendFeedbackRequests(actorEmail, {
     periodId:  '2026-03',
