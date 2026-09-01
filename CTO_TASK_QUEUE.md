@@ -237,9 +237,21 @@ just this one):**
   reconciliation is confirmed closed; re-run the same verification chain
   (trigger check, `replay_status` audit, fresh export) before purging it,
   do not assume the BATCH-001/002 all-clear extends to it.
-- Still unanswered, separate from storage: **why are 155 `IDEM_TEST` keys
-  in PROD's live Properties store at all** — an R10.8-class question, not
-  yet investigated.
+- ✅ **RESOLVED, 2026-09-01 — not an R10.8 violation, false alarm from
+  naming.** Traced every idKey construction starting with `TEST` in the
+  codebase (exactly two): `TestArtifactVoidFixer.gs` (voids
+  `client_code='NORSPAN'` test-pollution rows from `VW_JOB_CURRENT_STATE`/
+  `FACT_JOB_EVENTS` — root-caused in its own header to `TestHarness.gs`/
+  `TestRunner.gs` hardcoding `'NORSPAN'` pre-2026-07-08 `Config.isDev()`
+  guard) and `TestWorkLogVoidFixer.gs` ("PROD contamination cleanup —
+  Fix 4", voids `actor_code='DS1'` `FACT_WORK_LOGS` rows via net-zero
+  negated-hours entries). Both are legitimate one-time PROD remediation
+  scripts for the already-known 2026-07-08 incident, not new test data
+  sitting in PROD — the `IDEM_TEST` keys are those fixers' own
+  idempotency guards (so a crashed/partial run can be safely re-run
+  without double-voiding), not contamination themselves. No action
+  needed; excluding them from the PQ-1 purge was still correct as a
+  matter of scope discipline, just not because of an open incident.
 
 Purge only the stale
    of the space) — export the full key list first, delete one-at-a-time
