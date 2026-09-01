@@ -304,6 +304,57 @@ var ClientTimesheetEngine = (function () {
     return buildWorkLogEntries_(period.monthPartition, period.fromDate, period.toDate, period.year, cc, jobMap, productMap);
   }
 
+  // ── Per-client pre-billing gate isolation ───────────────────
+
+  /**
+   * Resolves which client_code(s) a single PreBillingGate blocker
+   * affects, so generate() can skip only those clients instead of
+   * blocking the whole period. Returns null when the blocker can't be
+   * safely attributed to specific client(s) — caller must treat that
+   * as "block everything", the original conservative behavior.
+   *
+   * Recognizes every attribution shape the current 5 checks return:
+   *   data.client_code       — single code (checkClientCodeConsistency_)
+   *   data.clients            — array of codes (checkRateConfigurationCompleteness_, part a)
+   *   data.combos              — object of { client_code, ... } (checkRateConfigurationCompleteness_, part b)
+   *   data.all_job_numbers    — job_numbers mapped through jobMap (checkDuplicateWorkLogs_,
+   *                             checkOrphanedWorkLogs_, checkAllocatedToValidity_). A job_number
+   *                             not found in jobMap (e.g. a true orphan has no VW row at all)
+   *                             is unmappable — returns null for the whole blocker.
+   *   anything else            — unrecognized shape, returns null (conservative default)
+   *
+   * @param {Object} blocker
+   * @param {Object} jobMap  job_number -> VW_JOB_CURRENT_STATE row
+   * @returns {string[]|null}
+   */
+  function resolveBlockerClientCodes_(blocker, jobMap) {
+    var d = (blocker && blocker.data) || {};
+
+    if (d.client_code) {
+      return [String(d.client_code).toUpperCase().trim()];
+    }
+    if (Array.isArray(d.clients)) {
+      return d.clients.map(function (c) { return String(c).toUpperCase().trim(); });
+    }
+    if (d.combos && typeof d.combos === 'object') {
+      var comboCodes = {};
+      Object.keys(d.combos).forEach(function (k) {
+        comboCodes[String(d.combos[k].client_code || '').toUpperCase().trim()] = true;
+      });
+      return Object.keys(comboCodes);
+    }
+    if (Array.isArray(d.all_job_numbers)) {
+      var codes = [];
+      for (var i = 0; i < d.all_job_numbers.length; i++) {
+        var job = jobMap[d.all_job_numbers[i]];
+        if (!job) return null; // unmappable job — can't safely scope, block everything
+        codes.push(String(job.client_code || '').toUpperCase().trim());
+      }
+      return codes;
+    }
+    return null; // unrecognized shape — conservative default, block everything
+  }
+
   // ── Main generate function ───────────────────────────────────
 
   /**
@@ -311,33 +362,61 @@ var ClientTimesheetEngine = (function () {
    * Writes output to sheet tab TIMESHEET|{periodId} (creates or overwrites).
    *
    * @param {string} [periodId]  e.g. '2026-06A'. Default: current period.
-   * @returns {{ clients: Object, period_id: string }}
+   * @returns {{ clients: Object, period_id: string, skipped_clients: string[] }}
    */
   function generate(periodId) {
     periodId   = periodId || currentPeriod_();
     var period = parsePeriod_(periodId);
     var label  = periodLabel_(period);
+    var jobMap = loadJobMap_();
 
     // ── Pre-billing gate (commit 4, PreBillingGate.gs) ──────────
     // Checks 1/2/3/8/9 scoped to this period. A gate error (vs. a
     // cleared:false data finding) is a pre-billing-gate bug — see
     // that file's header comment — and propagates unmodified here.
-    var gateResult = runPreBillingChecks(periodId);
+    //
+    // Per-client isolation: each blocker is resolved to the specific
+    // client_code(s) it affects (resolveBlockerClientCodes_) so only
+    // those clients are excluded below — everyone else still generates
+    // this run. A blocker that can't be attributed to specific clients
+    // (resolver returns null) falls back to the original whole-period
+    // block, unchanged from before this feature.
+    var gateResult      = runPreBillingChecks(periodId);
+    var blockedClients  = {}; // client_code -> [blocker reason, ...]
+
     if (!gateResult.cleared) {
-      Logger.error('TIMESHEET_BLOCKED_PRE_BILLING_GATE', {
-        module: MODULE, period_id: periodId, blocker_count: gateResult.blockers.length,
-        blockers: JSON.stringify(gateResult.blockers.map(function(b) { return b.check + ': ' + b.message; }))
+      for (var b = 0; b < gateResult.blockers.length; b++) {
+        var blocker = gateResult.blockers[b];
+        var codes   = resolveBlockerClientCodes_(blocker, jobMap);
+
+        if (codes === null) {
+          Logger.error('TIMESHEET_BLOCKED_PRE_BILLING_GATE', {
+            module: MODULE, period_id: periodId, blocker_count: gateResult.blockers.length,
+            blockers: JSON.stringify(gateResult.blockers.map(function(bl) { return bl.check + ': ' + bl.message; }))
+          });
+          throw new Error('Billing blocked — ' + gateResult.blockers.length +
+            ' data integrity issue(s) must be resolved first. Run runPreBillingReport(\'' + periodId +
+            '\') for details.');
+        }
+
+        for (var c = 0; c < codes.length; c++) {
+          var code = codes[c];
+          if (!blockedClients[code]) blockedClients[code] = [];
+          blockedClients[code].push(blocker.check + ': ' + blocker.message);
+        }
+      }
+
+      Logger.warn('TIMESHEET_CLIENTS_SKIPPED_PRE_BILLING_GATE', {
+        module: MODULE, period_id: periodId,
+        skipped_clients: Object.keys(blockedClients).sort(),
+        reasons: JSON.stringify(blockedClients)
       });
-      throw new Error('Billing blocked — ' + gateResult.blockers.length +
-        ' data integrity issue(s) must be resolved first. Run runPreBillingReport(\'' + periodId +
-        '\') for details.');
     }
 
     Logger.info('TIMESHEET_GEN_START', { module: MODULE, period_id: periodId, label: label });
 
     var staffMap    = loadStaffMap_();
     var rateCache   = loadRateCache_();
-    var jobMap      = loadJobMap_();
     var hoursMap    = buildHoursMap_(period.monthPartition, period.fromDate, period.toDate, period.year);
 
     // Group by client → jobs
@@ -350,6 +429,7 @@ var ClientTimesheetEngine = (function () {
       if (!job) continue;
 
       var cc     = String(job.client_code  || 'UNKNOWN').toUpperCase().trim();
+      if (blockedClients[cc]) continue; // skip only the client(s) this run's blockers actually affect
       var pc     = String(job.product_code || '').toUpperCase().trim();
       var rate   = resolveRate_(rateCache, cc, pc);
       if (!rate) {
@@ -394,10 +474,16 @@ var ClientTimesheetEngine = (function () {
       module:    MODULE,
       period_id: periodId,
       clients:   Object.keys(byClient).length,
-      jobs:      jobNums.length
+      jobs:      jobNums.length,
+      skipped_clients: Object.keys(blockedClients).sort()
     });
 
-    return { clients: byClient, period_id: periodId };
+    return {
+      clients:         byClient,
+      period_id:       periodId,
+      skipped_clients: Object.keys(blockedClients).sort(),
+      skipped_reasons: blockedClients
+    };
   }
 
   // ── Sheet output ─────────────────────────────────────────────

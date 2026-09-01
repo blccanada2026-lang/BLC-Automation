@@ -137,11 +137,12 @@ function checkDuplicateWorkLogs_(monthPartitionOverride, jobFilter) {
     message:  dupeGroups.length + ' duplicate work log group(s) detected in partition ' + periodId +
               '. Total excess hours: ' + totalExcess + '. Actors: ' + Object.keys(actorsHit).sort().join(', '),
     data: {
-      period_id:      periodId,
-      dupe_groups:    dupeGroups.length,
-      excess_hours:   totalExcess,
-      actors:         Object.keys(actorsHit).sort(),
-      samples:        dupeGroups.slice(0, 10)
+      period_id:       periodId,
+      dupe_groups:     dupeGroups.length,
+      excess_hours:    totalExcess,
+      actors:          Object.keys(actorsHit).sort(),
+      samples:         dupeGroups.slice(0, 10),
+      all_job_numbers: dupeGroups.map(function (g) { return g.job_number; })
     },
     recommendedAction: 'Run WorkLogDedupAudit for ' + periodId + ' to confirm, then void the excess ' +
                         'entries via WorkLogCorrectionHandler (net-zero, per ADR-WL-001 convention).'
@@ -193,10 +194,11 @@ function checkOrphanedWorkLogs_(monthPartitionOverride, jobFilter) {
     message:  currentMonthOrphans.length + ' orphaned job_number(s) with ' + totalHours +
               ' total hours in ' + periodId + '. Largest: ' + largest.job_number + ' (' + largest.total_hours + 'h).',
     data: {
-      period_id:    periodId,
-      orphan_count: currentMonthOrphans.length,
-      total_hours:  totalHours,
-      samples:      currentMonthOrphans.slice(0, 10)
+      period_id:       periodId,
+      orphan_count:    currentMonthOrphans.length,
+      total_hours:     totalHours,
+      samples:         currentMonthOrphans.slice(0, 10),
+      all_job_numbers: currentMonthOrphans.map(function (o) { return o.job_number; })
     },
     recommendedAction: 'Run runWorkLogOrphanAuditRecent() for full detail. Check job_number normalization ' +
                         '(Check 7) before assuming a genuine orphan needing a manual VW decision (ADR-WL-001).'

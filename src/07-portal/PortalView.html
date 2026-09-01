@@ -354,6 +354,7 @@
       <button class="btn-muted btn-sm" id="btn-sbs-intake" style="display:none">⬆ Process SBS Jobs</button>
       <button class="btn-muted btn-sm" id="btn-preview-as" style="display:none">👁 Preview As</button>
       <button class="btn-muted btn-sm" id="btn-generate-timesheet" style="display:none">📄 Generate Timesheet</button>
+      <button class="btn-muted btn-sm" id="btn-generate-client-timesheets" style="display:none">🧾 Generate Client Timesheets</button>
       <button class="btn-muted btn-sm" id="btn-preview-payout-statement" style="display:none">📧 Generate Payout Statement</button>
       <button class="btn-warning btn-sm" id="btn-run-billing" style="display:none">🧾 Run Billing</button>
       <button class="btn-primary btn-sm" id="btn-create-job" style="display:none">+ New Job</button>
@@ -1395,6 +1396,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-sbs-intake').addEventListener('click',        processSbsIntake);
   document.getElementById('btn-run-billing').addEventListener('click',       runBillingRun);
   document.getElementById('btn-generate-timesheet').addEventListener('click', openGenerateTimesheetModal);
+  document.getElementById('btn-generate-client-timesheets').addEventListener('click', generateClientTimesheets);
   document.getElementById('btn-preview-payout-statement').addEventListener('click', previewPayoutStatement);
   document.getElementById('btn-submit-generate-timesheet').addEventListener('click', submitGenerateTimesheet);
   document.getElementById('btn-run-payroll').addEventListener('click',       runPayrollRun);
@@ -1516,6 +1518,7 @@ function onDataLoaded(jsonStr) {
   // canGenerateTimesheet but is not a leader (isLeader = CEO/PM/TEAM_LEAD),
   // so this must be reachable from the always-evaluated main toolbar.
   if (_data.perms.canGenerateTimesheet) document.getElementById('btn-generate-timesheet').style.display = 'inline-block';
+  if (_data.perms.canGenerateTimesheet) document.getElementById('btn-generate-client-timesheets').style.display = 'inline-block';
   if (_data.perms.canPreviewPayoutStatement) document.getElementById('btn-preview-payout-statement').style.display = 'inline-block';
 
   // Leader dashboard payroll action buttons
@@ -1796,7 +1799,7 @@ function renderPortal_(data) {
   var allBtns = ['btn-create-job','btn-sbs-intake','btn-process-queue','btn-clients',
                  'btn-leader-dash','btn-staff-panel',
                  'btn-send-briefing','btn-send-feedback','btn-send-ratings','btn-run-billing',
-                 'btn-generate-timesheet','btn-run-payroll','btn-run-bonus',
+                 'btn-generate-timesheet','btn-generate-client-timesheets','btn-run-payroll','btn-run-bonus',
                  'btn-run-quarterly-bonus','btn-run-annual-bonus','btn-rebuild-views',
                  'btn-refresh-dashboard',
                  'btn-approve-payroll','lbl-test-mode'];
@@ -1813,6 +1816,7 @@ function renderPortal_(data) {
   if (perms.canRunPayroll)   document.getElementById('btn-process-queue').style.display = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-clients').style.display       = 'inline-block';
   if (perms.canGenerateTimesheet) document.getElementById('btn-generate-timesheet').style.display = 'inline-block';
+  if (perms.canGenerateTimesheet) document.getElementById('btn-generate-client-timesheets').style.display = 'inline-block';
   if (perms.canPreviewPayoutStatement) document.getElementById('btn-preview-payout-statement').style.display = 'inline-block';
   if (perms.isLeader)        document.getElementById('btn-leader-dash').style.display   = 'inline-block';
   if (perms.canManageStaff)  document.getElementById('btn-staff-panel').style.display   = 'inline-block';
@@ -4496,6 +4500,31 @@ function submitGenerateTimesheet() {
       showToast('Timesheet generation error: ' + (err.message || String(err)), 'error');
     })
     .portal_generateTimesheetPdf(clientCode, startDate, endDate);
+}
+
+function generateClientTimesheets() {
+  var periodId = window.prompt(
+    'Period to generate (e.g. 2026-08A for Aug 1-15, 2026-08B for Aug 16-end), blank = current half-month:', '');
+  if (periodId === null) return; // user cancelled
+
+  showLoading(true);
+  TOKEN_RUN
+    .withSuccessHandler(function (json) {
+      showLoading(false);
+      var result = JSON.parse(json);
+      var msg = 'Generated timesheets for ' + result.period_id + ' — ' +
+        result.client_codes.length + ' client(s).';
+      if (result.skipped_clients.length > 0) {
+        showToast(msg + ' Skipped (data issue, see logs): ' + result.skipped_clients.join(', ') + '.', 'info');
+      } else {
+        showToast(msg, 'success');
+      }
+    })
+    .withFailureHandler(function (err) {
+      showLoading(false);
+      showToast('Could not generate client timesheets: ' + err.message, 'error');
+    })
+    .portal_generateClientTimesheets(periodId);
 }
 
 function previewPayoutStatement() {

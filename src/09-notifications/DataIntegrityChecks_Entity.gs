@@ -166,6 +166,7 @@ function checkAllocatedToValidity_(jobFilter) {
   var vwRows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
 
   var byInvalidCode = {}; // allocated_to (as stored) -> { count, jobs: [] }
+  var allJobNumbers = [];
   vwRows.forEach(function(r) {
     if (jobFilter && !jobFilter[r.job_number]) return;
     if (DIM_TERMINAL_STATES_[String(r.current_state || '').toUpperCase()]) return;
@@ -176,6 +177,7 @@ function checkAllocatedToValidity_(jobFilter) {
     if (!byInvalidCode[allocatedTo]) byInvalidCode[allocatedTo] = { count: 0, jobs: [] };
     byInvalidCode[allocatedTo].count++;
     if (byInvalidCode[allocatedTo].jobs.length < 10) byInvalidCode[allocatedTo].jobs.push(r.job_number);
+    allJobNumbers.push(r.job_number);
   });
 
   var invalidCodes = Object.keys(byInvalidCode);
@@ -189,7 +191,7 @@ function checkAllocatedToValidity_(jobFilter) {
     category: 'ALLOCATED_TO_INVALID',
     message:  invalidCodes.length + ' invalid allocated_to value(s) across ' + totalJobs + ' job(s): ' +
               invalidCodes.slice(0, 10).map(function(c) { return c + ' (' + byInvalidCode[c].count + ')'; }).join(', '),
-    data: { invalid_count: invalidCodes.length, job_count: totalJobs, samples: byInvalidCode },
+    data: { invalid_count: invalidCodes.length, job_count: totalJobs, samples: byInvalidCode, all_job_numbers: allJobNumbers },
     recommendedAction: 'Each value must be a valid, active DIM_STAFF_ROSTER person_code. Reassign jobs with ' +
                         'blank/email/inactive allocated_to to a real active staff member.'
   }];

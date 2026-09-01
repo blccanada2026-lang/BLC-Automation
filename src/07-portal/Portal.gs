@@ -623,6 +623,41 @@ function portal_generateTimesheetPdf(ptoken, clientCode, startDate, endDate) {
 }
 
 // ============================================================
+// portal_generateClientTimesheets — semi-monthly client timesheets, on demand
+// ============================================================
+
+/**
+ * Generates the semi-monthly client timesheet (TIMESHEET_EXPORT tab) for
+ * the given period, or the current half-month if blank. Runnable for any
+ * past or current period, so a missed period can be caught up on demand.
+ * CEO/HR_ACCOUNTING only (TIMESHEET_GENERATE + enforceFinancialAccess —
+ * same scope as portal_generateTimesheetPdf; ClientTimesheetEngine.generate()
+ * has no RBAC of its own, same situation as GenerateTimesheetPdf.gs).
+ *
+ * A client with an unresolved data-integrity issue (rate config gap,
+ * client-code mismatch, etc.) is excluded from this run rather than
+ * blocking every other client — see skipped_clients/skipped_reasons.
+ *
+ * @param {string} periodId  e.g. '2026-08A'. Blank = current half-month.
+ * @returns {string}  JSON: { period_id, client_codes, skipped_clients, skipped_reasons }
+ */
+function portal_generateClientTimesheets(ptoken, periodId) {
+  var email = PortalAuth.resolveEmail(ptoken);
+  var actor = RBAC.resolveActor(email);
+  RBAC.enforcePermission(actor, RBAC.ACTIONS.TIMESHEET_GENERATE);
+  RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.TIMESHEET_GENERATE);
+
+  var result = ClientTimesheetEngine.generate(periodId || '');
+
+  return JSON.stringify({
+    period_id:       result.period_id,
+    client_codes:    Object.keys(result.clients).sort(),
+    skipped_clients: result.skipped_clients,
+    skipped_reasons: result.skipped_reasons
+  });
+}
+
+// ============================================================
 // portal_confirmPaystub — staff confirms their own paystub
 // ============================================================
 
