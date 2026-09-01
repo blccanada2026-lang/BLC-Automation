@@ -129,6 +129,81 @@ function previewIdemMigrKeyPurge() {
 }
 
 /**
+ * Restores IDEM_MIGR-WL-* keys from a Drive export file written by
+ * exportIdemMigrKeysBeforePurge() (or selfTestRestoreRoundTrip()'s
+ * disposable copy of the same format). Every value in these markers is
+ * the literal string '1' — the property's existence is the marker, not
+ * its content — so restoration is a plain setProperty() replay of each
+ * exported line. This is the actual undo path for the purge below.
+ *
+ * @param {string} fileId  Drive file ID of the export to restore from.
+ * @returns {number}  Count of keys restored.
+ */
+function restoreIdemMigrKeysFromExport(fileId) {
+  var file = DriveApp.getFileById(fileId);
+  var content = file.getBlob().getDataAsString();
+  var lines = content.split('\n');
+  var props = PropertiesService.getScriptProperties();
+
+  var restored = 0;
+  lines.forEach(function(line) {
+    var idx = line.indexOf(' = ');
+    if (idx === -1) return; // header/blank lines, not a key=value row
+    var key = line.substring(0, idx);
+    var value = line.substring(idx + 3);
+    if (key.indexOf('IDEM_MIGR-WL-') !== 0) return; // safety: only restore expected prefix
+    props.setProperty(key, value);
+    restored++;
+  });
+
+  console.log('Restored ' + restored + ' keys from export file ' + fileId);
+  return restored;
+}
+
+/**
+ * Self-contained round-trip test of the export → delete → restore path,
+ * using disposable IDEM_MIGR-WL-RESTORETEST-* keys that don't collide
+ * with any real data. Creates them, exports, deletes (simulating the
+ * purge), restores from the export, verifies, then cleans up both the
+ * test keys and the test export file. Safe to run directly against PROD —
+ * touches nothing but its own throwaway keys.
+ */
+function selfTestRestoreRoundTrip() {
+  var props = PropertiesService.getScriptProperties();
+  var testKeys = [
+    'IDEM_MIGR-WL-RESTORETEST-1-BATCH-001',
+    'IDEM_MIGR-WL-RESTORETEST-2-BATCH-001',
+    'IDEM_MIGR-WL-RESTORETEST-3-BATCH-001'
+  ];
+
+  testKeys.forEach(function(k) { props.setProperty(k, '1'); });
+  console.log('Setup: created ' + testKeys.length + ' disposable test keys.');
+
+  var lines = ['SELF-TEST export — ' + new Date().toISOString(),
+               'Total keys: ' + testKeys.length, ''];
+  testKeys.forEach(function(k) { lines.push(k + ' = ' + props.getProperty(k)); });
+  var filename = 'selftest_restore_' + new Date().toISOString().replace(/[:.]/g, '-') + '.txt';
+  var file = DriveApp.createFile(filename, lines.join('\n'), MimeType.PLAIN_TEXT);
+  console.log('Exported test keys to: ' + file.getUrl());
+
+  testKeys.forEach(function(k) { props.deleteProperty(k); });
+  var allGone = testKeys.every(function(k) { return props.getProperty(k) === null; });
+  console.log('Deleted test keys (simulating purge). All gone: ' + allGone);
+
+  var restoredCount = restoreIdemMigrKeysFromExport(file.getId());
+  var allRestored = testKeys.every(function(k) { return props.getProperty(k) === '1'; });
+  console.log('Restore reported ' + restoredCount + ' keys. All correctly restored: ' + allRestored);
+
+  testKeys.forEach(function(k) { props.deleteProperty(k); });
+  file.setTrashed(true);
+  console.log('Cleanup complete — test keys removed, test export file trashed.');
+  console.log('');
+  console.log(allGone && allRestored && restoredCount === testKeys.length
+    ? 'ROUND-TRIP TEST PASSED'
+    : 'ROUND-TRIP TEST FAILED — do not trust the restore path until this is fixed.');
+}
+
+/**
  * Deletes historical migration idempotency-key properties in batches,
  * RESTRICTED to SAFE_BATCH_TAGS only — BATCH-004 (JuneWorkLogImporter,
  * still being actively reconciled per CTO_TASK_QUEUE.md) is deliberately
