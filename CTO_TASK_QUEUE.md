@@ -31,7 +31,61 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-08-31)
+## Session State (last updated: end of turn, 2026-09-01)
+
+**NEW THREAD, 2026-09-01 — 3-feature sequence: timesheet automation (TASK
+NEW-3, done, not yet merged) → payout-run review (not started) → SOP
+activation (not started).** CTO assessment found none of these three
+things ("generate timesheets bi-weekly per client, payout runs for the
+design team, SOP in the job flow") worked flawlessly end-to-end yet. User
+asked to scope and build all 3, in that priority order, one at a time via
+the brainstorming process.
+
+**TASK NEW-3 (timesheet automation) — implementation DONE via strict TDD,
+code review dispatched (result not yet in), NOT YET MERGED to main.**
+Built on worktree branch `worktree-timesheet-per-client-gate`
+(`.claude/worktrees/timesheet-per-client-gate`), commit `9ae6eb4`. Design
+(approved, bounded scope, no spec doc): timesheet generation stays
+manual/on-demand per user's explicit choice (not a scheduled trigger),
+moved to a portal button instead of requiring Apps Script editor access,
+plus a fix for `ClientTimesheetEngine.generate()` hard-blocking every
+client's timesheet on any single client's PreBillingGate data issue.
+**Real finding during brainstorming, before implementation:** the CTO
+timesheet-flawlessness assessment itself found `TIMESHEET_EXPORT` had
+only been generated ONCE ever, manually, for July 1–15 (confirmed via
+`_SYS_LOGS`/sheet content, not assumption) — no recurring habit existed.
+**What shipped:** `resolveBlockerClientCodes_()` in `ClientTimesheetEngine.gs`
+maps each gate blocker to the specific client(s) it affects (4 real
+attribution shapes across the 5 existing data-integrity checks), skipping
+only those clients while everyone else still generates; unmappable
+blockers (e.g. true orphaned work logs with no client attribution at all)
+conservatively still block the whole period, preserving original safety.
+Additive-only `all_job_numbers` field added to 3 check functions
+(`checkDuplicateWorkLogs_`/`checkOrphanedWorkLogs_` in
+`DataIntegrityChecks_WorkLog.gs`, `checkAllocatedToValidity_` in
+`DataIntegrityChecks_Entity.gs`) — confirmed via grep that
+`DataIntegrityMonitor.gs`'s daily/weekly digest (the only other real
+consumer) reads none of the fields this touches. New
+`portal_generateClientTimesheets` (Portal.gs) + button (PortalView.html),
+RBAC-gated via the existing `TIMESHEET_GENERATE` permission, mirrors
+`portal_generateTimesheetPdf`'s pattern exactly. 535 → 556 tests, all
+green.
+**IMPORTANT — this feature touches `Portal.gs`/`PortalView.html`, the
+same files already flagged below as part of PROD's split-deploy state.**
+Once merged to `main` and eventually `npm run push:prod`'d, this will
+further bundle with the already-held NEW-1/W2-3/W2-4 features in
+whatever "New Version" redeploy eventually happens — do not treat this
+as a small, independent, separately-deployable change once it reaches
+PROD's source.
+**Next steps, none done yet:** (1) act on code review findings, (2) live
+DEV verification (`npm run push:dev` from the worktree), (3) merge to
+local `main`, (4) explicit user go-ahead before `git push origin main` +
+`npm run push:prod` — do not skip DEV verification just because the unit
+tests are green. **Do not start TASK NEW-4 (payout-run review) or NEW-5
+(SOP activation) until this is at least merged** — user's explicit
+priority order was timesheet → payroll → SOP, one at a time.
+
+---
 
 **TASK CF-1 — CLOSED, 2026-09-01.** PROD deploy reversion incident
 resolved; Nelson Lumber + 3 more real responses (Alberta Truss, MATIX-SK,
