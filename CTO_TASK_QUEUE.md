@@ -33,14 +33,12 @@ lacks, that silently deletes it from DEV.
 
 ## Session State (last updated: end of turn, 2026-08-31)
 
-**TASK CF-1 update, 2026-09-01:** PROD deploy reversion incident resolved;
-Nelson Lumber backfill complete. Re-verifying the orphan list caught a bug
-in the first verification script and, as a result, surfaced 3 MORE real
-uncaptured client responses (Alberta Truss, MATIX-SK, SBS — all Q1 2026) —
-same root cause as Nelson. All 13 designer rows across those 3 clients now
-backfilled and verified correct. Only remaining step in this thread: trash
-the 65 confirmed-safe orphan forms (hand list to business owner). Full
-detail in the CF-1 section below.
+**TASK CF-1 — CLOSED, 2026-09-01.** PROD deploy reversion incident
+resolved; Nelson Lumber + 3 more real responses (Alberta Truss, MATIX-SK,
+SBS, all Q1 2026 — 13 designer rows total) backfilled and verified
+correct; all 65 confirmed-safe orphan forms trashed (65/65, 0 failures,
+post-trash count matched expectation exactly). Full detail in the CF-1
+section below, kept for reference — nothing further to action.
 
 
 **IMPORTANT — PROD is in a split state as of 2026-08-28, read before touching Portal.gs/PortalView.html or the Apps Script editor.**
@@ -217,17 +215,23 @@ trash operation, one by one via Drive search/URL — no bulk-delete script.
 **Still open, deferred (not urgent):** `src/setup/TestRunner.gs`'s missing
 `Config.isDev()` guards (see above) — not yet fixed.
 
-**Session sequencing status (2026-09-01): steps 1 and 2 done, step 3 is
-now just a manual Drive action for the business owner.**
+**TASK CF-1 — CLOSED, 2026-09-01. All 3 steps done.**
 1. ✅ `git push origin main` + `npm run push:prod` for commits `7f8cce8` and
-   `5e895d5` — done, verified durable after the reversion incident above.
+   `5e895d5` — verified durable after the reversion incident above.
    **No New Version redeploy** (still correct — see deployment nuance above).
-2. ✅ Nelson Lumber backfill — done, verified correct. Extended: 3 more
-   real responses found + backfilled (Alberta Truss, MATIX-SK, SBS, all
-   Q1 2026 — 13 designer rows total), see above.
-3. ⬜ Trash the 65 safe orphans — final indexed list produced, awaiting
-   manual execution by the business owner via Drive. This is the only
-   open item left in TASK CF-1.
+2. ✅ Nelson Lumber backfill + 3 more real responses found + backfilled
+   (Alberta Truss, MATIX-SK, SBS, all Q1 2026 — 13 designer rows total).
+3. ✅ 65 safe orphan forms trashed via a script-driven run (recomputed the
+   list fresh in the same execution, hard-stopped unless count == 65,
+   then `setTrashed(true)` on each — reversible, ~30-day Drive retention).
+   Result: 65 of 65 trashed, 0 failures, post-trash count = 14 remaining
+   (13 live + Nelson's original orphan form), exactly as expected.
+
+This thread is fully closed. Durable outcomes (3 root causes fixed, 4
+real client responses backfilled, 65 duplicate forms removed) are now in
+`SESSION_LOG.md`'s 2026-08-31/09-01 entries; nothing further to track
+here going forward except the still-deferred `TestRunner.gs`
+`Config.isDev()` gap noted above.
 
 ---
 

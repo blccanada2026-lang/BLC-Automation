@@ -39,8 +39,11 @@
 
 - **Produced the final, indexed safe-to-trash list** (2026-09-01): 65 entries, `N of 65` per line plus `array.length` printed separately as a cross-check. Caught and discarded a hand-transcription attempt of an earlier (non-indexed) version of this list that produced 69 IDs instead of 65 — no duplicates, just drift from manually retyping a long repetitive list — before it was ever used. Lesson: never hand-copy a list like this between the execution log and the user; have the script itself produce a self-consistent, indexed final version and work directly from that log.
 
+- **Trashed all 65 confirmed-safe orphan forms** (2026-09-01): ran a script that recomputed the safe-to-trash list fresh in the same execution (no hand-copied IDs — advisor flagged backticks, not `test.gs`, as the likely cause of that script's syntax errors; switched to plain quotes and a new file, which fixed it), hard-stopped unless the count was exactly 65, then called `setTrashed(true)` per form. Result: 65/65 trashed, 0 failures, post-trash remaining count = 14 (13 live + Nelson's original orphan form) — exactly as predicted.
+- **TASK CF-1 is now fully closed**: 3 root causes fixed and durably deployed, 4 real client responses recovered and backfilled (Nelson + Alberta Truss/MATIX-SK/SBS, 13 rows total), 65 duplicate forms removed.
+
 ### Next Recommended Step
-- Trash the 65 confirmed-safe orphan forms using the final indexed list from this session's log — the only remaining step in TASK CF-1. This is a manual Drive action for the business owner (search each ID or visit `drive.google.com/open?id=<ID>`), not a script.
+- None for TASK CF-1 — fully closed. Only standing deferred item: add `Config.isDev()` guards to `TestRunner.gs`'s feedback test helpers (see "Issues Found" above).
 
 ---
 
