@@ -3,6 +3,7 @@ node_modules/
 
 # Workspace management
 .worktrees/
+.claude/worktrees/
 .superpowers/
 
 # Local tooling — not application source
