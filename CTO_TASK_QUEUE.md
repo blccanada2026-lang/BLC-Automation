@@ -97,21 +97,28 @@ integrity)` section to the sheet + matching console output for
 (Important #3): blank `client_code`, and mixed attributable +
 unattributable blockers in the same run. **Not fixed, flagged instead
 per reviewer's own recommendation — needs your input:** (Important #4)
-the new `window.prompt()` period entry has no confirmation step before
+the new `window.prompt()` period entry had no confirmation step before
 overwriting `TIMESHEET_EXPORT`, unlike `previewPayoutStatement()`'s
 quarterly-inclusion confirm — a typo (e.g. `2026-07A` instead of
-`2026-08A`) silently overwrites the shared tab with the wrong period's
-data. This is a UX/process tradeoff from moving the action to a portal
-button ("on demand" was your explicit choice), not a code bug — needs a
-decision, not a unilateral fix. 559 tests total, all green.
-**Next steps, none done yet:** (1) decide on the confirm-step question
-above, (2) live DEV verification (`npm run push:dev` from the worktree),
-(3) merge to local `main`, (4) explicit user go-ahead before
-`git push origin main` + `npm run push:prod` — do not skip DEV
-verification just because the unit
-tests are green. **Do not start TASK NEW-4 (payout-run review) or NEW-5
-(SOP activation) until this is at least merged** — user's explicit
-priority order was timesheet → payroll → SOP, one at a time.
+`2026-08A`) would have silently overwritten the shared tab with the
+wrong period's data.
+**RESOLVED, commit `a4b7665` — user chose to add the confirm step.**
+Added `describePeriodForConfirm_()` (client-side, parses `YYYY-MM[A|B]`
+into a human-readable label) + a `window.confirm()` echoing the resolved
+period back before the server call, matching `previewPayoutStatement()`'s
+pattern. 559 tests total, all green, JS syntax-checked.
+
+**All code-review findings closed. Ready for DEV verification, not yet
+done.** Next steps: (1) live DEV verification (`npm run push:dev` from
+the worktree — **check DEV's current state first**, per this file's own
+standing `push:dev` discipline rule: only push from the branch that
+holds the superset of everything DEV needs, never blindly overwrite
+unrelated in-flight DEV work), (2) merge to local `main`, (3) explicit
+user go-ahead before `git push origin main` + `npm run push:prod` — do
+not skip DEV verification just because the unit tests are green.
+**Do not start TASK NEW-4 (payout-run review) or NEW-5 (SOP activation)
+until this is at least merged** — user's explicit priority order was
+timesheet → payroll → SOP, one at a time.
 
 ---
 
