@@ -31,15 +31,16 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-09-01)
+## Session State (last updated: end of turn, 2026-09-02)
 
-**NEW THREAD, 2026-09-01 — 3-feature sequence: timesheet automation (TASK
-NEW-3, done, not yet merged) → payout-run review (not started) → SOP
+**3-feature sequence: timesheet automation (TASK NEW-3, DEV-verified
+working, not yet merged) → payout-run review (not started) → SOP
 activation (not started).** CTO assessment found none of these three
 things ("generate timesheets bi-weekly per client, payout runs for the
 design team, SOP in the job flow") worked flawlessly end-to-end yet. User
 asked to scope and build all 3, in that priority order, one at a time via
 the brainstorming process.
+**Next action:** confirm with user whether to merge NEW-3 to main now.
 
 **TASK NEW-3 (timesheet automation) — implementation DONE via strict TDD,
 code review dispatched (result not yet in), NOT YET MERGED to main.**
@@ -108,14 +109,24 @@ into a human-readable label) + a `window.confirm()` echoing the resolved
 period back before the server call, matching `previewPayoutStatement()`'s
 pattern. 559 tests total, all green, JS syntax-checked.
 
-**All code-review findings closed. Ready for DEV verification, not yet
-done.** Next steps: (1) live DEV verification (`npm run push:dev` from
-the worktree — **check DEV's current state first**, per this file's own
-standing `push:dev` discipline rule: only push from the branch that
-holds the superset of everything DEV needs, never blindly overwrite
-unrelated in-flight DEV work), (2) merge to local `main`, (3) explicit
-user go-ahead before `git push origin main` + `npm run push:prod` — do
-not skip DEV verification just because the unit tests are green.
+**All code-review findings closed. Pushed to DEV and live-verified,
+2026-09-02 — WORKING.** User clicked "🧾 Generate Client Timesheets" in
+the DEV portal: period prompt appeared, confirm step appeared (both per
+the a4b7665 fix), success toast returned. Zero clients generated for the
+period entered — confirmed as a DEV data-availability gap (no seeded
+work-log rows for that period), not a bug; full round trip (RBAC →
+`ClientTimesheetEngine.generate()` → portal toast) verified working.
+**Non-incident, logged for the record:** while testing the unrelated
+pre-existing "📧 Generate Payout Statement" button in DEV (period
+2026-08), the preview email included 3 DEV-only test fixtures
+(`A26D1`/`PMBT1`/`PMCONF1`, all labeled "safe to delete") alongside real
+entries — confirmed via user answer this ran in **DEV**, not PROD,
+and `previewPayoutStatement()` never writes to any FACT table (preview
+only, per its own trailing disclaimer) — expected seeded DEV test data
+surfacing in a DEV preview, not R10.8 contamination. No action taken.
+**Next steps:** (1) merge `worktree-timesheet-per-client-gate` to local
+`main`, (2) explicit user go-ahead before `git push origin main` +
+`npm run push:prod`.
 **Do not start TASK NEW-4 (payout-run review) or NEW-5 (SOP activation)
 until this is at least merged** — user's explicit priority order was
 timesheet → payroll → SOP, one at a time.
