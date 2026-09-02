@@ -4502,10 +4502,24 @@ function submitGenerateTimesheet() {
     .portal_generateTimesheetPdf(clientCode, startDate, endDate);
 }
 
+function describePeriodForConfirm_(periodId) {
+  if (!periodId) return 'the current half-month period';
+  var m = String(periodId).trim().match(/^(\d{4})-(\d{2})([AaBb])$/);
+  if (!m) return periodId; // unrecognized format — server-side parsePeriod_ will validate and throw
+  var MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var monthName = MONTH_NAMES[parseInt(m[2], 10) - 1] || m[2];
+  var half = m[3].toUpperCase() === 'A' ? '1st–15th' : '16th–end';
+  return monthName + ' ' + half + ', ' + m[1];
+}
+
 function generateClientTimesheets() {
   var periodId = window.prompt(
     'Period to generate (e.g. 2026-08A for Aug 1-15, 2026-08B for Aug 16-end), blank = current half-month:', '');
   if (periodId === null) return; // user cancelled
+
+  var confirmMsg = 'Generate client timesheets for ' + describePeriodForConfirm_(periodId) +
+    '? This overwrites the TIMESHEET_EXPORT sheet.';
+  if (!window.confirm(confirmMsg)) return;
 
   showLoading(true);
   TOKEN_RUN
