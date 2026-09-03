@@ -490,7 +490,7 @@ function portal_sendFeedbackRequests(ptoken, periodId, testEmail) {
 
 /**
  * Returns how many feedback responses have been received for the period.
- * CEO/PM/TL only.
+ * CEO/PM/TEAM_LEAD/ADMIN only (FEEDBACK_VIEW permission).
  *
  * @param {string} periodId  e.g. '2026-06' (pass '' for current period)
  * @returns {string}  JSON: { period_id, quarter, responses_received, per_designer[] }

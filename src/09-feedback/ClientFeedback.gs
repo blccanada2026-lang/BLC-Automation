@@ -325,7 +325,7 @@ var ClientFeedback = (function () {
   // ============================================================
 
   /**
-   * @param {string} actorEmail
+   * @param {string} actorEmail  CEO/PM/TEAM_LEAD/ADMIN only (FEEDBACK_VIEW permission)
    * @param {string} periodId
    * @returns {{ period_id, quarter, responses_received, per_designer[] }}
    */
