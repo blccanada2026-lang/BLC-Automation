@@ -31,105 +31,60 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-09-02)
+## Session State (last updated: end of turn, 2026-09-03)
 
-**3-feature sequence: timesheet automation (TASK NEW-3, DEV-verified
-working, not yet merged) → payout-run review (not started) → SOP
-activation (not started).** CTO assessment found none of these three
-things ("generate timesheets bi-weekly per client, payout runs for the
-design team, SOP in the job flow") worked flawlessly end-to-end yet. User
-asked to scope and build all 3, in that priority order, one at a time via
-the brainstorming process.
-**Next action:** confirm with user whether to merge NEW-3 to main now.
+**3-feature sequence: timesheet automation (TASK NEW-3, CLOSED) → payout-run
+review (TASK NEW-4, in progress) → SOP activation (not started).** Plus an
+incidental RBAC bug (TASK RB-1) found and fixed mid-stream during NEW-4's
+diagnostics — merged to `main`, NOT yet deployed to PROD.
+**Next action:** decide whether to `npm run push:prod` now for TASK RB-1
+(a real bug currently blocking a real TEAM_LEAD in PROD), then continue
+TASK NEW-4's arithmetic-verification design (still need the PROD
+active-PM-roster check — `checkActivePmRoster()` — to close out the
+multi-PM bonus-caveat risk question).
 
-**TASK NEW-3 (timesheet automation) — implementation DONE via strict TDD,
-code review dispatched (result not yet in), NOT YET MERGED to main.**
-Built on worktree branch `worktree-timesheet-per-client-gate`
-(`.claude/worktrees/timesheet-per-client-gate`), commit `9ae6eb4`. Design
-(approved, bounded scope, no spec doc): timesheet generation stays
-manual/on-demand per user's explicit choice (not a scheduled trigger),
-moved to a portal button instead of requiring Apps Script editor access,
-plus a fix for `ClientTimesheetEngine.generate()` hard-blocking every
-client's timesheet on any single client's PreBillingGate data issue.
-**Real finding during brainstorming, before implementation:** the CTO
-timesheet-flawlessness assessment itself found `TIMESHEET_EXPORT` had
-only been generated ONCE ever, manually, for July 1–15 (confirmed via
-`_SYS_LOGS`/sheet content, not assumption) — no recurring habit existed.
-**What shipped:** `resolveBlockerClientCodes_()` in `ClientTimesheetEngine.gs`
-maps each gate blocker to the specific client(s) it affects (4 real
-attribution shapes across the 5 existing data-integrity checks), skipping
-only those clients while everyone else still generates; unmappable
-blockers (e.g. true orphaned work logs with no client attribution at all)
-conservatively still block the whole period, preserving original safety.
-Additive-only `all_job_numbers` field added to 3 check functions
-(`checkDuplicateWorkLogs_`/`checkOrphanedWorkLogs_` in
-`DataIntegrityChecks_WorkLog.gs`, `checkAllocatedToValidity_` in
-`DataIntegrityChecks_Entity.gs`) — confirmed via grep that
-`DataIntegrityMonitor.gs`'s daily/weekly digest (the only other real
-consumer) reads none of the fields this touches. New
-`portal_generateClientTimesheets` (Portal.gs) + button (PortalView.html),
-RBAC-gated via the existing `TIMESHEET_GENERATE` permission, mirrors
-`portal_generateTimesheetPdf`'s pattern exactly. 535 → 556 tests, all
-green.
-**IMPORTANT — this feature touches `Portal.gs`/`PortalView.html`, the
-same files already flagged below as part of PROD's split-deploy state.**
-Once merged to `main` and eventually `npm run push:prod`'d, this will
-further bundle with the already-held NEW-1/W2-3/W2-4 features in
-whatever "New Version" redeploy eventually happens — do not treat this
-as a small, independent, separately-deployable change once it reaches
-PROD's source.
-**Code review — DONE, commit `76a34ed`.** Dispatched general-purpose
-reviewer against `cdb90a5..9ae6eb4`. Verdict: "ready to merge with fixes."
-Confirmed strengths (not just claimed): additive fields genuinely
-invisible to `DataIntegrityMonitor.gs` (read that file in full — it never
-enumerates `data`'s keys), `resolveBlockerClientCodes_` correctly matches
-all 4 real attribution shapes (traced each of the 5 real check functions'
-actual output, not just the Jest test doubles), RBAC byte-equivalent to
-the `portal_generateTimesheetPdf` precedent. **Found and fixed a real bug**
-(Important #1): the resolver defaulted a blank `client_code` to `''`
-while `generate()`'s own bucketing defaults to `'UNKNOWN'` — a flagged
-job with no `client_code` silently slipped through unskipped and got
-billed into the `UNKNOWN` bucket instead of excluded, the exact failure
-mode this feature exists to prevent. Reproduced with a failing test
-first, then one-line fix. Also fixed (Important #2): `TIMESHEET_EXPORT`
-previously gave no indication a run was partial — added a `SKIPPED (data
-integrity)` section to the sheet + matching console output for
-`runGenerateClientTimesheets`. Also added the two missing test cases
-(Important #3): blank `client_code`, and mixed attributable +
-unattributable blockers in the same run. **Not fixed, flagged instead
-per reviewer's own recommendation — needs your input:** (Important #4)
-the new `window.prompt()` period entry had no confirmation step before
-overwriting `TIMESHEET_EXPORT`, unlike `previewPayoutStatement()`'s
-quarterly-inclusion confirm — a typo (e.g. `2026-07A` instead of
-`2026-08A`) would have silently overwritten the shared tab with the
-wrong period's data.
-**RESOLVED, commit `a4b7665` — user chose to add the confirm step.**
-Added `describePeriodForConfirm_()` (client-side, parses `YYYY-MM[A|B]`
-into a human-readable label) + a `window.confirm()` echoing the resolved
-period back before the server call, matching `previewPayoutStatement()`'s
-pattern. 559 tests total, all green, JS syntax-checked.
+**TASK NEW-3 (timesheet automation) — CLOSED, 2026-09-02/03.** Per-client
+PreBillingGate isolation in `ClientTimesheetEngine.gs` (one client's data
+issue no longer blocks everyone's timesheet) + new on-demand
+"🧾 Generate Client Timesheets" portal button, RBAC-gated on
+`TIMESHEET_GENERATE`. Built via strict TDD (559 tests), code-reviewed
+(1 real bug found/fixed: blank `client_code` defaulting mismatch that
+would have silently let a flagged job through unskipped), DEV-verified
+live by user (full round trip confirmed working; zero clients generated
+in the test run was a DEV data-availability gap, not a bug). Merged to
+`main` via fast-forward push to `origin/main` (commit `4111793`) — worktree
+sessions can't touch the primary checkout directly, so this and all
+subsequent merges in this session used `git push origin HEAD:main`
+instead of a local merge. Full history: `git log -p` on this file before
+2026-09-03, or `git log 9ae6eb4..4111793`.
+**Non-incident closed alongside this:** DEV payout-statement preview
+showed 3 test-fixture staff (`A26D1`/`PMBT1`/`PMCONF1`) mixed into real
+entries — confirmed DEV-only (not PROD) and preview-only (no FACT write),
+so this was expected seeded test data, not R10.8 contamination.
 
-**All code-review findings closed. Pushed to DEV and live-verified,
-2026-09-02 — WORKING.** User clicked "🧾 Generate Client Timesheets" in
-the DEV portal: period prompt appeared, confirm step appeared (both per
-the a4b7665 fix), success toast returned. Zero clients generated for the
-period entered — confirmed as a DEV data-availability gap (no seeded
-work-log rows for that period), not a bug; full round trip (RBAC →
-`ClientTimesheetEngine.generate()` → portal toast) verified working.
-**Non-incident, logged for the record:** while testing the unrelated
-pre-existing "📧 Generate Payout Statement" button in DEV (period
-2026-08), the preview email included 3 DEV-only test fixtures
-(`A26D1`/`PMBT1`/`PMCONF1`, all labeled "safe to delete") alongside real
-entries — confirmed via user answer this ran in **DEV**, not PROD,
-and `previewPayoutStatement()` never writes to any FACT table (preview
-only, per its own trailing disclaimer) — expected seeded DEV test data
-surfacing in a DEV preview, not R10.8 contamination. No action taken.
-**Next steps:** (1) merge `worktree-timesheet-per-client-gate` to local
-`main`, (2) explicit user go-ahead before `git push origin main` +
-`npm run push:prod`.
-**Do not start TASK NEW-4 (payout-run review) or NEW-5 (SOP activation)
-until this is at least merged** — user's explicit priority order was
-timesheet → payroll → SOP, one at a time.
+---
+
+**TASK RB-1 (getFeedbackStatus RBAC bug) — CLOSED, 2026-09-03. Merged to
+main, NOT yet deployed to PROD.** Found incidentally while diagnosing
+TASK NEW-4 (user pasted an unrelated PROD execution-log error while
+looking for a different diagnostic's output). Real bug:
+`ClientFeedback.getFeedbackStatus()` (`src/09-feedback/ClientFeedback.gs`)
+gated on `RBAC.ACTIONS.PAYROLL_RUN` (CEO-only) instead of a permission
+TEAM_LEAD/PM also hold, contradicting its own JSDoc ("CEO/PM/TL only") —
+confirmed live-blocking a real TEAM_LEAD (Samar Kumar Das) in PROD.
+**Fix:** added `RBAC.ACTIONS.FEEDBACK_VIEW` to `RBAC.gs` (true for
+CEO/PM/TEAM_LEAD/ADMIN/SYSTEM, modeled on `getLeaderDashboard()`'s
+identical visibility tier — added to all 9 roles' `PERMISSION_MATRIX`
+rows), switched `getFeedbackStatus()` to use it. TDD'd (new test file
+`tests/client-feedback-status-rbac.test.js`, 4 tests, RED reproduced the
+exact real incident) — 563/563 tests green, zero regressions. Code
+review: no critical/important findings; one minor nit (stale JSDoc role
+lists) fixed same-session. DEV-verified live by user via a direct
+`ClientFeedback.getFeedbackStatus()` call as the TEAM_LEAD test identity
+— confirmed working. Merged to `main` (fast-forward push, commit
+`d7eea8f`). **`npm run push:prod` not yet run — needs explicit go-ahead**
+since this is a live PROD bug fix, not routine feature work; ask before
+deploying.
 
 ---
 
