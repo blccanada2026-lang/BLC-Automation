@@ -331,7 +331,7 @@ var ClientFeedback = (function () {
    */
   function getFeedbackStatus(actorEmail, periodId) {
     var actor = RBAC.resolveActor(actorEmail);
-    RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_RUN);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.FEEDBACK_VIEW);
 
     var summary     = getFeedbackSummary(periodId);
     var perDesigner = Object.keys(summary).map(function(code) {
