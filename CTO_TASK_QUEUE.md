@@ -36,12 +36,26 @@ lacks, that silently deletes it from DEV.
 **3-feature sequence: timesheet automation (TASK NEW-3, CLOSED) → payout-run
 review (TASK NEW-4, in progress) → SOP activation (not started).** Plus an
 incidental RBAC bug (TASK RB-1) found and fixed mid-stream during NEW-4's
-diagnostics — merged to `main`, NOT yet deployed to PROD.
-**Next action:** decide whether to `npm run push:prod` now for TASK RB-1
-(a real bug currently blocking a real TEAM_LEAD in PROD), then continue
-TASK NEW-4's arithmetic-verification design (still need the PROD
-active-PM-roster check — `checkActivePmRoster()` — to close out the
-multi-PM bonus-caveat risk question).
+diagnostics — deployed to PROD source, New Version redeploy done by user
+2026-09-03 (also activates W2-3/W2-4/NEW-1, held since 2026-08-28 —
+PROD-setup checklist for W2-4 completed first: schemas confirmed present,
+`SOP_REVIEW_LINK_SECRET` generated, web-app access confirmed already
+"Anyone", `DIM_QC_FINDING_TYPES` was fully unseeded in PROD — all 17
+codes inserted via `QcFindingTypes.seed()`, `PLATE_ERROR` confirmed
+`ROOF_TRUSS`). **Not yet done: R10.6 post-redeploy health verification**
+(`runHealthCheck()`/`runProdContaminationCheck()`, confirm the live
+portal — not just a direct function call — now lets a real TEAM_LEAD
+view feedback status) — RB-1 shouldn't be marked fully closed until this
+runs.
+**Also, new thread same session:** portal cleanup + 2 new features
+(EPIC "Portal Cleanup & Staff/Payroll Workflow Gaps" above) — button
+cleanup resolved (no action needed), TASK NEW-6 (staff status
+maintenance) and TASK NEW-7 (paystub → HR review) logged, not started.
+**Next action:** continue TASK NEW-4's arithmetic-verification design
+(still need the PROD active-PM-roster check —
+`checkActivePmRoster()` — to close out the multi-PM bonus-caveat risk
+question) OR start TASK NEW-6/NEW-7 per user's direction — ask which
+thread to pick up.
 
 **TASK NEW-3 (timesheet automation) — CLOSED, 2026-09-02/03.** Per-client
 PreBillingGate isolation in `ClientTimesheetEngine.gs` (one client's data
@@ -587,6 +601,22 @@ Source: full CTO architecture/performance/tech-debt assessment,
   **Live DEV verification — all 5 checklist items confirmed 2026-08-27:** (1) Run Payroll (CEO) — 1 ledger row written, committed HR summary arrived correctly; (2) Run Bonus (CEO) — bonus emails + committed HR summary arrived; (3) HR_ACCOUNTING access — header/button visibility all correct; (4) quarterly bonus opt-in section rendered correctly, separate from totals; (5) renamed strings confirmed live across every email seen. **Real incident found and fixed along the way, unrelated to this feature**: DEV was running source code older than `main`, missing all 4 fixes from the 2026-08-14 session (cause unknown, no worktree showed post-2026-08-14 activity) — the `npm run push:dev` for this feature also restored those fixes as a side effect; confirmed via `clasp pull` + diff against `main` before pushing. **Real gap found in test infra**: `RBAC.gs`'s `getDevTestActors_()` already defines a synthetic HR_ACCOUNTING test identity (`test-hr@test.blc.internal` → `THR`), but `seedTestStaff()` never seeds a matching `DIM_STAFF_ROSTER` row for it, so the `?pt=` link path couldn't resolve it — worked around with an ephemeral one-off `livetest_seedThr()` script (not committed, wiped by next `push:dev`); `seedTestStaff()` should get a proper `THR` entry as a follow-up so this doesn't need re-solving next time.
   **STALE CLAIM CORRECTED 2026-09-01** — this line previously said "NOT pushed to origin, NOT deployed to PROD," which was left over from before the 2026-08-28 deploy and never updated. Directly re-verified: `origin/main` and local `main` are identical (`0cbb17e`), both NEW-1 commits (`4d14ac9`, `dba5905`) are ancestors of current `main`, and a scratch-dir `clasp pull` of PROD's actual source confirms `previewPayoutStatement`, the "📧 Generate Payout Statement" button, and the "💵 Run Payroll" button are all present and byte-identical to git HEAD's `PayrollEngine.gs`. **NEW-1's code is durably deployed to PROD's source.** What remains open is the same "New Version" redeploy gate described in the Session State block above (bundled with W2-3 and W2-4) — not a re-push.
   **Post-merge finding, not blocking:** a bare `npx jest` from the repo root double-counts/fails on unrelated content — `package.json`'s `testPathIgnorePatterns` excludes `.worktrees/` but not `.claude/worktrees/` (a second, harness-native worktree location this session used) or `code-review-graph/` (a local, gitignored tool with incompatible Vitest test files). Confirmed the actual suite is clean (536 → 535 real tests, 36 suites) once scoped past those two paths; worth adding both to the ignore list as a quick follow-up so `npm test` is reliable by default again.
+
+### EPIC: New — Portal Cleanup & Staff/Payroll Workflow Gaps (2026-09-03)
+User asked for a portal button audit/tidy-up plus two new features. Decomposed
+into 3 pieces, agreed build order: (1) button cleanup, (2) individual paystub
+→ HR review → forward to staff, (3) staff status maintenance.
+- **Button cleanup — RESOLVED, no action needed.** Audited all toolbar
+  buttons. "📄 Generate Timesheet" (PDF) looked redundant with the new
+  "🧾 Generate Client Timesheets" but isn't — the old button produces
+  actual downloadable PDF files per client/date-range (still sent to
+  clients directly), the new one writes to an internal `TIMESHEET_EXPORT`
+  review sheet, semi-monthly periods only. User confirmed PDFs still
+  needed — keeping both. "🧾 Run Billing" explained (bills clients,
+  unrelated to payroll) — not redundant, just unclear from the label.
+  Nothing else flagged for removal.
+- **TASK NEW-7** | Individual paystub → HR review → forward to staff workflow. Today `runPayrollRun()`'s `sendPaystubEmail_()` emails each staff member their paystub directly for self-confirmation — no HR-in-the-loop step exists. User wants HR to receive/verify individual paystubs first, then forward to the team. | P2 | Not started — next up after NEW-6.
+- **TASK NEW-6** | Staff lifecycle maintenance: ability to change/modify staff status (deactivate/offboard, promote, change role/supervisor) from the portal. | P2 | Not started. Confirmed gap: only `portal_onboardStaff`/`portal_bulkOnboardStaff` exist — no update/deactivate function. `DIM_STAFF_ROSTER` already has the needed fields (`active`, `role`, `supervisor_code`, `pm_code`, `effective_from`/`effective_to` — D4 point-in-time pattern), just no portal-facing write path to them. `TestStaffDeactivator.gs` (`src/12-migration/`) is an unrelated one-time test-data cleanup script, not a real feature.
 
 ### Parallel Track: BLC Growth Platform
 - **TASK GP-1** | Standalone project decision + architecture (own future CTO assessment, not folded into this backlog) | P4 | Not started, not scoped.
