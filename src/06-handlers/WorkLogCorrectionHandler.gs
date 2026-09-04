@@ -231,7 +231,13 @@ var WorkLogCorrectionHandler = (function () {
         // list (no server-side templating available to share it directly).
         if (!Constants.CORRECTABLE_WORK_LOG_EVENT_TYPES[String(r.event_type || '')]) continue;
         if (normWorkDate_(r.work_date) !== normDate) continue;
-        if (expectedHours != null && parseFloat(r.hours) !== expectedHours) continue;
+        // Skipped when expectedEventId is supplied: event_id alone already
+        // uniquely identifies the row, and requiring the ORIGINAL row's own
+        // (immutable) hours to also match p.hours breaks voiding-after-a-
+        // prior-amend, where the operator legitimately supplies the
+        // CURRENT remaining net (the amount left to zero out), not the
+        // entry's original submitted hours.
+        if (!expectedEventId && expectedHours != null && parseFloat(r.hours) !== expectedHours) continue;
         matches.push({ row: r, periodId: pid });
       }
     }
@@ -600,13 +606,17 @@ var WorkLogCorrectionHandler = (function () {
     var original  = found.row;
     var periodId  = found.periodId;
 
-    // ── Step 5b: Already-corrected guard ────────────────────────
+    // ── Step 5b: Already-voided guard ───────────────────────────
+    // Only a prior VOID blocks a further void (double-void is nonsensical
+    // — the entry is already fully zeroed). A prior AMEND does NOT block
+    // this: void-after-amend is the documented recovery path ("void the
+    // whole entry and re-submit fresh") for when a partial correction
+    // wasn't enough — blocking it here would make that advertised remedy
+    // unreachable (code review 2026-09-04).
     var existingCorrection = findExistingCorrection_(original.event_id, periodId);
-    if (existingCorrection) {
+    if (existingCorrection && existingCorrection.event_type === Constants.EVENT_TYPES.WORK_LOG_VOIDED) {
       throw new Error(
-        'WorkLogCorrectionHandler: event_id ' + original.event_id + ' was already ' +
-        (existingCorrection.event_type === Constants.EVENT_TYPES.WORK_LOG_VOIDED ? 'voided' : 'amended') +
-        ' — cannot correct it again. To make a further change, void the whole entry and re-submit fresh.'
+        'WorkLogCorrectionHandler: event_id ' + original.event_id + ' was already voided — cannot void it again.'
       );
     }
 
@@ -763,7 +773,12 @@ var WorkLogCorrectionHandler = (function () {
       actor_role:       actor.role,
       hours:            -p.hours,
       work_date:        p.work_date,
-      notes:            'Void of event_id ' + original.event_id + ' (reassigned to ' + p.new_job_number + '). ' +
+      // Literal '.' must immediately follow the event_id — CORRECTION_NOTE_RE_
+      // (this file) and PortalData.gs's identical copy both require it to
+      // recognize this as a correction of that original event. A prior
+      // version put "(reassigned to ...)" directly after the event_id with
+      // no period, which silently never matched either regex.
+      notes:            'Void of event_id ' + original.event_id + '. Reassigned to ' + p.new_job_number + '. ' +
                          '-' + p.hours + 'h. ' + reasonNote,
       idempotency_key:  idempotencyKey + '_VOID',
       payload_json:     rawPayload

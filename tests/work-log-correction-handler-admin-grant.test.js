@@ -285,6 +285,74 @@ describe('WorkLogCorrectionHandler.handleVoid — cannot double-void the same or
     var voidedRows = store['FACT_WORK_LOGS|2026-08'].filter(function (r) { return r.event_type === 'WORK_LOG_VOIDED'; });
     expect(voidedRows.length).toBe(1); // not 2 — the retry must not have written a second void
   });
+
+  test('voiding an entry that was already AMENDED (not voided) is still allowed — the documented "void the whole entry and re-submit fresh" recovery path', () => {
+    // Code-review finding (2026-09-04): the already-corrected guard's error
+    // message tells the operator to "void the whole entry and re-submit
+    // fresh" as the recovery path after a correction — but if the guard
+    // blocked VOID unconditionally on ANY prior correction (amend or
+    // void), that advertised remedy would be unreachable. Voiding after a
+    // prior amend must still work; only voiding an already-VOIDED entry
+    // is nonsensical and stays blocked (see the test above).
+    seedOriginalEntry({ event_id: 'EVT-AMENDED-A', actor_code: 'TST1', job_number: 'BLC-TEST06', work_date: '2026-08-18', hours: 5 });
+    var amendPayload = {
+      actor_code: 'TST1', job_number: 'BLC-TEST06', work_date: '2026-08-18',
+      original_hours: 5, new_hours: 4, reason: 'Corrected hours to match the client timesheet.'
+    };
+    WorkLogCorrectionHandler.handleAmend({ queue_id: 'Q-AMEND-1', payload_json: JSON.stringify(amendPayload) }, actor('CEO'));
+
+    // Now void the whole entry outright — should succeed, not be blocked
+    // by the prior amend. hours=4 is the CURRENT remaining net (5 original
+    // - 1 amend delta), the actual amount left to zero out — findOriginalEntry_
+    // skips the hours-match check when event_id is supplied (see its own
+    // comment), so this correctly locates the row via event_id alone.
+    var voidPayload = {
+      actor_code: 'TST1', job_number: 'BLC-TEST06', work_date: '2026-08-18', hours: 4,
+      event_id: 'EVT-AMENDED-A', reason: 'Scrapping this entry entirely — will re-log fresh.'
+    };
+    expect(function () {
+      WorkLogCorrectionHandler.handleVoid({ queue_id: 'Q-VOID-AFTER-AMEND', payload_json: JSON.stringify(voidPayload) }, actor('CEO'));
+    }).not.toThrow();
+
+    var voidedRows = store['FACT_WORK_LOGS|2026-08'].filter(function (r) { return r.event_type === 'WORK_LOG_VOIDED'; });
+    expect(voidedRows.length).toBe(1);
+  });
+});
+
+describe('WorkLogCorrectionHandler.handleReassign — cannot double-reassign the same original entry', () => {
+  // Code-review finding (2026-09-04): handleReassign's own Step 5b guard
+  // was silently non-functional — its void note reads 'Void of event_id
+  // X (reassigned to ...)', and CORRECTION_NOTE_RE_ requires a literal
+  // '.' immediately after the event_id, which this note never has (a
+  // space+paren follows instead). findExistingCorrection_ therefore never
+  // matched a prior reassign, so a retry could reassign the same entry
+  // twice — silently creating a second (voidRow, newRow) pair instead of
+  // being rejected.
+  test('a second reassign request targeting the same already-reassigned event_id is rejected, not silently double-applied', () => {
+    // A second, untouched row on a DIFFERENT date for the same actor+job
+    // is what masks the pre-existing negative-hours guard on a retry —
+    // its "spare" hours keep net non-negative even after the target row
+    // has already been reassigned away once, exactly like the VOID
+    // masking scenario above. Without a working Step 5b, a retry would
+    // reassign row A a second time AND leave row B's legitimate hours
+    // silently wiped out of this job's net.
+    seedOriginalEntry({ event_id: 'EVT-REASSIGN-A', actor_code: 'TST1', job_number: 'BLC-TEST04', work_date: '2026-08-18', hours: 3 });
+    seedOriginalEntry({ event_id: 'EVT-REASSIGN-B', actor_code: 'TST1', job_number: 'BLC-TEST04', work_date: '2026-08-19', hours: 3 });
+    var payload = {
+      actor_code: 'TST1', job_number: 'BLC-TEST04', work_date: '2026-08-18', hours: 3,
+      new_job_number: 'BLC-TEST05', reason: 'Logged against the wrong job.'
+    };
+    // WORK_LOG_REASSIGN wasn't part of the WORK_LOG_CORRECTION_ADMIN carve-out
+    // (HR_ACCOUNTING doesn't have it) — use CEO, which does.
+    WorkLogCorrectionHandler.handleReassign({ queue_id: 'Q-REASSIGN-1', payload_json: JSON.stringify(payload) }, actor('CEO'));
+
+    expect(function () {
+      WorkLogCorrectionHandler.handleReassign({ queue_id: 'Q-REASSIGN-2', payload_json: JSON.stringify(payload) }, actor('CEO'));
+    }).toThrow(/already/i);
+
+    var voidRows = store['FACT_WORK_LOGS|2026-08'].filter(function (r) { return r.event_type === 'WORK_LOG_VOIDED'; });
+    expect(voidRows.length).toBe(1); // not 2 — the retry must not have written a second void+resubmit pair
+  });
 });
 
 describe('WorkLogCorrectionHandler.handleAmend — WORK_LOG_CORRECTION_ADMIN carve-out', () => {
