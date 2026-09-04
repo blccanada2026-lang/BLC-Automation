@@ -28,6 +28,11 @@
 //                   "SYSTEM: true for all" invariant documented in
 //                   RBAC.gs — flagged to CTO, implemented as specified)
 //   CLIENT        — no correction authority
+//   HR_ACCOUNTING — any entry, any period (overrides period lock) via the
+//                   WORK_LOG_CORRECTION_ADMIN carve-out added 2026-09-04
+//                   (see enforceCorrectionPermission_) — admin-mediated
+//                   correction authority ONLY; HR_ACCOUNTING still has no
+//                   WORK_LOG_SUBMIT/AMEND/VOID/REASSIGN grant of its own
 //
 // QC vs QC_REVIEWER: RBAC.gs's PERMISSION_MATRIX['QC'] row must say
 // true for WORK_LOG_AMEND/VOID (so the QC_REVIEWER alias — which
@@ -377,6 +382,20 @@ var WorkLogCorrectionHandler = (function () {
     throw new Error('WorkLogCorrectionHandler: ' + status.message);
   }
 
+  /**
+   * Permission gate for handleAmend/handleVoid — accepts either the
+   * general self-service action (DESIGNER/TEAM_LEAD/PM/CEO/ADMIN
+   * correcting hours under the normal RBAC hierarchy above) or the
+   * WORK_LOG_CORRECTION_ADMIN carve-out (2026-09-04 — lets HR_ACCOUNTING
+   * perform admin-mediated corrections without gaining the general
+   * self-service action). Throws the primaryAction's standard RBACError
+   * message when the actor has neither.
+   */
+  function enforceCorrectionPermission_(actor, primaryAction) {
+    if (RBAC.hasPermission(actor, primaryAction)) return;
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_CORRECTION_ADMIN);
+  }
+
   // ============================================================
   // SECTION 3: WORK_LOG_AMEND
   // ============================================================
@@ -388,7 +407,7 @@ var WorkLogCorrectionHandler = (function () {
    */
   function handleAmend(queueItem, actor) {
     // ── Step 1: Permission (R3 — the unconditional first statement) ──
-    RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_AMEND);
+    enforceCorrectionPermission_(actor, RBAC.ACTIONS.WORK_LOG_AMEND);
 
     var queueId = queueItem.queue_id || '(unknown)';
 
@@ -481,7 +500,7 @@ var WorkLogCorrectionHandler = (function () {
    */
   function handleVoid(queueItem, actor) {
     // ── Step 1: Permission (R3 — the unconditional first statement) ──
-    RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_VOID);
+    enforceCorrectionPermission_(actor, RBAC.ACTIONS.WORK_LOG_VOID);
 
     var queueId = queueItem.queue_id || '(unknown)';
 

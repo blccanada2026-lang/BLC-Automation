@@ -330,8 +330,12 @@ var PortalData = (function () {
       // even though RBAC.PERMISSION_MATRIX['QC'] must say true for
       // WORK_LOG_AMEND/VOID so the QC_REVIEWER alias (same canonical row)
       // passes — see WorkLogCorrectionHandler.gs's checkCorrectionScope_.
-      canAmendWork:      role !== 'QC' && RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_AMEND),
-      canVoidWork:       role !== 'QC' && RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_VOID),
+      // Either grant opens the button: the self-service action, or the
+      // WORK_LOG_CORRECTION_ADMIN carve-out added 2026-09-04 for
+      // HR_ACCOUNTING's admin-mediated corrections — mirrors
+      // WorkLogCorrectionHandler.gs's enforceCorrectionPermission_.
+      canAmendWork:      role !== 'QC' && (RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_AMEND) || RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_CORRECTION_ADMIN)),
+      canVoidWork:       role !== 'QC' && (RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_VOID)  || RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_CORRECTION_ADMIN)),
       canReassignWork:   RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_REASSIGN),
       hasAllWorkScope:   actor.scope === RBAC.SCOPES.ALL
     };
@@ -1767,7 +1771,17 @@ var PortalData = (function () {
    */
   function getMyHours(email) {
     var actor = RBAC.resolveActor(email);
-    RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_SUBMIT);
+    // Either the self-service action, or the WORK_LOG_CORRECTION_ADMIN
+    // carve-out added 2026-09-04 — HR_ACCOUNTING has no WORK_LOG_SUBMIT
+    // grant of its own but needs to browse entries to find the row to
+    // correct via canAmendWork/canVoidWork below. Also closes a
+    // pre-existing gap: ADMIN's WORK_LOG_SUBMIT was already false despite
+    // ADMIN having full WORK_LOG_AMEND/VOID authority, so ADMIN could not
+    // open "My Hours" either until this OR-check was added.
+    if (!RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_SUBMIT) &&
+        !RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_CORRECTION_ADMIN)) {
+      RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_SUBMIT);
+    }
 
     // Built at call time, not module-load time — GAS load order does not
     // guarantee Constants.gs has executed before this file's top-level

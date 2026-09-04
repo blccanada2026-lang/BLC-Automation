@@ -38,6 +38,11 @@ beforeEach(() => {
   // Same reasoning — BILLING_RUN not in the shared stub's ACTIONS list,
   // needed for the canRunBilling audit-fix tests below.
   mocks.RBAC.ACTIONS.BILLING_RUN = 'BILLING_RUN';
+  // Same reasoning — needed for the canAmendWork/canVoidWork OR-widening
+  // tests below (2026-09-04).
+  mocks.RBAC.ACTIONS.WORK_LOG_AMEND = 'WORK_LOG_AMEND';
+  mocks.RBAC.ACTIONS.WORK_LOG_VOID = 'WORK_LOG_VOID';
+  mocks.RBAC.ACTIONS.WORK_LOG_CORRECTION_ADMIN = 'WORK_LOG_CORRECTION_ADMIN';
   loadSrc('../src/07-portal/PortalData.gs');
 });
 
@@ -137,5 +142,41 @@ describe('PortalData buildPerms_ — canRunBilling (RBAC audit finding, 2026-08-
   test('canRunBilling is false for PM even when other billing-adjacent permissions are granted — no accidental fallback to role or canRunPayroll', () => {
     const perms = getPerms('PM', (actor, action) => action === 'PAYROLL_VIEW'); // BILLING_RUN deliberately not stubbed true
     expect(perms.canRunBilling).toBe(false);
+  });
+});
+
+describe('PortalData buildPerms_ — canAmendWork/canVoidWork accept WORK_LOG_CORRECTION_ADMIN too (2026-09-04)', () => {
+  // HR_ACCOUNTING gained the WORK_LOG_CORRECTION_ADMIN carve-out in
+  // RBAC.gs (see rbac.test.js) so it can correct duplicate/erroneous
+  // work-log hours — but buildPerms_'s canAmendWork/canVoidWork only
+  // ever checked WORK_LOG_AMEND/WORK_LOG_VOID directly, so the Edit/Void
+  // buttons would stay hidden for HR_ACCOUNTING even after the RBAC and
+  // handler fixes. These flags must accept EITHER grant.
+  test('canAmendWork is true when only WORK_LOG_CORRECTION_ADMIN is granted, not WORK_LOG_AMEND', () => {
+    const perms = getPerms('HR_ACCOUNTING', (actor, action) => action === 'WORK_LOG_CORRECTION_ADMIN');
+    expect(perms.canAmendWork).toBe(true);
+  });
+
+  test('canVoidWork is true when only WORK_LOG_CORRECTION_ADMIN is granted, not WORK_LOG_VOID', () => {
+    const perms = getPerms('HR_ACCOUNTING', (actor, action) => action === 'WORK_LOG_CORRECTION_ADMIN');
+    expect(perms.canVoidWork).toBe(true);
+  });
+
+  test('canAmendWork/canVoidWork stay true for DESIGNER via the original WORK_LOG_AMEND/VOID grant alone — unaffected by the OR-widening', () => {
+    const perms = getPerms('DESIGNER', (actor, action) => action === 'WORK_LOG_AMEND' || action === 'WORK_LOG_VOID');
+    expect(perms.canAmendWork).toBe(true);
+    expect(perms.canVoidWork).toBe(true);
+  });
+
+  test('canAmendWork/canVoidWork are false when neither grant is present', () => {
+    const perms = getPerms('CLIENT', () => false);
+    expect(perms.canAmendWork).toBe(false);
+    expect(perms.canVoidWork).toBe(false);
+  });
+
+  test('canAmendWork/canVoidWork stay false for role "QC" even with both grants stubbed true — the pre-existing QC/QC_REVIEWER carve-out is untouched', () => {
+    const perms = getPerms('QC', () => true);
+    expect(perms.canAmendWork).toBe(false);
+    expect(perms.canVoidWork).toBe(false);
   });
 });

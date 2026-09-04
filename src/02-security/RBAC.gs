@@ -158,6 +158,7 @@ var RBAC = (function () {
     WORK_LOG_AMEND:     'WORK_LOG_AMEND',  // Correct hours on an existing entry
     WORK_LOG_VOID:      'WORK_LOG_VOID',   // Zero out an existing entry
     WORK_LOG_REASSIGN:  'WORK_LOG_REASSIGN', // Void an entry and re-log it against a different job
+    WORK_LOG_CORRECTION_ADMIN: 'WORK_LOG_CORRECTION_ADMIN', // Admin-mediated correction of ANY staff member's work-log hours (CEO/ADMIN/HR_ACCOUNTING/SYSTEM) — an additional grant into WorkLogCorrectionHandler's handleAmend/handleVoid, distinct from the self-service WORK_LOG_AMEND/VOID actions
     // ── QC ───────────────────────────────────────────────────
     QC_SUBMIT:          'QC_SUBMIT',       // Submit a job for QC review
     QC_APPROVE:         'QC_APPROVE',      // Approve a QC review
@@ -274,6 +275,7 @@ var RBAC = (function () {
       WORK_LOG_AMEND:  true,   // own entries only — scope enforced in handler, open periods only
       WORK_LOG_VOID:   true,   // own entries only — scope enforced in handler, open periods only
       WORK_LOG_REASSIGN: false, // designers cannot reassign hours to another job
+      WORK_LOG_CORRECTION_ADMIN: false,
       QC_SUBMIT:       true,   // designers submit their completed work for QC review
       QC_APPROVE:      false,
       QC_REJECT:       false,
@@ -313,6 +315,7 @@ var RBAC = (function () {
       WORK_LOG_AMEND:  true,   // own + team members' entries — scope enforced in handler, open periods only
       WORK_LOG_VOID:   true,   // own + team members' entries — scope enforced in handler, open periods only
       WORK_LOG_REASSIGN: true, // TL may reassign own or team members' hours to another job
+      WORK_LOG_CORRECTION_ADMIN: false,
       QC_SUBMIT:       true,
       QC_APPROVE:      true,
       QC_REJECT:       true,
@@ -360,6 +363,7 @@ var RBAC = (function () {
       WORK_LOG_AMEND:  true,
       WORK_LOG_VOID:   true,
       WORK_LOG_REASSIGN: false, // neither QC nor QC_REVIEWER may reassign
+      WORK_LOG_CORRECTION_ADMIN: false,
       QC_SUBMIT:       true,
       QC_APPROVE:      true,
       QC_REJECT:       true,
@@ -399,6 +403,7 @@ var RBAC = (function () {
       WORK_LOG_AMEND:  true,   // any entry, any period — overrides period lock
       WORK_LOG_VOID:   true,   // any entry, any period — overrides period lock
       WORK_LOG_REASSIGN: true,
+      WORK_LOG_CORRECTION_ADMIN: false, // PM already has full correction authority via WORK_LOG_AMEND/VOID above — this action is the HR_ACCOUNTING carve-out, not a second grant
       QC_SUBMIT:       true,
       QC_APPROVE:      true,
       QC_REJECT:       true,
@@ -438,6 +443,7 @@ var RBAC = (function () {
       WORK_LOG_AMEND:  true,   // any entry, any period — overrides period lock
       WORK_LOG_VOID:   true,   // any entry, any period — overrides period lock
       WORK_LOG_REASSIGN: true,
+      WORK_LOG_CORRECTION_ADMIN: true,
       QC_SUBMIT:       true,
       QC_APPROVE:      true,
       QC_REJECT:       true,
@@ -477,6 +483,7 @@ var RBAC = (function () {
       WORK_LOG_AMEND:  true,   // any entry, any period — overrides period lock (admin corrections domain)
       WORK_LOG_VOID:   true,   // any entry, any period — overrides period lock (admin corrections domain)
       WORK_LOG_REASSIGN: true,
+      WORK_LOG_CORRECTION_ADMIN: true,
       QC_SUBMIT:       false,
       QC_APPROVE:      false,
       QC_REJECT:       false,
@@ -522,6 +529,7 @@ var RBAC = (function () {
       WORK_LOG_AMEND:  false,
       WORK_LOG_VOID:   false,
       WORK_LOG_REASSIGN: false,
+      WORK_LOG_CORRECTION_ADMIN: false, // same deliberate exclusion as above — a script must correct under a human actor, not SYSTEM
       QC_SUBMIT:       true,
       QC_APPROVE:      true,
       QC_REJECT:       true,
@@ -560,6 +568,7 @@ var RBAC = (function () {
       WORK_LOG_AMEND:  false,
       WORK_LOG_VOID:   false,
       WORK_LOG_REASSIGN: false,
+      WORK_LOG_CORRECTION_ADMIN: false,
       QC_SUBMIT:       false,
       QC_APPROVE:      false,
       QC_REJECT:       false,
@@ -603,6 +612,7 @@ var RBAC = (function () {
       WORK_LOG_AMEND:  false,
       WORK_LOG_VOID:   false,
       WORK_LOG_REASSIGN: false,
+      WORK_LOG_CORRECTION_ADMIN: true,  // 2026-09-04 carve-out — admin-mediated correction of ANY staff member's hours via WorkLogCorrectionHandler; does not grant the general WORK_LOG_SUBMIT/AMEND/VOID/REASSIGN actions above
       QC_SUBMIT:       false,
       QC_APPROVE:      false,
       QC_REJECT:       false,

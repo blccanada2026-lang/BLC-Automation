@@ -122,6 +122,48 @@ describe('RBAC.PERMISSION_MATRIX — HR_ACCOUNTING role', () => {
   });
 });
 
+describe('RBAC.PERMISSION_MATRIX — WORK_LOG_CORRECTION_ADMIN (2026-09-04)', () => {
+  // Business decision 2026-09-04: HR/CEO/ADMIN need a way to correct
+  // duplicate/erroneous work-log hours (root-caused a payroll/billing
+  // discrepancy investigation). Rather than granting HR_ACCOUNTING the
+  // existing WORK_LOG_AMEND/WORK_LOG_VOID actions — which stay a
+  // deliberate denial per the 'cannot perform job-lifecycle, work-log...'
+  // test above, since those actions also cover routine DESIGNER/TEAM_LEAD
+  // self-service correction of their OWN logged hours — this is a new,
+  // narrowly-named action so HR_ACCOUNTING gains admin-mediated correction
+  // authority without gaining self-service work-log authority.
+  test('is a registered action', () => {
+    expect(RBAC.ACTIONS.WORK_LOG_CORRECTION_ADMIN).toBe('WORK_LOG_CORRECTION_ADMIN');
+  });
+
+  test('CEO, ADMIN, HR_ACCOUNTING can perform it', () => {
+    expect(RBAC.canPerform('CEO', 'WORK_LOG_CORRECTION_ADMIN')).toBe(true);
+    expect(RBAC.canPerform('ADMIN', 'WORK_LOG_CORRECTION_ADMIN')).toBe(true);
+    expect(RBAC.canPerform('HR_ACCOUNTING', 'WORK_LOG_CORRECTION_ADMIN')).toBe(true);
+  });
+
+  test('DESIGNER, TEAM_LEAD, QC, PM, CLIENT, SYSTEM cannot perform it', () => {
+    // PM is deliberately excluded here even though PM already has full
+    // correction authority via the pre-existing WORK_LOG_AMEND/VOID grant —
+    // this action is specifically the HR_ACCOUNTING carve-out, not a
+    // second grant for roles that already have the capability. SYSTEM is
+    // excluded too — WorkLogCorrectionHandler.gs's own header documents a
+    // deliberate CTO-spec break from "SYSTEM: true for all": corrections
+    // must be made under a human actor, never an automation identity.
+    ['DESIGNER', 'TEAM_LEAD', 'QC', 'PM', 'CLIENT', 'SYSTEM'].forEach(function (role) {
+      expect(RBAC.canPerform(role, 'WORK_LOG_CORRECTION_ADMIN')).toBe(false);
+    });
+  });
+
+  test('HR_ACCOUNTING still cannot perform the general WORK_LOG_AMEND/VOID/REASSIGN/SUBMIT actions', () => {
+    // The new action is an ADDITIONAL door, not a widening of the old ones.
+    expect(RBAC.canPerform('HR_ACCOUNTING', 'WORK_LOG_SUBMIT')).toBe(false);
+    expect(RBAC.canPerform('HR_ACCOUNTING', 'WORK_LOG_AMEND')).toBe(false);
+    expect(RBAC.canPerform('HR_ACCOUNTING', 'WORK_LOG_VOID')).toBe(false);
+    expect(RBAC.canPerform('HR_ACCOUNTING', 'WORK_LOG_REASSIGN')).toBe(false);
+  });
+});
+
 describe('RBAC.enforceFinancialAccess(actor, action) — action-aware', () => {
   function resolveHrActor() {
     seedRosterActor(mocks, { person_code: 'AAR', email: 'aarthirajeshnair@gmail.com', role: 'HR_ACCOUNTING' });
