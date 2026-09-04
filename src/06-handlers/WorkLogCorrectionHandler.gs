@@ -104,6 +104,10 @@ var WorkLogCorrectionHandler = (function () {
     job_number: { type: 'string', required: true, maxLength: 200, label: 'Job Number' },
     work_date:  WORK_DATE_FIELD,
     hours:      { type: 'number', required: true, min: 0.25, max: 24, label: 'Hours' },
+    // Optional — disambiguates two byte-identical duplicate rows (same
+    // actor+job+date+hours). Omitted, findOriginalEntry_ falls back to its
+    // original single-match-or-throw behavior. See findOriginalEntry_.
+    event_id:   { type: 'string', required: false, maxLength: 100, label: 'Event ID' },
     reason:     REASON_FIELD
   };
 
@@ -186,10 +190,16 @@ var WorkLogCorrectionHandler = (function () {
    * or more than one match is found — corrections must target an
    * unambiguous original entry.
    *
+   * expectedEventId (optional) disambiguates two byte-identical duplicate
+   * rows (same actor+job+date+hours — a genuine double-submit, not two
+   * distinct entries) by narrowing to the one exact event_id before the
+   * ambiguity check runs. Omitted, behavior is unchanged: multiple matches
+   * still throw.
+   *
    * @returns {{ row: Object, periodId: string }}  the matched row and the
    *   partition it actually lives in (NOT necessarily work_date's own month)
    */
-  function findOriginalEntry_(actorCode, jobNumber, workDate, expectedHours) {
+  function findOriginalEntry_(actorCode, jobNumber, workDate, expectedHours, expectedEventId) {
     var normDate   = normWorkDate_(workDate);
     var normActor  = normCode_(actorCode);
     var candidates = candidatePeriodIds_(workDate);
@@ -226,11 +236,16 @@ var WorkLogCorrectionHandler = (function () {
       }
     }
 
+    if (expectedEventId) {
+      matches = matches.filter(function (m) { return m.row.event_id === expectedEventId; });
+    }
+
     if (matches.length === 0) {
       throw new Error(
         'WorkLogCorrectionHandler: no matching correctable entry found for ' +
         'actor_code=' + actorCode + ' job_number=' + jobNumber + ' work_date=' + workDate +
-        (expectedHours != null ? ' hours=' + expectedHours : '') + '.'
+        (expectedHours != null ? ' hours=' + expectedHours : '') +
+        (expectedEventId ? ' event_id=' + expectedEventId : '') + '.'
       );
     }
     if (matches.length > 1) {
@@ -532,7 +547,7 @@ var WorkLogCorrectionHandler = (function () {
     var hasAllScope = checkCorrectionScope_(actor, p.actor_code);
 
     // ── Step 5: Locate the original entry (discovers its real partition) ──
-    var found     = findOriginalEntry_(p.actor_code, p.job_number, p.work_date, p.hours);
+    var found     = findOriginalEntry_(p.actor_code, p.job_number, p.work_date, p.hours, p.event_id);
     var original  = found.row;
     var periodId  = found.periodId;
 

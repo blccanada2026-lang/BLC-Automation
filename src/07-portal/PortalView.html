@@ -3936,6 +3936,10 @@ function confirmVoidWorkLog_() {
     job_number: _voidTarget.job_number,
     work_date:  _voidTarget.work_date,
     hours:      _voidTarget.hours,
+    // Disambiguates two byte-identical duplicate rows (same job/date/hours
+    // — a genuine double-submit) — without it, the server can't tell which
+    // copy this button was clicked on and rejects the void as ambiguous.
+    event_id:   _voidTarget.event_id,
     reason:     reason
   };
 

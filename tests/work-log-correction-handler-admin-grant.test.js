@@ -194,6 +194,60 @@ describe('WorkLogCorrectionHandler.handleVoid — WORK_LOG_CORRECTION_ADMIN carv
   });
 });
 
+describe('WorkLogCorrectionHandler.handleVoid — event_id disambiguation for byte-identical duplicates', () => {
+  // Real incident (2026-09-04): Abhisek Rit had two WORK_LOG_SUBMITTED
+  // rows for the same job/date/hours — a genuine double-submit, not a
+  // multi-day job. findOriginalEntry_ matches on actor_code+job_number+
+  // work_date+hours only, so voiding either copy via the normal VOID
+  // payload throws "ambiguous — 2 matching entries found" and the
+  // correction can never be applied. An optional event_id in the payload
+  // disambiguates without changing behavior for the normal single-match case.
+  test('voiding without event_id still throws ambiguous when two rows are byte-identical (unchanged pre-existing behavior)', () => {
+    seedOriginalEntry({ event_id: 'EVT-DUP-A', actor_code: 'TST1', job_number: 'BLC-TEST02', work_date: '2026-08-24', hours: 4 });
+    seedOriginalEntry({ event_id: 'EVT-DUP-B', actor_code: 'TST1', job_number: 'BLC-TEST02', work_date: '2026-08-24', hours: 4 });
+    var queueItem = {
+      queue_id: 'Q-AMBIG-1',
+      payload_json: JSON.stringify({
+        actor_code: 'TST1', job_number: 'BLC-TEST02', work_date: '2026-08-24', hours: 4, reason: 'Duplicate submission.'
+      })
+    };
+    expect(function () {
+      WorkLogCorrectionHandler.handleVoid(queueItem, actor('HR_ACCOUNTING'));
+    }).toThrow(/ambiguous/);
+  });
+
+  test('voiding with event_id resolves the ambiguity and voids exactly the targeted row', () => {
+    seedOriginalEntry({ event_id: 'EVT-DUP-A', actor_code: 'TST1', job_number: 'BLC-TEST02', work_date: '2026-08-24', hours: 4 });
+    seedOriginalEntry({ event_id: 'EVT-DUP-B', actor_code: 'TST1', job_number: 'BLC-TEST02', work_date: '2026-08-24', hours: 4 });
+    var queueItem = {
+      queue_id: 'Q-AMBIG-2',
+      payload_json: JSON.stringify({
+        actor_code: 'TST1', job_number: 'BLC-TEST02', work_date: '2026-08-24', hours: 4,
+        event_id: 'EVT-DUP-B', reason: 'Duplicate submission — voiding the second copy.'
+      })
+    };
+    var eventId = WorkLogCorrectionHandler.handleVoid(queueItem, actor('HR_ACCOUNTING'));
+    expect(eventId).not.toBe('DUPLICATE');
+    var written = store['FACT_WORK_LOGS|2026-08'].find(function (r) { return r.event_type === 'WORK_LOG_VOIDED'; });
+    expect(written.notes).toMatch(/EVT-DUP-B/);
+  });
+
+  test('an event_id that does not match either row is treated as not found', () => {
+    seedOriginalEntry({ event_id: 'EVT-DUP-A', actor_code: 'TST1', job_number: 'BLC-TEST02', work_date: '2026-08-24', hours: 4 });
+    seedOriginalEntry({ event_id: 'EVT-DUP-B', actor_code: 'TST1', job_number: 'BLC-TEST02', work_date: '2026-08-24', hours: 4 });
+    var queueItem = {
+      queue_id: 'Q-AMBIG-3',
+      payload_json: JSON.stringify({
+        actor_code: 'TST1', job_number: 'BLC-TEST02', work_date: '2026-08-24', hours: 4,
+        event_id: 'EVT-DOES-NOT-EXIST', reason: 'n/a'
+      })
+    };
+    expect(function () {
+      WorkLogCorrectionHandler.handleVoid(queueItem, actor('HR_ACCOUNTING'));
+    }).toThrow(/no matching correctable entry/);
+  });
+});
+
 describe('WorkLogCorrectionHandler.handleAmend — WORK_LOG_CORRECTION_ADMIN carve-out', () => {
   test('HR_ACCOUNTING can amend another person\'s entry via the new action', () => {
     seedOriginalEntry({ actor_code: 'TST1', job_number: 'BLC-TEST01', work_date: '2026-08-18', hours: 4.5 });
