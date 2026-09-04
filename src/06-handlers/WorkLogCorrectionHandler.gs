@@ -388,12 +388,24 @@ var WorkLogCorrectionHandler = (function () {
    * correcting hours under the normal RBAC hierarchy above) or the
    * WORK_LOG_CORRECTION_ADMIN carve-out (2026-09-04 — lets HR_ACCOUNTING
    * perform admin-mediated corrections without gaining the general
-   * self-service action). Throws the primaryAction's standard RBACError
-   * message when the actor has neither.
+   * self-service action).
+   *
+   * Always calls RBAC.enforcePermission (never just RBAC.hasPermission)
+   * so assertActorExists_ runs unconditionally on every path — code
+   * review 2026-09-04 caught an earlier version that returned on a bare
+   * hasPermission() check for the common case (any role that already
+   * holds primaryAction), silently skipping the "actor must come from
+   * RBAC.resolveActor()" guard for DESIGNER/TEAM_LEAD/QC/PM/CEO/ADMIN.
+   * Checking WORK_LOG_CORRECTION_ADMIN first also means a genuinely
+   * denied actor sees an error naming the action they actually
+   * attempted, not always WORK_LOG_CORRECTION_ADMIN.
    */
   function enforceCorrectionPermission_(actor, primaryAction) {
-    if (RBAC.hasPermission(actor, primaryAction)) return;
-    RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_CORRECTION_ADMIN);
+    if (RBAC.hasPermission(actor, RBAC.ACTIONS.WORK_LOG_CORRECTION_ADMIN)) {
+      RBAC.enforcePermission(actor, RBAC.ACTIONS.WORK_LOG_CORRECTION_ADMIN);
+      return;
+    }
+    RBAC.enforcePermission(actor, primaryAction);
   }
 
   // ============================================================

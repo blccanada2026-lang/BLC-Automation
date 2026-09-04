@@ -9,11 +9,13 @@
  * investigation), without gaining the general WORK_LOG_AMEND/VOID
  * self-service actions DESIGNER/TEAM_LEAD use for their own hours (see
  * tests/rbac.test.js — HR_ACCOUNTING stays denied on those). RBAC.gs
- * now grants HR_ACCOUNTING (and, redundantly with their existing
- * WORK_LOG_AMEND/VOID grant, CEO/ADMIN/SYSTEM) a new WORK_LOG_CORRECTION_
- * ADMIN action. This file proves the HANDLER actually honours that
- * second door — Step 1 of handleAmend/handleVoid must accept either the
- * original action or WORK_LOG_CORRECTION_ADMIN.
+ * now grants HR_ACCOUNTING a new WORK_LOG_CORRECTION_ADMIN action —
+ * CEO/ADMIN also get it, redundantly with their existing WORK_LOG_AMEND/
+ * VOID grant; SYSTEM does NOT (it has its own pre-existing, deliberate
+ * CTO-spec exclusion from all work-log correction authority, which this
+ * new action must not reverse — see rbac.test.js). This file proves the
+ * HANDLER actually honours the new door — Step 1 of handleAmend/handleVoid
+ * must accept either the original action or WORK_LOG_CORRECTION_ADMIN.
  *
  * Loads the real RBAC.gs (matrix) and Constants.gs (event types) so the
  * permission check under test runs against real, not stubbed, logic.
@@ -168,6 +170,27 @@ describe('WorkLogCorrectionHandler.handleVoid — WORK_LOG_CORRECTION_ADMIN carv
     };
     var eventId = WorkLogCorrectionHandler.handleVoid(queueItem, actor('DESIGNER', 'OPX'));
     expect(eventId).not.toBe('DUPLICATE');
+  });
+
+  test('a manually-constructed actor (no _rbacResolved) is rejected even for a role that holds WORK_LOG_VOID — enforceCorrectionPermission_ must not bypass assertActorExists_', () => {
+    // Code-review finding: RBAC.hasPermission() (unlike RBAC.enforcePermission())
+    // does NOT call assertActorExists_ — it only checks actor.role. The
+    // fast-path `if (RBAC.hasPermission(actor, primaryAction)) return;`
+    // returned without ever calling RBAC.enforcePermission for any role
+    // that already holds the primary action (DESIGNER/TEAM_LEAD/QC/PM/
+    // CEO/ADMIN), silently skipping the "actor must come from
+    // RBAC.resolveActor()" guard documented in RBAC.gs's assertActorExists_.
+    seedOriginalEntry({ actor_code: 'TST1', job_number: 'BLC-TEST01', work_date: '2026-08-18', hours: 4.5 });
+    var queueItem = {
+      queue_id: 'Q-UNRESOLVED',
+      payload_json: JSON.stringify({
+        actor_code: 'TST1', job_number: 'BLC-TEST01', work_date: '2026-08-18', hours: 4.5, reason: 'n/a'
+      })
+    };
+    var unresolvedActor = { email: 'ceo@test.blc.internal', role: 'CEO', personCode: 'TCEO' }; // no _rbacResolved
+    expect(function () {
+      WorkLogCorrectionHandler.handleVoid(queueItem, unresolvedActor);
+    }).toThrow();
   });
 });
 
