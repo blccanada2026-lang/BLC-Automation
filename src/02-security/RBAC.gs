@@ -158,7 +158,7 @@ var RBAC = (function () {
     WORK_LOG_AMEND:     'WORK_LOG_AMEND',  // Correct hours on an existing entry
     WORK_LOG_VOID:      'WORK_LOG_VOID',   // Zero out an existing entry
     WORK_LOG_REASSIGN:  'WORK_LOG_REASSIGN', // Void an entry and re-log it against a different job
-    WORK_LOG_CORRECTION_ADMIN: 'WORK_LOG_CORRECTION_ADMIN', // Admin-mediated correction of ANY staff member's work-log hours (CEO/ADMIN/HR_ACCOUNTING/SYSTEM) — an additional grant into WorkLogCorrectionHandler's handleAmend/handleVoid, distinct from the self-service WORK_LOG_AMEND/VOID actions
+    WORK_LOG_CORRECTION_ADMIN: 'WORK_LOG_CORRECTION_ADMIN', // Admin-mediated correction of ANY staff member's work-log hours (CEO/ADMIN/HR_ACCOUNTING only — SYSTEM stays excluded, matching WorkLogCorrectionHandler.gs's existing deliberate CTO-spec break from "SYSTEM: true for all") — an additional grant into handleAmend/handleVoid, distinct from the self-service WORK_LOG_AMEND/VOID actions
     // ── QC ───────────────────────────────────────────────────
     QC_SUBMIT:          'QC_SUBMIT',       // Submit a job for QC review
     QC_APPROVE:         'QC_APPROVE',      // Approve a QC review
