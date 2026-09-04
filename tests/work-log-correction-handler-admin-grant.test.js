@@ -316,6 +316,8 @@ describe('WorkLogCorrectionHandler.handleVoid — cannot double-void the same or
 
     var voidedRows = store['FACT_WORK_LOGS|2026-08'].filter(function (r) { return r.event_type === 'WORK_LOG_VOIDED'; });
     expect(voidedRows.length).toBe(1);
+    expect(voidedRows[0].hours).toBe(-4); // the remaining net, not the original 5h
+    expect(voidedRows[0].notes).toMatch(/EVT-AMENDED-A/);
   });
 });
 
