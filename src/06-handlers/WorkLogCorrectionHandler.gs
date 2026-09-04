@@ -257,6 +257,45 @@ var WorkLogCorrectionHandler = (function () {
     return matches[0];
   }
 
+  // Mirrors PortalData.gs's own CORRECTION_NOTE_RE — that file parses this
+  // exact "Amendment of event_id X." / "Void of event_id X." notes format
+  // to compute corrected_status for the UI (disables Edit/Void/Reassign on
+  // an already-corrected row). Kept as a second, independent literal
+  // rather than a shared import — this repo's GAS files have no way to
+  // share a regex across Portal.gs and this handler at load time.
+  var CORRECTION_NOTE_RE_ = /^(Amendment|Void) of event_id (\S+)\./;
+
+  /**
+   * Finds an existing WORK_LOG_AMENDED/VOIDED row that already corrects
+   * originalEventId, if one exists in periodId. Used to reject a second
+   * correction attempt against the same original entry (code review
+   * 2026-09-04): the portal's disabled-button protection is client-side
+   * only, and a retried/double-submitted request — a fresh queue_id each
+   * time — is invisible to IdempotencyEngine and can slip past the
+   * negative-hours guard when a sibling duplicate's "spare" hours mask
+   * the double-correction. This is a server-side enforcement of the same
+   * "already corrected — void the whole entry and re-submit fresh" policy
+   * PortalView.html already documents for the UI.
+   *
+   * @returns {Object|null}  the existing correction row, or null if none
+   */
+  function findExistingCorrection_(originalEventId, periodId) {
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, { periodId: periodId, callerModule: MODULE });
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') return null;
+      throw e;
+    }
+    for (var i = 0; i < rows.length; i++) {
+      var et = String(rows[i].event_type || '');
+      if (et !== Constants.EVENT_TYPES.WORK_LOG_AMENDED && et !== Constants.EVENT_TYPES.WORK_LOG_VOIDED) continue;
+      var m = String(rows[i].notes || '').match(CORRECTION_NOTE_RE_);
+      if (m && m[2] === originalEventId) return rows[i];
+    }
+    return null;
+  }
+
   /**
    * Net hours currently logged by actorCode against jobNumber within
    * periodId — sums WORK_LOG_SUBMITTED (positive), WORK_LOG_AMENDED
@@ -459,6 +498,16 @@ var WorkLogCorrectionHandler = (function () {
     var original  = found.row;
     var periodId  = found.periodId;
 
+    // ── Step 5b: Already-corrected guard ────────────────────────
+    var existingCorrection = findExistingCorrection_(original.event_id, periodId);
+    if (existingCorrection) {
+      throw new Error(
+        'WorkLogCorrectionHandler: event_id ' + original.event_id + ' was already ' +
+        (existingCorrection.event_type === Constants.EVENT_TYPES.WORK_LOG_VOIDED ? 'voided' : 'amended') +
+        ' — cannot correct it again. To make a further change, void the whole entry and re-submit fresh.'
+      );
+    }
+
     // ── Step 6: Period-closed guard ─────────────────────────────
     enforcePeriodNotClosed_(actor, hasAllScope, p.actor_code, periodId, p.job_number);
 
@@ -550,6 +599,16 @@ var WorkLogCorrectionHandler = (function () {
     var found     = findOriginalEntry_(p.actor_code, p.job_number, p.work_date, p.hours, p.event_id);
     var original  = found.row;
     var periodId  = found.periodId;
+
+    // ── Step 5b: Already-corrected guard ────────────────────────
+    var existingCorrection = findExistingCorrection_(original.event_id, periodId);
+    if (existingCorrection) {
+      throw new Error(
+        'WorkLogCorrectionHandler: event_id ' + original.event_id + ' was already ' +
+        (existingCorrection.event_type === Constants.EVENT_TYPES.WORK_LOG_VOIDED ? 'voided' : 'amended') +
+        ' — cannot correct it again. To make a further change, void the whole entry and re-submit fresh.'
+      );
+    }
 
     // ── Step 6: Period-closed guard ─────────────────────────────
     enforcePeriodNotClosed_(actor, hasAllScope, p.actor_code, periodId, p.job_number);
@@ -647,6 +706,16 @@ var WorkLogCorrectionHandler = (function () {
     var original     = found.row;
     var periodId      = found.periodId;      // partition of the ORIGINAL entry — the void event goes here
     var newPeriodId   = Identifiers.generateCurrentPeriodId(); // the new entry is a fresh submission, stamped NOW — matches WorkLogHandler's own convention
+
+    // ── Step 5b: Already-corrected guard ────────────────────────
+    var existingCorrection = findExistingCorrection_(original.event_id, periodId);
+    if (existingCorrection) {
+      throw new Error(
+        'WorkLogCorrectionHandler: event_id ' + original.event_id + ' was already ' +
+        (existingCorrection.event_type === Constants.EVENT_TYPES.WORK_LOG_VOIDED ? 'voided' : 'amended') +
+        ' — cannot correct it again. To make a further change, void the whole entry and re-submit fresh.'
+      );
+    }
 
     // ── Step 6: Period-closed guard (on the ORIGINAL job) ───────
     enforcePeriodNotClosed_(actor, hasAllScope, p.actor_code, periodId, p.job_number);

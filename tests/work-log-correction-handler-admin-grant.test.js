@@ -57,6 +57,10 @@ function installMocks() {
   };
 
   global.DAL = {
+    readAll: function (table, opts) {
+      var key = table + '|' + (opts && opts.periodId);
+      return (store[key] || []).slice();
+    },
     readWhere: function (table, conditions, opts) {
       var key  = table + '|' + (opts && opts.periodId);
       var rows = store[key] || [];
@@ -248,6 +252,41 @@ describe('WorkLogCorrectionHandler.handleVoid — event_id disambiguation for by
   });
 });
 
+describe('WorkLogCorrectionHandler.handleVoid — cannot double-void the same original entry', () => {
+  // Code-review finding (2026-09-04): idempotency is keyed on queue_id,
+  // which is fresh on every submission — a retried/double-submitted void
+  // request for the SAME original entry is not caught by IdempotencyEngine,
+  // and the negative-hours guard alone doesn't catch it either when a
+  // sibling duplicate's "spare" hours mask the double-void (exactly the
+  // scenario this feature exists for: two 4h rows, net=8h — voiding one
+  // 4h row twice still leaves net=0, which looks non-negative but has
+  // wiped out the SURVIVING row's legitimate hours too). Server-side
+  // guard: refuse to void/amend an original event_id that already has a
+  // correction recorded against it, mirroring the client-side
+  // corrected_status check PortalData.gs already relies on for the UI
+  // (buttons disabled) but which a stalled-UI retry can bypass entirely.
+  test('a second void request targeting the same already-voided event_id is rejected, not silently double-applied', () => {
+    seedOriginalEntry({ event_id: 'EVT-DUP-A', actor_code: 'TST1', job_number: 'BLC-TEST03', work_date: '2026-08-24', hours: 4 });
+    seedOriginalEntry({ event_id: 'EVT-DUP-B', actor_code: 'TST1', job_number: 'BLC-TEST03', work_date: '2026-08-24', hours: 4 });
+
+    var firstPayload = {
+      actor_code: 'TST1', job_number: 'BLC-TEST03', work_date: '2026-08-24', hours: 4,
+      event_id: 'EVT-DUP-B', reason: 'Duplicate submission — voiding the second copy.'
+    };
+    WorkLogCorrectionHandler.handleVoid({ queue_id: 'Q-FIRST', payload_json: JSON.stringify(firstPayload) }, actor('HR_ACCOUNTING'));
+
+    // Simulate a retry: same target, brand-new queue_id (as a real UI
+    // double-submit would generate) — IdempotencyEngine sees this as new.
+    var retryPayload = firstPayload;
+    expect(function () {
+      WorkLogCorrectionHandler.handleVoid({ queue_id: 'Q-RETRY', payload_json: JSON.stringify(retryPayload) }, actor('HR_ACCOUNTING'));
+    }).toThrow(/already/i);
+
+    var voidedRows = store['FACT_WORK_LOGS|2026-08'].filter(function (r) { return r.event_type === 'WORK_LOG_VOIDED'; });
+    expect(voidedRows.length).toBe(1); // not 2 — the retry must not have written a second void
+  });
+});
+
 describe('WorkLogCorrectionHandler.handleAmend — WORK_LOG_CORRECTION_ADMIN carve-out', () => {
   test('HR_ACCOUNTING can amend another person\'s entry via the new action', () => {
     seedOriginalEntry({ actor_code: 'TST1', job_number: 'BLC-TEST01', work_date: '2026-08-18', hours: 4.5 });
@@ -277,5 +316,31 @@ describe('WorkLogCorrectionHandler.handleAmend — WORK_LOG_CORRECTION_ADMIN car
     expect(function () {
       WorkLogCorrectionHandler.handleAmend(queueItem, actor('CLIENT'));
     }).toThrow();
+  });
+});
+
+describe('WorkLogCorrectionHandler.VOID_SCHEMA — event_id survives real ValidationEngine schema stripping', () => {
+  // Code-review finding (2026-09-04): ValidationEngine.validate() returns
+  // a "clean" object containing ONLY schema-defined keys (see
+  // src/04-validation/ValidationEngine.gs — fields not in the schema are
+  // silently dropped). This file's own ValidationEngine mock is a bare
+  // pass-through (`return data`), so it would pass identically even if
+  // VOID_SCHEMA's event_id field were deleted entirely — this test loads
+  // the REAL ValidationEngine.gs to close that gap.
+  beforeEach(() => {
+    global.ErrorHandler = { record: function () {} }; // only invoked on validation failure — not exercised here
+    loadSrc('../src/04-validation/ValidationEngine.gs');
+  });
+
+  test('event_id is present in the clean output when supplied', () => {
+    var payload = { actor_code: 'TST1', job_number: 'BLC-TEST01', work_date: '2026-08-18', hours: 4, event_id: 'EVT-DUP-B', reason: 'Duplicate submission.' };
+    var clean = ValidationEngine.validate(WorkLogCorrectionHandler.VOID_SCHEMA, payload);
+    expect(clean.event_id).toBe('EVT-DUP-B');
+  });
+
+  test('event_id is absent from the clean output when omitted, and validation still succeeds', () => {
+    var payload = { actor_code: 'TST1', job_number: 'BLC-TEST01', work_date: '2026-08-18', hours: 4, reason: 'Not a duplicate.' };
+    var clean = ValidationEngine.validate(WorkLogCorrectionHandler.VOID_SCHEMA, payload);
+    expect(clean.hasOwnProperty('event_id')).toBe(false);
   });
 });
