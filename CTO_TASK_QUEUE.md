@@ -31,31 +31,26 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-09-03)
+## Session State (last updated: end of turn, 2026-09-04)
 
-**3-feature sequence: timesheet automation (TASK NEW-3, CLOSED) → payout-run
-review (TASK NEW-4, in progress) → SOP activation (not started).** Plus an
-incidental RBAC bug (TASK RB-1) found and fixed mid-stream during NEW-4's
-diagnostics — deployed to PROD source, New Version redeploy done by user
-2026-09-03 (also activates W2-3/W2-4/NEW-1, held since 2026-08-28 —
-PROD-setup checklist for W2-4 completed first: schemas confirmed present,
-`SOP_REVIEW_LINK_SECRET` generated, web-app access confirmed already
-"Anyone", `DIM_QC_FINDING_TYPES` was fully unseeded in PROD — all 17
-codes inserted via `QcFindingTypes.seed()`, `PLATE_ERROR` confirmed
-`ROOF_TRUSS`). **Not yet done: R10.6 post-redeploy health verification**
-(`runHealthCheck()`/`runProdContaminationCheck()`, confirm the live
-portal — not just a direct function call — now lets a real TEAM_LEAD
-view feedback status) — RB-1 shouldn't be marked fully closed until this
-runs.
-**Also, new thread same session:** portal cleanup + 2 new features
-(EPIC "Portal Cleanup & Staff/Payroll Workflow Gaps" above) — button
-cleanup resolved (no action needed), TASK NEW-6 (staff status
-maintenance) and TASK NEW-7 (paystub → HR review) logged, not started.
-**Next action:** continue TASK NEW-4's arithmetic-verification design
-(still need the PROD active-PM-roster check —
-`checkActivePmRoster()` — to close out the multi-PM bonus-caveat risk
-question) OR start TASK NEW-6/NEW-7 per user's direction — ask which
-thread to pick up.
+**Current thread: TASK RB-2 (see EPIC above) — WORK_LOG_CORRECTION_ADMIN
+carve-out shipped to PROD source + redeployed (New Version) 2026-09-04.**
+Root cause for the August payroll/HR-invoice discrepancy fully diagnosed
+(rate staleness for 7 staff, pending HR confirmation; 2 confirmed duplicate
+work-log entries — Sarty Gosh, Abhisek Rit, both detailed in the EPIC
+above). Built the correction door via 3 reviewed commits (743be71/583322c/
+aa94a66 merged; cb6be8d + c448971 built in a second worktree
+`worklog-void-disambiguate`, not yet merged as of this update — pending the
+3rd review cycle's result). **Next action once that review clears:**
+merge, push PROD source again, redeploy again (Portal.gs deps changed
+again), then actually perform the two FACT_WORK_LOGS voids via the
+portal's My Hours flow — ask the user to confirm each one individually,
+do not script it. Known follow-up gap logged in the EPIC (AMEND/REASSIGN
+still lack event_id disambiguation) — not blocking, don't silently fix
+without flagging scope growth.
+**Earlier this session, unrelated:** TASK NEW-4 (payout-run review) and
+TASK NEW-6/NEW-7 (staff status maintenance, paystub→HR review) remain
+exactly where they were — not started, not touched this turn.
 
 **TASK NEW-3 (timesheet automation) — CLOSED, 2026-09-02/03.** Per-client
 PreBillingGate isolation in `ClientTimesheetEngine.gs` (one client's data
@@ -617,6 +612,45 @@ into 3 pieces, agreed build order: (1) button cleanup, (2) individual paystub
   Nothing else flagged for removal.
 - **TASK NEW-7** | Individual paystub → HR review → forward to staff workflow. Today `runPayrollRun()`'s `sendPaystubEmail_()` emails each staff member their paystub directly for self-confirmation — no HR-in-the-loop step exists. User wants HR to receive/verify individual paystubs first, then forward to the team. | P2 | Not started — next up after NEW-6.
 - **TASK NEW-6** | Staff lifecycle maintenance: ability to change/modify staff status (deactivate/offboard, promote, change role/supervisor) from the portal. | P2 | Not started. Confirmed gap: only `portal_onboardStaff`/`portal_bulkOnboardStaff` exist — no update/deactivate function. `DIM_STAFF_ROSTER` already has the needed fields (`active`, `role`, `supervisor_code`, `pm_code`, `effective_from`/`effective_to` — D4 point-in-time pattern), just no portal-facing write path to them. `TestStaffDeactivator.gs` (`src/12-migration/`) is an unrelated one-time test-data cleanup script, not a real feature.
+
+### EPIC: August 2026 Payroll Discrepancy — Rate Reconciliation & Work-Log Correction Tool (2026-09-04)
+Root-caused a payroll-vs-HR-invoice mismatch to two independent causes: (1)
+stale/incorrectly-entered pay rates for 7 staff (HR confirming rates
+separately — not yet actioned, no back-pay decision made), (2) two confirmed
+duplicate FACT_WORK_LOGS entries (Sarty Gosh — Nelson, job BLC-01016, one of
+two 4.5h rows on 2026-08-18/19, HR-confirmed only one line exists on their
+timesheet; Abhisek Rit — Nelson, job BLC-01070, 2026-08-24, byte-identical
+4h double-submit, `dupe_count: 2` via `WorkLogDedupAudit`).
+- **TASK RB-2 — CLOSED, deployed to PROD 2026-09-04.** Built a reusable
+  CEO/ADMIN/HR_ACCOUNTING correction door into the existing (already-tested)
+  `WorkLogCorrectionHandler.gs`/portal "My Hours" Void/Edit flow, rather than
+  a new one-off script — new `WORK_LOG_CORRECTION_ADMIN` RBAC action
+  (deliberately NOT widening the general `WORK_LOG_AMEND`/`WORK_LOG_VOID`
+  actions DESIGNER/TEAM_LEAD use for self-correction; SYSTEM stays excluded
+  per its own pre-existing CTO-spec policy). Two review cycles found and
+  fixed real issues before merge: (a) `enforceCorrectionPermission_` was
+  silently bypassing `assertActorExists_` for any role already holding the
+  primary action, since `RBAC.hasPermission()` doesn't validate actor shape
+  the way `RBAC.enforcePermission()` does; (b) idempotency (keyed on
+  `queue_id`, fresh every submission) didn't protect against a retried/
+  double-submitted void of the SAME entry — closed with a new server-side
+  `findExistingCorrection_` guard in `handleVoid`/`handleAmend`/
+  `handleReassign`, mirroring `PortalData.gs`'s own `corrected_status`
+  note-parsing. Also added `event_id` as an optional disambiguator on
+  `VOID_SCHEMA` so two byte-identical duplicate rows (Abhisek Rit's exact
+  case) can actually be told apart — without it `findOriginalEntry_` always
+  threw "ambiguous" and neither copy could ever be voided.
+- **Follow-up gap, not yet closed:** the `event_id` disambiguator was only
+  added to VOID, not AMEND/REASSIGN. Once a duplicate's twin is voided, the
+  surviving row still has no `corrected_status`, so `findOriginalEntry_`
+  (called without `event_id` from those two paths) still finds both original
+  rows and throws "ambiguous" — the surviving entry becomes permanently
+  un-editable/un-reassignable through the portal until this is extended the
+  same way VOID was. Not urgent (today's known corrections are VOID-only)
+  but will resurface the moment a duplicate-row case needs an amend instead.
+- **Pending:** the two actual FACT_WORK_LOGS voids (Sarty, Abhisek Rit) —
+  not yet performed. To be done via the portal's My Hours → Void flow now
+  that the fix is live, each authorized individually, not scripted.
 
 ### Parallel Track: BLC Growth Platform
 - **TASK GP-1** | Standalone project decision + architecture (own future CTO assessment, not folded into this backlog) | P4 | Not started, not scoped.
