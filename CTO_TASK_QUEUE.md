@@ -33,19 +33,27 @@ lacks, that silently deletes it from DEV.
 
 ## Session State (last updated: end of turn, 2026-09-08)
 
-**TASK RB-3 — active, awaiting user decisions.** Rate reconciliation values
-now HR-confirmed (effective 2026-07-01, 7 people, exact old/new values +
-mechanism per person) — see EPIC below for the full table. While verifying
-before writing anything, found two real payroll-rules problems beyond the
-rate staleness: (1) TEAM_LEAD supervisor bonus has no account-scoping —
-live example, Pabitra Ghosh is credited ~₹2,381 for Priyanka S's hours on
+**TASK RB-3 — rate corrections CLOSED 2026-09-08; architecture redesign
+active, spec written, awaiting user review.** The 7 HR-confirmed rate
+corrections (effective 2026-07-01) are shipped, verified, and live in PROD
+— see EPIC below. Still outstanding, and NOT part of this task: re-running
+the August billing/payroll dry-run.
+Separately, investigating this surfaced two real payroll-rules problems
+that led to a full architectural design conversation (brainstorming skill,
+full process): (1) TEAM_LEAD supervisor bonus has no account-scoping — live
+example, Pabitra Ghosh was credited ~₹2,381 for Priyanka S's hours on
 Alberta Truss, an account he has nothing to do with; (2) `QC_REVIEWER` role
-alias never reaches `actor.role`/`actor_work_log.actor_role`, so 106/106 of
-Deb Sen's Jul/Aug hours are misclassified as design_hours not qc_hours
-(currently financially silent by coincidence only). Three explicit
-decisions needed from the user before continuing (see EPIC) — nothing
-written to PROD yet on any of this. The 7 rate corrections themselves are
-NOT blocked by these three decisions and can proceed once confirmed.
+alias never reaches `actor.role`, so QC reviewers' hours misclassify as
+design_hours (currently financially silent, one-rate model confirmed
+company-wide). Design spec written and committed:
+`docs/superpowers/specs/2026-09-08-payout-supervision-redesign-design.md`
+— new `REF_ACCOUNT_SUPERVISION` table, per-account bonus rewrite, a
+role-based PM-fallback skip rule (verified Sarty holds exactly one active
+role so this is safe), new `STAFF_PAYOUT_ADMIN` RBAC action, and a Phase 2
+CEO/HR self-service portal panel. **Awaiting user's review of the written
+spec before moving to an implementation plan — no code written for this
+part yet.** A CAD-denominated per-account profitability calculator was also
+requested and is explicitly sequenced after this design closes.
 
 **TASK RB-2 — fully CLOSED 2026-09-08, including both real corrections.**
 Root cause for the August payroll/HR-invoice discrepancy fully diagnosed
@@ -634,8 +642,9 @@ into 3 pieces, agreed build order: (1) button cleanup, (2) individual paystub
 
 ### EPIC: August 2026 Payroll Discrepancy — Rate Reconciliation & Work-Log Correction Tool (2026-09-04)
 Root-caused a payroll-vs-HR-invoice mismatch to two independent causes: (1)
-stale/incorrectly-entered pay rates for 7 staff (HR confirming rates
-separately — not yet actioned, no back-pay decision made), (2) two confirmed
+stale/incorrectly-entered pay rates for 7 staff (HR-confirmed and corrected
+in PROD 2026-09-08 — see TASK RB-3 below; no back-pay owed, July was already
+paid manually outside Nexus using the corrected rates), (2) two confirmed
 duplicate FACT_WORK_LOGS entries (Sarty Gosh — Nelson, job BLC-01016, one of
 two 4.5h rows on 2026-08-18/19, HR-confirmed only one line exists on their
 timesheet; Abhisek Rit — Nelson, job BLC-01070, 2026-08-24, byte-identical
@@ -705,8 +714,21 @@ timesheet; Abhisek Rit — Nelson, job BLC-01070, 2026-08-24, byte-identical
   **2026-07-01** (not August — July payroll was already run and paid
   manually, outside Nexus, using these corrected rates; no back-pay is
   owed, only Nexus's own `DIM_STAFF_ROSTER` is stale).
-  - **7 confirmed rate corrections, verified against live PROD data
-    (`verifyBeforeRateCorrection()`, 2026-09-08 09:53), not yet written:**
+  - **All 7 rate corrections shipped and verified in PROD, 2026-09-08
+    11:36.** `StaffOnboarding.changePayRate()` added (commit `4cdbb05`,
+    code-reviewed — one Important finding fixed before use: missing
+    `newRates` validation could close the old row then fail appending the
+    new one, leaving a person with no open roster row at all; fixed with a
+    guard + 3 new tests before any PROD call), merged to `main` via a
+    3-way merge (`3f7eac6` — the spec commit `bfdf07a` and this work had
+    diverged from a stale worktree base; reconciled cleanly, zero file
+    overlap), deployed to PROD (168 files). 5 people corrected via
+    `changePayRate` (PRS, ABB, RKG, DBS, BIT); Sayan Roy and Savvy Nath
+    corrected via a direct `DAL.updateWhere` patch instead (their existing
+    2026-07-01 row, per the inverted-window guard explained below).
+    `verifyAllSevenRates()` confirms all 7 match HR's figures exactly.
+    **7 confirmed rate corrections, verified against live PROD data
+    (`verifyBeforeRateCorrection()`, 2026-09-08 09:53):**
     | Person | Code | Current pay_design/qc | Target | Mechanism |
     |---|---|---|---|---|
     | Priyanka S | PRS | 250/250 | 300 | new SCD-2 row, close 2026-06-30 |
@@ -738,9 +760,12 @@ timesheet; Abhisek Rit — Nelson, job BLC-01070, 2026-08-24, byte-identical
     genuinely filters `DIM_STAFF_ROSTER` rows by `effective_from`/
     `effective_to` against `periodId + '-01'` — so correctly-dated rows
     will resolve correctly for any future payroll run, this isn't cosmetic.
-  - **Not yet started:** writing `changePayRate`, the 5-row SCD-2 script,
-    or the SYR/SVN direct-patch script. Blocked on user confirming the
-    findings below don't change the plan.
+  - **Still outstanding, not this task's scope:** re-running the August
+    billing/payroll dry-run (TASK RB-2's own leftover item) now that both
+    the duplicate-hours fix and these rate corrections are both in — this
+    has NOT been done. Shipping the rate data is not the same as August
+    being reconciled; whether client billing (`DIM_CLIENT_RATES`) uses
+    these same numbers hasn't been checked either.
 
   - **Payroll rules audit, requested by user to prevent re-litigating this
     piece by piece.** Traced actual code (not assumed from docs):
