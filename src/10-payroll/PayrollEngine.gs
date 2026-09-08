@@ -152,6 +152,35 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
+  // SECTION 3b: JOB → CLIENT RESOLUTION
+  //
+  // Resolves job_number to client_code for account-scoped supervisor
+  // bonus attribution (2026-09-08 design spec) — FACT_WORK_LOGS rows
+  // carry job_number only, not client_code directly.
+  // ============================================================
+
+  /**
+   * @returns {Object}  { jobNumber: clientCode }
+   */
+  function buildJobToClientMap_() {
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') return {};
+      throw e;
+    }
+
+    var map = {};
+    for (var i = 0; i < rows.length; i++) {
+      var jobNumber = String(rows[i].job_number || '').trim();
+      if (!jobNumber) continue;
+      map[jobNumber] = String(rows[i].client_code || '').trim();
+    }
+    return map;
+  }
+
+  // ============================================================
   // SECTION 2: FX RATE CACHE
   //
   // Reads DIM_FX_RATES and builds a lookup: { 'CAD': 62.5, 'USD': 83.0 }
@@ -1336,6 +1365,7 @@ var PayrollEngine = (function () {
     // real date-filtering and supervisor-attribution logic runPayrollRun()/
     // runBonusRun() actually use, not a reimplementation. Both read-only.
     buildStaffCache_:         buildStaffCache_,
+    buildJobToClientMap_:     buildJobToClientMap_,
     buildSupervisorBonusMap_: buildSupervisorBonusMap_,
 
     // Exposed 2026-07-28 (Phase B1, payroll automation) — same
