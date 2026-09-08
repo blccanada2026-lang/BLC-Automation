@@ -147,4 +147,14 @@ describe('aggregateNetWorkLogHours()', () => {
     expect(resultUnion.PHD1.design_hours).toBe(6);
   });
 
+  test('classifies QC_REVIEWER rows as qc_hours, same as QC (RBAC.gs alias, not applied to actor.role outside RBAC\'s own matrix lookup — see 2026-09-08 design spec, Discrepancy 1)', () => {
+    const rows = [
+      { actor_code: 'DBS', actor_role: 'QC_REVIEWER', hours: 4, event_type: 'WORK_LOG_SUBMITTED' },
+      { actor_code: 'DBS', actor_role: 'QC_REVIEWER', hours: 3, event_type: 'WORK_LOG_SUBMITTED' },
+    ];
+    const result = aggregateNetWorkLogHours(rows);
+    expect(result.DBS.qc_hours).toBe(7);
+    expect(result.DBS.design_hours).toBe(0);
+  });
+
 });

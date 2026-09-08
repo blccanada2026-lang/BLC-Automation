@@ -67,7 +67,7 @@ function aggregateNetWorkLogHours(rows) {
     if (!code || isNaN(hours) || hours === 0) continue;
 
     if (!hoursMap[code]) hoursMap[code] = { design_hours: 0, qc_hours: 0 };
-    if (role === 'QC') {
+    if (role === 'QC' || role === 'QC_REVIEWER') {
       hoursMap[code].qc_hours += hours;
     } else {
       hoursMap[code].design_hours += hours;
