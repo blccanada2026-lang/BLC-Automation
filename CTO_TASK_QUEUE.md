@@ -33,6 +33,20 @@ lacks, that silently deletes it from DEV.
 
 ## Session State (last updated: end of turn, 2026-09-08)
 
+**TASK RB-3 — active, awaiting user decisions.** Rate reconciliation values
+now HR-confirmed (effective 2026-07-01, 7 people, exact old/new values +
+mechanism per person) — see EPIC below for the full table. While verifying
+before writing anything, found two real payroll-rules problems beyond the
+rate staleness: (1) TEAM_LEAD supervisor bonus has no account-scoping —
+live example, Pabitra Ghosh is credited ~₹2,381 for Priyanka S's hours on
+Alberta Truss, an account he has nothing to do with; (2) `QC_REVIEWER` role
+alias never reaches `actor.role`/`actor_work_log.actor_role`, so 106/106 of
+Deb Sen's Jul/Aug hours are misclassified as design_hours not qc_hours
+(currently financially silent by coincidence only). Three explicit
+decisions needed from the user before continuing (see EPIC) — nothing
+written to PROD yet on any of this. The 7 rate corrections themselves are
+NOT blocked by these three decisions and can proceed once confirmed.
+
 **TASK RB-2 — fully CLOSED 2026-09-08, including both real corrections.**
 Root cause for the August payroll/HR-invoice discrepancy fully diagnosed
 (rate staleness for 7 staff, still pending HR confirmation — untouched;
@@ -684,6 +698,132 @@ timesheet; Abhisek Rit — Nelson, job BLC-01070, 2026-08-24, byte-identical
     session) to confirm these two fixes plus the still-pending rate
     corrections (7 staff, waiting on HR) fully reconcile before actually
     committing August payroll/billing.
+
+- **TASK RB-3 — Rate reconciliation (HR-confirmed) + payroll rules audit —
+  IN PROGRESS, 2026-09-08.** Supersedes the "not yet actioned" rate line
+  above — HR has now confirmed exact values. Effective date confirmed as
+  **2026-07-01** (not August — July payroll was already run and paid
+  manually, outside Nexus, using these corrected rates; no back-pay is
+  owed, only Nexus's own `DIM_STAFF_ROSTER` is stale).
+  - **7 confirmed rate corrections, verified against live PROD data
+    (`verifyBeforeRateCorrection()`, 2026-09-08 09:53), not yet written:**
+    | Person | Code | Current pay_design/qc | Target | Mechanism |
+    |---|---|---|---|---|
+    | Priyanka S | PRS | 250/250 | 300 | new SCD-2 row, close 2026-06-30 |
+    | Abhijit Bera | ABB | 300/300 | 350 | new SCD-2 row, close 2026-06-30 |
+    | RaviKumar Gummadi | RKG | 250/250 | 300 | new SCD-2 row, close 2026-06-30 |
+    | Deb Sen | DBS | 300/300 | 350 | new SCD-2 row, close 2026-06-30 |
+    | Bittu Dalui | BIT | 250/250 | 300 | new SCD-2 row, close 2026-06-30 |
+    | Sayan Roy | SYR | 250/250 (on existing 2026-07-01 row) | 300 | **direct field patch**, not a new row |
+    | Savvy Nath | SVN | 300/300 (on existing 2026-07-01 row) | 350 | **direct field patch**, not a new row |
+    Sayan Roy and Savvy Nath already have a row dated exactly 2026-07-01
+    (opened by a legitimate `changeSupervisor()` call that changed their
+    reporting line the same day — SYR's supervisor BCH→SDA, SVN's SDA→SGO
+    — and carried the old, uncorrected rate forward). `scd2FieldChange_`
+    (`StaffOnboarding.gs:1094`) cannot touch this: calling it again with
+    `effectiveDate='2026-07-01'` closes the current row at `2026-06-30`,
+    which is *before* the row's own start date — the function's own
+    2026-07-27 inverted-window guard (line ~1187) throws on exactly this
+    shape. Confirmed correct fix is a direct `pay_design`/`pay_qc` patch on
+    that existing row (safe: `DIM_STAFF_ROSTER` is a dimension table, not
+    FACT/Rule A5, and `scd2FieldChange_` itself already uses
+    `DAL.updateWhere` on this same table for the `effective_to` field).
+  - `scd2FieldChange_` is **private/unexported** — only `changeSupervisor`
+    (`StaffOnboarding.gs:1255`) calls it externally. The 5-person fix needs
+    a small new exported wrapper (`changePayRate`, mirroring
+    `changeSupervisor`'s exact shape: `RBAC.enforcePermission(actor,
+    RBAC.ACTIONS.ADMIN_CONFIG)` then delegate to `scd2FieldChange_`) —
+    real code change, needs commit + PROD push, not a scratch script.
+  - Verified `PayrollEngine.buildStaffCache_` (`PayrollEngine.gs:89`)
+    genuinely filters `DIM_STAFF_ROSTER` rows by `effective_from`/
+    `effective_to` against `periodId + '-01'` — so correctly-dated rows
+    will resolve correctly for any future payroll run, this isn't cosmetic.
+  - **Not yet started:** writing `changePayRate`, the 5-row SCD-2 script,
+    or the SYR/SVN direct-patch script. Blocked on user confirming the
+    findings below don't change the plan.
+
+  - **Payroll rules audit, requested by user to prevent re-litigating this
+    piece by piece.** Traced actual code (not assumed from docs):
+    - **DESIGNER**: `pay_design × design_hours` (net of amend/void via
+      `aggregateNetWorkLogHours`, `WorkLogAggregation.gs:56`). No bonus.
+    - **QC reviewer**: `pay_qc × qc_hours`, gated on
+      `WorkLogAggregation.gs:70`'s `role === 'QC'` check on the work log
+      row's `actor_role` string. No bonus (reviewers don't supervise for
+      bonus purposes under the current model).
+    - **TEAM_LEAD**: own `pay_design × design_hours` (if they log any) +
+      `INR 25 × Σ(design_hours of every designer whose supervisor_code =
+      this TL)`, **company-wide, no account/client dimension at all**
+      (`buildSupervisorBonusMap_`, `PayrollEngine.gs:306`). Matches
+      `payroll-rules.md:39-41` exactly — code and docs agree with each
+      other, and both disagree with the real business rule.
+    - **PM**: own hours (if any) + `INR 25 × Σ(design_hours of every
+      non-PM staff, company-wide)` — flat, deliberately **not** scoped by
+      `pm_code` (`buildPmBonusMap_`, `PayrollEngine.gs:355`, rewritten
+      Phase B1 2026-07). This is documented as intentional in both the
+      code comments and `payroll-rules.md:42-50`, including the
+      already-flagged multi-PM caveat — **not a discrepancy**, listed only
+      for completeness.
+
+  - **Discrepancy 1 — TEAM_LEAD bonus is not account-scoped (real business
+    rule gap, live and currently costing money).** User's stated rule:
+    "the team lead is associated with an account... check which account
+    they are team leads for and who they are supervising in that account
+    only" (example given: Bharath is TL across both SBS and Norspan with
+    two different teams). The current model cannot express this — a
+    designer has exactly one flat `supervisor_code`, with no way to say
+    "this designer's hours on Account X go to TL-A, but on Account Y go to
+    TL-B." **Confirmed live instance, not hypothetical:** Priyanka S
+    (`PRS`) has logged 95.25 hours in Jul/Aug 2026 against **Alberta
+    Truss** — nothing against Titan Truss, the account tied to her current
+    `supervisor_code` (`PBG`, Pabitra Ghosh). Titan Truss no longer sends
+    work. Pabitra is currently credited ~₹2,381 (95.25 × ₹25) for hours he
+    has nothing to do with; whoever actually leads Alberta Truss gets
+    nothing. Checked whether `REF_ACCOUNT_DESIGNER_MAP`
+    (`client_code, designer_code, role, assigned_from_date,
+    assigned_to_date, notes`) already models this — it doesn't: its `role`
+    column is always literally `'DESIGNER'` in the seed data
+    (`SetupScript.gs:856-858`), "Team Lead" appears only as a free-text
+    `notes` string, and nothing under `src/10-payroll/` reads this table
+    at all. **There is no existing data model for account-scoped
+    supervision** — building one is real design work, not a quick fix.
+    User named Deb Sen (`DBS`) as Priyanka's real supervisor going
+    forward, but see Discrepancy 2 — his role is `QC_REVIEWER`, and
+    `buildSupervisorBonusMap_` only fires for `role === 'TEAM_LEAD'`, so
+    reassigning her to him today would silently pay **nobody** a bonus on
+    her hours (worse than the current wrong attribution). **Reassignment
+    deliberately not yet made — blocked on user decision.**
+  - **Discrepancy 2 — `QC_REVIEWER` role alias never applied outside RBAC
+    permission checks (real bug, live, currently financially silent by
+    coincidence).** `RBAC.gs:93` declares `QC_REVIEWER: 'QC'` as an alias,
+    but `lookupActor_` (`RBAC.gs:734`) returns the raw, unaliased roster
+    string; `enforcePermission` (`RBAC.gs:1162`) canonicalizes it locally
+    via `resolveRole_` for its own matrix lookup, but the alias is never
+    applied to the `actor` object itself. So `actor.role` stays
+    `'QC_REVIEWER'` everywhere else, including where `WorkLogHandler.gs`
+    writes `actor_role: actor.role` into `FACT_WORK_LOGS`. Confirmed on
+    live data: **106/106** of Deb Sen's Jul/Aug 2026 work log rows carry
+    `actor_role: "QC_REVIEWER"` — none read as `"QC"`. Since
+    `WorkLogAggregation.gs:70` tests `role === 'QC'` exactly, every one of
+    his hours is bucketed as `design_hours`, not `qc_hours`. Currently
+    silent only because his `pay_design` and `pay_qc` happen to be equal
+    (300, soon 350 under the correction above) — the moment those two
+    rates diverge for him or anyone else onboarded with role
+    `QC_REVIEWER`, this misroutes real pay. Not fixed yet — needs a
+    decision on where the alias should actually apply (normalize at
+    `resolveActor()`/`lookupActor_` time so `actor.role` is always
+    canonical, vs. widening the `=== 'QC'` checks to also accept
+    `'QC_REVIEWER'`).
+  - **Open decisions blocking further work on this task:**
+    1. Deb Sen's role vs. Priyanka's reassignment — change his role, or is
+       "reviewer supervises a designer for bonus purposes" a case the
+       model needs to support?
+    2. Account-scoped TEAM_LEAD bonus — design a real fix now (new
+       data model), or log as a known gap and defer?
+    3. `QC_REVIEWER` alias bug — fix now (low-risk, isolated), or fold
+       into whatever Decision 1 produces?
+  - The 7 rate corrections above are independent of all three decisions
+    and can proceed as soon as confirmed — nothing about them depends on
+    how the bonus/supervision questions resolve.
 
 ### Parallel Track: BLC Growth Platform
 - **TASK GP-1** | Standalone project decision + architecture (own future CTO assessment, not folded into this backlog) | P4 | Not started, not scoped.
