@@ -166,6 +166,18 @@ var SCHEMAS = {
     'assigned_from_date', 'assigned_to_date', 'notes'
   ],
 
+  // Which Team Lead/PM supervises which designer, on which client account —
+  // the source of truth for INR 25/hr supervisor bonus attribution.
+  // Effective-dated (D4): effective_to blank = the currently active
+  // assignment for that (client_code, designer_code) pair. NEVER derive
+  // this from DIM_STAFF_ROSTER.supervisor_code — that field cannot express
+  // "this designer's hours on Account X go to Lead A, but on Account Y go
+  // to Lead B" (see 2026-09-08 design spec, problem statement).
+  'REF_ACCOUNT_SUPERVISION': [
+    'client_code', 'designer_code', 'supervisor_code',
+    'effective_from', 'effective_to', 'notes'
+  ],
+
   // ── Staging tables ────────────────────────────────────────
 
   'STG_STAFF_IMPORT': [

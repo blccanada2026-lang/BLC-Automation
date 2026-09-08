@@ -175,6 +175,7 @@ var Config = (function () {
     FACT_CLIENT_FEEDBACK:    'FACT_CLIENT_FEEDBACK',    // client feedback scores per designer per quarter
     DIM_SEQUENCE_COUNTERS:   'DIM_SEQUENCE_COUNTERS',
     REF_ACCOUNT_DESIGNER_MAP: 'REF_ACCOUNT_DESIGNER_MAP', // account team assignments: which designers belong to which client
+    REF_ACCOUNT_SUPERVISION: 'REF_ACCOUNT_SUPERVISION', // which Team Lead supervises which designer, per client account (bonus attribution)
     DIM_SOP_TEMPLATES:       'DIM_SOP_TEMPLATES',       // SOP checklist templates per client/software/scope (T13)
     DIM_SOP_ITEMS:           'DIM_SOP_ITEMS',           // individual checklist items per SOP template (T13)
     DIM_QC_FINDING_TYPES:    'DIM_QC_FINDING_TYPES',   // QC finding taxonomy — controlled vocabulary (T13 QMS Layer 3)

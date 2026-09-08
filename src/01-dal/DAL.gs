@@ -90,6 +90,7 @@ var DAL = (function () {
     'FACT_QUARTERLY_BONUS':     ['QuarterlyBonusEngine', 'BonusPeriodEngine'],   // quarterly + annual bonus calculations; BonusPeriodEngine = BonusPeriodCommit.gs's callerModule identity
     'DIM_PRODUCT_RATES':        ['AdminEngine', 'MigrationEngine'],
     'DIM_SEQUENCE_COUNTERS':    ['JobCreateHandler', 'AdminEngine'],
+    'REF_ACCOUNT_SUPERVISION':  ['AdminEngine', 'MigrationEngine', 'StaffOnboarding'],
 
     // ── Staging tables (Intake + Queue only) ────────────────
     'STG_RAW_INTAKE':        ['IntakeService'],
