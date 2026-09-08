@@ -364,6 +364,91 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
+  // SECTION 5a: ACCOUNT-SCOPED SUPERVISOR BONUS (2026-09-08 design spec)
+  //
+  // Rewrite of buildSupervisorBonusMap_ that attributes each designer's
+  // hours to whoever REF_ACCOUNT_SUPERVISION says supervises them on
+  // THAT SPECIFIC client account, instead of summing a designer's entire
+  // period total and crediting one flat supervisor_code. Built and
+  // tested standalone — NOT wired into runBonusRun/previewPayoutStatement
+  // until a separate, later cutover task confirms REF_ACCOUNT_SUPERVISION
+  // has been backfilled with every active designer's real current
+  // account/supervisor pairing (spec §7 — the table starts empty, and
+  // this function blocks any pair with no assignment row).
+  // ============================================================
+
+  /**
+   * @param {Object} staffCache          From buildStaffCache_(asOfDate).
+   * @param {Object} hoursMapByAccount   From aggregateNetWorkLogHoursByAccount().
+   *                                     { personCode: { clientCode: { design_hours, qc_hours } } }
+   * @param {string} asOfDate            'YYYY-MM-DD' — resolves REF_ACCOUNT_SUPERVISION
+   *                                     as of this date, same convention as buildStaffCache_.
+   * @returns {{ bonusMap: Object, blockedPairs: Array<{client_code, designer_code, hours}> }}
+   */
+  function buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, asOfDate) {
+    var supervisionRows;
+    try {
+      supervisionRows = DAL.readAll(Config.TABLES.REF_ACCOUNT_SUPERVISION, { callerModule: MODULE });
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') supervisionRows = [];
+      else throw e;
+    }
+
+    var bonusMap     = {};
+    var blockedPairs = [];
+    var designerCodes = Object.keys(hoursMapByAccount);
+
+    for (var i = 0; i < designerCodes.length; i++) {
+      var designerCode  = designerCodes[i];
+      var clientCodes   = Object.keys(hoursMapByAccount[designerCode]);
+
+      for (var j = 0; j < clientCodes.length; j++) {
+        var clientCode  = clientCodes[j];
+        var pairHours   = hoursMapByAccount[designerCode][clientCode].design_hours;
+        if (!pairHours) continue;
+
+        var matchingRows = [];
+        for (var k = 0; k < supervisionRows.length; k++) {
+          var row = supervisionRows[k];
+          if (String(row.client_code).trim() !== clientCode) continue;
+          if (String(row.designer_code).trim() !== designerCode) continue;
+          var effFrom = toIsoDate_(row.effective_from);
+          var effTo   = toIsoDate_(row.effective_to);
+          if (effFrom && effFrom > asOfDate) continue;
+          if (effTo   && effTo   < asOfDate) continue;
+          matchingRows.push(row);
+        }
+
+        if (matchingRows.length > 1) {
+          throw new Error('PayrollEngine.buildSupervisorBonusMapByAccount_: ' + matchingRows.length +
+                           ' REF_ACCOUNT_SUPERVISION rows resolve as valid for ' + clientCode + '/' + designerCode +
+                           ' as of ' + asOfDate + ' — refusing to silently pick one (would silently corrupt bonus ' +
+                           'attribution). This means assignAccountSupervisor\'s own guards were bypassed somehow ' +
+                           '(e.g. a manual sheet edit) — clean up the duplicate rows before retrying.');
+        }
+
+        var matchingRow = matchingRows[0];
+
+        if (!matchingRow) {
+          Logger.warn('SUPERVISOR_BONUS_UNASSIGNED_PAIR', {
+            module: MODULE, client_code: clientCode, designer_code: designerCode, hours: pairHours
+          });
+          blockedPairs.push({ client_code: clientCode, designer_code: designerCode, hours: pairHours });
+          continue;
+        }
+
+        var supervisorCode = String(matchingRow.supervisor_code).trim();
+        var supervisor      = staffCache[supervisorCode];
+        if (!supervisor || supervisor.role !== 'TEAM_LEAD') continue; // role-based PM-skip rule, spec §4.5
+
+        bonusMap[supervisorCode] = Math.round(((bonusMap[supervisorCode] || 0) + pairHours * SUPERVISOR_BONUS_INR) * 100) / 100;
+      }
+    }
+
+    return { bonusMap: bonusMap, blockedPairs: blockedPairs };
+  }
+
+  // ============================================================
   // SECTION 5b: PM BONUS CALCULATION (flat, roster-wide)
   //
   // Returns: { personCode → bonusAmountINR }
@@ -1367,6 +1452,7 @@ var PayrollEngine = (function () {
     buildStaffCache_:         buildStaffCache_,
     buildJobToClientMap_:     buildJobToClientMap_,
     buildSupervisorBonusMap_: buildSupervisorBonusMap_,
+    buildSupervisorBonusMapByAccount_: buildSupervisorBonusMapByAccount_,
 
     // Exposed 2026-07-28 (Phase B1, payroll automation) — same
     // precedent as buildSupervisorBonusMap_ above, so the Jest suite
