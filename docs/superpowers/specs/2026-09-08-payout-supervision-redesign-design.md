@@ -1,7 +1,7 @@
 # Payout & Account-Supervision Redesign — Design Spec
 
 **Date:** 2026-09-08
-**Status:** Approved in conversation, pending written-spec review
+**Status:** Approved (2026-09-08) — proceeding to implementation plan
 **Related:** `CTO_TASK_QUEUE.md` TASK RB-3 (full investigation trail, file:line citations)
 
 ## 1. Problem
