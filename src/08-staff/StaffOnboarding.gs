@@ -1268,6 +1268,48 @@ var StaffOnboarding = (function () {
     return scd2FieldChange_(personCode, { supervisor_code: newSupervisorCode }, effectiveDate);
   }
 
+  /**
+   * Effective-dated pay rate change. Closes the current DIM_STAFF_ROSTER
+   * row and inserts a new one, SCD-2 style — same mechanism as
+   * changeSupervisor(). CEO + Admin only.
+   *
+   * If the person already has an open row whose own effective_from equals
+   * effectiveDate (e.g. a row opened the same day by an unrelated field
+   * change that carried the old rate forward), and the rates actually
+   * differ, this throws — closing that row would produce an inverted
+   * validity window. Fix that case with a direct field patch on the
+   * existing row instead, not this function.
+   *
+   * @param {string} actorEmail
+   * @param {string} personCode
+   * @param {{ pay_design: number, pay_qc: number }} newRates  Both required —
+   *   scd2FieldChange_ closes the old row before appending the new one, so a
+   *   missing/invalid field here would close the old row successfully and
+   *   then fail appending the new one, leaving the person with no open
+   *   roster row at all. Validated up front specifically to avoid that.
+   * @param {string} effectiveDate  'YYYY-MM-DD'
+   * @returns {{ personCode: string, closedRow: boolean, newRowCreated: boolean }}
+   */
+  function changePayRate(actorEmail, personCode, newRates, effectiveDate) {
+    var actor = RBAC.resolveActor(actorEmail);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
+
+    newRates = newRates || {};
+    if (typeof newRates.pay_design !== 'number' || !isFinite(newRates.pay_design)) {
+      throw new Error('StaffOnboarding.changePayRate: newRates.pay_design must be a finite number. Received: ' +
+                       JSON.stringify(newRates.pay_design));
+    }
+    if (typeof newRates.pay_qc !== 'number' || !isFinite(newRates.pay_qc)) {
+      throw new Error('StaffOnboarding.changePayRate: newRates.pay_qc must be a finite number. Received: ' +
+                       JSON.stringify(newRates.pay_qc));
+    }
+
+    return scd2FieldChange_(personCode, {
+      pay_design: newRates.pay_design,
+      pay_qc:     newRates.pay_qc
+    }, effectiveDate);
+  }
+
   // ============================================================
   // PUBLIC API
   // ============================================================
@@ -1312,7 +1354,15 @@ var StaffOnboarding = (function () {
      * section comment above for the full convention. CEO + Admin only.
      * Idempotent on (person_code, newSupervisorCode, effectiveDate).
      */
-    changeSupervisor: changeSupervisor
+    changeSupervisor: changeSupervisor,
+
+    /**
+     * Effective-dated pay rate change (pay_design/pay_qc). Closes the
+     * current DIM_STAFF_ROSTER row and inserts a new one, SCD-2 style —
+     * see changeSupervisor's section comment for the full convention.
+     * CEO + Admin only. Idempotent on (person_code, rates, effectiveDate).
+     */
+    changePayRate: changePayRate
   };
 
 }());
