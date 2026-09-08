@@ -205,4 +205,40 @@ describe('PayrollEngine.buildSupervisorBonusMapByAccount_()', () => {
     expect(() => PayrollEngine.buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, '2026-09-01'))
       .toThrow(/SBS\/BIT/);
   });
+
+  test('a supervisor_code in REF_ACCOUNT_SUPERVISION not found in staffCache (e.g. typo or inactive person) is logged as SUPERVISOR_BONUS_UNRESOLVED_SUPERVISOR and blocked, not silently skipped with no visibility', () => {
+    seedSupervision([
+      { client_code: 'ACME CORP', designer_code: 'PRS', supervisor_code: 'NONEXISTENT' }
+    ]);
+    const staffCache = {
+      PRS: staff({ role: 'DESIGNER' })
+      // NONEXISTENT not in staffCache — simulates typo or inactive person
+    };
+    const hoursMapByAccount = {
+      PRS: { 'ACME CORP': { design_hours: 20, qc_hours: 0 } }
+    };
+
+    const logWarns = [];
+    mocks.Logger.warn = (eventName, payload) => {
+      logWarns.push({ eventName, payload });
+    };
+
+    const result = PayrollEngine.buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, '2026-09-01');
+
+    // Should log a warning with distinct event name
+    expect(logWarns.length).toBe(1);
+    expect(logWarns[0].eventName).toBe('SUPERVISOR_BONUS_UNRESOLVED_SUPERVISOR');
+    expect(logWarns[0].payload.supervisor_code).toBe('NONEXISTENT');
+    expect(logWarns[0].payload.client_code).toBe('ACME CORP');
+    expect(logWarns[0].payload.designer_code).toBe('PRS');
+    expect(logWarns[0].payload.hours).toBe(20);
+
+    // Should be in blockedPairs so it's visible in the same place a human reviews
+    expect(result.blockedPairs).toEqual([
+      { client_code: 'ACME CORP', designer_code: 'PRS', hours: 20 }
+    ]);
+
+    // Should NOT have a bonusMap entry for the nonexistent supervisor
+    expect(result.bonusMap.NONEXISTENT).toBeUndefined();
+  });
 });

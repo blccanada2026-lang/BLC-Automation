@@ -439,7 +439,19 @@ var PayrollEngine = (function () {
 
         var supervisorCode = String(matchingRow.supervisor_code).trim();
         var supervisor      = staffCache[supervisorCode];
-        if (!supervisor || supervisor.role !== 'TEAM_LEAD') continue; // role-based PM-skip rule, spec §4.5
+
+        // Case 1: supervisor_code not found in staffCache (typo, inactive, etc.) — log and block
+        if (!supervisor) {
+          Logger.warn('SUPERVISOR_BONUS_UNRESOLVED_SUPERVISOR', {
+            module: MODULE, supervisor_code: supervisorCode, client_code: clientCode,
+            designer_code: designerCode, hours: pairHours
+          });
+          blockedPairs.push({ client_code: clientCode, designer_code: designerCode, hours: pairHours });
+          continue;
+        }
+
+        // Case 2: supervisor found but wrong role (e.g., PM) — skip silently, no logging, no blocking
+        if (supervisor.role !== 'TEAM_LEAD') continue; // role-based PM-skip rule, spec §4.5
 
         bonusMap[supervisorCode] = Math.round(((bonusMap[supervisorCode] || 0) + pairHours * SUPERVISOR_BONUS_INR) * 100) / 100;
       }
