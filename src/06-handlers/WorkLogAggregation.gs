@@ -81,3 +81,52 @@ function aggregateNetWorkLogHours(rows) {
 
   return hoursMap;
 }
+
+/**
+ * Same NET-hours aggregation principle as aggregateNetWorkLogHours (void/
+ * amendment deltas netted against their originals, migrated rows
+ * excluded), but bucketed per (actor_code, client_code) instead of just
+ * actor_code — needed for account-scoped Team Lead bonus attribution
+ * (2026-09-08 design spec). A row whose job_number isn't in jobToClientMap
+ * is bucketed under the literal key '(UNKNOWN)' rather than dropped, so a
+ * stale/missing job-to-client mapping is visible in the result rather than
+ * silently losing hours.
+ *
+ * @param {Array<Object>} rows
+ * @param {Object} jobToClientMap  { jobNumber: clientCode }
+ * @returns {Object}  { personCode: { clientCode: { design_hours, qc_hours } } }
+ */
+function aggregateNetWorkLogHoursByAccount(rows, jobToClientMap) {
+  var hoursMap = {};
+  jobToClientMap = jobToClientMap || {};
+
+  for (var i = 0; i < (rows || []).length; i++) {
+    var row = rows[i];
+    if (isMigratedWorkLog(row)) continue;
+
+    var code   = String((row && (row.actor_code || row.person_code)) || '').trim();
+    var role   = String((row && row.actor_role) || '').toUpperCase();
+    var hours  = parseFloat(row && row.hours);
+    var client = jobToClientMap[row && row.job_number] || '(UNKNOWN)';
+
+    if (!code || isNaN(hours) || hours === 0) continue;
+
+    if (!hoursMap[code]) hoursMap[code] = {};
+    if (!hoursMap[code][client]) hoursMap[code][client] = { design_hours: 0, qc_hours: 0 };
+
+    if (role === 'QC' || role === 'QC_REVIEWER') {
+      hoursMap[code][client].qc_hours += hours;
+    } else {
+      hoursMap[code][client].design_hours += hours;
+    }
+  }
+
+  Object.keys(hoursMap).forEach(function (code) {
+    Object.keys(hoursMap[code]).forEach(function (client) {
+      hoursMap[code][client].design_hours = Math.round(hoursMap[code][client].design_hours * 100) / 100;
+      hoursMap[code][client].qc_hours     = Math.round(hoursMap[code][client].qc_hours     * 100) / 100;
+    });
+  });
+
+  return hoursMap;
+}
