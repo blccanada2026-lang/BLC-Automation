@@ -31,23 +31,28 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-09-04)
+## Session State (last updated: end of turn, 2026-09-08)
 
-**Current thread: TASK RB-2 (see EPIC above) — WORK_LOG_CORRECTION_ADMIN
-carve-out shipped to PROD source + redeployed (New Version) 2026-09-04.**
+**TASK RB-2 — fully CLOSED 2026-09-08, including both real corrections.**
 Root cause for the August payroll/HR-invoice discrepancy fully diagnosed
-(rate staleness for 7 staff, pending HR confirmation; 2 confirmed duplicate
-work-log entries — Sarty Gosh, Abhisek Rit, both detailed in the EPIC
-above). Built the correction door via 3 reviewed commits (743be71/583322c/
-aa94a66 merged; cb6be8d + c448971 built in a second worktree
-`worklog-void-disambiguate`, not yet merged as of this update — pending the
-3rd review cycle's result). **Next action once that review clears:**
-merge, push PROD source again, redeploy again (Portal.gs deps changed
-again), then actually perform the two FACT_WORK_LOGS voids via the
-portal's My Hours flow — ask the user to confirm each one individually,
-do not script it. Known follow-up gap logged in the EPIC (AMEND/REASSIGN
-still lack event_id disambiguation) — not blocking, don't silently fix
-without flagging scope growth.
+(rate staleness for 7 staff, still pending HR confirmation — untouched;
+2 confirmed duplicate work-log entries — Sarty Gosh, Abhisek Rit — both
+fixed). WORK_LOG_CORRECTION_ADMIN carve-out shipped to PROD across two
+merge batches (aa94a66, then d3ae6e1) with 4 review cycles total, each
+finding something real — see EPIC above for the full list. Both PROD
+pushes redeployed (New Version) by the user.
+Discovered at execution time that the portal's "My Hours" view can't
+browse past periods at all (hardcoded to current period) — worked around
+by submitting both corrections directly into the same queue path the
+portal's Void button uses, not by scripting around the handler. Both
+verified correct by re-reading FACT_WORK_LOGS.
+**Next action:** re-run the August billing/payroll dry-run to check where
+things stand now that both duplicates are fixed — rate corrections for
+the other 7 staff are still outstanding and pending HR, so August payroll
+still shouldn't be committed yet. Two logged follow-ups, not started
+(AMEND/REASSIGN event_id disambiguation; My Hours past-period browsing) —
+don't pick either up without the user asking, they're deliberately
+deferred, not forgotten.
 **Earlier this session, unrelated:** TASK NEW-4 (payout-run review) and
 TASK NEW-6/NEW-7 (staff status maintenance, paystub→HR review) remain
 exactly where they were — not started, not touched this turn.
@@ -621,36 +626,64 @@ duplicate FACT_WORK_LOGS entries (Sarty Gosh — Nelson, job BLC-01016, one of
 two 4.5h rows on 2026-08-18/19, HR-confirmed only one line exists on their
 timesheet; Abhisek Rit — Nelson, job BLC-01070, 2026-08-24, byte-identical
 4h double-submit, `dupe_count: 2` via `WorkLogDedupAudit`).
-- **TASK RB-2 — CLOSED, deployed to PROD 2026-09-04.** Built a reusable
-  CEO/ADMIN/HR_ACCOUNTING correction door into the existing (already-tested)
-  `WorkLogCorrectionHandler.gs`/portal "My Hours" Void/Edit flow, rather than
-  a new one-off script — new `WORK_LOG_CORRECTION_ADMIN` RBAC action
+- **TASK RB-2 — CLOSED, deployed to PROD and both corrections performed
+  2026-09-08.** Built a reusable CEO/ADMIN/HR_ACCOUNTING correction door
+  into the existing (already-tested) `WorkLogCorrectionHandler.gs` rather
+  than a new one-off script — new `WORK_LOG_CORRECTION_ADMIN` RBAC action
   (deliberately NOT widening the general `WORK_LOG_AMEND`/`WORK_LOG_VOID`
   actions DESIGNER/TEAM_LEAD use for self-correction; SYSTEM stays excluded
-  per its own pre-existing CTO-spec policy). Two review cycles found and
+  per its own pre-existing CTO-spec policy). Four review cycles found and
   fixed real issues before merge: (a) `enforceCorrectionPermission_` was
   silently bypassing `assertActorExists_` for any role already holding the
-  primary action, since `RBAC.hasPermission()` doesn't validate actor shape
-  the way `RBAC.enforcePermission()` does; (b) idempotency (keyed on
-  `queue_id`, fresh every submission) didn't protect against a retried/
-  double-submitted void of the SAME entry — closed with a new server-side
-  `findExistingCorrection_` guard in `handleVoid`/`handleAmend`/
-  `handleReassign`, mirroring `PortalData.gs`'s own `corrected_status`
-  note-parsing. Also added `event_id` as an optional disambiguator on
+  primary action; (b) idempotency (keyed on `queue_id`, fresh every
+  submission) didn't protect against a retried/double-submitted void of the
+  SAME entry — closed with a server-side `findExistingCorrection_` guard in
+  `handleVoid`/`handleAmend`/`handleReassign`; (c) that same guard was
+  silently dead code in `handleReassign` (its void note format never
+  matched the detection regex) and, in `handleVoid`, blocked the very
+  "void the whole entry and re-submit fresh" recovery path its own error
+  message advertised (a prior AMEND no longer blocks a further VOID — only
+  a prior VOID does). Also added `event_id` as an optional disambiguator on
   `VOID_SCHEMA` so two byte-identical duplicate rows (Abhisek Rit's exact
-  case) can actually be told apart — without it `findOriginalEntry_` always
-  threw "ambiguous" and neither copy could ever be voided.
-- **Follow-up gap, not yet closed:** the `event_id` disambiguator was only
-  added to VOID, not AMEND/REASSIGN. Once a duplicate's twin is voided, the
-  surviving row still has no `corrected_status`, so `findOriginalEntry_`
-  (called without `event_id` from those two paths) still finds both original
-  rows and throws "ambiguous" — the surviving entry becomes permanently
-  un-editable/un-reassignable through the portal until this is extended the
-  same way VOID was. Not urgent (today's known corrections are VOID-only)
-  but will resurface the moment a duplicate-row case needs an amend instead.
-- **Pending:** the two actual FACT_WORK_LOGS voids (Sarty, Abhisek Rit) —
-  not yet performed. To be done via the portal's My Hours → Void flow now
-  that the fix is live, each authorized individually, not scripted.
+  case) can actually be told apart.
+- **Follow-up gap, not yet closed:** `event_id` disambiguation was only
+  added to VOID, not AMEND/REASSIGN — a surviving duplicate twin still
+  can't be edited/reassigned through the portal (still finds both original
+  rows, throws "ambiguous"). Not urgent (both known corrections were
+  VOID-only) but will resurface the moment a duplicate-row case needs an
+  amend instead.
+- **Follow-up gap, found during execution:** `PortalData.getMyHours` (and
+  the portal's "My Hours" panel built on it) hardcodes
+  `Identifiers.generateCurrentPeriodId()` — there is no way to browse a
+  past period through the portal UI at all, for anyone, regardless of role.
+  This meant the new Void button couldn't actually be used to fix August's
+  duplicates from September — worked around by submitting both corrections
+  directly into the same `WORK_LOG_VOID` queue path
+  (`PortalData.writeQueueItem` + `QueueProcessor.processQueue()`, exactly
+  what `portal_submitAction` does) via one-off Apps Script editor scripts,
+  not through the "My Hours" UI. A real fix (optional periodId param on
+  `getMyHours`/`portal_getMyHours` + a period selector in the UI) is a
+  legitimate follow-up, not done here — same reasoning as the AMEND/
+  REASSIGN gap above: this session's actual two corrections didn't need it
+  built, so it wasn't, but any *future* use of this tool for a past period
+  will hit the same wall.
+- **Both corrections performed and verified 2026-09-08, run by CEO (Raj
+  Nair) directly (already has full correction authority, so HR_ACCOUNTING
+  access was never actually exercised for these two):**
+  - Sarty Gosh / BLC-01016: voided the 2026-08-19 4.5h entry (event_id
+    `5225da4f-...`), kept 2026-08-18. Net now 4.5h, matching HR's Nelson
+    timesheet.
+  - Abhisek Rit / BLC-01070: voided the 2026-08-25 4h entry (event_id
+    `e6b4c9fb-...`), kept the 2026-08-24 submission (`705b3589-...`). Net
+    now 4h, matching HR's Nelson total.
+  - Both verified by re-reading `FACT_WORK_LOGS` post-write — void rows
+    correctly reference the target `event_id`, correct signed actor/reason
+    in notes, no unintended second write.
+  - **Not yet done:** re-run the August billing/payroll dry-run
+    (`checkAugustBillingDryRunSafe()`-style check from earlier this
+    session) to confirm these two fixes plus the still-pending rate
+    corrections (7 staff, waiting on HR) fully reconcile before actually
+    committing August payroll/billing.
 
 ### Parallel Track: BLC Growth Platform
 - **TASK GP-1** | Standalone project decision + architecture (own future CTO assessment, not folded into this backlog) | P4 | Not started, not scoped.
