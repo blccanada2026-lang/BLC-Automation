@@ -457,7 +457,23 @@ var PayrollEngine = (function () {
       }
     }
 
-    return { bonusMap: bonusMap, blockedPairs: blockedPairs };
+    // Final defensive filter: ensure no bonusMap entry has a non-positive value.
+    // Under current system invariants (per-pair guard skips falsy pairHours, only positive
+    // accumulation), this should never occur. But if hoursMapByAccount is ever built by a
+    // future code path with different guarantees (e.g., smaller minimum units, or rounding
+    // edge cases), this filter ensures no zero/negative entry ever reaches production.
+    // Matches the old buildSupervisorBonusMap_'s own final gate (if (supervisedDesignHours > 0)),
+    // now applied defensively to the account-scoped variant.
+    var finalBonusMap = {};
+    var bonusKeys = Object.keys(bonusMap);
+    for (var m = 0; m < bonusKeys.length; m++) {
+      var code = bonusKeys[m];
+      if (bonusMap[code] > 0) {
+        finalBonusMap[code] = bonusMap[code];
+      }
+    }
+
+    return { bonusMap: finalBonusMap, blockedPairs: blockedPairs };
   }
 
   // ============================================================

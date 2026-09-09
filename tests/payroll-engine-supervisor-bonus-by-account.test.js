@@ -241,4 +241,32 @@ describe('PayrollEngine.buildSupervisorBonusMapByAccount_()', () => {
     // Should NOT have a bonusMap entry for the nonexistent supervisor
     expect(result.bonusMap.NONEXISTENT).toBeUndefined();
   });
+
+  test('a supervisor with only very-small-hours pairs that round to zero is filtered out (no non-positive entries in bonusMap)', () => {
+    seedSupervision([
+      { client_code: 'TINY ACCOUNT 1', designer_code: 'PRS', supervisor_code: 'DBS' },
+      { client_code: 'TINY ACCOUNT 2', designer_code: 'PRS', supervisor_code: 'DBS' }
+    ]);
+    const staffCache = {
+      DBS: staff({ role: 'TEAM_LEAD' }),
+      PRS: staff({ role: 'DESIGNER' })
+    };
+    // Two tiny pairs: each 0.00001 hours × 25 = 0.00025, which rounds to 0 after *100/100
+    // The per-pair guard at line 408 allows these through (0.00001 is truthy), but accumulation
+    // + rounding produces a zero-value bonusMap entry. The final filter should remove it.
+    const hoursMapByAccount = {
+      PRS: {
+        'TINY ACCOUNT 1': { design_hours: 0.00001, qc_hours: 0 },
+        'TINY ACCOUNT 2': { design_hours: 0.00001, qc_hours: 0 }
+      }
+    };
+
+    const result = PayrollEngine.buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, '2026-09-01');
+
+    // The bonusMap entry for DBS should either not exist, or if it does exist,
+    // it should NOT be zero. The fix adds a final filter to ensure
+    // no non-positive values remain in bonusMap.
+    expect(result.bonusMap.DBS).toBeUndefined();
+    expect(result.blockedPairs).toEqual([]); // pairs are not blocked, just filtered out
+  });
 });
