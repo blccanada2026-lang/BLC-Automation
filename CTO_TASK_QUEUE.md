@@ -31,21 +31,53 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-09-08)
+## Session State (last updated: end of turn, 2026-09-09)
 
-**TASK RB-3 — rate corrections CLOSED 2026-09-08; architecture redesign
-active, spec written, awaiting user review.** The 7 HR-confirmed rate
-corrections (effective 2026-07-01) are shipped, verified, and live in PROD
-— see EPIC below. Still outstanding, and NOT part of this task: re-running
-the August billing/payroll dry-run.
+**TASK RB-3 — rate corrections CLOSED 2026-09-08; Phase 1 of the
+account-supervision redesign CLOSED and LIVE in PROD 2026-09-09; Phase 2
+and the real-data backfill are the next open items.** The 7 HR-confirmed
+rate corrections (effective 2026-07-01) are shipped, verified, and live in
+PROD — see EPIC below. Still outstanding, and NOT part of this task:
+re-running the August billing/payroll dry-run.
 Separately, investigating this surfaced two real payroll-rules problems
 that led to a full architectural design conversation (brainstorming skill,
-full process): (1) TEAM_LEAD supervisor bonus has no account-scoping — live
-example, Pabitra Ghosh was credited ~₹2,381 for Priyanka S's hours on
-Alberta Truss, an account he has nothing to do with; (2) `QC_REVIEWER` role
-alias never reaches `actor.role`, so QC reviewers' hours misclassify as
-design_hours (currently financially silent, one-rate model confirmed
-company-wide). Design spec written and committed:
+full process) and, now, a completed Phase 1 implementation: (1) TEAM_LEAD
+supervisor bonus has no account-scoping — live example, Pabitra Ghosh was
+credited ~₹2,381 for Priyanka S's hours on Alberta Truss, an account he has
+nothing to do with; (2) `QC_REVIEWER` role alias never reaches `actor.role`,
+so QC reviewers' hours misclassify as design_hours (was financially silent,
+one-rate model confirmed company-wide — now fixed, see below).
+
+**Phase 1 shipped 2026-09-09** (subagent-driven-development, 6 tasks + 1
+fix-round + 1 final-review fix-round, all task-reviewed, one whole-branch
+review): new `REF_ACCOUNT_SUPERVISION` table (provisioned in PROD, verified
+empty with correct headers), `StaffOnboarding.assignAccountSupervisor()`,
+the `WorkLogAggregation.gs` QC_REVIEWER classification fix,
+`aggregateNetWorkLogHoursByAccount()`, `PayrollEngine.buildJobToClientMap_()`,
+and `PayrollEngine.buildSupervisorBonusMapByAccount_()` (the new per-account
+bonus calc) — merged to `main` (`ff36fd0`) and deployed to PROD. **The new
+calc is deliberately NOT wired into `runBonusRun`/`previewPayoutStatement`
+yet** — those still call the old, flat, company-wide function, byte-for-byte
+untouched, verified independently by two separate reviewers reading the
+source directly (not just the diff). Full detail, including one real
+Important bug the review process caught and fixed before merge (an
+unresolvable `supervisor_code` — e.g. a sheet typo — was silently
+indistinguishable from the intentional PM-skip case; now logged and blocked,
+visible), is in the design spec and implementation plan:
+`docs/superpowers/specs/2026-09-08-payout-supervision-redesign-design.md`,
+`docs/superpowers/plans/2026-09-08-payout-supervision-redesign-phase1.md`.
+
+**Next, blocking, human action — not an engineering task:** back-fill
+`REF_ACCOUNT_SUPERVISION` with every active designer's real, current
+account/supervisor pairing, via `StaffOnboarding.assignAccountSupervisor()`
+called directly in the Apps Script editor (no portal UI yet — that's
+Phase 2). The table starts empty; until this is done, a real-data
+preview run of `buildSupervisorBonusMapByAccount_` would show every pair
+as blocked. Only once `blockedPairs` comes back empty against real PROD
+data should `runBonusRun`/`previewPayoutStatement` be switched over to the
+new calculation — a small, separate, deliberately-not-yet-done cutover
+task once the backfill is verified. Phase 2 (the CEO/HR self-service
+portal panel) is planned after that. Design spec written and committed:
 `docs/superpowers/specs/2026-09-08-payout-supervision-redesign-design.md`
 — new `REF_ACCOUNT_SUPERVISION` table, per-account bonus rewrite, a
 role-based PM-fallback skip rule (verified Sarty holds exactly one active
@@ -838,17 +870,19 @@ timesheet; Abhisek Rit — Nelson, job BLC-01070, 2026-08-24, byte-identical
     `resolveActor()`/`lookupActor_` time so `actor.role` is always
     canonical, vs. widening the `=== 'QC'` checks to also accept
     `'QC_REVIEWER'`).
-  - **Open decisions blocking further work on this task:**
-    1. Deb Sen's role vs. Priyanka's reassignment — change his role, or is
-       "reviewer supervises a designer for bonus purposes" a case the
-       model needs to support?
-    2. Account-scoped TEAM_LEAD bonus — design a real fix now (new
-       data model), or log as a known gap and defer?
-    3. `QC_REVIEWER` alias bug — fix now (low-risk, isolated), or fold
-       into whatever Decision 1 produces?
-  - The 7 rate corrections above are independent of all three decisions
-    and can proceed as soon as confirmed — nothing about them depends on
-    how the bonus/supervision questions resolve.
+  - **All three open decisions above resolved 2026-09-08, in a full
+    brainstorming-skill design conversation:** (1) Deb Sen's role changes
+    to TEAM_LEAD as part of reassigning him Priyanka's supervision — not
+    yet actually done in the roster, waiting on the backfill step below;
+    (2) account-scoped bonus gets a real new data model
+    (`REF_ACCOUNT_SUPERVISION`) — **built and shipped**, see Phase 1
+    entry above and in Session State; (3) the `QC_REVIEWER` alias bug is
+    fixed with an isolated one-line change to `WorkLogAggregation.gs`
+    (NOT a global RBAC fix — `WorkLogCorrectionHandler.gs` deliberately
+    relies on the raw unaliased string elsewhere) — **shipped** as part
+    of Phase 1.
+  - The 7 rate corrections above were independent of these decisions and
+    shipped separately, first — see their own entry above.
 
 ### Parallel Track: BLC Growth Platform
 - **TASK GP-1** | Standalone project decision + architecture (own future CTO assessment, not folded into this backlog) | P4 | Not started, not scoped.
