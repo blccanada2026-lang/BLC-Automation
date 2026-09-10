@@ -160,21 +160,21 @@ describe('aggregateNetWorkLogHours()', () => {
 });
 
 describe('aggregateNetWorkLogHoursByAccount()', () => {
-  const jobToClientMap = {
-    'BLC-01001': 'ALBERTA TRUSS',
-    'BLC-01002': 'TITAN TRUSS',
-    'BLC-01003': 'SBS'
+  const jobToClientProductMap = {
+    'BLC-01001': { client_code: 'ALBERTA TRUSS', product_code: 'ROOF_TRUSS' },
+    'BLC-01002': { client_code: 'TITAN TRUSS',   product_code: 'ROOF_TRUSS' },
+    'BLC-01003': { client_code: 'SBS',           product_code: 'ROOF_TRUSS' }
   };
 
-  test('sums hours per (actor, client_code), split design vs QC', () => {
+  test('sums hours per (actor, client_code, product_code), split design vs QC', () => {
     const rows = [
       { actor_code: 'PRS', actor_role: 'DESIGNER', hours: 6, job_number: 'BLC-01001', event_type: 'WORK_LOG_SUBMITTED' },
       { actor_code: 'PRS', actor_role: 'DESIGNER', hours: 4, job_number: 'BLC-01001', event_type: 'WORK_LOG_SUBMITTED' },
       { actor_code: 'PRS', actor_role: 'QC_REVIEWER', hours: 2, job_number: 'BLC-01001', event_type: 'WORK_LOG_SUBMITTED' },
     ];
-    const result = aggregateNetWorkLogHoursByAccount(rows, jobToClientMap);
-    expect(result.PRS['ALBERTA TRUSS'].design_hours).toBe(10);
-    expect(result.PRS['ALBERTA TRUSS'].qc_hours).toBe(2);
+    const result = aggregateNetWorkLogHoursByAccount(rows, jobToClientProductMap);
+    expect(result.PRS['ALBERTA TRUSS']['ROOF_TRUSS'].design_hours).toBe(10);
+    expect(result.PRS['ALBERTA TRUSS']['ROOF_TRUSS'].qc_hours).toBe(2);
   });
 
   test('the same person\'s hours on two different accounts stay in separate buckets', () => {
@@ -182,18 +182,32 @@ describe('aggregateNetWorkLogHoursByAccount()', () => {
       { actor_code: 'PRS', actor_role: 'DESIGNER', hours: 6, job_number: 'BLC-01001', event_type: 'WORK_LOG_SUBMITTED' },
       { actor_code: 'PRS', actor_role: 'DESIGNER', hours: 3, job_number: 'BLC-01002', event_type: 'WORK_LOG_SUBMITTED' },
     ];
-    const result = aggregateNetWorkLogHoursByAccount(rows, jobToClientMap);
-    expect(result.PRS['ALBERTA TRUSS'].design_hours).toBe(6);
-    expect(result.PRS['TITAN TRUSS'].design_hours).toBe(3);
+    const result = aggregateNetWorkLogHoursByAccount(rows, jobToClientProductMap);
+    expect(result.PRS['ALBERTA TRUSS']['ROOF_TRUSS'].design_hours).toBe(6);
+    expect(result.PRS['TITAN TRUSS']['ROOF_TRUSS'].design_hours).toBe(3);
   });
 
-  test('nets a WORK_LOG_VOIDED negative delta against the same (actor, client_code) bucket', () => {
+  test('the same person\'s hours on two different products within the SAME account stay in separate buckets', () => {
+    const map = {
+      'BLC-01001': { client_code: 'ALBERTA TRUSS', product_code: 'ROOF_TRUSS' },
+      'BLC-01004': { client_code: 'ALBERTA TRUSS', product_code: 'FLOOR_JOIST' }
+    };
+    const rows = [
+      { actor_code: 'PRS', actor_role: 'DESIGNER', hours: 6, job_number: 'BLC-01001', event_type: 'WORK_LOG_SUBMITTED' },
+      { actor_code: 'PRS', actor_role: 'DESIGNER', hours: 3, job_number: 'BLC-01004', event_type: 'WORK_LOG_SUBMITTED' },
+    ];
+    const result = aggregateNetWorkLogHoursByAccount(rows, map);
+    expect(result.PRS['ALBERTA TRUSS']['ROOF_TRUSS'].design_hours).toBe(6);
+    expect(result.PRS['ALBERTA TRUSS']['FLOOR_JOIST'].design_hours).toBe(3);
+  });
+
+  test('nets a WORK_LOG_VOIDED negative delta against the same (actor, client_code, product_code) bucket', () => {
     const rows = [
       { actor_code: 'PRS', actor_role: 'DESIGNER', hours: 6, job_number: 'BLC-01001', event_type: 'WORK_LOG_SUBMITTED' },
       { actor_code: 'PRS', actor_role: 'DESIGNER', hours: -6, job_number: 'BLC-01001', event_type: 'WORK_LOG_VOIDED' },
     ];
-    const result = aggregateNetWorkLogHoursByAccount(rows, jobToClientMap);
-    expect(result.PRS['ALBERTA TRUSS'].design_hours).toBe(0);
+    const result = aggregateNetWorkLogHoursByAccount(rows, jobToClientProductMap);
+    expect(result.PRS['ALBERTA TRUSS']['ROOF_TRUSS'].design_hours).toBe(0);
   });
 
   test('excludes migrated rows, same as aggregateNetWorkLogHours', () => {
@@ -201,15 +215,15 @@ describe('aggregateNetWorkLogHoursByAccount()', () => {
       { actor_code: 'PRS', actor_role: 'DESIGNER', hours: 6, job_number: 'BLC-01001', event_type: 'WORK_LOG_SUBMITTED' },
       { actor_code: 'PRS', actor_role: 'DESIGNER', hours: 40, job_number: 'BLC-01001', event_type: 'WORK_LOG_MIGRATED' },
     ];
-    const result = aggregateNetWorkLogHoursByAccount(rows, jobToClientMap);
-    expect(result.PRS['ALBERTA TRUSS'].design_hours).toBe(6);
+    const result = aggregateNetWorkLogHoursByAccount(rows, jobToClientProductMap);
+    expect(result.PRS['ALBERTA TRUSS']['ROOF_TRUSS'].design_hours).toBe(6);
   });
 
-  test('a row whose job_number has no entry in jobToClientMap is bucketed under a literal "(UNKNOWN)" key, not silently dropped', () => {
+  test('a row whose job_number has no entry in jobToClientProductMap is bucketed under literal "(UNKNOWN)" for both client and product, not silently dropped', () => {
     const rows = [
       { actor_code: 'PRS', actor_role: 'DESIGNER', hours: 5, job_number: 'BLC-99999', event_type: 'WORK_LOG_SUBMITTED' },
     ];
-    const result = aggregateNetWorkLogHoursByAccount(rows, jobToClientMap);
-    expect(result.PRS['(UNKNOWN)'].design_hours).toBe(5);
+    const result = aggregateNetWorkLogHoursByAccount(rows, jobToClientProductMap);
+    expect(result.PRS['(UNKNOWN)']['(UNKNOWN)'].design_hours).toBe(5);
   });
 });
