@@ -494,6 +494,49 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
+  // SECTION 5c: PRE-CUTOVER ACCEPTED-EXCEPTIONS GATE
+  //
+  // Some blocked pairs are permanent by design under product-scoped
+  // supervision — e.g. a designer's I-Joist hours on an account whose
+  // I-Joist work is intentionally outside TEAM_LEAD-tier supervision
+  // (already covered by a different bonus mechanism, e.g. Sarty's flat
+  // company-wide PM bonus). The pre-cutover gate must not require these
+  // to disappear — it requires every remaining blocked pair to be on
+  // this explicit, reviewed list. (2026-09-10 design spec §6.)
+  //
+  // A hardcoded code constant, not a table, deliberately — user's
+  // explicit choice given how few of these exist today. Update this
+  // list (and get it reviewed like any other code change) whenever a
+  // new intentional exception is identified.
+  // ============================================================
+
+  var ACCEPTED_UNSUPERVISED_PAIRS_ = [
+    // Deb Sen's Truss-only scope on Alberta Truss/Nelson leaves I-Joist
+    // there intentionally unsupervised at the TEAM_LEAD tier — Sarty's
+    // flat, company-wide PM bonus already covers it (buildPmBonusMap_).
+    { client_code: 'ALBERTA TRUSS', product_code: 'FLOOR_JOIST', designer_code: 'PRS' },
+    { client_code: 'NELSON',        product_code: 'FLOOR_JOIST', designer_code: 'AR001' }
+  ];
+
+  /**
+   * Filters blockedPairs (from buildSupervisorBonusMapByAccount_) down
+   * to only the ones NOT on the accepted-exceptions list above. The
+   * pre-cutover gate is: this returns an empty array.
+   *
+   * @param {Array<{client_code, product_code, designer_code, hours}>} blockedPairs
+   * @returns {Array} the subset not covered by an accepted exception
+   */
+  function filterUnexpectedBlockedPairs_(blockedPairs) {
+    return (blockedPairs || []).filter(function (pair) {
+      return !ACCEPTED_UNSUPERVISED_PAIRS_.some(function (accepted) {
+        return accepted.client_code === pair.client_code &&
+               accepted.product_code === pair.product_code &&
+               accepted.designer_code === pair.designer_code;
+      });
+    });
+  }
+
+  // ============================================================
   // SECTION 5b: PM BONUS CALCULATION (flat, roster-wide)
   //
   // Returns: { personCode → bonusAmountINR }
@@ -1498,6 +1541,7 @@ var PayrollEngine = (function () {
     buildJobToClientProductMap_: buildJobToClientProductMap_,
     buildSupervisorBonusMap_: buildSupervisorBonusMap_,
     buildSupervisorBonusMapByAccount_: buildSupervisorBonusMapByAccount_,
+    filterUnexpectedBlockedPairs_: filterUnexpectedBlockedPairs_,
 
     // Exposed 2026-07-28 (Phase B1, payroll automation) — same
     // precedent as buildSupervisorBonusMap_ above, so the Jest suite
