@@ -152,17 +152,18 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
-  // SECTION 3b: JOB → CLIENT RESOLUTION
+  // SECTION 3b: JOB → CLIENT+PRODUCT RESOLUTION
   //
-  // Resolves job_number to client_code for account-scoped supervisor
-  // bonus attribution (2026-09-08 design spec) — FACT_WORK_LOGS rows
-  // carry job_number only, not client_code directly.
+  // Resolves job_number to { client_code, product_code } for
+  // product-scoped supervisor bonus attribution (2026-09-10 design spec)
+  // — FACT_WORK_LOGS rows carry job_number only, not client_code or
+  // product_code directly.
   // ============================================================
 
   /**
-   * @returns {Object}  { jobNumber: clientCode }
+   * @returns {Object}  { job_number: { client_code, product_code } }
    */
-  function buildJobToClientMap_() {
+  function buildJobToClientProductMap_() {
     var rows;
     try {
       rows = DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: MODULE });
@@ -175,7 +176,10 @@ var PayrollEngine = (function () {
     for (var i = 0; i < rows.length; i++) {
       var jobNumber = String(rows[i].job_number || '').trim();
       if (!jobNumber) continue;
-      map[jobNumber] = String(rows[i].client_code || '').trim();
+      map[jobNumber] = {
+        client_code:  String(rows[i].client_code  || '').trim(),
+        product_code: String(rows[i].product_code || '').trim()
+      };
     }
     return map;
   }
@@ -1478,7 +1482,7 @@ var PayrollEngine = (function () {
     // real date-filtering and supervisor-attribution logic runPayrollRun()/
     // runBonusRun() actually use, not a reimplementation. Both read-only.
     buildStaffCache_:         buildStaffCache_,
-    buildJobToClientMap_:     buildJobToClientMap_,
+    buildJobToClientProductMap_: buildJobToClientProductMap_,
     buildSupervisorBonusMap_: buildSupervisorBonusMap_,
     buildSupervisorBonusMapByAccount_: buildSupervisorBonusMapByAccount_,
 
