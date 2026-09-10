@@ -1350,19 +1350,22 @@ var StaffOnboarding = (function () {
    * designer on a specific client account — the source of truth for
    * INR 25/hr supervisor bonus attribution (see 2026-09-08 design spec).
    * Same close-current/open-new SCD-2 pattern as scd2FieldChange_, but
-   * keyed on (client_code, designer_code) — a fresh implementation, not
+   * keyed on (client_code, product_code, designer_code) — a fresh implementation, not
    * a reuse, since scd2FieldChange_ is keyed on person_code alone.
-   * CEO + Admin only. Idempotent on (clientCode, designerCode,
-   * supervisorCode, effectiveDate).
+   * CEO + Admin only. Idempotent on (clientCode, productCode,
+   * designerCode, supervisorCode, effectiveDate). productCode is optional —
+   * blank means "covers every product on this account" (2026-09-10 design
+   * spec §3/§4).
    *
    * @param {string} actorEmail
    * @param {string} clientCode
    * @param {string} designerCode
    * @param {string} supervisorCode
    * @param {string} effectiveDate  'YYYY-MM-DD'
-   * @returns {{ clientCode: string, designerCode: string, closedRow: boolean, newRowCreated: boolean, changed: boolean, reason: string }}
+   * @param {string} [productCode]  Optional; defaults to '' (covers all products)
+   * @returns {{ clientCode: string, designerCode: string, productCode: string, closedRow: boolean, newRowCreated: boolean, changed: boolean, reason: string }}
    */
-  function assignAccountSupervisor(actorEmail, clientCode, designerCode, supervisorCode, effectiveDate) {
+  function assignAccountSupervisor(actorEmail, clientCode, designerCode, supervisorCode, effectiveDate, productCode) {
     var actor = RBAC.resolveActor(actorEmail);
     RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
 
@@ -1370,6 +1373,7 @@ var StaffOnboarding = (function () {
     designerCode   = String(designerCode || '').trim().toUpperCase();
     supervisorCode = String(supervisorCode || '').trim().toUpperCase();
     effectiveDate  = String(effectiveDate || '').trim();
+    productCode    = String(productCode || '').trim().toUpperCase();
 
     if (!clientCode)     throw new Error('StaffOnboarding.assignAccountSupervisor: clientCode is required');
     if (!designerCode)   throw new Error('StaffOnboarding.assignAccountSupervisor: designerCode is required');
@@ -1379,7 +1383,7 @@ var StaffOnboarding = (function () {
     var existing;
     try {
       existing = DAL.readWhere(Config.TABLES.REF_ACCOUNT_SUPERVISION,
-        { client_code: clientCode, designer_code: designerCode }, { callerModule: MODULE });
+        { client_code: clientCode, designer_code: designerCode, product_code: productCode }, { callerModule: MODULE });
     } catch (e) {
       if (e.code === 'SHEET_NOT_FOUND') existing = [];
       else throw e;
@@ -1388,7 +1392,7 @@ var StaffOnboarding = (function () {
     var openRows = (existing || []).filter(function (r) { return !String(r.effective_to || '').trim(); });
     if (openRows.length > 1) {
       throw new Error('StaffOnboarding.assignAccountSupervisor: found ' + openRows.length + ' open-ended rows for ' +
-                       clientCode + '/' + designerCode + ' — refusing to guess which to close.');
+                       clientCode + '/' + productCode + '/' + designerCode + ' — refusing to guess which to close.');
     }
 
     var currentRow = openRows[0];
@@ -1396,32 +1400,33 @@ var StaffOnboarding = (function () {
     if (currentRow) {
       var currentEffFrom = toIsoDateStr_(currentRow.effective_from);
       if (currentEffFrom === effectiveDate && String(currentRow.supervisor_code).trim().toUpperCase() === supervisorCode) {
-        return { clientCode: clientCode, designerCode: designerCode, closedRow: false, newRowCreated: false,
+        return { clientCode: clientCode, designerCode: designerCode, productCode: productCode, closedRow: false, newRowCreated: false,
                  changed: false, reason: 'already_current' };
       }
       var closedTo = dayBefore_(effectiveDate);
       if (closedTo < currentEffFrom) {
         throw new Error('StaffOnboarding.assignAccountSupervisor: refusing to close the current row for ' +
-                         clientCode + '/' + designerCode + ' (effective_from="' + currentEffFrom + '") with ' +
+                         clientCode + '/' + productCode + '/' + designerCode + ' (effective_from="' + currentEffFrom + '") with ' +
                          'effective_to="' + closedTo + '" — that is BEFORE the row\'s own start date, an ' +
                          'inverted/impossible validity window. effectiveDate must be after "' + currentEffFrom + '".');
       }
 
       var updateResult = DAL.updateWhere(
         Config.TABLES.REF_ACCOUNT_SUPERVISION,
-        { client_code: clientCode, designer_code: designerCode, effective_to: '' },
+        { client_code: clientCode, designer_code: designerCode, product_code: productCode, effective_to: '' },
         { effective_to: closedTo },
         { callerModule: MODULE }
       );
       var closedCount = (updateResult && typeof updateResult.updated === 'number') ? updateResult.updated : 0;
       if (closedCount !== 1) {
         throw new Error('StaffOnboarding.assignAccountSupervisor: expected the close-row write to affect exactly ' +
-                         '1 row for ' + clientCode + '/' + designerCode + ' but it reported ' + closedCount + '.');
+                         '1 row for ' + clientCode + '/' + productCode + '/' + designerCode + ' but it reported ' + closedCount + '.');
       }
     }
 
     DAL.appendRow(Config.TABLES.REF_ACCOUNT_SUPERVISION, {
       client_code:     clientCode,
+      product_code:    productCode,
       designer_code:   designerCode,
       supervisor_code: supervisorCode,
       effective_from:  effectiveDate,
@@ -1429,7 +1434,7 @@ var StaffOnboarding = (function () {
       notes:           ''
     }, { callerModule: MODULE });
 
-    return { clientCode: clientCode, designerCode: designerCode, closedRow: !!currentRow, newRowCreated: true,
+    return { clientCode: clientCode, designerCode: designerCode, productCode: productCode, closedRow: !!currentRow, newRowCreated: true,
              changed: true, reason: 'applied' };
   }
 

@@ -26,7 +26,7 @@ beforeEach(() => {
 
 function seedSupervision(rows) {
   mocks.store['REF_ACCOUNT_SUPERVISION'] = rows.map(r => Object.assign({
-    client_code: '', designer_code: '', supervisor_code: '',
+    client_code: '', product_code: '', designer_code: '', supervisor_code: '',
     effective_from: '2024-01-01', effective_to: '', notes: ''
   }, r));
 }
@@ -140,5 +140,60 @@ describe('StaffOnboarding.assignAccountSupervisor()', () => {
       .toThrow(/designerCode/i);
     expect(() => StaffOnboarding.assignAccountSupervisor('ceo@test.blc.internal', 'SBS', 'BIT', '', '2026-09-08'))
       .toThrow(/supervisorCode/i);
+  });
+
+  test('productCode defaults to blank (wildcard) when omitted — existing whole-account call shape still works', () => {
+    seedSupervision([]);
+
+    const result = StaffOnboarding.assignAccountSupervisor(
+      'ceo@test.blc.internal', 'SBS', 'MARV', 'BCH', '2026-08-01'
+    );
+
+    expect(result.productCode).toBe('');
+    const rows = mocks.store['REF_ACCOUNT_SUPERVISION'].filter(r => r.client_code === 'SBS' && r.designer_code === 'MARV');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].product_code).toBe('');
+  });
+
+  test('a product-specific assignment and a whole-account (wildcard) assignment for the same designer+client coexist as two independent rows', () => {
+    seedSupervision([]);
+
+    StaffOnboarding.assignAccountSupervisor('ceo@test.blc.internal', 'ALBERTA TRUSS', 'PRS', 'DBS', '2026-08-01', 'ROOF_TRUSS');
+    StaffOnboarding.assignAccountSupervisor('ceo@test.blc.internal', 'ALBERTA TRUSS', 'PRS', 'DBS', '2026-08-01', 'FLOOR_TRUSS');
+
+    const rows = mocks.store['REF_ACCOUNT_SUPERVISION'].filter(r => r.client_code === 'ALBERTA TRUSS' && r.designer_code === 'PRS');
+    expect(rows).toHaveLength(2);
+    expect(rows.map(r => r.product_code).sort()).toEqual(['FLOOR_TRUSS', 'ROOF_TRUSS']);
+  });
+
+  test('reassigning one product does not close or affect a different product\'s open row for the same designer+client', () => {
+    seedSupervision([
+      { client_code: 'NELSON', product_code: 'ROOF_TRUSS',  designer_code: 'AR001', supervisor_code: 'DBS', effective_from: '2026-08-01', effective_to: '' },
+      { client_code: 'NELSON', product_code: 'FLOOR_TRUSS', designer_code: 'AR001', supervisor_code: 'DBS', effective_from: '2026-08-01', effective_to: '' }
+    ]);
+
+    StaffOnboarding.assignAccountSupervisor('ceo@test.blc.internal', 'NELSON', 'AR001', 'SGO', '2026-09-01', 'ROOF_TRUSS');
+
+    const rows = mocks.store['REF_ACCOUNT_SUPERVISION'].filter(r => r.client_code === 'NELSON' && r.designer_code === 'AR001');
+    expect(rows).toHaveLength(3); // ROOF_TRUSS closed+reopened (2) + FLOOR_TRUSS untouched (1)
+
+    const floorTruss = rows.find(r => r.product_code === 'FLOOR_TRUSS');
+    expect(floorTruss.supervisor_code).toBe('DBS');
+    expect(floorTruss.effective_to).toBe(''); // untouched
+
+    const roofTrussOld = rows.find(r => r.product_code === 'ROOF_TRUSS' && r.supervisor_code === 'DBS');
+    const roofTrussNew = rows.find(r => r.product_code === 'ROOF_TRUSS' && r.supervisor_code === 'SGO');
+    expect(roofTrussOld.effective_to).toBe('2026-08-31');
+    expect(roofTrussNew.effective_from).toBe('2026-09-01');
+  });
+
+  test('throws if more than one open-ended row exists for the same (client, product, designer) — refuses to guess which to close', () => {
+    seedSupervision([
+      { client_code: 'SBS', product_code: 'ROOF_TRUSS', designer_code: 'BIT', supervisor_code: 'BCH', effective_from: '2024-01-01', effective_to: '' },
+      { client_code: 'SBS', product_code: 'ROOF_TRUSS', designer_code: 'BIT', supervisor_code: 'SDA', effective_from: '2025-01-01', effective_to: '' }
+    ]);
+
+    expect(() => StaffOnboarding.assignAccountSupervisor('ceo@test.blc.internal', 'SBS', 'BIT', 'SVN', '2026-08-01', 'ROOF_TRUSS'))
+      .toThrow(/SBS/);
   });
 });
