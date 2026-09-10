@@ -1504,3 +1504,41 @@ var StaffOnboarding = (function () {
   };
 
 }());
+
+/**
+ * ONE-TIME: Patches REF_ACCOUNT_SUPERVISION's header row to add a
+ * 'product_code' column, needed for the 2026-09-10 product-scoped-
+ * supervision design (Phase 1.5).
+ *
+ * Run this ONCE from the Apps Script editor, in DEV first then PROD,
+ * before calling assignAccountSupervisor() with a productCode, or
+ * before the 15-row backfill (design spec §9). Safe to re-run — skips
+ * if the column already exists.
+ */
+function runPatchAccountSupervisionSchema() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(Config.TABLES.REF_ACCOUNT_SUPERVISION);
+  if (!sheet) {
+    console.log('REF_ACCOUNT_SUPERVISION sheet not found — nothing to patch.');
+    return;
+  }
+
+  var lastCol = sheet.getLastColumn();
+  if (lastCol === 0) {
+    var newHeader = ['client_code', 'product_code', 'designer_code', 'supervisor_code',
+                      'effective_from', 'effective_to', 'notes'];
+    sheet.getRange(1, 1, 1, newHeader.length).setValues([newHeader]);
+    console.log('SET header on empty sheet: REF_ACCOUNT_SUPERVISION');
+    return;
+  }
+
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (headers.indexOf('product_code') >= 0) {
+    console.log('SKIP REF_ACCOUNT_SUPERVISION — already has product_code');
+    return;
+  }
+
+  sheet.insertColumnAfter(lastCol);
+  sheet.getRange(1, lastCol + 1).setValue('product_code');
+  console.log('PATCHED REF_ACCOUNT_SUPERVISION — added product_code column');
+}

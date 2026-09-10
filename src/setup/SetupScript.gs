@@ -174,7 +174,7 @@ var SCHEMAS = {
   // "this designer's hours on Account X go to Lead A, but on Account Y go
   // to Lead B" (see 2026-09-08 design spec, problem statement).
   'REF_ACCOUNT_SUPERVISION': [
-    'client_code', 'designer_code', 'supervisor_code',
+    'client_code', 'product_code', 'designer_code', 'supervisor_code',
     'effective_from', 'effective_to', 'notes'
   ],
 
