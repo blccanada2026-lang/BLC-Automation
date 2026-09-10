@@ -384,10 +384,14 @@ var PayrollEngine = (function () {
   /**
    * @param {Object} staffCache          From buildStaffCache_(asOfDate).
    * @param {Object} hoursMapByAccount   From aggregateNetWorkLogHoursByAccount().
-   *                                     { personCode: { clientCode: { design_hours, qc_hours } } }
+   *                                     { designerCode: { clientCode: { productCode: { design_hours, qc_hours } } } }
    * @param {string} asOfDate            'YYYY-MM-DD' — resolves REF_ACCOUNT_SUPERVISION
    *                                     as of this date, same convention as buildStaffCache_.
-   * @returns {{ bonusMap: Object, blockedPairs: Array<{client_code, designer_code, hours}> }}
+   *                                     A REF_ACCOUNT_SUPERVISION row with an exact product_code
+   *                                     match wins over a wildcard (blank product_code) row for
+   *                                     that product; the wildcard still covers other products
+   *                                     for the same client/designer (2026-09-10 design spec §5).
+   * @returns {{ bonusMap: Object, blockedPairs: Array<{client_code, product_code, designer_code, hours}> }}
    */
   function buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, asOfDate) {
     var supervisionRows;
@@ -407,67 +411,76 @@ var PayrollEngine = (function () {
       var clientCodes   = Object.keys(hoursMapByAccount[designerCode]);
 
       for (var j = 0; j < clientCodes.length; j++) {
-        var clientCode  = clientCodes[j];
-        var pairHours   = hoursMapByAccount[designerCode][clientCode].design_hours;
-        if (!pairHours) continue;
+        var clientCode   = clientCodes[j];
+        var productCodes = Object.keys(hoursMapByAccount[designerCode][clientCode]);
 
-        var matchingRows = [];
-        for (var k = 0; k < supervisionRows.length; k++) {
-          var row = supervisionRows[k];
-          if (String(row.client_code).trim() !== clientCode) continue;
-          if (String(row.designer_code).trim() !== designerCode) continue;
-          var effFrom = toIsoDate_(row.effective_from);
-          var effTo   = toIsoDate_(row.effective_to);
-          if (effFrom && effFrom > asOfDate) continue;
-          if (effTo   && effTo   < asOfDate) continue;
-          matchingRows.push(row);
+        for (var p = 0; p < productCodes.length; p++) {
+          var productCode = productCodes[p];
+          var pairHours   = hoursMapByAccount[designerCode][clientCode][productCode].design_hours;
+          if (!pairHours) continue;
+
+          var candidateRows = [];
+          for (var k = 0; k < supervisionRows.length; k++) {
+            var row = supervisionRows[k];
+            if (String(row.client_code).trim() !== clientCode) continue;
+            if (String(row.designer_code).trim() !== designerCode) continue;
+            var rowProduct = String(row.product_code || '').trim();
+            if (rowProduct !== '' && rowProduct !== productCode) continue;
+            var effFrom = toIsoDate_(row.effective_from);
+            var effTo   = toIsoDate_(row.effective_to);
+            if (effFrom && effFrom > asOfDate) continue;
+            if (effTo   && effTo   < asOfDate) continue;
+            candidateRows.push(row);
+          }
+
+          // Most-specific-wins: an exact-product row beats a wildcard row
+          // for this bucket. Only fall back to wildcards when no exact
+          // match exists. (2026-09-10 design spec §5, step 2.)
+          var exactRows = candidateRows.filter(function (r) { return String(r.product_code || '').trim() === productCode; });
+          var matchingRows = exactRows.length > 0
+            ? exactRows
+            : candidateRows.filter(function (r) { return String(r.product_code || '').trim() === ''; });
+
+          if (matchingRows.length > 1) {
+            throw new Error('PayrollEngine.buildSupervisorBonusMapByAccount_: ' + matchingRows.length +
+                             ' REF_ACCOUNT_SUPERVISION rows resolve as valid for ' + clientCode + '/' + productCode + '/' + designerCode +
+                             ' as of ' + asOfDate + ' — refusing to silently pick one (would silently corrupt bonus ' +
+                             'attribution). This means assignAccountSupervisor\'s own guards were bypassed somehow ' +
+                             '(e.g. a manual sheet edit) — clean up the duplicate rows before retrying.');
+          }
+
+          var matchingRow = matchingRows[0];
+
+          if (!matchingRow) {
+            Logger.warn('SUPERVISOR_BONUS_UNASSIGNED_PAIR', {
+              module: MODULE, client_code: clientCode, product_code: productCode, designer_code: designerCode, hours: pairHours
+            });
+            blockedPairs.push({ client_code: clientCode, product_code: productCode, designer_code: designerCode, hours: pairHours });
+            continue;
+          }
+
+          var supervisorCode = String(matchingRow.supervisor_code).trim();
+          var supervisor      = staffCache[supervisorCode];
+
+          // Case 1: supervisor_code not found in staffCache (typo, inactive, etc.) — log and block
+          if (!supervisor) {
+            Logger.warn('SUPERVISOR_BONUS_UNRESOLVED_SUPERVISOR', {
+              module: MODULE, supervisor_code: supervisorCode, client_code: clientCode,
+              product_code: productCode, designer_code: designerCode, hours: pairHours
+            });
+            blockedPairs.push({ client_code: clientCode, product_code: productCode, designer_code: designerCode, hours: pairHours });
+            continue;
+          }
+
+          // Case 2: supervisor found but wrong role (e.g., PM) — skip silently, no logging, no blocking
+          if (supervisor.role !== 'TEAM_LEAD') continue; // role-based PM-skip rule, spec §4.5
+
+          bonusMap[supervisorCode] = Math.round(((bonusMap[supervisorCode] || 0) + pairHours * SUPERVISOR_BONUS_INR) * 100) / 100;
         }
-
-        if (matchingRows.length > 1) {
-          throw new Error('PayrollEngine.buildSupervisorBonusMapByAccount_: ' + matchingRows.length +
-                           ' REF_ACCOUNT_SUPERVISION rows resolve as valid for ' + clientCode + '/' + designerCode +
-                           ' as of ' + asOfDate + ' — refusing to silently pick one (would silently corrupt bonus ' +
-                           'attribution). This means assignAccountSupervisor\'s own guards were bypassed somehow ' +
-                           '(e.g. a manual sheet edit) — clean up the duplicate rows before retrying.');
-        }
-
-        var matchingRow = matchingRows[0];
-
-        if (!matchingRow) {
-          Logger.warn('SUPERVISOR_BONUS_UNASSIGNED_PAIR', {
-            module: MODULE, client_code: clientCode, designer_code: designerCode, hours: pairHours
-          });
-          blockedPairs.push({ client_code: clientCode, designer_code: designerCode, hours: pairHours });
-          continue;
-        }
-
-        var supervisorCode = String(matchingRow.supervisor_code).trim();
-        var supervisor      = staffCache[supervisorCode];
-
-        // Case 1: supervisor_code not found in staffCache (typo, inactive, etc.) — log and block
-        if (!supervisor) {
-          Logger.warn('SUPERVISOR_BONUS_UNRESOLVED_SUPERVISOR', {
-            module: MODULE, supervisor_code: supervisorCode, client_code: clientCode,
-            designer_code: designerCode, hours: pairHours
-          });
-          blockedPairs.push({ client_code: clientCode, designer_code: designerCode, hours: pairHours });
-          continue;
-        }
-
-        // Case 2: supervisor found but wrong role (e.g., PM) — skip silently, no logging, no blocking
-        if (supervisor.role !== 'TEAM_LEAD') continue; // role-based PM-skip rule, spec §4.5
-
-        bonusMap[supervisorCode] = Math.round(((bonusMap[supervisorCode] || 0) + pairHours * SUPERVISOR_BONUS_INR) * 100) / 100;
       }
     }
 
     // Final defensive filter: ensure no bonusMap entry has a non-positive value.
-    // Under current system invariants (per-pair guard skips falsy pairHours, only positive
-    // accumulation), this should never occur. But if hoursMapByAccount is ever built by a
-    // future code path with different guarantees (e.g., smaller minimum units, or rounding
-    // edge cases), this filter ensures no zero/negative entry ever reaches production.
-    // Matches the old buildSupervisorBonusMap_'s own final gate (if (supervisedDesignHours > 0)),
-    // now applied defensively to the account-scoped variant.
     var finalBonusMap = {};
     var bonusKeys = Object.keys(bonusMap);
     for (var m = 0; m < bonusKeys.length; m++) {
