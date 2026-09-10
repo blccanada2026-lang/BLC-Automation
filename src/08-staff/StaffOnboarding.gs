@@ -1503,7 +1503,7 @@ var StaffOnboarding = (function () {
     /**
      * Effective-dated assignment of a designer's supervisor on a specific
      * client account (REF_ACCOUNT_SUPERVISION). CEO + Admin only.
-     * Idempotent on (clientCode, designerCode, supervisorCode, effectiveDate).
+     * Idempotent on (clientCode, productCode, designerCode, supervisorCode, effectiveDate).
      */
     assignAccountSupervisor: assignAccountSupervisor
   };
