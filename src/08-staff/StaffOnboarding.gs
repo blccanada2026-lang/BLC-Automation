@@ -1311,6 +1311,41 @@ var StaffOnboarding = (function () {
   }
 
   /**
+   * Effective-dated role change. Closes the current DIM_STAFF_ROSTER row
+   * and inserts a new one, SCD-2 style — same mechanism as
+   * changeSupervisor()/changePayRate(). CEO + Admin only.
+   *
+   * Deliberately does NOT validate newRole against a canonical role
+   * list: RBAC.gs's role matrix and DIM_STAFF_ROSTER's stored role
+   * strings are not the same alphabet (RBAC aliases QC_REVIEWER -> QC
+   * only inside its own permission-matrix lookup, never on the roster
+   * value itself — see 2026-09-08 design spec, Discrepancy 1).
+   * Cross-checking against RBAC's canonical set here risks rejecting a
+   * legitimate roster role due to that exact aliasing mismatch. Callers
+   * are responsible for passing a value DIM_STAFF_ROSTER already uses
+   * elsewhere (DESIGNER, TEAM_LEAD, QC_REVIEWER, PM, CEO, ADMIN).
+   *
+   * @param {string} actorEmail
+   * @param {string} personCode
+   * @param {string} newRole
+   * @param {string} effectiveDate  'YYYY-MM-DD'
+   * @returns {{ personCode: string, closedRow: boolean, newRowCreated: boolean, changed: boolean, reason: string }}
+   */
+  function changeRole(actorEmail, personCode, newRole, effectiveDate) {
+    var actor = RBAC.resolveActor(actorEmail);
+    RBAC.enforcePermission(actor, RBAC.ACTIONS.ADMIN_CONFIG);
+
+    personCode = String(personCode || '').trim().toUpperCase();
+    newRole    = String(newRole || '').trim().toUpperCase();
+
+    if (!newRole) {
+      throw new Error('StaffOnboarding.changeRole: newRole is required');
+    }
+
+    return scd2FieldChange_(personCode, { role: newRole }, effectiveDate);
+  }
+
+  /**
    * Effective-dated assignment of which Team Lead/PM supervises a
    * designer on a specific client account — the source of truth for
    * INR 25/hr supervisor bonus attribution (see 2026-09-08 design spec).
@@ -1451,6 +1486,14 @@ var StaffOnboarding = (function () {
      * CEO + Admin only. Idempotent on (person_code, rates, effectiveDate).
      */
     changePayRate: changePayRate,
+
+    /**
+     * Effective-dated role change (DIM_STAFF_ROSTER.role). Closes the
+     * current row and inserts a new one, SCD-2 style — see
+     * changeSupervisor's section comment for the full convention.
+     * CEO + Admin only. Idempotent on (person_code, newRole, effectiveDate).
+     */
+    changeRole: changeRole,
 
     /**
      * Effective-dated assignment of a designer's supervisor on a specific
