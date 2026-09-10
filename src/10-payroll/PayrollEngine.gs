@@ -178,7 +178,7 @@ var PayrollEngine = (function () {
       if (!jobNumber) continue;
       map[jobNumber] = {
         client_code:  String(rows[i].client_code  || '').trim(),
-        product_code: String(rows[i].product_code || '').trim()
+        product_code: String(rows[i].product_code || '').trim().toUpperCase()
       };
     }
     return map;
@@ -424,7 +424,7 @@ var PayrollEngine = (function () {
             var row = supervisionRows[k];
             if (String(row.client_code).trim() !== clientCode) continue;
             if (String(row.designer_code).trim() !== designerCode) continue;
-            var rowProduct = String(row.product_code || '').trim();
+            var rowProduct = String(row.product_code || '').trim().toUpperCase();
             if (rowProduct !== '' && rowProduct !== productCode) continue;
             var effFrom = toIsoDate_(row.effective_from);
             var effTo   = toIsoDate_(row.effective_to);
@@ -436,10 +436,10 @@ var PayrollEngine = (function () {
           // Most-specific-wins: an exact-product row beats a wildcard row
           // for this bucket. Only fall back to wildcards when no exact
           // match exists. (2026-09-10 design spec §5, step 2.)
-          var exactRows = candidateRows.filter(function (r) { return String(r.product_code || '').trim() === productCode; });
+          var exactRows = candidateRows.filter(function (r) { return String(r.product_code || '').trim().toUpperCase() === productCode; });
           var matchingRows = exactRows.length > 0
             ? exactRows
-            : candidateRows.filter(function (r) { return String(r.product_code || '').trim() === ''; });
+            : candidateRows.filter(function (r) { return String(r.product_code || '').trim().toUpperCase() === ''; });
 
           if (matchingRows.length > 1) {
             throw new Error('PayrollEngine.buildSupervisorBonusMapByAccount_: ' + matchingRows.length +
