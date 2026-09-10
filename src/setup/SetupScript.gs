@@ -169,7 +169,7 @@ var SCHEMAS = {
   // Which Team Lead/PM supervises which designer, on which client account —
   // the source of truth for INR 25/hr supervisor bonus attribution.
   // Effective-dated (D4): effective_to blank = the currently active
-  // assignment for that (client_code, designer_code) pair. NEVER derive
+  // assignment for that (client_code, product_code, designer_code) triple. NEVER derive
   // this from DIM_STAFF_ROSTER.supervisor_code — that field cannot express
   // "this designer's hours on Account X go to Lead A, but on Account Y go
   // to Lead B" (see 2026-09-08 design spec, problem statement).

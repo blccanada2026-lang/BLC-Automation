@@ -69,4 +69,13 @@ describe('PayrollEngine.filterUnexpectedBlockedPairs_()', () => {
   test('an empty blockedPairs list returns empty', () => {
     expect(PayrollEngine.filterUnexpectedBlockedPairs_([])).toEqual([]);
   });
+
+  test('an accepted exception only matches its exact product — a different product on the same client/designer is NOT exempted', () => {
+    const blockedPairs = [
+      { client_code: 'ALBERTA TRUSS', product_code: 'ROOF_TRUSS', designer_code: 'PRS', hours: 5 }
+    ];
+    expect(PayrollEngine.filterUnexpectedBlockedPairs_(blockedPairs)).toEqual([
+      { client_code: 'ALBERTA TRUSS', product_code: 'ROOF_TRUSS', designer_code: 'PRS', hours: 5 }
+    ]);
+  });
 });

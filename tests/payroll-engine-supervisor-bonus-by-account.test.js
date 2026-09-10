@@ -231,6 +231,9 @@ describe('PayrollEngine.buildSupervisorBonusMapByAccount_()', () => {
     expect(result.bonusMap.NONEXISTENT).toBeUndefined();
   });
 
+  // Two tiny pairs: each 0.00001 hours × 25 = 0.00025, which rounds to 0 after *100/100
+  // The per-pair guard allows these through (0.00001 is truthy), but accumulation
+  // + rounding produces a zero-value bonusMap entry. The final filter should remove it.
   test('a supervisor with only very-small-hours pairs that round to zero is filtered out (no non-positive entries in bonusMap)', () => {
     seedSupervision([
       { client_code: 'TINY ACCOUNT 1', designer_code: 'PRS', supervisor_code: 'DBS' },
@@ -320,5 +323,28 @@ describe('PayrollEngine.buildSupervisorBonusMapByAccount_()', () => {
 
     expect(() => PayrollEngine.buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, '2026-09-01'))
       .toThrow(/NELSON\/ROOF_TRUSS\/AR001/);
+  });
+
+  test('date filtering happens BEFORE the exact-vs-wildcard tier split — an expired product-specific row must not suppress a live wildcard for that same product', () => {
+    seedSupervision([
+      { client_code: 'ALBERTA TRUSS', product_code: 'ROOF_TRUSS', designer_code: 'PRS', supervisor_code: 'PBG', effective_from: '2024-01-01', effective_to: '2026-08-31' },
+      { client_code: 'ALBERTA TRUSS', product_code: '',           designer_code: 'PRS', supervisor_code: 'DBS', effective_from: '2026-09-01', effective_to: '' }
+    ]);
+    const staffCache = {
+      PBG: staff({ role: 'TEAM_LEAD' }),
+      DBS: staff({ role: 'TEAM_LEAD' }),
+      PRS: staff({ role: 'DESIGNER' })
+    };
+    const hoursMapByAccount = {
+      PRS: { 'ALBERTA TRUSS': { 'ROOF_TRUSS': { design_hours: 10, qc_hours: 0 } } }
+    };
+
+    const result = PayrollEngine.buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, '2026-09-15');
+
+    // The exact-product row (PBG) expired 2026-08-31 — it must be excluded
+    // by the date filter BEFORE the tier split runs, so it never gets a
+    // chance to suppress the live wildcard row (DBS) for this product.
+    expect(result.bonusMap.DBS).toBe(250);
+    expect(result.bonusMap.PBG).toBeUndefined();
   });
 });

@@ -196,4 +196,25 @@ describe('StaffOnboarding.assignAccountSupervisor()', () => {
     expect(() => StaffOnboarding.assignAccountSupervisor('ceo@test.blc.internal', 'SBS', 'BIT', 'SVN', '2026-08-01', 'ROOF_TRUSS'))
       .toThrow(/SBS/);
   });
+
+  test('throws if productCode is given but REF_ACCOUNT_SUPERVISION has no product_code column yet (schema patch not run), rather than silently writing a wildcard row', () => {
+    mocks.store['REF_ACCOUNT_SUPERVISION'] = [
+      { client_code: 'SBS', designer_code: 'MARV', supervisor_code: 'BCH', effective_from: '2024-01-01', effective_to: '' }
+      // deliberately no product_code key on this row — simulates a pre-patch sheet
+    ];
+
+    expect(() => StaffOnboarding.assignAccountSupervisor(
+      'ceo@test.blc.internal', 'ALBERTA TRUSS', 'PRS', 'DBS', '2026-08-01', 'ROOF_TRUSS'
+    )).toThrow(/product_code column/);
+  });
+
+  test('a wildcard (blank productCode) call is unaffected by a missing product_code column — no guard needed since it never writes the field', () => {
+    mocks.store['REF_ACCOUNT_SUPERVISION'] = [
+      { client_code: 'SBS', designer_code: 'MARV', supervisor_code: 'BCH', effective_from: '2024-01-01', effective_to: '' }
+    ];
+
+    expect(() => StaffOnboarding.assignAccountSupervisor(
+      'ceo@test.blc.internal', 'NORSPAN-MB', 'VKV', 'BCH', '2026-08-01'
+    )).not.toThrow();
+  });
 });

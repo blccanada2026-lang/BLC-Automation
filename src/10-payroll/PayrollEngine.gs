@@ -382,15 +382,16 @@ var PayrollEngine = (function () {
   // ============================================================
 
   /**
+   * A REF_ACCOUNT_SUPERVISION row with an exact product_code match wins over
+   * a wildcard (blank product_code) row for that product; the wildcard
+   * still covers other products for the same client/designer (2026-09-10
+   * design spec §5).
+   *
    * @param {Object} staffCache          From buildStaffCache_(asOfDate).
    * @param {Object} hoursMapByAccount   From aggregateNetWorkLogHoursByAccount().
    *                                     { designerCode: { clientCode: { productCode: { design_hours, qc_hours } } } }
    * @param {string} asOfDate            'YYYY-MM-DD' — resolves REF_ACCOUNT_SUPERVISION
    *                                     as of this date, same convention as buildStaffCache_.
-   *                                     A REF_ACCOUNT_SUPERVISION row with an exact product_code
-   *                                     match wins over a wildcard (blank product_code) row for
-   *                                     that product; the wildcard still covers other products
-   *                                     for the same client/designer (2026-09-10 design spec §5).
    * @returns {{ bonusMap: Object, blockedPairs: Array<{client_code, product_code, designer_code, hours}> }}
    */
   function buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, asOfDate) {
@@ -437,6 +438,9 @@ var PayrollEngine = (function () {
           // for this bucket. Only fall back to wildcards when no exact
           // match exists. (2026-09-10 design spec §5, step 2.)
           var exactRows = candidateRows.filter(function (r) { return String(r.product_code || '').trim().toUpperCase() === productCode; });
+          // Note: if an exact-product row exists, duplicate WILDCARD rows for this pair are
+          // silently discarded here (not an ambiguity error) — only duplicate rows within the
+          // winning tier trigger the throw below. Intentional.
           var matchingRows = exactRows.length > 0
             ? exactRows
             : candidateRows.filter(function (r) { return String(r.product_code || '').trim().toUpperCase() === ''; });
@@ -481,6 +485,12 @@ var PayrollEngine = (function () {
     }
 
     // Final defensive filter: ensure no bonusMap entry has a non-positive value.
+    // Under current system invariants (per-pair guard skips falsy pairHours, only positive
+    // accumulation), this should never occur. But if hoursMapByAccount is ever built by a
+    // future code path with different guarantees (e.g., smaller minimum units, or rounding
+    // edge cases), this filter ensures no zero/negative entry ever reaches production.
+    // Matches the old buildSupervisorBonusMap_'s own final gate (if (supervisedDesignHours > 0)),
+    // now applied defensively to the account-scoped variant.
     var finalBonusMap = {};
     var bonusKeys = Object.keys(bonusMap);
     for (var m = 0; m < bonusKeys.length; m++) {

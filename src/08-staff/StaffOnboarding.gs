@@ -1380,6 +1380,20 @@ var StaffOnboarding = (function () {
     if (!supervisorCode) throw new Error('StaffOnboarding.assignAccountSupervisor: supervisorCode is required');
     if (!effectiveDate)  throw new Error('StaffOnboarding.assignAccountSupervisor: effectiveDate is required (YYYY-MM-DD)');
 
+    if (productCode) {
+      var anyExistingRow;
+      try {
+        anyExistingRow = DAL.readAll(Config.TABLES.REF_ACCOUNT_SUPERVISION, { callerModule: MODULE });
+      } catch (e) {
+        if (e.code === 'SHEET_NOT_FOUND') anyExistingRow = [];
+        else throw e;
+      }
+      if (anyExistingRow.length > 0 && !anyExistingRow[0].hasOwnProperty('product_code')) {
+        throw new Error('StaffOnboarding.assignAccountSupervisor: REF_ACCOUNT_SUPERVISION has no ' +
+                         'product_code column yet — run runPatchAccountSupervisionSchema() first.');
+      }
+    }
+
     var existing;
     try {
       existing = DAL.readWhere(Config.TABLES.REF_ACCOUNT_SUPERVISION,
