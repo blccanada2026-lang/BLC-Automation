@@ -309,6 +309,27 @@ describe('PayrollEngine.previewPayoutStatement() — no-write HR/CEO preview tri
     expect(mocks.DAL.appendRow).not.toHaveBeenCalled();
   });
 
+  test('options.silent=true skips the HR email but still returns the full computed result — used by the CEO run-button confirm dialog', () => {
+    seedRoster([
+      { person_code: 'TL1', role: 'TEAM_LEAD', pay_design: 300, pay_qc: 0, email: 'tl1@test.blc.internal' },
+      { person_code: 'DES1', role: 'DESIGNER', supervisor_code: 'TL1', pay_design: 300, pay_qc: 0, email: 'des1@test.blc.internal' }
+    ]);
+    seedJob('BLC-001', 'TEST-CLIENT', 'ROOF_TRUSS');
+    seedSupervision([{ client_code: 'TEST-CLIENT', designer_code: 'DES1', supervisor_code: 'TL1' }]);
+    seedWorkLogs([
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER', job_number: 'BLC-001',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' }
+    ]);
+
+    var result = PayrollEngine.previewPayoutStatement('test-ceo@test.blc.internal', '2026-08', { includeQuarterly: false, silent: true });
+
+    expect(result.previewed).toBe(true);
+    expect(result.by_person.find(p => p.person_code === 'DES1').total_pay).toBe(3000);
+    expect(result.by_supervisor.find(s => s.person_code === 'TL1').bonus_amount).toBe(250);
+    expect(MailApp.sendEmail).not.toHaveBeenCalled();
+    expect(mocks.DAL.appendRow).not.toHaveBeenCalled();
+  });
+
   test('wraps its body in HealthMonitor.startExecution/endExecution, same pattern as runPayrollRun — makes the isApproachingLimit() quota guard live instead of dead code', () => {
     seedRoster([{ person_code: 'DES1', role: 'DESIGNER', pay_design: 300, pay_qc: 0 }]);
     seedWorkLogs([{ event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',

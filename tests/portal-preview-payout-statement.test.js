@@ -29,7 +29,7 @@ test('resolves the actor from ptoken and calls PayrollEngine.previewPayoutStatem
 
   expect(PortalAuth.resolveEmail).toHaveBeenCalledWith('TOKEN123');
   expect(PayrollEngine.previewPayoutStatement).toHaveBeenCalledWith(
-    'test-ceo@test.blc.internal', '2026-08', { includeQuarterly: true, quarter: 'Q3', year: 2026 }
+    'test-ceo@test.blc.internal', '2026-08', { includeQuarterly: true, quarter: 'Q3', year: 2026, silent: false }
   );
   expect(JSON.parse(json).period_id).toBe('2026-08');
 });
@@ -38,6 +38,14 @@ test('blank periodId and no quarterly args pass through as empty/false defaults'
   portal_previewPayoutStatement('TOKEN123', '', undefined, undefined, undefined);
 
   expect(PayrollEngine.previewPayoutStatement).toHaveBeenCalledWith(
-    'test-ceo@test.blc.internal', '', { includeQuarterly: false, quarter: '', year: null }
+    'test-ceo@test.blc.internal', '', { includeQuarterly: false, quarter: '', year: null, silent: false }
+  );
+});
+
+test('silent=true passes through so the CEO run-button preview can skip the HR email', () => {
+  portal_previewPayoutStatement('TOKEN123', '2026-08', false, '', '', true);
+
+  expect(PayrollEngine.previewPayoutStatement).toHaveBeenCalledWith(
+    'test-ceo@test.blc.internal', '2026-08', { includeQuarterly: false, quarter: '', year: null, silent: true }
   );
 });

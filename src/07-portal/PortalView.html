@@ -4625,42 +4625,85 @@ function renderTimesheetResults(results) {
   container.appendChild(list);
 }
 
-function runPayrollRun() {
-  if (!confirm('Run base pay calculations for the current period?\n\nThis will calculate design + QC pay for all staff and send each a payout statement email to confirm.')) return;
-  showLoading(true);
+// Fetches a silent (no HR email) payout preview for the chosen period, so a
+// run button's confirm dialog can show real numbers instead of generic text.
+// On failure, onReady(null) — the caller falls back to a plain confirm; the
+// actual run call will surface the same error if it's a real problem.
+function fetchSilentPayoutPreview_(periodId, onReady) {
   TOKEN_RUN
     .withSuccessHandler(function(json) {
-      showLoading(false);
-      try {
-        var result = JSON.parse(json);
-        showToast('Payroll run complete: ' + result.processed + ' staff processed.', 'success');
-        loadLeaderDashboard();
-      } catch(e) { showToast('Payroll run complete.', 'success'); }
+      var preview = null;
+      try { preview = JSON.parse(json); } catch(e) { preview = null; }
+      onReady(preview);
     })
-    .withFailureHandler(function(err) {
-      showLoading(false);
-      showToast('Payroll run error: ' + (err.message || String(err)), 'error');
-    })
-    .portal_runPayrollRun('');
+    .withFailureHandler(function() { onReady(null); })
+    .portal_previewPayoutStatement(periodId, false, '', '', true);
+}
+
+function runPayrollRun() {
+  var periodId = window.prompt('Period to run (YYYY-MM), blank = current period:', '');
+  if (periodId === null) return; // cancelled
+
+  fetchSilentPayoutPreview_(periodId, function(preview) {
+    var label = (preview && preview.period_id) || periodId || 'the current period';
+    var msg = 'Run base pay calculations for ' + label + '?';
+    if (preview) {
+      msg += '\n\n' + preview.by_person.length + ' staff with hours this period.';
+    }
+    msg += '\n\nThis will calculate design + QC pay for all staff and send each a payout statement email to confirm.';
+    if (!confirm(msg)) return;
+
+    showLoading(true);
+    TOKEN_RUN
+      .withSuccessHandler(function(json) {
+        showLoading(false);
+        try {
+          var result = JSON.parse(json);
+          showToast('Payroll run complete: ' + result.processed + ' staff processed.', 'success');
+          loadLeaderDashboard();
+        } catch(e) { showToast('Payroll run complete.', 'success'); }
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        showToast('Payroll run error: ' + (err.message || String(err)), 'error');
+      })
+      .portal_runPayrollRun(periodId);
+  });
 }
 
 function runBonusRun() {
-  if (!confirm('Run supervisor bonus calculations for the current period?\n\nThis will calculate INR 25 × supervised design hours for all TLs and PMs.')) return;
-  showLoading(true);
-  TOKEN_RUN
-    .withSuccessHandler(function(json) {
-      showLoading(false);
-      try {
-        var result = JSON.parse(json);
-        showToast('Bonus run complete: ' + result.processed + ' supervisors processed.', 'success');
-        loadLeaderDashboard();
-      } catch(e) { showToast('Bonus run complete.', 'success'); }
-    })
-    .withFailureHandler(function(err) {
-      showLoading(false);
-      showToast('Bonus run error: ' + (err.message || String(err)), 'error');
-    })
-    .portal_runBonusRun('');
+  var periodId = window.prompt('Period to run (YYYY-MM), blank = current period:', '');
+  if (periodId === null) return; // cancelled
+
+  fetchSilentPayoutPreview_(periodId, function(preview) {
+    var label = (preview && preview.period_id) || periodId || 'the current period';
+    var msg = 'Run supervisor bonus calculations for ' + label + '?';
+    if (preview) {
+      msg += '\n\n' + preview.by_supervisor.length + ' supervisor(s)/PM(s) would be paid.';
+      if (preview.unexpectedBlockedPairs && preview.unexpectedBlockedPairs.length > 0) {
+        msg += '\n\n⚠ ' + preview.unexpectedBlockedPairs.length + ' unattributed supervisor-hour pair(s) — ' +
+               'this run WILL FAIL until each has a REF_ACCOUNT_SUPERVISION assignment or an accepted exception.';
+      }
+    }
+    msg += '\n\nThis will calculate INR 25 × supervised design hours for all TLs and PMs.';
+    if (!confirm(msg)) return;
+
+    showLoading(true);
+    TOKEN_RUN
+      .withSuccessHandler(function(json) {
+        showLoading(false);
+        try {
+          var result = JSON.parse(json);
+          showToast('Bonus run complete: ' + result.processed + ' supervisors processed.', 'success');
+          loadLeaderDashboard();
+        } catch(e) { showToast('Bonus run complete.', 'success'); }
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        showToast('Bonus run error: ' + (err.message || String(err)), 'error');
+      })
+      .portal_runBonusRun(periodId);
+  });
 }
 
 function runQuarterlyBonus() {
@@ -4803,7 +4846,9 @@ function refreshDashboard() {
 }
 
 function approveAllPayroll() {
-  if (!confirm('Approve all CONFIRMED payroll for the current period?\n\nThis marks all confirmed records as PROCESSED. This cannot be undone.')) return;
+  var periodId = window.prompt('Period to approve (YYYY-MM), blank = current period:', '');
+  if (periodId === null) return; // cancelled
+  if (!confirm('Approve all CONFIRMED payroll for ' + (periodId || 'the current period') + '?\n\nThis marks all confirmed records as PROCESSED. This cannot be undone.')) return;
   showLoading(true);
   TOKEN_RUN
     .withSuccessHandler(function(json) {
@@ -4818,7 +4863,7 @@ function approveAllPayroll() {
       showLoading(false);
       showToast('Approval error: ' + (err.message || String(err)), 'error');
     })
-    .portal_approveAllPayroll('');
+    .portal_approveAllPayroll(periodId);
 }
 
 // ── SBS Sheet Intake ───────────────────────────────────────────

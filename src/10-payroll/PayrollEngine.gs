@@ -1552,7 +1552,11 @@ var PayrollEngine = (function () {
   /**
    * @param {string} actorEmail
    * @param {string} periodId  'YYYY-MM'
-   * @param {{ includeQuarterly: boolean, quarter: string, year: number }} options
+   * @param {{ includeQuarterly: boolean, quarter: string, year: number, silent: boolean }} options
+   *   silent — when true, skips the HR review email (sendPayoutStatementSummary_).
+   *   Used by the portal's run buttons to fetch review numbers for their own
+   *   confirm dialog without also firing HR's separate review email each click.
+   *   Defaults to false — every existing caller keeps sending the email.
    * @returns {{ previewed: boolean, period_id: string, by_person: Object[],
    *   by_supervisor: Object[], unexpectedBlockedPairs: Array, skippedNonTeamLead: Array,
    *   quarterly: Object[]|null }}
@@ -1618,13 +1622,15 @@ var PayrollEngine = (function () {
         quarterPeriodId = options.quarter + '-' + options.year;
       }
 
-      sendPayoutStatementSummary_(periodId, {
-        basePay:                 basePay,
-        supervisorBonus:         supervisorBonus,
-        unexpectedBlockedPairs:  unexpectedBlockedPairs,
-        skippedNonTeamLead:      skippedNonTeamLead,
-        quarterlyBonus:          quarterlyBonus
-      }, { committed: false, quarterPeriodId: quarterPeriodId });
+      if (!options.silent) {
+        sendPayoutStatementSummary_(periodId, {
+          basePay:                 basePay,
+          supervisorBonus:         supervisorBonus,
+          unexpectedBlockedPairs:  unexpectedBlockedPairs,
+          skippedNonTeamLead:      skippedNonTeamLead,
+          quarterlyBonus:          quarterlyBonus
+        }, { committed: false, quarterPeriodId: quarterPeriodId });
+      }
 
       Logger.info('PAYOUT_STATEMENT_PREVIEWED', {
         module: MODULE, message: 'Payout statement previewed', period_id: periodId,

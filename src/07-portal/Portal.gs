@@ -849,14 +849,18 @@ function portal_approveAllPayroll(ptoken, periodId) {
  * @param {boolean} includeQuarterly Include a quarterly bonus preview section
  * @param {string} quarter           'Q1'|'Q2'|'Q3'|'Q4', only read when includeQuarterly
  * @param {string|number} year       e.g. 2026, only read when includeQuarterly
+ * @param {boolean} [silent]         Skip the HR review email — used by the CEO's
+ *                                   run-button confirm dialogs to fetch review
+ *                                   numbers without also emailing HR
  * @returns {string}  JSON: { previewed, period_id, by_person, by_supervisor, quarterly }
  */
-function portal_previewPayoutStatement(ptoken, periodId, includeQuarterly, quarter, year) {
+function portal_previewPayoutStatement(ptoken, periodId, includeQuarterly, quarter, year, silent) {
   var email  = PortalAuth.resolveEmail(ptoken);
   var result = PayrollEngine.previewPayoutStatement(email, periodId || '', {
     includeQuarterly: !!includeQuarterly,
     quarter:          quarter || '',
-    year:             parseInt(year, 10) || null
+    year:             parseInt(year, 10) || null,
+    silent:           !!silent
   });
   return JSON.stringify(result);
 }
