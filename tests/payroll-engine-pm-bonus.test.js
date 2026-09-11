@@ -263,6 +263,26 @@ describe('PayrollEngine.runBonusRun() — TL and PM bonuses both written, no dou
     expect(hrCall[0].body).not.toContain('BASE PAY');
   });
 
+  test('PAYSTUB_ROUTE_TO_HR_ (2026-09-11 HR-review phase): the per-supervisor bonus email goes to HR, named for the supervisor, with a forward instruction', () => {
+    seedRoster([
+      { person_code: 'TL1', name: 'Priyanka S', role: 'TEAM_LEAD', email: 'tl1@test.blc.internal' },
+      { person_code: 'DES1', role: 'DESIGNER', supervisor_code: 'TL1', email: 'des1@test.blc.internal' }
+    ]);
+    seedJob('BLC-001', 'TEST-CLIENT', 'ROOF_TRUSS');
+    seedSupervision([{ client_code: 'TEST-CLIENT', designer_code: 'DES1', supervisor_code: 'TL1' }]);
+    seedWorkLogs('2026-08', [
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER', job_number: 'BLC-001',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 8, work_date: '2026-08-05', period_id: '2026-08' }
+    ]);
+
+    PayrollEngine.runBonusRun('ceo@test.blc.internal', { periodId: '2026-08' });
+
+    var bonusCall = MailApp.sendEmail.mock.calls.find(c => c[0].subject.indexOf('Supervisor Bonus —') !== -1);
+    expect(bonusCall[0].to).toBe('HR@bluelotuscanada.ca');
+    expect(bonusCall[0].subject).toContain('Priyanka S');
+    expect(bonusCall[0].body).toContain('forward to Priyanka S <tl1@test.blc.internal>');
+  });
+
   test('a fully-idempotent re-run (bonus already written) does NOT send a second HR summary', () => {
     seedRoster([
       { person_code: 'TL1', role: 'TEAM_LEAD', email: 'tl1@test.blc.internal' },

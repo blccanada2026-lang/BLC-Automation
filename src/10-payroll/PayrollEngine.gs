@@ -53,6 +53,12 @@ var PayrollEngine = (function () {
   var MODULE               = 'PayrollEngine';
   var SUPERVISOR_BONUS_INR = 25;   // INR per supervised design hour
 
+  // 2026-09-11 → ~2026-12: every individual paystub/bonus email routes to HR
+  // for review-and-forward instead of straight to the person, while the new
+  // product-scoped bonus calc is being trusted. Flip to false (one-line
+  // change + deploy) once the numbers have been verified for three cycles.
+  var PAYSTUB_ROUTE_TO_HR_ = true;
+
   // ============================================================
   // SECTION 1: STAFF CACHE
   //
@@ -679,8 +685,18 @@ var PayrollEngine = (function () {
   // Non-fatal — if email fails, payroll row is still written.
   // ============================================================
 
+  // Shared HR recipient lookup — used by sendPayoutStatementSummary_ (the
+  // aggregate, always HR-bound) and, while PAYSTUB_ROUTE_TO_HR_ is true, by
+  // every individual paystub/bonus email below.
+  function resolveHrReviewRecipient_() {
+    return PropertiesService.getScriptProperties().getProperty('PAYOUT_STATEMENT_REVIEW_RECIPIENT')
+      || 'HR@bluelotuscanada.ca';
+  }
+
   function sendPaystubEmail_(staff, personCode, periodId, row) {
-    if (!staff.email) {
+    // Under HR routing the recipient no longer depends on staff.email — a
+    // missing address must not suppress the email HR still needs to see.
+    if (!PAYSTUB_ROUTE_TO_HR_ && !staff.email) {
       Logger.warn('PAYROLL_NO_EMAIL', {
         module:      MODULE,
         message:     'No email for staff member — payout statement not sent',
@@ -690,8 +706,9 @@ var PayrollEngine = (function () {
     }
 
     try {
-      var subject = 'BLC Payout Statement — ' + periodId + ' (Action Required)';
-      var body = [
+      var recipient = PAYSTUB_ROUTE_TO_HR_ ? resolveHrReviewRecipient_() : staff.email;
+      var subject   = 'BLC Payout Statement — ' + staff.name + ' — ' + periodId + ' (Action Required)';
+      var bodyLines = [
         'Hi ' + staff.name + ',',
         '',
         'Your payroll has been calculated for period: ' + periodId,
@@ -705,7 +722,15 @@ var PayrollEngine = (function () {
         'QC Pay:          INR ' + (row.qc_pay    || 0).toFixed(2),
         'Total Pay:       INR ' + (row.total_pay || 0).toFixed(2),
         '───────────────────────────────',
-        '',
+        ''
+      ];
+      if (PAYSTUB_ROUTE_TO_HR_) {
+        bodyLines.push(
+          '(HR review copy — forward to ' + staff.name + ' <' + (staff.email || 'no email on file') + '> after checking.)',
+          ''
+        );
+      }
+      bodyLines.push(
         'ACTION REQUIRED:',
         'Please review and confirm your payout statement by logging in to the BLC Portal.',
         'Payroll will not be processed until you confirm.',
@@ -713,20 +738,21 @@ var PayrollEngine = (function () {
         'If you have any questions, contact your PM or CEO.',
         '',
         '— BLC Payroll System'
-      ].join('\n');
+      );
 
       MailApp.sendEmail({
-        to:      staff.email,
+        to:      recipient,
         subject: subject,
-        body:    body
+        body:    bodyLines.join('\n')
       });
 
       Logger.info('PAYROLL_EMAIL_SENT', {
-        module:      MODULE,
-        message:     'Payout statement email sent',
-        person_code: personCode,
-        email:       staff.email,
-        period_id:   periodId
+        module:       MODULE,
+        message:      'Payout statement email sent',
+        person_code:  personCode,
+        email:        recipient,
+        period_id:    periodId,
+        routed_to_hr: PAYSTUB_ROUTE_TO_HR_
       });
     } catch (emailErr) {
       Logger.warn('PAYROLL_EMAIL_FAILED', {
@@ -743,11 +769,12 @@ var PayrollEngine = (function () {
   // ============================================================
 
   function sendBonusEmail_(staff, personCode, periodId, bonusAmount) {
-    if (!staff.email) return;
+    if (!PAYSTUB_ROUTE_TO_HR_ && !staff.email) return;
 
     try {
-      var subject = 'BLC Supervisor Bonus — ' + periodId + ' (Action Required)';
-      var body = [
+      var recipient = PAYSTUB_ROUTE_TO_HR_ ? resolveHrReviewRecipient_() : staff.email;
+      var subject   = 'BLC Supervisor Bonus — ' + staff.name + ' — ' + periodId + ' (Action Required)';
+      var bodyLines = [
         'Hi ' + staff.name + ',',
         '',
         'Your supervisor bonus has been calculated for period: ' + periodId,
@@ -757,14 +784,22 @@ var PayrollEngine = (function () {
         'Period:           ' + periodId,
         'Supervisor Bonus: INR ' + bonusAmount.toFixed(2),
         '───────────────────────────────',
-        '',
+        ''
+      ];
+      if (PAYSTUB_ROUTE_TO_HR_) {
+        bodyLines.push(
+          '(HR review copy — forward to ' + staff.name + ' <' + (staff.email || 'no email on file') + '> after checking.)',
+          ''
+        );
+      }
+      bodyLines.push(
         'ACTION REQUIRED:',
         'Please confirm your payout statement in the BLC Portal.',
         '',
         '— BLC Payroll System'
-      ].join('\n');
+      );
 
-      MailApp.sendEmail({ to: staff.email, subject: subject, body: body });
+      MailApp.sendEmail({ to: recipient, subject: subject, body: bodyLines.join('\n') });
     } catch (e) {
       Logger.warn('PAYROLL_BONUS_EMAIL_FAILED', {
         module: MODULE, person_code: personCode, error: e.message
@@ -785,8 +820,7 @@ var PayrollEngine = (function () {
   // ============================================================
 
   function sendPayoutStatementSummary_(periodId, sections, meta) {
-    var recipient = PropertiesService.getScriptProperties().getProperty('PAYOUT_STATEMENT_REVIEW_RECIPIENT')
-      || 'HR@bluelotuscanada.ca';
+    var recipient = resolveHrReviewRecipient_();
 
     if (!recipient) {
       Logger.warn('PAYOUT_STATEMENT_NO_RECIPIENT', {

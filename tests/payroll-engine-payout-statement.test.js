@@ -229,6 +229,33 @@ describe('PayrollEngine.runPayrollRun() — additive HR summary on commit (Task 
     expect(hrCall[0].body).toContain('This reflects payroll already committed for this period');
   });
 
+  test('PAYSTUB_ROUTE_TO_HR_ (2026-09-11 HR-review phase): the per-consultant paystub email goes to HR, not the designer, with the designer named in the subject and a forward instruction in the body', () => {
+    seedRoster([{ person_code: 'DES1', role: 'DESIGNER', name: 'Rita Nair', pay_design: 300, pay_qc: 0, email: 'des1@test.blc.internal' }]);
+    seedWorkLogs([{ event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' }]);
+
+    PayrollEngine.runPayrollRun('test-ceo@test.blc.internal', { periodId: '2026-08' });
+
+    var paystubCall = MailApp.sendEmail.mock.calls.find(c => c[0].subject.indexOf('Payout Statement —') !== -1);
+    expect(paystubCall[0].to).toBe('HR@bluelotuscanada.ca'); // Script Property unset in this suite's mocks — default
+    expect(paystubCall[0].subject).toContain('Rita Nair');
+    expect(paystubCall[0].body).toContain('forward to Rita Nair <des1@test.blc.internal>');
+  });
+
+  test('PAYSTUB_ROUTE_TO_HR_: a staff member with no email on file still gets their paystub routed to HR (the old staff.email-required guard would have wrongly suppressed this)', () => {
+    seedRoster([{ person_code: 'DES1', role: 'DESIGNER', name: 'No Email Guy', pay_design: 300, pay_qc: 0, email: '' }]);
+    seedWorkLogs([{ event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' }]);
+
+    var result = PayrollEngine.runPayrollRun('test-ceo@test.blc.internal', { periodId: '2026-08' });
+
+    expect(result.processed).toBe(1);
+    var paystubCall = MailApp.sendEmail.mock.calls.find(c => c[0].subject.indexOf('Payout Statement —') !== -1);
+    expect(paystubCall).toBeDefined();
+    expect(paystubCall[0].to).toBe('HR@bluelotuscanada.ca');
+    expect(paystubCall[0].body).toContain('forward to No Email Guy <no email on file>');
+  });
+
   test('a period with zero hours does not send an HR summary at all (matches existing PAYROLL_NO_HOURS early return)', () => {
     seedRoster([{ person_code: 'DES1', role: 'DESIGNER', pay_design: 300, pay_qc: 0 }]);
     seedWorkLogs([]);
