@@ -413,8 +413,8 @@
   <!-- ══ MY HOURS ═════════════════════════════════════════════ -->
   <div id="my-hours-section" style="display:none; margin-top:24px">
     <div class="dash-panel">
-      <div class="dash-panel-hdr">
-        <span>My Hours — <span id="my-hours-period">—</span></span>
+      <div class="dash-panel-hdr" id="my-hours-hdr" style="cursor:pointer;user-select:none">
+        <span><span id="my-hours-arrow" style="display:inline-block;font-size:10px;margin-right:6px;transition:transform .15s">▶</span>My Hours — <span id="my-hours-period">—</span></span>
         <span id="my-hours-total" style="font-size:12px;font-weight:400;color:var(--c-muted)"></span>
       </div>
       <div style="padding:10px 14px 0;display:flex;gap:8px;flex-wrap:wrap">
@@ -1358,6 +1358,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('job-search').addEventListener('input', function() { filterJobs_(this.value); });
   document.getElementById('my-hours-search').addEventListener('input', applyMyHoursFilters_);
   document.getElementById('my-hours-designer-filter').addEventListener('change', applyMyHoursFilters_);
+  document.getElementById('my-hours-hdr').addEventListener('click', function() { setMyHoursExpanded_(!_myHoursExpanded); });
 
   document.getElementById('create-client').addEventListener('change', onCreateClientChange);
 
@@ -3627,12 +3628,31 @@ function clearEl_(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 // used by the Edit/Void/Reassign click handlers below.
 var _myHoursEntryById = {};
 
+// Collapsed by default (same "compressed, click to expand" pattern as the
+// Invoiced tier panel) — a module-level flag, not DOM state, so it survives
+// renderMyHours_ re-rendering the table body on every search/filter
+// keystroke. applyMyHoursFilters_ forces it open when a filter is active,
+// so a collapsed panel never hides search results the user just typed.
+var _myHoursExpanded = false;
+
+function setMyHoursExpanded_(expanded) {
+  _myHoursExpanded = expanded;
+  var body  = document.getElementById('my-hours-body');
+  var arrow = document.getElementById('my-hours-arrow');
+  if (body)  body.style.display = expanded ? '' : 'none';
+  if (arrow) arrow.style.transform = expanded ? 'rotate(90deg)' : '';
+}
+
 function renderMyHours_(data, isFiltered) {
   var body = document.getElementById('my-hours-body');
   document.getElementById('my-hours-period').textContent = data.period_id || '—';
   document.getElementById('my-hours-total').textContent  = 'Total: ' + (data.total_hours || 0) + ' hrs';
   clearEl_(body);
   _myHoursEntryById = {};
+  // A collapsed panel hiding the results of a search the user just typed
+  // would be a dead end — force it open while a filter is active. Otherwise
+  // reapply whatever the user last chose (re-rendering must not slam it shut).
+  setMyHoursExpanded_(isFiltered ? true : _myHoursExpanded);
 
   if (!data.entries || data.entries.length === 0) {
     body.appendChild(makeEmptyDiv_(isFiltered ? 'No entries match your search.' : 'No hours logged this period.'));
