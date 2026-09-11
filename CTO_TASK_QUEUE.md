@@ -33,8 +33,11 @@ lacks, that silently deletes it from DEV.
 
 ## Session State (last updated: end of turn, 2026-09-10)
 
-**TASK RB-3.5 — Phase 1.5 (product-scoped account supervision) CODE-COMPLETE
-and DEPLOYED TO PROD's Apps Script source 2026-09-10 (168 files, no
+**TASK RB-3.5 — Phase 1.5 (product-scoped account supervision) CODE AND
+SCHEMA COMPLETE on both DEV and PROD, 2026-09-10. Only the real-data
+backfill and cutover remain, and those are deliberately-separate human
+tasks (see below), not engineering work.** Deployed to PROD's Apps
+Script source 2026-09-10 (168 files, no
 errors).** Built via subagent-driven-development in worktree
 `.claude/worktrees/product-scoped-supervision` (branch
 `worktree-product-scoped-supervision`): 7 tasks, 1 fix round on 3 of them,
@@ -81,13 +84,15 @@ tabs/headers, never touch existing content), created the tab with
 `product_code` already in its header (baked into current `SCHEMAS`), plus
 9 unrelated `FACT_*|2026-09` partitions DEV was simply behind on.
 
-**Still open, NOT done yet, blocks any real use of this code:**
-(1) run `runPatchAccountSupervisionSchema()` (`src/08-staff/StaffOnboarding.gs:1537`)
-against PROD — PROD's table already exists (Phase 1), just needs the
-column added; Task 8 Step 5, needs the Apps Script editor (no `clasp run`
-wiring in this repo); (2) this branch touched zero
-`PortalView.html`/`Portal.gs` files, so no New Version redeploy is needed
-for this change specifically. Deliberately **NOT** part
+**Schema setup — PROD confirmed done 2026-09-10.** Ran
+`runPatchAccountSupervisionSchema()` against PROD — it reported "SKIP
+REF_ACCOUNT_SUPERVISION — already has product_code" (column already
+present when checked; possibly upgraded lazily via `getDAL()` by one of
+PROD's periodic triggers sometime after the code deploy, ~30 min earlier
+— not confirmed, but the end state is correct either way). **Task 8 of
+the Phase 1.5 plan is now fully complete: code + schema, both DEV and
+PROD.** No New Version redeploy needed — this branch touched zero
+`PortalView.html`/`Portal.gs` files. Deliberately **NOT** part
 of this task, per the plan's own Step 6 (same separation as Phase 1): Deb
 Sen's `changeRole` call, the 15-row `assignAccountSupervisor` backfill from
 spec §9, reviewing `blockedPairs` against real August 2026 data, and the
