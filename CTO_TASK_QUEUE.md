@@ -201,6 +201,25 @@ The 4 `PRS`/`AR001` rows are contingent on Step 4 (`changeRole` for
 `DBS` → `TEAM_LEAD`) actually running — until then they'd also silently
 zero, same mechanism.
 
+**BACKFILL WRITTEN AND VERIFIED CLEAN, 2026-09-10, in PROD.** Ran the
+role change + all 18 rows via a single pasted script; every row logged
+`changed: true, reason: "applied"` (all genuinely new, no conflicts).
+Re-ran `runSupervisorBonusByAccountDryRun('2026-08')` against real PROD
+data to confirm, not just trusted the write log:
+- `bonusMap`: exactly the 4 expected real TEAM_LEADs — `BCH` ₹4,487.50,
+  `DBS` ₹1,150 (confirms her role change actually took effect — she's
+  getting real bonus, not a silent zero), `SDA` ₹8,550, `SVN` ₹13,693.75.
+- `blockedPairs` (7): exactly SGO's own hours, as intended.
+- `unexpectedBlockedPairs`: **0. PRE-CUTOVER GATE: CLEAN.**
+
+**Next and last remaining step: Step 7, the cutover** — wiring
+`buildSupervisorBonusMapByAccount_`/`buildJobToClientProductMap_`/
+`aggregateNetWorkLogHoursByAccount` into `runBonusRun`/
+`previewPayoutStatement` (currently still call the old flat
+`buildSupervisorBonusMap_`). This is real, unwritten code with its own
+TDD/review/deploy cycle — not done yet. Then Step 8: generate August
+stubs.
+
 **Read-only dry-run tool added and deployed 2026-09-10:**
 `runSupervisorBonusByAccountDryRun(periodId, asOfDate)`
 (`src/12-migration/SupervisorBonusByAccountDryRun.gs:54`) — previews
