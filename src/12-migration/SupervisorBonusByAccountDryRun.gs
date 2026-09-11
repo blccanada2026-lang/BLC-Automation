@@ -49,7 +49,7 @@ var SBAD_ACTOR_EMAIL_ = 'raj.nair@bluelotuscanada.ca';
  *                             migration scripts (BlankProductAudit.gs)
  *                             use for their own date-range filtering.
  * @param {string} [asOfDate] 'YYYY-MM-DD'. Defaults to periodId + '-01'.
- * @returns {{ bonusMap: Object, blockedPairs: Array, unexpectedBlockedPairs: Array }}
+ * @returns {{ bonusMap: Object, blockedPairs: Array, unexpectedBlockedPairs: Array, skippedNonTeamLead: Array }}
  */
 function runSupervisorBonusByAccountDryRun(periodId, asOfDate) {
   var actualScriptId = ScriptApp.getScriptId();
@@ -102,6 +102,13 @@ function runSupervisorBonusByAccountDryRun(periodId, asOfDate) {
   });
 
   console.log('');
+  console.log('--- skippedNonTeamLead (' + result.skippedNonTeamLead.length + ' — informational only, NOT gating) ---');
+  result.skippedNonTeamLead.forEach(function (p) {
+    console.log('  ' + p.client_code + ' / ' + (p.product_code || '(blank product_code)') + ' / ' + p.designer_code +
+                ' — ' + p.hours + 'h — supervisor ' + p.supervisor_code + ' is ' + p.role + ', not TEAM_LEAD');
+  });
+
+  console.log('');
   console.log('=== PRE-CUTOVER GATE: ' +
               (unexpectedBlockedPairs.length === 0
                 ? 'CLEAN — 0 unexpected blocked pairs'
@@ -109,5 +116,10 @@ function runSupervisorBonusByAccountDryRun(periodId, asOfDate) {
               ' ===');
   console.log('=== End of dry-run. No writes were made. ===');
 
-  return { bonusMap: result.bonusMap, blockedPairs: result.blockedPairs, unexpectedBlockedPairs: unexpectedBlockedPairs };
+  return {
+    bonusMap: result.bonusMap,
+    blockedPairs: result.blockedPairs,
+    unexpectedBlockedPairs: unexpectedBlockedPairs,
+    skippedNonTeamLead: result.skippedNonTeamLead
+  };
 }

@@ -101,6 +101,9 @@ describe('PayrollEngine.buildSupervisorBonusMapByAccount_()', () => {
 
     expect(result.bonusMap.SGO).toBeUndefined();
     expect(result.blockedPairs).toEqual([]);
+    expect(result.skippedNonTeamLead).toEqual([
+      { client_code: 'SOME SMALL ACCOUNT', product_code: 'ROOF_TRUSS', designer_code: 'BIT', supervisor_code: 'SGO', role: 'PM', hours: 12 }
+    ]);
   });
 
   test('a genuinely unassigned pair is blocked, not silently mis-credited or dropped', () => {
@@ -178,6 +181,44 @@ describe('PayrollEngine.buildSupervisorBonusMapByAccount_()', () => {
 
     expect(result.bonusMap.RKG).toBeUndefined();
     expect(result.blockedPairs).toEqual([]); // an assignment row DOES exist — not "unassigned"
+    expect(result.skippedNonTeamLead).toEqual([
+      { client_code: 'SBS', product_code: 'ROOF_TRUSS', designer_code: 'BIT', supervisor_code: 'RKG', role: 'DESIGNER', hours: 6 }
+    ]);
+  });
+
+  test('a PM-supervised pair is logged as SUPERVISOR_BONUS_NON_TEAM_LEAD_SKIP, surfaced in skippedNonTeamLead, and NOT gating — it never appears in blockedPairs', () => {
+    seedSupervision([
+      { client_code: 'SOME SMALL ACCOUNT', designer_code: 'BIT', supervisor_code: 'SGO' }
+    ]);
+    const staffCache = {
+      SGO: staff({ role: 'PM' }),
+      BIT: staff({ role: 'DESIGNER' })
+    };
+    const hoursMapByAccount = {
+      BIT: { 'SOME SMALL ACCOUNT': { 'ROOF_TRUSS': { design_hours: 12, qc_hours: 0 } } }
+    };
+
+    const logWarns = [];
+    mocks.Logger.warn = (eventName, payload) => {
+      logWarns.push({ eventName, payload });
+    };
+
+    const result = PayrollEngine.buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, '2026-09-01');
+
+    expect(logWarns.length).toBe(1);
+    expect(logWarns[0].eventName).toBe('SUPERVISOR_BONUS_NON_TEAM_LEAD_SKIP');
+    expect(logWarns[0].payload.supervisor_code).toBe('SGO');
+    expect(logWarns[0].payload.role).toBe('PM');
+    expect(logWarns[0].payload.client_code).toBe('SOME SMALL ACCOUNT');
+    expect(logWarns[0].payload.product_code).toBe('ROOF_TRUSS');
+    expect(logWarns[0].payload.designer_code).toBe('BIT');
+    expect(logWarns[0].payload.hours).toBe(12);
+
+    expect(result.blockedPairs).toEqual([]);
+    expect(PayrollEngine.filterUnexpectedBlockedPairs_(result.blockedPairs)).toEqual([]);
+    expect(result.skippedNonTeamLead).toEqual([
+      { client_code: 'SOME SMALL ACCOUNT', product_code: 'ROOF_TRUSS', designer_code: 'BIT', supervisor_code: 'SGO', role: 'PM', hours: 12 }
+    ]);
   });
 
   test('throws if more than one REF_ACCOUNT_SUPERVISION row resolves as valid for the same (client, product, designer) as of asOfDate (data corruption, e.g. a manual sheet edit bypassing assignAccountSupervisor)', () => {

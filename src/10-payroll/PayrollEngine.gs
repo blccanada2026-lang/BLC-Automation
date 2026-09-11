@@ -421,7 +421,8 @@ var PayrollEngine = (function () {
    *                                     { designerCode: { clientCode: { productCode: { design_hours, qc_hours } } } }
    * @param {string} asOfDate            'YYYY-MM-DD' — resolves REF_ACCOUNT_SUPERVISION
    *                                     as of this date, same convention as buildStaffCache_.
-   * @returns {{ bonusMap: Object, blockedPairs: Array<{client_code, product_code, designer_code, hours}> }}
+   * @returns {{ bonusMap: Object, blockedPairs: Array<{client_code, product_code, designer_code, hours}>,
+   *             skippedNonTeamLead: Array<{client_code, product_code, designer_code, supervisor_code, role, hours}> }}
    */
   function buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, asOfDate) {
     var supervisionRows;
@@ -434,6 +435,7 @@ var PayrollEngine = (function () {
 
     var bonusMap     = {};
     var blockedPairs = [];
+    var skippedNonTeamLead = [];
     var designerCodes = Object.keys(hoursMapByAccount);
 
     for (var i = 0; i < designerCodes.length; i++) {
@@ -505,8 +507,20 @@ var PayrollEngine = (function () {
             continue;
           }
 
-          // Case 2: supervisor found but wrong role (e.g., PM) — skip silently, no logging, no blocking
-          if (supervisor.role !== 'TEAM_LEAD') continue; // role-based PM-skip rule, spec §4.5
+          // Case 2: supervisor found but wrong role (e.g., PM) — not gating (spec §4.5's PM-fallback
+          // skip stays in force: this pair still pays no TEAM_LEAD-tier bonus), but visible for
+          // reconciliation instead of silent, closing the asymmetry with cases 1 and above.
+          if (supervisor.role !== 'TEAM_LEAD') {
+            Logger.warn('SUPERVISOR_BONUS_NON_TEAM_LEAD_SKIP', {
+              module: MODULE, supervisor_code: supervisorCode, role: supervisor.role, client_code: clientCode,
+              product_code: productCode, designer_code: designerCode, hours: pairHours
+            });
+            skippedNonTeamLead.push({
+              client_code: clientCode, product_code: productCode, designer_code: designerCode,
+              supervisor_code: supervisorCode, role: supervisor.role, hours: pairHours
+            });
+            continue;
+          }
 
           bonusMap[supervisorCode] = Math.round(((bonusMap[supervisorCode] || 0) + pairHours * SUPERVISOR_BONUS_INR) * 100) / 100;
         }
@@ -529,7 +543,7 @@ var PayrollEngine = (function () {
       }
     }
 
-    return { bonusMap: finalBonusMap, blockedPairs: blockedPairs };
+    return { bonusMap: finalBonusMap, blockedPairs: blockedPairs, skippedNonTeamLead: skippedNonTeamLead };
   }
 
   // ============================================================
@@ -797,6 +811,10 @@ var PayrollEngine = (function () {
         lines = lines.concat(formatUnexpectedBlockedPairsSection_(sections.unexpectedBlockedPairs));
         anySectionRendered = true;
       }
+      if (sections.skippedNonTeamLead && sections.skippedNonTeamLead.length > 0) {
+        lines = lines.concat(formatSkippedNonTeamLeadSection_(sections.skippedNonTeamLead));
+        anySectionRendered = true;
+      }
       if (sections.quarterlyBonus && sections.quarterlyBonus.length > 0) {
         lines = lines.concat(formatQuarterlyBonusSection_(sections.quarterlyBonus, meta.quarterPeriodId));
         anySectionRendered = true;
@@ -868,6 +886,26 @@ var PayrollEngine = (function () {
     unexpectedBlockedPairs.forEach(function (p) {
       lines.push(p.client_code + ' / ' + (p.product_code || '(blank product_code)') + ' / ' +
                  p.designer_code + '  ' + p.hours + 'h — NO supervisor bonus paid for these hours');
+    });
+    lines.push('───────────────────────────────');
+    lines.push('');
+    return lines;
+  }
+
+  // Preview-only, informational (2026-09-11) — surfaces
+  // buildSupervisorBonusMapByAccount_()'s skippedNonTeamLead so the pairs
+  // deliberately left unsupervised because their assigned supervisor
+  // isn't TEAM_LEAD-tier (spec §4.5's PM-fallback skip) are visible for
+  // reconciliation instead of silent. This list is NEVER gating — it does
+  // not feed filterUnexpectedBlockedPairs_ or the abort check in
+  // runBonusRun.
+  function formatSkippedNonTeamLeadSection_(skippedNonTeamLead) {
+    var lines = ['ℹ SUPERVISED BY NON-TEAM_LEAD (bonus intentionally not paid — informational only)',
+                 '───────────────────────────────'];
+    skippedNonTeamLead.forEach(function (p) {
+      lines.push(p.client_code + ' / ' + (p.product_code || '(blank product_code)') + ' / ' +
+                 p.designer_code + '  ' + p.hours + 'h — supervisor ' + p.supervisor_code +
+                 ' is ' + p.role + ', not TEAM_LEAD');
     });
     lines.push('───────────────────────────────');
     lines.push('');
@@ -1561,6 +1599,7 @@ var PayrollEngine = (function () {
       var tlResult = buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, asOfDate);
       var tlBonusMap = tlResult.bonusMap;
       var unexpectedBlockedPairs = filterUnexpectedBlockedPairs_(tlResult.blockedPairs);
+      var skippedNonTeamLead = tlResult.skippedNonTeamLead;
       var pmBonusMap = buildPmBonusMap_(staffCache, hoursMap);
       var bonusMap   = {};
       Object.keys(tlBonusMap).forEach(function (code) { bonusMap[code] = tlBonusMap[code]; });
@@ -1582,13 +1621,15 @@ var PayrollEngine = (function () {
         basePay:                 basePay,
         supervisorBonus:         supervisorBonus,
         unexpectedBlockedPairs:  unexpectedBlockedPairs,
+        skippedNonTeamLead:      skippedNonTeamLead,
         quarterlyBonus:          quarterlyBonus
       }, { committed: false, quarterPeriodId: quarterPeriodId });
 
       Logger.info('PAYOUT_STATEMENT_PREVIEWED', {
         module: MODULE, message: 'Payout statement previewed', period_id: periodId,
         base_pay_count: basePay.length, supervisor_bonus_count: supervisorBonus.length,
-        unexpected_blocked_pair_count: unexpectedBlockedPairs.length
+        unexpected_blocked_pair_count: unexpectedBlockedPairs.length,
+        skipped_non_team_lead_count: skippedNonTeamLead.length
       });
 
       return {
@@ -1597,6 +1638,7 @@ var PayrollEngine = (function () {
         by_person:               basePay,
         by_supervisor:           supervisorBonus,
         unexpectedBlockedPairs:  unexpectedBlockedPairs,
+        skippedNonTeamLead:      skippedNonTeamLead,
         quarterly:               quarterlyBonus
       };
 
