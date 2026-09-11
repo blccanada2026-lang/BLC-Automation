@@ -100,7 +100,16 @@ REF_ACCOUNT_SUPERVISION — added product_code column` when it actually
 runs there, not `SKIP`. Task 8 of the Phase 1.5 plan is code-complete but
 **not yet schema-complete on PROD.** No New Version redeploy needed
 regardless — this branch touched zero `PortalView.html`/`Portal.gs`
-files. Deliberately **NOT** part
+files.
+
+**Blank-product-code check for August, run against PROD 2026-09-10:**
+`runBlankProductAudit('2026-08A')` and `('2026-08B')` both returned 0 —
+zero SBS/Norspan jobs with blank `product_code` in August (scoped to just
+those two accounts, per that script's own design — other backfill
+accounts like Alberta Truss/Nelson/Matix-SK aren't covered by this
+audit). One risk item from the plan is cleared for August specifically.
+
+Deliberately **NOT** part
 of this task, per the plan's own Step 6 (same separation as Phase 1): Deb
 Sen's `changeRole` call, the 15-row `assignAccountSupervisor` backfill from
 spec §9, reviewing `blockedPairs` against real August 2026 data, and the
