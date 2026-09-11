@@ -483,3 +483,69 @@ describe('PayrollEngine.previewPayoutStatement() — no-write HR/CEO preview tri
     expect(hrCall[0].body).toContain('BRAND NEW ACCOUNT');
   });
 });
+
+describe('PayrollEngine.sendTestPaystubEmail() — on-demand single-person check, no FACT write', () => {
+  function seedRoster(rows) {
+    mocks.store['DIM_STAFF_ROSTER'] = rows.map(r => Object.assign({
+      person_code: '', name: '', email: '', role: 'DESIGNER',
+      supervisor_code: '', pm_code: '', pay_currency: 'INR',
+      pay_design: 0, pay_qc: 0, bonus_eligible: 'FALSE',
+      active: 'TRUE', effective_from: '2025-01-01', effective_to: ''
+    }, r));
+  }
+  function seedWorkLogs(rows) { mocks.store['FACT_WORK_LOGS'] = rows; }
+
+  beforeEach(() => {
+    mocks.DAL.appendRow = jest.fn();
+  });
+
+  test('happy path: sends exactly one email with the real computed pay, no ledger write', () => {
+    seedRoster([{ person_code: 'DES1', name: 'Rita Nair', role: 'DESIGNER', pay_design: 300, pay_qc: 0, email: 'des1@test.blc.internal' }]);
+    seedWorkLogs([{ event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' }]);
+
+    var result = PayrollEngine.sendTestPaystubEmail('test-ceo@test.blc.internal', 'DES1', '2026-08');
+
+    expect(result).toEqual({ sent: true, period_id: '2026-08', person_code: 'DES1', name: 'Rita Nair',
+      row: { person_code: 'DES1', name: 'Rita Nair', design_hours: 10, qc_hours: 0, design_pay: 3000, qc_pay: 0, total_pay: 3000, currency: 'INR' } });
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(1);
+    expect(MailApp.sendEmail.mock.calls[0][0].to).toBe('HR@bluelotuscanada.ca'); // PAYSTUB_ROUTE_TO_HR_ active
+    expect(MailApp.sendEmail.mock.calls[0][0].subject).toContain('Rita Nair');
+    expect(mocks.DAL.appendRow).not.toHaveBeenCalled();
+  });
+
+  test('a person with no hours this period still gets a test email, showing zero pay — not an error', () => {
+    seedRoster([{ person_code: 'DES1', name: 'Rita Nair', role: 'DESIGNER', pay_design: 300, pay_qc: 0, email: 'des1@test.blc.internal' }]);
+    seedWorkLogs([]);
+
+    var result = PayrollEngine.sendTestPaystubEmail('test-ceo@test.blc.internal', 'DES1', '2026-08');
+
+    expect(result.row.design_hours).toBe(0);
+    expect(result.row.total_pay).toBe(0);
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  test('an unknown person_code throws a clear error instead of a silent no-op', () => {
+    seedRoster([{ person_code: 'DES1', name: 'Rita Nair', role: 'DESIGNER' }]);
+
+    expect(() => PayrollEngine.sendTestPaystubEmail('test-ceo@test.blc.internal', 'NOPE', '2026-08'))
+      .toThrow(/no active staff member found for person_code "NOPE"/);
+    expect(MailApp.sendEmail).not.toHaveBeenCalled();
+  });
+
+  test('a blank personCode throws before any lookup', () => {
+    expect(() => PayrollEngine.sendTestPaystubEmail('test-ceo@test.blc.internal', '', '2026-08'))
+      .toThrow(/personCode is required/);
+  });
+
+  test('calls RBAC.enforcePermission and enforceFinancialAccess with PAYROLL_PREVIEW, not PAYROLL_RUN', () => {
+    seedRoster([{ person_code: 'DES1', name: 'Rita Nair', role: 'DESIGNER' }]);
+    mocks.RBAC.enforcePermission      = jest.fn();
+    mocks.RBAC.enforceFinancialAccess = jest.fn();
+
+    PayrollEngine.sendTestPaystubEmail('test-hr@test.blc.internal', 'DES1', '2026-08');
+
+    expect(mocks.RBAC.enforcePermission).toHaveBeenCalledWith(expect.any(Object), 'PAYROLL_PREVIEW');
+    expect(mocks.RBAC.enforceFinancialAccess).toHaveBeenCalledWith(expect.any(Object), 'PAYROLL_PREVIEW');
+  });
+});

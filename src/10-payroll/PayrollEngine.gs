@@ -1689,6 +1689,55 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
+  // SECTION 14a: SEND TEST PAYSTUB EMAIL — on-demand single-person check
+  //
+  // Fires ONE real sendPaystubEmail_ for a single person using their actual
+  // computed pay for the period. No FACT write, fully repeatable — lets the
+  // exact email HR (or, once PAYSTUB_ROUTE_TO_HR_ is false, the designer)
+  // will receive be checked on demand, instead of only being visible after
+  // a real payroll run.
+  // ============================================================
+
+  /**
+   * @param {string} actorEmail
+   * @param {string} personCode
+   * @param {string} periodId  'YYYY-MM', blank = current period
+   * @returns {{ sent: boolean, period_id: string, person_code: string, name: string, row: Object }}
+   */
+  function sendTestPaystubEmail(actorEmail, personCode, periodId) {
+    HealthMonitor.startExecution(MODULE);
+    try {
+      var actor = RBAC.resolveActor(actorEmail);
+      RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_PREVIEW);
+      RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.PAYROLL_PREVIEW);
+
+      if (!personCode) {
+        throw new Error('PayrollEngine.sendTestPaystubEmail: personCode is required.');
+      }
+      periodId = periodId || Identifiers.generateCurrentPeriodId();
+      var asOfDate = periodId + '-01';
+
+      var staffCache = buildStaffCache_(asOfDate);
+      var staff = staffCache[personCode];
+      if (!staff) {
+        throw new Error('PayrollEngine.sendTestPaystubEmail: no active staff member found for person_code "' +
+          personCode + '" as of ' + asOfDate + '.');
+      }
+
+      var fxCache  = buildFxRateCache_();
+      var hoursMap = aggregateHours_(periodId);
+      var hours    = hoursMap[personCode] || { design_hours: 0, qc_hours: 0 };
+      var row      = computePersonPay_(staff, personCode, hours, fxCache);
+
+      sendPaystubEmail_(staff, personCode, periodId, row);
+
+      return { sent: true, period_id: periodId, person_code: personCode, name: staff.name, row: row };
+    } finally {
+      HealthMonitor.endExecution();
+    }
+  }
+
+  // ============================================================
   // PUBLIC API
   // ============================================================
   return {
@@ -1724,6 +1773,12 @@ var PayrollEngine = (function () {
      * per-consultant/per-supervisor email, fully repeatable.
      */
     previewPayoutStatement: previewPayoutStatement,
+
+    /**
+     * CEO/HR_ACCOUNTING on-demand check — fires one real paystub email for
+     * a single person's actual computed pay. No FACT write, repeatable.
+     */
+    sendTestPaystubEmail: sendTestPaystubEmail,
 
     // Exposed 2026-07-23 (payroll-hardening effort, Phase 4 promotion
     // dry-run) — same precedent as QuarterlyBonusEngine.aggregateQuarterHours_
