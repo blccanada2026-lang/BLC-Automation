@@ -320,7 +320,8 @@ describe('PayrollEngine.runBonusRun() — cutover (2026-09-11): aborts on unexpe
         event_type: 'WORK_LOG_SUBMITTED', hours: 5, work_date: '2026-08-05', period_id: '2026-08' }
     ]);
 
-    var appendRowSpy = jest.spyOn(mocks.DAL, 'appendRow');
+    var appendRowSpy      = jest.spyOn(mocks.DAL, 'appendRow');
+    var ensurePartitionSpy = jest.spyOn(mocks.DAL, 'ensurePartition');
 
     expect(() => PayrollEngine.runBonusRun('ceo@test.blc.internal', { periodId: '2026-08' }))
       .toThrow(/unexpected blocked pair/);
@@ -328,6 +329,11 @@ describe('PayrollEngine.runBonusRun() — cutover (2026-09-11): aborts on unexpe
       .toThrow(/BRAND NEW ACCOUNT\/ROOF_TRUSS\/DES1/);
 
     expect(appendRowSpy).not.toHaveBeenCalled();
+    // Locks in gate-before-ensurePartition ordering — ensurePartition
+    // creates a real sheet tab in PROD, a genuine side effect. A future
+    // refactor that moved the gate below it would still pass every
+    // other assertion here without this one.
+    expect(ensurePartitionSpy).not.toHaveBeenCalled();
     expect(MailApp.sendEmail).not.toHaveBeenCalled();
   });
 
@@ -388,5 +394,41 @@ describe('PayrollEngine.runBonusRun() — cutover (2026-09-11): aborts on unexpe
     // matches the real figure independently confirmed against live
     // PROD data on 2026-09-10 (runSupervisorBonusByAccountDryRun output).
     expect(bch.bonus_amount).toBe(4487.5);
+  });
+
+  test('a blocked pair that IS on the accepted-exceptions list does NOT abort the run — other supervisors still get paid (the real August 2026 shape: 7 accepted pairs present on a run that must succeed)', () => {
+    seedRoster([
+      { person_code: 'TL1', role: 'TEAM_LEAD', email: 'tl1@test.blc.internal' },
+      { person_code: 'DES1', role: 'DESIGNER', email: 'des1@test.blc.internal' },
+      // PRS is a real designer_code with a real, hardcoded accepted
+      // exception in ACCEPTED_UNSUPERVISED_PAIRS_ (PayrollEngine.gs):
+      // ALBERTA TRUSS / FLOOR_JOIST / PRS. No supervision row is seeded
+      // for that pair — it must resolve as an ACCEPTED blocked pair,
+      // not an unexpected one.
+      { person_code: 'PRS', role: 'DESIGNER', email: 'prs@test.blc.internal' }
+    ]);
+    seedJob('BLC-001', 'TEST-CLIENT',   'ROOF_TRUSS');
+    seedJob('BLC-002', 'ALBERTA TRUSS', 'FLOOR_JOIST');
+    seedSupervision([{ client_code: 'TEST-CLIENT', designer_code: 'DES1', supervisor_code: 'TL1' }]);
+    // deliberately no REF_ACCOUNT_SUPERVISION row for PRS/ALBERTA TRUSS/FLOOR_JOIST
+    seedWorkLogs([
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER', job_number: 'BLC-001',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' },
+      { event_id: 'E2', person_code: 'PRS', actor_code: 'PRS', actor_role: 'DESIGNER', job_number: 'BLC-002',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 4, work_date: '2026-08-06', period_id: '2026-08' }
+    ]);
+
+    var result;
+    expect(() => {
+      result = PayrollEngine.runBonusRun('ceo@test.blc.internal', { periodId: '2026-08' });
+    }).not.toThrow();
+
+    expect(result.processed).toBe(1);
+    expect(result.by_supervisor.find(s => s.person_code === 'TL1').bonus_amount).toBe(250);
+    // PRS's accepted-exception hours produced no bonus for anyone — not
+    // an error, not silently swallowed, just genuinely unattributed by
+    // design (already covered by a different bonus mechanism per the
+    // ACCEPTED_UNSUPERVISED_PAIRS_ comment).
+    expect(result.by_supervisor.find(s => s.person_code === 'PRS')).toBeUndefined();
   });
 });
