@@ -72,11 +72,20 @@ only prior divergence from `main` was one disposable 4-line scratch file
 feedback-status-RBAC fix) — lost on push as expected, nothing of value.
 DEV and PROD now both match current `main`.
 
+**Schema setup — DEV done 2026-09-10.** DEV's `REF_ACCOUNT_SUPERVISION`
+tab never existed at all (only PROD had it, from Phase 1) — running
+`runPatchAccountSupervisionSchema()` there just no-op'd ("sheet not
+found"). Ran `runSetupSchemas()` instead (`src/setup/SetupScript.gs:1303`)
+— safe/idempotent (`ensureTab_`/`ensureHeaders_` only ever create missing
+tabs/headers, never touch existing content), created the tab with
+`product_code` already in its header (baked into current `SCHEMAS`), plus
+9 unrelated `FACT_*|2026-09` partitions DEV was simply behind on.
+
 **Still open, NOT done yet, blocks any real use of this code:**
 (1) run `runPatchAccountSupervisionSchema()` (`src/08-staff/StaffOnboarding.gs:1537`)
-in the DEV Apps Script editor, confirm the `product_code` header, then
-repeat against PROD — Task 8 Step 5, needs the Apps Script editor (no
-`clasp run` wiring in this repo); (2) this branch touched zero
+against PROD — PROD's table already exists (Phase 1), just needs the
+column added; Task 8 Step 5, needs the Apps Script editor (no `clasp run`
+wiring in this repo); (2) this branch touched zero
 `PortalView.html`/`Portal.gs` files, so no New Version redeploy is needed
 for this change specifically. Deliberately **NOT** part
 of this task, per the plan's own Step 6 (same separation as Phase 1): Deb
