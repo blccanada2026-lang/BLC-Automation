@@ -212,13 +212,47 @@ data to confirm, not just trusted the write log:
 - `blockedPairs` (7): exactly SGO's own hours, as intended.
 - `unexpectedBlockedPairs`: **0. PRE-CUTOVER GATE: CLEAN.**
 
-**Next and last remaining step: Step 7, the cutover** — wiring
-`buildSupervisorBonusMapByAccount_`/`buildJobToClientProductMap_`/
-`aggregateNetWorkLogHoursByAccount` into `runBonusRun`/
-`previewPayoutStatement` (currently still call the old flat
-`buildSupervisorBonusMap_`). This is real, unwritten code with its own
-TDD/review/deploy cycle — not done yet. Then Step 8: generate August
-stubs.
+**Step 7 (the cutover) — CODE COMPLETE 2026-09-11, commits `37f61ed` +
+`4b38723`, NOT YET DEPLOYED.** `runBonusRun`/`previewPayoutStatement`
+now call `buildSupervisorBonusMapByAccount_` instead of the old flat
+`buildSupervisorBonusMap_`. Design reviewed by advisor before writing
+(asymmetric abort: `runBonusRun` refuses to write on any unexpected
+blocked pair; `previewPayoutStatement` surfaces the list instead of
+throwing). Independent review on the most capable available model
+(opus) — thorough, found:
+- **1 Critical (C1), resolved with existing evidence, not a code
+  change tonight:** `buildSupervisorBonusMapByAccount_:509`'s
+  `role !== 'TEAM_LEAD'` check silently skips (no blocked-pair entry,
+  no warning) rather than blocking — different from the "no row found"
+  case. Reviewer's worry: if Deb Sen's role change hadn't taken effect
+  by `asOfDate=2026-08-01`, her rows would silently pay ₹0 invisibly.
+  **Resolved**: the dry-run log already on record explicitly shows
+  `asOfDate: 2026-08-01` and `DBS: INR 1150` — direct proof her role
+  change had taken effect by that date, using the identical function.
+  **Real, permanent, NOT fixed tonight**: this silent-skip mechanism is
+  also what the 6 intentional `SGO`-as-supervisor rows (SDA/SVN/DBG×2/
+  BCH×2's own hours) rely on by design — fixing it properly means
+  updating `ACCEPTED_UNSUPERVISED_PAIRS_` to also cover those 6, which
+  reopens already-shipped, already-reviewed code. Flagged as a
+  follow-up, not blocking.
+- **3 Important**, 2 closed same-session (added `ensurePartition`
+  spy-not-called assertion to the abort test; added an end-to-end test
+  proving an accepted-exception blocked pair does NOT abort the run —
+  the actual August 2026 shape, previously only tested in isolation).
+  One genuinely operational and NOT yet acted on: **the portal's "Run
+  Payroll"/bonus buttons always use the CURRENT period
+  (`Identifiers.generateCurrentPeriodId()`) — August 2026 CANNOT be run
+  from the portal.** Must invoke
+  `PayrollEngine.runBonusRun('raj.nair@bluelotuscanada.ca', { periodId: '2026-08' })`
+  directly from the Apps Script editor.
+- Minor/optional (not blocking): accepted blocked pairs (the known
+  7 SGO ones) don't appear in the HR summary email, only in `_SYS_LOGS`
+  — worth a future follow-up, not tonight.
+
+**Deploy pending user go-ahead.** Once deployed (DEV+PROD, same
+tab-closed + independent-verify precaution as every other push
+tonight): Step 8, generate August stubs, via the editor call above —
+NOT the portal button.
 
 **Read-only dry-run tool added and deployed 2026-09-10:**
 `runSupervisorBonusByAccountDryRun(periodId, asOfDate)`
