@@ -33,11 +33,11 @@ lacks, that silently deletes it from DEV.
 
 ## Session State (last updated: end of turn, 2026-09-10)
 
-**TASK RB-3.5 — Phase 1.5 (product-scoped account supervision) CODE AND
-SCHEMA COMPLETE on both DEV and PROD, 2026-09-10. Only the real-data
-backfill and cutover remain, and those are deliberately-separate human
-tasks (see below), not engineering work.** Deployed to PROD's Apps
-Script source 2026-09-10 (168 files, no
+**TASK RB-3.5 — Phase 1.5 (product-scoped account supervision) CODE
+COMPLETE on both DEV and PROD, 2026-09-10. Schema is done on DEV, still
+OPEN on PROD (corrected below — an earlier note in this section wrongly
+marked PROD's schema done; see the correction dated later 2026-09-10).**
+Deployed to PROD's Apps Script source 2026-09-10 (168 files, no
 errors).** Built via subagent-driven-development in worktree
 `.claude/worktrees/product-scoped-supervision` (branch
 `worktree-product-scoped-supervision`): 7 tasks, 1 fix round on 3 of them,
@@ -84,15 +84,23 @@ tabs/headers, never touch existing content), created the tab with
 `product_code` already in its header (baked into current `SCHEMAS`), plus
 9 unrelated `FACT_*|2026-09` partitions DEV was simply behind on.
 
-**Schema setup — PROD confirmed done 2026-09-10.** Ran
-`runPatchAccountSupervisionSchema()` against PROD — it reported "SKIP
-REF_ACCOUNT_SUPERVISION — already has product_code" (column already
-present when checked; possibly upgraded lazily via `getDAL()` by one of
-PROD's periodic triggers sometime after the code deploy, ~30 min earlier
-— not confirmed, but the end state is correct either way). **Task 8 of
-the Phase 1.5 plan is now fully complete: code + schema, both DEV and
-PROD.** No New Version redeploy needed — this branch touched zero
-`PortalView.html`/`Portal.gs` files. Deliberately **NOT** part
+**CORRECTION, later 2026-09-10 — PROD schema is NOT done.** The "SKIP —
+already has product_code" result logged above was from re-running the
+patch in **DEV** (already patched via `runSetupSchemas()` minutes
+earlier), not PROD — a tab mix-up, confirmed by the user directly dumping
+PROD's real header via a temporary `dbgDumpAccountSupervision()` function
+and the user confirming the script ID matched `.clasp.prod.json`
+(`1HzRiDrQJ6z-BxPzk-MHgm4pUb5enabsEA9Hg16OoRzpOhGjv9FyeiQQ0`). PROD's
+actual `REF_ACCOUNT_SUPERVISION` header, confirmed live: `lastRow=1
+lastCol=6`, `["client_code","designer_code","supervisor_code",
+"effective_from","effective_to","notes"]` — the OLD pre-Phase-1.5 header,
+`product_code` never added. **`runPatchAccountSupervisionSchema()` still
+needs to be run for real against PROD** — it should log `PATCHED
+REF_ACCOUNT_SUPERVISION — added product_code column` when it actually
+runs there, not `SKIP`. Task 8 of the Phase 1.5 plan is code-complete but
+**not yet schema-complete on PROD.** No New Version redeploy needed
+regardless — this branch touched zero `PortalView.html`/`Portal.gs`
+files. Deliberately **NOT** part
 of this task, per the plan's own Step 6 (same separation as Phase 1): Deb
 Sen's `changeRole` call, the 15-row `assignAccountSupervisor` backfill from
 spec §9, reviewing `blockedPairs` against real August 2026 data, and the
