@@ -34,6 +34,8 @@ beforeEach(() => {
   mocks.Config.TABLES.FACT_PAYROLL_LEDGER = 'FACT_PAYROLL_LEDGER';
   mocks.Config.TABLES.MART_PAYROLL_SUMMARY = 'MART_PAYROLL_SUMMARY';
   mocks.Config.TABLES.DIM_FX_RATES        = 'DIM_FX_RATES';
+  mocks.Config.TABLES.VW_JOB_CURRENT_STATE     = 'VW_JOB_CURRENT_STATE';
+  mocks.Config.TABLES.REF_ACCOUNT_SUPERVISION  = 'REF_ACCOUNT_SUPERVISION';
   // runBonusRun() calls HealthMonitor.start/endExecution + isApproachingLimit —
   // out of gas-v3-staff-mocks.js's scope (Task 2 never needed it).
   global.HealthMonitor = {
@@ -203,14 +205,31 @@ describe('PayrollEngine.runBonusRun() — TL and PM bonuses both written, no dou
     mocks.store['FACT_WORK_LOGS'] = rows;
   }
 
+  // Needed by the cutover (2026-09-11): runBonusRun now resolves TL
+  // bonus via buildSupervisorBonusMapByAccount_, which requires each
+  // work log's job_number to map to a real (client_code, product_code)
+  // via VW_JOB_CURRENT_STATE, and a matching REF_ACCOUNT_SUPERVISION row.
+  function seedJob(jobNumber, clientCode, productCode) {
+    mocks.store['VW_JOB_CURRENT_STATE'] = mocks.store['VW_JOB_CURRENT_STATE'] || [];
+    mocks.store['VW_JOB_CURRENT_STATE'].push({ job_number: jobNumber, client_code: clientCode, product_code: productCode });
+  }
+
+  function seedSupervision(rows) {
+    mocks.store['REF_ACCOUNT_SUPERVISION'] = rows.map(r => Object.assign({
+      product_code: '', effective_from: '2024-01-01', effective_to: ''
+    }, r));
+  }
+
   test('a TL who is also being counted under a PM gets both bonuses written, same designer hours counted for each — intentional, not a bug', () => {
     seedRoster([
       { person_code: 'PM1', role: 'PM', email: 'pm1@test.blc.internal' },
       { person_code: 'TL1', role: 'TEAM_LEAD', pm_code: 'PM1', email: 'tl1@test.blc.internal' },
       { person_code: 'DES1', role: 'DESIGNER', supervisor_code: 'TL1', pm_code: 'PM1', email: 'des1@test.blc.internal' }
     ]);
+    seedJob('BLC-001', 'TEST-CLIENT', 'ROOF_TRUSS');
+    seedSupervision([{ client_code: 'TEST-CLIENT', designer_code: 'DES1', supervisor_code: 'TL1' }]);
     seedWorkLogs('2026-08', [
-      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER', job_number: 'BLC-001',
         event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' }
     ]);
 
@@ -228,8 +247,10 @@ describe('PayrollEngine.runBonusRun() — TL and PM bonuses both written, no dou
       { person_code: 'TL1', role: 'TEAM_LEAD', email: 'tl1@test.blc.internal' },
       { person_code: 'DES1', role: 'DESIGNER', supervisor_code: 'TL1', email: 'des1@test.blc.internal' }
     ]);
+    seedJob('BLC-001', 'TEST-CLIENT', 'ROOF_TRUSS');
+    seedSupervision([{ client_code: 'TEST-CLIENT', designer_code: 'DES1', supervisor_code: 'TL1' }]);
     seedWorkLogs('2026-08', [
-      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER', job_number: 'BLC-001',
         event_type: 'WORK_LOG_SUBMITTED', hours: 8, work_date: '2026-08-05', period_id: '2026-08' }
     ]);
 
@@ -247,8 +268,10 @@ describe('PayrollEngine.runBonusRun() — TL and PM bonuses both written, no dou
       { person_code: 'TL1', role: 'TEAM_LEAD', email: 'tl1@test.blc.internal' },
       { person_code: 'DES1', role: 'DESIGNER', supervisor_code: 'TL1', email: 'des1@test.blc.internal' }
     ]);
+    seedJob('BLC-001', 'TEST-CLIENT', 'ROOF_TRUSS');
+    seedSupervision([{ client_code: 'TEST-CLIENT', designer_code: 'DES1', supervisor_code: 'TL1' }]);
     seedWorkLogs('2026-08', [
-      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER', job_number: 'BLC-001',
         event_type: 'WORK_LOG_SUBMITTED', hours: 8, work_date: '2026-08-05', period_id: '2026-08' }
     ]);
 
@@ -263,5 +286,107 @@ describe('PayrollEngine.runBonusRun() — TL and PM bonuses both written, no dou
     expect(second.processed).toBe(0); // TL1 already has a PAYROLL_BONUS|TL1|2026-08 row — skipped
     expect(MailApp.sendEmail).toHaveBeenCalledTimes(0);
     expect(firstCallCount).toBe(2);
+  });
+});
+
+describe('PayrollEngine.runBonusRun() — cutover (2026-09-11): aborts on unexpected blocked pairs', () => {
+  function seedRoster(rows) {
+    mocks.store['DIM_STAFF_ROSTER'] = rows.map(r => Object.assign({
+      person_code: '', name: '', email: '', role: 'DESIGNER',
+      supervisor_code: '', pm_code: '', pay_currency: 'INR',
+      pay_design: 0, pay_qc: 0, bonus_eligible: 'FALSE',
+      active: 'TRUE', effective_from: '2025-01-01', effective_to: ''
+    }, r));
+  }
+  function seedWorkLogs(rows) { mocks.store['FACT_WORK_LOGS'] = rows; }
+  function seedJob(jobNumber, clientCode, productCode) {
+    mocks.store['VW_JOB_CURRENT_STATE'] = mocks.store['VW_JOB_CURRENT_STATE'] || [];
+    mocks.store['VW_JOB_CURRENT_STATE'].push({ job_number: jobNumber, client_code: clientCode, product_code: productCode });
+  }
+  function seedSupervision(rows) {
+    mocks.store['REF_ACCOUNT_SUPERVISION'] = rows.map(r => Object.assign({
+      product_code: '', effective_from: '2024-01-01', effective_to: ''
+    }, r));
+  }
+
+  test('a designer with real hours and NO REF_ACCOUNT_SUPERVISION row aborts the run with zero writes', () => {
+    seedRoster([
+      { person_code: 'DES1', role: 'DESIGNER', email: 'des1@test.blc.internal' }
+    ]);
+    seedJob('BLC-001', 'BRAND NEW ACCOUNT', 'ROOF_TRUSS');
+    // deliberately no REF_ACCOUNT_SUPERVISION row for this pair, no accepted exception either
+    seedWorkLogs([
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER', job_number: 'BLC-001',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 5, work_date: '2026-08-05', period_id: '2026-08' }
+    ]);
+
+    var appendRowSpy = jest.spyOn(mocks.DAL, 'appendRow');
+
+    expect(() => PayrollEngine.runBonusRun('ceo@test.blc.internal', { periodId: '2026-08' }))
+      .toThrow(/unexpected blocked pair/);
+    expect(() => PayrollEngine.runBonusRun('ceo@test.blc.internal', { periodId: '2026-08' }))
+      .toThrow(/BRAND NEW ACCOUNT\/ROOF_TRUSS\/DES1/);
+
+    expect(appendRowSpy).not.toHaveBeenCalled();
+    expect(MailApp.sendEmail).not.toHaveBeenCalled();
+  });
+
+  test('asOfDate is the period start, not today — a REF_ACCOUNT_SUPERVISION row starting AFTER the period is excluded, correctly still blocking', () => {
+    seedRoster([
+      { person_code: 'TL1', role: 'TEAM_LEAD', email: 'tl1@test.blc.internal' },
+      { person_code: 'DES1', role: 'DESIGNER', email: 'des1@test.blc.internal' }
+    ]);
+    seedJob('BLC-001', 'TEST-CLIENT', 'ROOF_TRUSS');
+    // This assignment only starts 2026-09-01 — a run for the 2026-08
+    // period (asOfDate 2026-08-01) must NOT see it as active. If a
+    // future refactor let asOfDate default to today's real date instead
+    // of the period start, this row would wrongly resolve and the test
+    // would fail to catch the regression.
+    mocks.store['REF_ACCOUNT_SUPERVISION'] = [{
+      client_code: 'TEST-CLIENT', product_code: '', designer_code: 'DES1', supervisor_code: 'TL1',
+      effective_from: '2026-09-01', effective_to: ''
+    }];
+    seedWorkLogs([
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER', job_number: 'BLC-001',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 5, work_date: '2026-08-05', period_id: '2026-08' }
+    ]);
+
+    expect(() => PayrollEngine.runBonusRun('ceo@test.blc.internal', { periodId: '2026-08' }))
+      .toThrow(/TEST-CLIENT\/ROOF_TRUSS\/DES1/);
+  });
+
+  test('reproduces a real, PROD-confirmed August 2026 bonus figure end-to-end through the full runBonusRun pipeline (not just the underlying calc, which has its own dedicated test suite) — BCH INR 4,487.50 from VKV/RKG/MARV\'s real hours', () => {
+    seedRoster([
+      { person_code: 'BCH', role: 'TEAM_LEAD', email: 'bch@test.blc.internal' },
+      { person_code: 'VKV', role: 'DESIGNER', email: 'vkv@test.blc.internal' },
+      { person_code: 'RKG', role: 'DESIGNER', email: 'rkg@test.blc.internal' },
+      { person_code: 'MARV', role: 'DESIGNER', email: 'marv@test.blc.internal' }
+    ]);
+    seedJob('JOB-NORSPAN-1', 'NORSPAN-MB', 'ROOF_TRUSS');
+    seedJob('JOB-SBS-1',     'SBS',        'ROOF_TRUSS');
+    seedJob('JOB-SBS-2',     'SBS',        'FLOOR_TRUSS');
+    seedSupervision([
+      { client_code: 'NORSPAN-MB', designer_code: 'VKV',  supervisor_code: 'BCH' },
+      { client_code: 'NORSPAN-MB', designer_code: 'RKG',  supervisor_code: 'BCH' },
+      { client_code: 'SBS',        designer_code: 'MARV', supervisor_code: 'BCH' }
+    ]);
+    seedWorkLogs([
+      { event_id: 'E1', person_code: 'VKV',  actor_code: 'VKV',  actor_role: 'DESIGNER', job_number: 'JOB-NORSPAN-1',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 45,    work_date: '2026-08-05', period_id: '2026-08' },
+      { event_id: 'E2', person_code: 'RKG',  actor_code: 'RKG',  actor_role: 'DESIGNER', job_number: 'JOB-NORSPAN-1',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 70,    work_date: '2026-08-06', period_id: '2026-08' },
+      { event_id: 'E3', person_code: 'MARV', actor_code: 'MARV', actor_role: 'DESIGNER', job_number: 'JOB-SBS-1',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 61.75, work_date: '2026-08-07', period_id: '2026-08' },
+      { event_id: 'E4', person_code: 'MARV', actor_code: 'MARV', actor_role: 'DESIGNER', job_number: 'JOB-SBS-2',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 2.75,  work_date: '2026-08-08', period_id: '2026-08' }
+    ]);
+
+    var result = PayrollEngine.runBonusRun('ceo@test.blc.internal', { periodId: '2026-08' });
+
+    var bch = result.by_supervisor.find(s => s.person_code === 'BCH');
+    // (45 + 70 + 61.75 + 2.75) = 179.5h x INR 25/hr = INR 4487.50 —
+    // matches the real figure independently confirmed against live
+    // PROD data on 2026-09-10 (runSupervisorBonusByAccountDryRun output).
+    expect(bch.bonus_amount).toBe(4487.5);
   });
 });

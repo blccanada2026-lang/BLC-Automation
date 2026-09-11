@@ -26,6 +26,8 @@ beforeEach(() => {
   mocks.Config.TABLES.FACT_PAYROLL_LEDGER  = 'FACT_PAYROLL_LEDGER';
   mocks.Config.TABLES.MART_PAYROLL_SUMMARY = 'MART_PAYROLL_SUMMARY';
   mocks.Config.TABLES.DIM_FX_RATES         = 'DIM_FX_RATES';
+  mocks.Config.TABLES.VW_JOB_CURRENT_STATE     = 'VW_JOB_CURRENT_STATE';
+  mocks.Config.TABLES.REF_ACCOUNT_SUPERVISION  = 'REF_ACCOUNT_SUPERVISION';
   global.HealthMonitor = {
     startExecution: function () {}, endExecution: function () {}, isApproachingLimit: function () { return false; }
   };
@@ -268,6 +270,15 @@ describe('PayrollEngine.previewPayoutStatement() — no-write HR/CEO preview tri
     }, r));
   }
   function seedWorkLogs(rows) { mocks.store['FACT_WORK_LOGS'] = rows; }
+  function seedJob(jobNumber, clientCode, productCode) {
+    mocks.store['VW_JOB_CURRENT_STATE'] = mocks.store['VW_JOB_CURRENT_STATE'] || [];
+    mocks.store['VW_JOB_CURRENT_STATE'].push({ job_number: jobNumber, client_code: clientCode, product_code: productCode });
+  }
+  function seedSupervision(rows) {
+    mocks.store['REF_ACCOUNT_SUPERVISION'] = rows.map(r => Object.assign({
+      product_code: '', effective_from: '2024-01-01', effective_to: ''
+    }, r));
+  }
 
   beforeEach(() => {
     global.PropertiesService.getScriptProperties = function () { return { getProperty: function () { return null; } }; };
@@ -280,8 +291,10 @@ describe('PayrollEngine.previewPayoutStatement() — no-write HR/CEO preview tri
       { person_code: 'TL1', role: 'TEAM_LEAD', pay_design: 300, pay_qc: 0, email: 'tl1@test.blc.internal' },
       { person_code: 'DES1', role: 'DESIGNER', supervisor_code: 'TL1', pay_design: 300, pay_qc: 0, email: 'des1@test.blc.internal' }
     ]);
+    seedJob('BLC-001', 'TEST-CLIENT', 'ROOF_TRUSS');
+    seedSupervision([{ client_code: 'TEST-CLIENT', designer_code: 'DES1', supervisor_code: 'TL1' }]);
     seedWorkLogs([
-      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER', job_number: 'BLC-001',
         event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' }
     ]);
 
@@ -290,6 +303,7 @@ describe('PayrollEngine.previewPayoutStatement() — no-write HR/CEO preview tri
     expect(result.previewed).toBe(true);
     expect(result.by_person.find(p => p.person_code === 'DES1').total_pay).toBe(3000);
     expect(result.by_supervisor.find(s => s.person_code === 'TL1').bonus_amount).toBe(250);
+    expect(result.unexpectedBlockedPairs).toEqual([]);
     expect(result.quarterly).toBeNull();
     expect(MailApp.sendEmail).toHaveBeenCalledTimes(1);
     expect(mocks.DAL.appendRow).not.toHaveBeenCalled();
@@ -396,5 +410,28 @@ describe('PayrollEngine.previewPayoutStatement() — no-write HR/CEO preview tri
 
     expect(QuarterlyBonusEngine.previewQuarterlyBonus).not.toHaveBeenCalled();
     expect(result.quarterly).toBeNull();
+  });
+
+  test('cutover (2026-09-11): an unexpected blocked pair is surfaced in the result and the HR email, NOT thrown', () => {
+    seedRoster([{ person_code: 'DES1', role: 'DESIGNER', pay_design: 300, pay_qc: 0 }]);
+    seedJob('BLC-001', 'BRAND NEW ACCOUNT', 'ROOF_TRUSS');
+    // deliberately no REF_ACCOUNT_SUPERVISION row and no accepted exception
+    seedWorkLogs([
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER', job_number: 'BLC-001',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 5, work_date: '2026-08-05', period_id: '2026-08' }
+    ]);
+
+    var result;
+    expect(() => {
+      result = PayrollEngine.previewPayoutStatement('test-ceo@test.blc.internal', '2026-08', { includeQuarterly: false });
+    }).not.toThrow();
+
+    expect(result.previewed).toBe(true);
+    expect(result.unexpectedBlockedPairs).toEqual([
+      { client_code: 'BRAND NEW ACCOUNT', product_code: 'ROOF_TRUSS', designer_code: 'DES1', hours: 5 }
+    ]);
+    var hrCall = MailApp.sendEmail.mock.calls.find(c => c[0].subject.indexOf('Payout Statement Summary') !== -1);
+    expect(hrCall[0].body).toContain('UNATTRIBUTED SUPERVISOR HOURS');
+    expect(hrCall[0].body).toContain('BRAND NEW ACCOUNT');
   });
 });

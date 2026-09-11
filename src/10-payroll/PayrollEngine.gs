@@ -282,6 +282,35 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
+  // SECTION 4c: HOURS AGGREGATION — BY ACCOUNT+PRODUCT (cutover,
+  // 2026-09-11)
+  //
+  // Product/account-scoped counterpart to aggregateHours_(), needed by
+  // buildSupervisorBonusMapByAccount_(). Reads the same FACT_WORK_LOGS
+  // partition a second time rather than sharing aggregateHours_()'s
+  // read, so that function (already covered by its own long-standing
+  // test suite) stays untouched by this cutover.
+  //
+  // Returns: { personCode: { clientCode: { productCode: { design_hours, qc_hours } } } }
+  // ============================================================
+
+  function aggregateHoursByAccount_(periodId) {
+    var rows;
+    try {
+      rows = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
+        callerModule: MODULE,
+        periodId:     periodId
+      });
+    } catch (e) {
+      if (e.code === 'SHEET_NOT_FOUND') return {};
+      throw e;
+    }
+
+    var jobToClientProductMap = buildJobToClientProductMap_();
+    return aggregateNetWorkLogHoursByAccount(rows, jobToClientProductMap);
+  }
+
+  // ============================================================
   // SECTION 4a: PER-PERSON PAY CALCULATION (pure)
   //
   // Extracted from runPayrollRun()'s per-person loop (Payout Statement
@@ -764,6 +793,10 @@ var PayrollEngine = (function () {
         lines = lines.concat(formatSupervisorBonusSection_(sections.supervisorBonus));
         anySectionRendered = true;
       }
+      if (sections.unexpectedBlockedPairs && sections.unexpectedBlockedPairs.length > 0) {
+        lines = lines.concat(formatUnexpectedBlockedPairsSection_(sections.unexpectedBlockedPairs));
+        anySectionRendered = true;
+      }
       if (sections.quarterlyBonus && sections.quarterlyBonus.length > 0) {
         lines = lines.concat(formatQuarterlyBonusSection_(sections.quarterlyBonus, meta.quarterPeriodId));
         anySectionRendered = true;
@@ -818,6 +851,24 @@ var PayrollEngine = (function () {
       total += row.bonus_amount;
     });
     lines.push('Total: INR ' + (Math.round(total * 100) / 100).toFixed(2));
+    lines.push('───────────────────────────────');
+    lines.push('');
+    return lines;
+  }
+
+  // Preview-only section (2026-09-11 cutover) — surfaces
+  // buildSupervisorBonusMapByAccount_()'s unexpectedBlockedPairs so HR's
+  // review email shows exactly which real hours have NO supervisor
+  // bonus attribution, instead of the total silently under-reporting.
+  // runBonusRun() never reaches this — it aborts before any write when
+  // this list is non-empty (see runBonusRun's own comment).
+  function formatUnexpectedBlockedPairsSection_(unexpectedBlockedPairs) {
+    var lines = ['⚠ UNATTRIBUTED SUPERVISOR HOURS — needs a REF_ACCOUNT_SUPERVISION assignment',
+                 '───────────────────────────────'];
+    unexpectedBlockedPairs.forEach(function (p) {
+      lines.push(p.client_code + ' / ' + (p.product_code || '(blank product_code)') + ' / ' +
+                 p.designer_code + '  ' + p.hours + 'h — NO supervisor bonus paid for these hours');
+    });
     lines.push('───────────────────────────────');
     lines.push('');
     return lines;
@@ -1115,6 +1166,14 @@ var PayrollEngine = (function () {
       RBAC.enforceFinancialAccess(actor);
 
       var periodId = options.periodId || Identifiers.generateCurrentPeriodId();
+      // asOfDate = first day of the period — Task 2 effective-dating. This is
+      // the supervisor-bonus attribution path itself: a re-run of a past
+      // month's bonus after a later supervisor_code change must still credit
+      // whoever actually supervised that month, not today's supervisor. Used
+      // for BOTH buildStaffCache_ and buildSupervisorBonusMapByAccount_'s
+      // REF_ACCOUNT_SUPERVISION date filtering — must be the same value for
+      // both, or attribution is correct for neither date.
+      var asOfDate = periodId + '-01';
 
       Logger.info('PAYROLL_BONUS_START', {
         module: MODULE, message: 'Supervisor bonus run started',
@@ -1122,20 +1181,40 @@ var PayrollEngine = (function () {
       });
 
       // ── 2. Load staff + hours ─────────────────────────────
-      // asOfDate = first day of the period — Task 2 effective-dating. This is
-      // the supervisor-bonus attribution path itself: a re-run of a past
-      // month's bonus after a later supervisor_code change must still credit
-      // whoever actually supervised that month, not today's supervisor.
-      var staffCache = buildStaffCache_(periodId + '-01');
-      var hoursMap   = aggregateHours_(periodId);
-      // TL (direct-report sum) and PM (flat, roster-wide sum) are two
+      var staffCache        = buildStaffCache_(asOfDate);
+      var hoursMap          = aggregateHours_(periodId);
+      var hoursMapByAccount = aggregateHoursByAccount_(periodId);
+
+      // Product/account-scoped supervisor bonus (2026-09-10 design spec,
+      // cutover 2026-09-11) — replaces the old flat buildSupervisorBonusMap_.
+      // Pre-cutover gate, enforced here on every real run, not just checked
+      // manually beforehand: if any real hours have no resolvable TEAM_LEAD
+      // supervisor and aren't on the reviewed ACCEPTED_UNSUPERVISED_PAIRS_
+      // list, ABORT WITH NO WRITES rather than silently pay nobody for
+      // those hours. This is what stops next month's new hire (or a
+      // designer added to a new account) from silently zeroing out.
+      var tlResult = buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, asOfDate);
+      var unexpectedBlockedPairs = filterUnexpectedBlockedPairs_(tlResult.blockedPairs);
+      if (unexpectedBlockedPairs.length > 0) {
+        var blockedDesc = unexpectedBlockedPairs.map(function (p) {
+          return p.client_code + '/' + p.product_code + '/' + p.designer_code + ' (' + p.hours + 'h)';
+        }).join(', ');
+        throw new Error(
+          'PayrollEngine.runBonusRun: ' + unexpectedBlockedPairs.length + ' unexpected blocked pair(s) — ' +
+          'refusing to write. ' + blockedDesc + '. Each needs a REF_ACCOUNT_SUPERVISION row ' +
+          '(StaffOnboarding.assignAccountSupervisor) or an entry in ACCEPTED_UNSUPERVISED_PAIRS_. ' +
+          'Run runSupervisorBonusByAccountDryRun(\'' + periodId + '\') to inspect.'
+        );
+      }
+
+      // TL (account-scoped) and PM (flat, roster-wide sum) are two
       // architecturally distinct calculations (Phase B1, payroll
       // automation — see buildPmBonusMap_'s own header comment) merged
       // into one map here. Person codes never collide — role is
       // singular per person in staffCache — so a plain merge is safe;
       // the write loop below is agnostic to which function produced
       // which amount.
-      var tlBonusMap = buildSupervisorBonusMap_(staffCache, hoursMap);
+      var tlBonusMap = tlResult.bonusMap;
       var pmBonusMap = buildPmBonusMap_(staffCache, hoursMap);
       var bonusMap   = {};
       Object.keys(tlBonusMap).forEach(function (code) { bonusMap[code] = tlBonusMap[code]; });
@@ -1449,10 +1528,13 @@ var PayrollEngine = (function () {
       RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.PAYROLL_PREVIEW);
 
       periodId = periodId || Identifiers.generateCurrentPeriodId();
+      // Same asOfDate convention as runBonusRun — see that function's comment.
+      var asOfDate = periodId + '-01';
 
-      var staffCache = buildStaffCache_(periodId + '-01');
-      var fxCache    = buildFxRateCache_();
-      var hoursMap   = aggregateHours_(periodId);
+      var staffCache        = buildStaffCache_(asOfDate);
+      var fxCache            = buildFxRateCache_();
+      var hoursMap           = aggregateHours_(periodId);
+      var hoursMapByAccount  = aggregateHoursByAccount_(periodId);
 
       var basePay      = [];
       var personCodes  = Object.keys(hoursMap);
@@ -1471,7 +1553,14 @@ var PayrollEngine = (function () {
         basePay.push(computePersonPay_(staff, personCode, hoursMap[personCode], fxCache));
       }
 
-      var tlBonusMap = buildSupervisorBonusMap_(staffCache, hoursMap);
+      // Product/account-scoped supervisor bonus (2026-09-10 design spec,
+      // cutover 2026-09-11). Unlike runBonusRun, preview does NOT abort on
+      // unexpected blocked pairs — its job is to show what would happen,
+      // so the list is surfaced in the email/return value instead of
+      // turning the diagnostic into a dead end.
+      var tlResult = buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, asOfDate);
+      var tlBonusMap = tlResult.bonusMap;
+      var unexpectedBlockedPairs = filterUnexpectedBlockedPairs_(tlResult.blockedPairs);
       var pmBonusMap = buildPmBonusMap_(staffCache, hoursMap);
       var bonusMap   = {};
       Object.keys(tlBonusMap).forEach(function (code) { bonusMap[code] = tlBonusMap[code]; });
@@ -1490,22 +1579,25 @@ var PayrollEngine = (function () {
       }
 
       sendPayoutStatementSummary_(periodId, {
-        basePay:         basePay,
-        supervisorBonus: supervisorBonus,
-        quarterlyBonus:  quarterlyBonus
+        basePay:                 basePay,
+        supervisorBonus:         supervisorBonus,
+        unexpectedBlockedPairs:  unexpectedBlockedPairs,
+        quarterlyBonus:          quarterlyBonus
       }, { committed: false, quarterPeriodId: quarterPeriodId });
 
       Logger.info('PAYOUT_STATEMENT_PREVIEWED', {
         module: MODULE, message: 'Payout statement previewed', period_id: periodId,
-        base_pay_count: basePay.length, supervisor_bonus_count: supervisorBonus.length
+        base_pay_count: basePay.length, supervisor_bonus_count: supervisorBonus.length,
+        unexpected_blocked_pair_count: unexpectedBlockedPairs.length
       });
 
       return {
-        previewed:     true,
-        period_id:     periodId,
-        by_person:     basePay,
-        by_supervisor: supervisorBonus,
-        quarterly:     quarterlyBonus
+        previewed:               true,
+        period_id:               periodId,
+        by_person:               basePay,
+        by_supervisor:           supervisorBonus,
+        unexpectedBlockedPairs:  unexpectedBlockedPairs,
+        quarterly:               quarterlyBonus
       };
 
     } finally {
@@ -1558,6 +1650,10 @@ var PayrollEngine = (function () {
     // construction: only calls DAL.readAll() (never appendRow/appendRows/
     // ensurePartition) — see this function's own body above.
     aggregateHours_: aggregateHours_,
+
+    // Exposed 2026-09-11 (product-scoped supervisor bonus cutover) —
+    // same precedent as aggregateHours_ above.
+    aggregateHoursByAccount_: aggregateHoursByAccount_,
 
     // Exposed 2026-07-24 (Task 2, supervisor_code effective-dating) — same
     // precedent as aggregateHours_ above — so the Jest suite can test the
