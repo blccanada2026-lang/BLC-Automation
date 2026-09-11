@@ -78,4 +78,32 @@ describe('PayrollEngine.filterUnexpectedBlockedPairs_()', () => {
       { client_code: 'ALBERTA TRUSS', product_code: 'ROOF_TRUSS', designer_code: 'PRS', hours: 5 }
     ]);
   });
+
+  // SGO (Sarty Gosh, the PM) has his own design hours on 4 accounts —
+  // added 2026-09-10 as part of the August 2026 real-data backfill.
+  // He's himself the PM, so there's no TEAM_LEAD above him to credit,
+  // and per explicit user decision his hours must NOT flow to his own
+  // PM bonus either — these 7 pairs stay genuinely unsupervised by
+  // design, not silently dropped.
+  test('all 7 of SGO\'s own accepted pairs (his own August hours across 4 accounts) are filtered out', () => {
+    const blockedPairs = [
+      { client_code: 'ALBERTA TRUSS', product_code: 'FLOOR_JOIST', designer_code: 'SGO', hours: 35.5 },
+      { client_code: 'MATIX-SK',      product_code: 'FLOOR_JOIST', designer_code: 'SGO', hours: 9 },
+      { client_code: 'MATIX-SK',      product_code: 'FLOOR_TRUSS', designer_code: 'SGO', hours: 1.5 },
+      { client_code: 'MATIX-SK',      product_code: 'ROOF_TRUSS',  designer_code: 'SGO', hours: 10.5 },
+      { client_code: 'SBS',           product_code: 'FLOOR_JOIST', designer_code: 'SGO', hours: 14.5 },
+      { client_code: 'SBS',           product_code: 'ROOF_TRUSS',  designer_code: 'SGO', hours: 31.5 },
+      { client_code: 'NELSON',        product_code: 'FLOOR_JOIST', designer_code: 'SGO', hours: 20.5 }
+    ];
+    expect(PayrollEngine.filterUnexpectedBlockedPairs_(blockedPairs)).toEqual([]);
+  });
+
+  test('SGO on a product NOT in his accepted list (e.g. WALL_PANEL) is NOT exempted', () => {
+    const blockedPairs = [
+      { client_code: 'SBS', product_code: 'WALL_PANEL', designer_code: 'SGO', hours: 6 }
+    ];
+    expect(PayrollEngine.filterUnexpectedBlockedPairs_(blockedPairs)).toEqual([
+      { client_code: 'SBS', product_code: 'WALL_PANEL', designer_code: 'SGO', hours: 6 }
+    ]);
+  });
 });

@@ -525,7 +525,23 @@ var PayrollEngine = (function () {
     // there intentionally unsupervised at the TEAM_LEAD tier — Sarty's
     // flat, company-wide PM bonus already covers it (buildPmBonusMap_).
     { client_code: 'ALBERTA TRUSS', product_code: 'FLOOR_JOIST', designer_code: 'PRS' },
-    { client_code: 'NELSON',        product_code: 'FLOOR_JOIST', designer_code: 'AR001' }
+    { client_code: 'NELSON',        product_code: 'FLOOR_JOIST', designer_code: 'AR001' },
+
+    // Sarty Gosh (SGO) is himself the PM — his own design hours have no
+    // TEAM_LEAD above him to credit, and per explicit user decision
+    // (2026-09-10, August 2026 backfill), his own hours must NOT flow
+    // into his own PM bonus either (buildPmBonusMap_ already excludes
+    // role === 'PM' from its sum, so this is a no-op there, but no
+    // REF_ACCOUNT_SUPERVISION row is written for these pairs — they
+    // stay genuinely, visibly unsupervised at the TEAM_LEAD tier by
+    // design, not silently dropped).
+    { client_code: 'ALBERTA TRUSS', product_code: 'FLOOR_JOIST',  designer_code: 'SGO' },
+    { client_code: 'MATIX-SK',      product_code: 'FLOOR_JOIST',  designer_code: 'SGO' },
+    { client_code: 'MATIX-SK',      product_code: 'FLOOR_TRUSS',  designer_code: 'SGO' },
+    { client_code: 'MATIX-SK',      product_code: 'ROOF_TRUSS',   designer_code: 'SGO' },
+    { client_code: 'SBS',           product_code: 'FLOOR_JOIST',  designer_code: 'SGO' },
+    { client_code: 'SBS',           product_code: 'ROOF_TRUSS',   designer_code: 'SGO' },
+    { client_code: 'NELSON',        product_code: 'FLOOR_JOIST',  designer_code: 'SGO' }
   ];
 
   /**
