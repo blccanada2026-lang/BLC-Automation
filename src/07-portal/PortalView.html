@@ -4625,6 +4625,14 @@ function renderTimesheetResults(results) {
   container.appendChild(list);
 }
 
+// Rejects a malformed period before it reaches any run/approve action.
+// Blank is fine (the server treats it as "current period"); anything else
+// must be YYYY-MM — a typo here would otherwise silently target the wrong
+// month on a write that, for approveAllPayroll, is irreversible.
+function isValidPeriodId_(periodId) {
+  return periodId === '' || /^\d{4}-\d{2}$/.test(periodId);
+}
+
 // Fetches a silent (no HR email) payout preview for the chosen period, so a
 // run button's confirm dialog can show real numbers instead of generic text.
 // On failure, onReady(null) — the caller falls back to a plain confirm; the
@@ -4643,6 +4651,7 @@ function fetchSilentPayoutPreview_(periodId, onReady) {
 function runPayrollRun() {
   var periodId = window.prompt('Period to run (YYYY-MM), blank = current period:', '');
   if (periodId === null) return; // cancelled
+  if (!isValidPeriodId_(periodId)) { showToast('Invalid period — use YYYY-MM (e.g. 2026-08), or leave blank for the current period.', 'error'); return; }
 
   fetchSilentPayoutPreview_(periodId, function(preview) {
     var label = (preview && preview.period_id) || periodId || 'the current period';
@@ -4674,6 +4683,7 @@ function runPayrollRun() {
 function runBonusRun() {
   var periodId = window.prompt('Period to run (YYYY-MM), blank = current period:', '');
   if (periodId === null) return; // cancelled
+  if (!isValidPeriodId_(periodId)) { showToast('Invalid period — use YYYY-MM (e.g. 2026-08), or leave blank for the current period.', 'error'); return; }
 
   fetchSilentPayoutPreview_(periodId, function(preview) {
     var label = (preview && preview.period_id) || periodId || 'the current period';
@@ -4848,6 +4858,7 @@ function refreshDashboard() {
 function approveAllPayroll() {
   var periodId = window.prompt('Period to approve (YYYY-MM), blank = current period:', '');
   if (periodId === null) return; // cancelled
+  if (!isValidPeriodId_(periodId)) { showToast('Invalid period — use YYYY-MM (e.g. 2026-08), or leave blank for the current period.', 'error'); return; }
   if (!confirm('Approve all CONFIRMED payroll for ' + (periodId || 'the current period') + '?\n\nThis marks all confirmed records as PROCESSED. This cannot be undone.')) return;
   showLoading(true);
   TOKEN_RUN
