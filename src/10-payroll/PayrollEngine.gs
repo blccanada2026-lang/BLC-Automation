@@ -1554,7 +1554,8 @@ var PayrollEngine = (function () {
    * @param {string} periodId  'YYYY-MM'
    * @param {{ includeQuarterly: boolean, quarter: string, year: number }} options
    * @returns {{ previewed: boolean, period_id: string, by_person: Object[],
-   *   by_supervisor: Object[], quarterly: Object[]|null }}
+   *   by_supervisor: Object[], unexpectedBlockedPairs: Array, skippedNonTeamLead: Array,
+   *   quarterly: Object[]|null }}
    */
   function previewPayoutStatement(actorEmail, periodId, options) {
     options = options || {};
