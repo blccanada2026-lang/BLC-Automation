@@ -484,7 +484,7 @@ describe('PayrollEngine.previewPayoutStatement() — no-write HR/CEO preview tri
   });
 });
 
-describe('PayrollEngine.sendTestPaystubEmail() — on-demand single-person check, no FACT write', () => {
+describe('PayrollEngine.sendAllTestPaystubEmails() — whole-team on-demand check, no FACT write', () => {
   function seedRoster(rows) {
     mocks.store['DIM_STAFF_ROSTER'] = rows.map(r => Object.assign({
       person_code: '', name: '', email: '', role: 'DESIGNER',
@@ -499,43 +499,54 @@ describe('PayrollEngine.sendTestPaystubEmail() — on-demand single-person check
     mocks.DAL.appendRow = jest.fn();
   });
 
-  test('happy path: sends exactly one email with the real computed pay, no ledger write', () => {
-    seedRoster([{ person_code: 'DES1', name: 'Rita Nair', role: 'DESIGNER', pay_design: 300, pay_qc: 0, email: 'des1@test.blc.internal' }]);
-    seedWorkLogs([{ event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
-      event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' }]);
+  test('happy path: sends one email per person with hours, no ledger write', () => {
+    seedRoster([
+      { person_code: 'DES1', name: 'Rita Nair', role: 'DESIGNER', pay_design: 300, pay_qc: 0, email: 'des1@test.blc.internal' },
+      { person_code: 'DES2', name: 'Amit Rao',  role: 'DESIGNER', pay_design: 200, pay_qc: 0, email: 'des2@test.blc.internal' }
+    ]);
+    seedWorkLogs([
+      { event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' },
+      { event_id: 'E2', person_code: 'DES2', actor_code: 'DES2', actor_role: 'DESIGNER',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 5, work_date: '2026-08-06', period_id: '2026-08' }
+    ]);
 
-    var result = PayrollEngine.sendTestPaystubEmail('test-ceo@test.blc.internal', 'DES1', '2026-08');
+    var result = PayrollEngine.sendAllTestPaystubEmails('test-ceo@test.blc.internal', '2026-08');
 
-    expect(result).toEqual({ sent: true, period_id: '2026-08', person_code: 'DES1', name: 'Rita Nair',
-      row: { person_code: 'DES1', name: 'Rita Nair', design_hours: 10, qc_hours: 0, design_pay: 3000, qc_pay: 0, total_pay: 3000, currency: 'INR' } });
-    expect(MailApp.sendEmail).toHaveBeenCalledTimes(1);
-    expect(MailApp.sendEmail.mock.calls[0][0].to).toBe('HR@bluelotuscanada.ca'); // PAYSTUB_ROUTE_TO_HR_ active
-    expect(MailApp.sendEmail.mock.calls[0][0].subject).toContain('Rita Nair');
+    expect(result.sent).toBe(true);
+    expect(result.period_id).toBe('2026-08');
+    expect(result.sent_count).toBe(2);
+    expect(result.skipped_count).toBe(0);
+    expect(result.people.map(p => p.person_code).sort()).toEqual(['DES1', 'DES2']);
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(2);
+    MailApp.sendEmail.mock.calls.forEach(c => expect(c[0].to).toBe('HR@bluelotuscanada.ca')); // PAYSTUB_ROUTE_TO_HR_ active
     expect(mocks.DAL.appendRow).not.toHaveBeenCalled();
   });
 
-  test('a person with no hours this period still gets a test email, showing zero pay — not an error', () => {
-    seedRoster([{ person_code: 'DES1', name: 'Rita Nair', role: 'DESIGNER', pay_design: 300, pay_qc: 0, email: 'des1@test.blc.internal' }]);
+  test('a zero-hours period sends nothing and reports sent_count 0, not an error', () => {
+    seedRoster([{ person_code: 'DES1', name: 'Rita Nair', role: 'DESIGNER' }]);
     seedWorkLogs([]);
 
-    var result = PayrollEngine.sendTestPaystubEmail('test-ceo@test.blc.internal', 'DES1', '2026-08');
+    var result = PayrollEngine.sendAllTestPaystubEmails('test-ceo@test.blc.internal', '2026-08');
 
-    expect(result.row.design_hours).toBe(0);
-    expect(result.row.total_pay).toBe(0);
-    expect(MailApp.sendEmail).toHaveBeenCalledTimes(1);
-  });
-
-  test('an unknown person_code throws a clear error instead of a silent no-op', () => {
-    seedRoster([{ person_code: 'DES1', name: 'Rita Nair', role: 'DESIGNER' }]);
-
-    expect(() => PayrollEngine.sendTestPaystubEmail('test-ceo@test.blc.internal', 'NOPE', '2026-08'))
-      .toThrow(/no active staff member found for person_code "NOPE"/);
+    expect(result.sent_count).toBe(0);
     expect(MailApp.sendEmail).not.toHaveBeenCalled();
   });
 
-  test('a blank personCode throws before any lookup', () => {
-    expect(() => PayrollEngine.sendTestPaystubEmail('test-ceo@test.blc.internal', '', '2026-08'))
-      .toThrow(/personCode is required/);
+  test('a work log for a person no longer in the roster is skipped, not thrown', () => {
+    seedRoster([{ person_code: 'DES1', name: 'Rita Nair', role: 'DESIGNER', pay_design: 300, pay_qc: 0, email: 'des1@test.blc.internal' }]);
+    seedWorkLogs([
+      { event_id: 'E1', person_code: 'DES1',  actor_code: 'DES1',  actor_role: 'DESIGNER',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' },
+      { event_id: 'E2', person_code: 'GONE', actor_code: 'GONE', actor_role: 'DESIGNER',
+        event_type: 'WORK_LOG_SUBMITTED', hours: 3, work_date: '2026-08-05', period_id: '2026-08' }
+    ]);
+
+    var result = PayrollEngine.sendAllTestPaystubEmails('test-ceo@test.blc.internal', '2026-08');
+
+    expect(result.sent_count).toBe(1);
+    expect(result.skipped_count).toBe(1);
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(1);
   });
 
   test('calls RBAC.enforcePermission and enforceFinancialAccess with PAYROLL_PREVIEW, not PAYROLL_RUN', () => {
@@ -543,30 +554,32 @@ describe('PayrollEngine.sendTestPaystubEmail() — on-demand single-person check
     mocks.RBAC.enforcePermission      = jest.fn();
     mocks.RBAC.enforceFinancialAccess = jest.fn();
 
-    PayrollEngine.sendTestPaystubEmail('test-hr@test.blc.internal', 'DES1', '2026-08');
+    PayrollEngine.sendAllTestPaystubEmails('test-hr@test.blc.internal', '2026-08');
 
     expect(mocks.RBAC.enforcePermission).toHaveBeenCalledWith(expect.any(Object), 'PAYROLL_PREVIEW');
     expect(mocks.RBAC.enforceFinancialAccess).toHaveBeenCalledWith(expect.any(Object), 'PAYROLL_PREVIEW');
   });
 
   // Once PAYSTUB_ROUTE_TO_HR_ flips to false (the ~December revert tracked
-  // in CTO_TASK_QUEUE.md), this same call would email a real "Action
-  // Required" payout statement directly to the designer with no ledger row
-  // behind it and no confirm() anywhere in the path — the function must
-  // refuse outright rather than silently doing that. Since the flag is a
+  // in CTO_TASK_QUEUE.md), this same call would email every designer a real
+  // "Action Required" payout statement with no ledger row behind any of it
+  // and no confirm() anywhere in the path — the function must refuse
+  // outright rather than silently doing that. Since the flag is a
   // module-private constant (deliberately not a Script Property — see its
   // own comment), the only way to exercise the "off" branch is to reload
   // the real source with that one line patched, so this is testing the
   // actual guard, not a reimplementation of it.
-  test('refuses outright when PAYSTUB_ROUTE_TO_HR_ is false, instead of emailing the designer directly with no confirm', () => {
+  test('refuses outright when PAYSTUB_ROUTE_TO_HR_ is false, instead of emailing everyone directly with no confirm', () => {
     var patchedSrc = fs.readFileSync(path.join(__dirname, '../src/10-payroll/PayrollEngine.gs'), 'utf8')
       .replace('var PAYSTUB_ROUTE_TO_HR_ = true;', 'var PAYSTUB_ROUTE_TO_HR_ = false;');
     expect(patchedSrc).toContain('var PAYSTUB_ROUTE_TO_HR_ = false;'); // guards against the replace silently no-op'ing
     (0, eval)(patchedSrc);
 
     seedRoster([{ person_code: 'DES1', name: 'Rita Nair', role: 'DESIGNER', email: 'des1@test.blc.internal' }]);
+    seedWorkLogs([{ event_id: 'E1', person_code: 'DES1', actor_code: 'DES1', actor_role: 'DESIGNER',
+      event_type: 'WORK_LOG_SUBMITTED', hours: 10, work_date: '2026-08-05', period_id: '2026-08' }]);
 
-    expect(() => PayrollEngine.sendTestPaystubEmail('test-ceo@test.blc.internal', 'DES1', '2026-08'))
+    expect(() => PayrollEngine.sendAllTestPaystubEmails('test-ceo@test.blc.internal', '2026-08'))
       .toThrow(/PAYSTUB_ROUTE_TO_HR_ is false/);
     expect(MailApp.sendEmail).not.toHaveBeenCalled();
   });

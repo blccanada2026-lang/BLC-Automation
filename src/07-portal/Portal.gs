@@ -866,20 +866,19 @@ function portal_previewPayoutStatement(ptoken, periodId, includeQuarterly, quart
 }
 
 // ============================================================
-// portal_sendTestPaystubEmail — CEO/HR_ACCOUNTING on-demand single-person
+// portal_sendAllTestPaystubEmails — CEO/HR_ACCOUNTING whole-team on-demand
 // paystub email check (no FACT write, repeatable)
 // ============================================================
 
 /**
- * Fires one real paystub email for a single person's actual computed pay.
+ * Fires a real paystub email for every person with hours in the period.
  *
- * @param {string} personCode
  * @param {string} periodId    'YYYY-MM', blank = current period
- * @returns {string}  JSON: { sent, period_id, person_code, name, row }
+ * @returns {string}  JSON: { sent, period_id, sent_count, skipped_count, people }
  */
-function portal_sendTestPaystubEmail(ptoken, personCode, periodId) {
+function portal_sendAllTestPaystubEmails(ptoken, periodId) {
   var email  = PortalAuth.resolveEmail(ptoken);
-  var result = PayrollEngine.sendTestPaystubEmail(email, personCode || '', periodId || '');
+  var result = PayrollEngine.sendAllTestPaystubEmails(email, periodId || '');
   return JSON.stringify(result);
 }
 

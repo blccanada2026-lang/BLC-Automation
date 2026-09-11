@@ -1689,26 +1689,27 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
-  // SECTION 14a: SEND TEST PAYSTUB EMAIL — on-demand single-person check
+  // SECTION 14a: SEND ALL TEST PAYSTUB EMAILS — whole-team on-demand check
   //
-  // Fires ONE real sendPaystubEmail_ for a single person using their actual
-  // computed pay for the period. No FACT write, fully repeatable — lets the
-  // exact email HR will receive be checked on demand, instead of only being
-  // visible after a real payroll run. Only meaningful while
-  // PAYSTUB_ROUTE_TO_HR_ is true (refuses otherwise — see the guard below):
-  // once routing flips to direct-send, this same call would email the
-  // designer a real "Action Required" statement with no ledger row behind
-  // it, so this tool has no safe use until it's revisited alongside that flip.
+  // Fires a real sendPaystubEmail_ for EVERY person with hours in the
+  // period, using their actual computed pay — same population runPayrollRun
+  // would process, but no FACT write, fully repeatable. Lets HR see every
+  // individual paystub email they'd receive on a real run, before that run
+  // actually happens. Only meaningful while PAYSTUB_ROUTE_TO_HR_ is true
+  // (refuses otherwise — see the guard below): once routing flips to
+  // direct-send, this same call would email every designer a real "Action
+  // Required" statement with no ledger row behind any of it, so this tool
+  // has no safe use until it's revisited alongside that flip.
   // ============================================================
 
   /**
    * @param {string} actorEmail
-   * @param {string} personCode
    * @param {string} periodId  'YYYY-MM', blank = current period
-   * @returns {{ sent: boolean, period_id: string, person_code: string, name: string, row: Object }}
+   * @returns {{ sent: boolean, period_id: string, sent_count: number,
+   *   skipped_count: number, people: Array<{person_code, name, total_pay}> }}
    * @throws {Error} if PAYSTUB_ROUTE_TO_HR_ is false (see guard comment below)
    */
-  function sendTestPaystubEmail(actorEmail, personCode, periodId) {
+  function sendAllTestPaystubEmails(actorEmail, periodId) {
     HealthMonitor.startExecution(MODULE);
     try {
       var actor = RBAC.resolveActor(actorEmail);
@@ -1718,36 +1719,51 @@ var PayrollEngine = (function () {
       // Safe today only because sendPaystubEmail_ routes to HR while
       // PAYSTUB_ROUTE_TO_HR_ is true. The moment that flips to direct-send,
       // this same call would fire a real "Action Required" payout email —
-      // with no ledger row behind it — straight at the designer, with no
+      // with no ledger row behind it — straight at every designer, with no
       // confirm() anywhere in the path. Refuse outright instead, so
       // whoever flips the flag is forced to also revisit this function.
       if (!PAYSTUB_ROUTE_TO_HR_) {
-        throw new Error('PayrollEngine.sendTestPaystubEmail: refusing — PAYSTUB_ROUTE_TO_HR_ is false, ' +
-          'so this would send a real "Action Required" paystub email directly to the person with no ' +
-          'payroll row behind it. Use a real runPayrollRun() instead, or re-enable this tool deliberately.');
+        throw new Error('PayrollEngine.sendAllTestPaystubEmails: refusing — PAYSTUB_ROUTE_TO_HR_ is false, ' +
+          'so this would send real "Action Required" paystub emails directly to every person with no ' +
+          'payroll rows behind them. Use a real runPayrollRun() instead, or re-enable this tool deliberately.');
       }
 
-      if (!personCode) {
-        throw new Error('PayrollEngine.sendTestPaystubEmail: personCode is required.');
-      }
       periodId = periodId || Identifiers.generateCurrentPeriodId();
       var asOfDate = periodId + '-01';
 
-      var staffCache = buildStaffCache_(asOfDate);
-      var staff = staffCache[personCode];
-      if (!staff) {
-        throw new Error('PayrollEngine.sendTestPaystubEmail: no active staff member found for person_code "' +
-          personCode + '" as of ' + asOfDate + '.');
+      var staffCache  = buildStaffCache_(asOfDate);
+      var fxCache     = buildFxRateCache_();
+      var hoursMap    = aggregateHours_(periodId);
+      var personCodes = Object.keys(hoursMap);
+
+      var sentCount = 0, skippedCount = 0, people = [];
+
+      for (var i = 0; i < personCodes.length; i++) {
+        if (i % 20 === 0 && HealthMonitor.isApproachingLimit()) {
+          Logger.warn('SEND_ALL_TEST_PAYSTUBS_PARTIAL', {
+            module: MODULE, message: 'Stopping — quota limit approaching',
+            processed: i, remaining: personCodes.length - i
+          });
+          break;
+        }
+
+        var personCode = personCodes[i];
+        var staff = staffCache[personCode];
+        if (!staff) { skippedCount++; continue; }
+
+        var row = computePersonPay_(staff, personCode, hoursMap[personCode], fxCache);
+        sendPaystubEmail_(staff, personCode, periodId, row);
+        sentCount++;
+        people.push({ person_code: personCode, name: staff.name, total_pay: row.total_pay });
       }
 
-      var fxCache  = buildFxRateCache_();
-      var hoursMap = aggregateHours_(periodId);
-      var hours    = hoursMap[personCode] || { design_hours: 0, qc_hours: 0 };
-      var row      = computePersonPay_(staff, personCode, hours, fxCache);
-
-      sendPaystubEmail_(staff, personCode, periodId, row);
-
-      return { sent: true, period_id: periodId, person_code: personCode, name: staff.name, row: row };
+      return {
+        sent:          true,
+        period_id:     periodId,
+        sent_count:    sentCount,
+        skipped_count: skippedCount,
+        people:        people
+      };
     } finally {
       HealthMonitor.endExecution();
     }
@@ -1791,10 +1807,11 @@ var PayrollEngine = (function () {
     previewPayoutStatement: previewPayoutStatement,
 
     /**
-     * CEO/HR_ACCOUNTING on-demand check — fires one real paystub email for
-     * a single person's actual computed pay. No FACT write, repeatable.
+     * CEO/HR_ACCOUNTING on-demand check — fires a real paystub email for
+     * every person with hours in the period, using their actual computed
+     * pay. No FACT write, repeatable.
      */
-    sendTestPaystubEmail: sendTestPaystubEmail,
+    sendAllTestPaystubEmails: sendAllTestPaystubEmails,
 
     // Exposed 2026-07-23 (payroll-hardening effort, Phase 4 promotion
     // dry-run) — same precedent as QuarterlyBonusEngine.aggregateQuarterHours_

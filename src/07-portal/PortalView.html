@@ -444,7 +444,7 @@
         <button class="btn-muted btn-sm" id="btn-send-ratings" style="display:none">📋 Send Rating Requests</button>
         <button class="btn-muted btn-sm" id="btn-run-payroll" style="display:none">💵 Run Payroll</button>
         <button class="btn-muted btn-sm" id="btn-run-bonus" style="display:none">💰 Run Bonus</button>
-        <button class="btn-muted btn-sm" id="btn-send-test-paystub" style="display:none" title="Sends one real paystub email for a single person — no ledger write">📧 Send Test Paystub</button>
+        <button class="btn-muted btn-sm" id="btn-send-test-paystub" style="display:none" title="Sends every team member's paystub email to HR for review — no ledger write">📧 Send Test Paystubs (All)</button>
         <button class="btn-muted btn-sm" id="btn-run-quarterly-bonus" style="display:none">🏆 Run Quarterly Bonus</button>
         <button class="btn-muted btn-sm" id="btn-run-annual-bonus" style="display:none">🎁 Run Annual Bonus</button>
         <button class="btn-danger btn-sm" id="btn-rebuild-views" style="display:none">🔧 Rebuild Views</button>
@@ -1405,7 +1405,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btn-submit-generate-timesheet').addEventListener('click', submitGenerateTimesheet);
   document.getElementById('btn-run-payroll').addEventListener('click',       runPayrollRun);
   document.getElementById('btn-run-bonus').addEventListener('click',         runBonusRun);
-  document.getElementById('btn-send-test-paystub').addEventListener('click', sendTestPaystubEmail);
+  document.getElementById('btn-send-test-paystub').addEventListener('click', sendAllTestPaystubEmails);
   document.getElementById('btn-run-quarterly-bonus').addEventListener('click', runQuarterlyBonus);
   document.getElementById('btn-run-annual-bonus').addEventListener('click',    runAnnualBonus);
   document.getElementById('btn-rebuild-views').addEventListener('click',       rebuildViews);
@@ -4901,14 +4901,11 @@ function approveAllPayroll() {
     .portal_approveAllPayroll(periodId);
 }
 
-function sendTestPaystubEmail() {
-  var personCode = window.prompt('Person code to send a test paystub for (e.g. DS1):', '');
-  if (personCode === null || !personCode.trim()) return; // cancelled or blank — nothing to test
-  personCode = personCode.trim();
-
-  var periodId = window.prompt('Period (YYYY-MM), blank = current period:', '');
+function sendAllTestPaystubEmails() {
+  var periodId = window.prompt('Send every team member\'s test paystub to HR for which period (YYYY-MM), blank = current period:', '');
   if (periodId === null) return; // cancelled
   if (!isValidPeriodId_(periodId)) { showToast('Invalid period — use YYYY-MM (e.g. 2026-08), or leave blank for the current period.', 'error'); return; }
+  if (!confirm('Send a test paystub email to HR for EVERY team member with hours in ' + (periodId || 'the current period') + '?\n\nNo payroll is written — this only sends the review emails.')) return;
 
   showLoading(true);
   TOKEN_RUN
@@ -4916,14 +4913,15 @@ function sendTestPaystubEmail() {
       showLoading(false);
       try {
         var result = JSON.parse(json);
-        showToast('Test paystub sent for ' + result.name + ' (' + result.period_id + '), total pay INR ' + result.row.total_pay + '.', 'success');
-      } catch(e) { showToast('Test paystub sent.', 'success'); }
+        showToast('Test paystubs sent for ' + result.period_id + ': ' + result.sent_count + ' sent' +
+          (result.skipped_count ? ', ' + result.skipped_count + ' skipped' : '') + '.', 'success');
+      } catch(e) { showToast('Test paystubs sent.', 'success'); }
     })
     .withFailureHandler(function(err) {
       showLoading(false);
       showToast('Test paystub error: ' + (err.message || String(err)), 'error');
     })
-    .portal_sendTestPaystubEmail(personCode, periodId);
+    .portal_sendAllTestPaystubEmails(periodId);
 }
 
 // ── SBS Sheet Intake ───────────────────────────────────────────
