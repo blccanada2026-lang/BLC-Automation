@@ -151,6 +151,56 @@ expected, supervisor likely = their current
 sheet: PBG, JYS, VKV, RKG, BIT, SDA, MARV, ABB, SYR, SVN (all single
 real-August-hours account each, mostly SBS; VKV/RKG on NORSPAN-MB).
 
+**Worklist fully resolved 2026-09-10, with user.** Real PROD
+`DIM_STAFF_ROSTER` dump reviewed (confirmed real staff + inactive
+legacy/DEV-test rows, not a contamination issue). Found and resolved a
+real silent-failure risk `filterUnexpectedBlockedPairs_` cannot catch:
+`buildSupervisorBonusMapByAccount_` silently pays ₹0 (no bonus, no
+blocked-pair flag) for any pair whose resolved supervisor isn't role
+`TEAM_LEAD` — several designers' flat roster `supervisor_code` is `SGO`
+(role `PM`), which would have silently zeroed real bonus amounts if
+backfilled naively. Resolved explicitly with the user, pair by pair:
+- **SVN, SDA (own hours), DBG, BCH (own hours)** — `SGO` is genuinely
+  the right value on their `REF_ACCOUNT_SUPERVISION` row; user confirmed
+  this is an intentional ₹0 at the TEAM_LEAD tier, already covered by
+  SGO's separate flat PM bonus.
+- **SGO's own hours** (4 accounts, 123.5h) — no row at all; SGO is
+  himself the PM, `buildPmBonusMap_` already excludes PM-role staff from
+  its own sum, so his own hours get NO bonus at any tier, by design.
+  Added as 7 new entries to `ACCEPTED_UNSUPERVISED_PAIRS_`
+  (`PayrollEngine.gs`, commit `8018715`) so the pre-cutover gate treats
+  this as a known, reviewed gap rather than failing on it. Independent
+  code review: clean (see below). Deployed + independently verified on
+  both DEV and PROD.
+
+**Final 18-row `REF_ACCOUNT_SUPERVISION` backfill, all
+`effective_from = '2026-08-01'`, NOT YET WRITTEN:**
+
+| client_code | product_code | designer_code | supervisor_code |
+|---|---|---|---|
+| ALBERTA TRUSS | ROOF_TRUSS | PRS | DBS |
+| ALBERTA TRUSS | FLOOR_TRUSS | PRS | DBS |
+| NELSON | ROOF_TRUSS | AR001 | DBS |
+| NELSON | FLOOR_TRUSS | AR001 | DBS |
+| SBS | (blank) | PBG | SDA |
+| SBS | (blank) | JYS | SVN |
+| NORSPAN-MB | (blank) | VKV | BCH |
+| NORSPAN-MB | (blank) | RKG | BCH |
+| SBS | (blank) | BIT | SVN |
+| SBS | (blank) | MARV | BCH |
+| SBS | (blank) | ABB | SVN |
+| SBS | (blank) | SYR | SDA |
+| SBS | (blank) | SDA | SGO |
+| SBS | (blank) | SVN | SGO |
+| MATIX-SK | (blank) | DBG | SGO |
+| SBS | (blank) | DBG | SGO |
+| NORSPAN-MB | (blank) | BCH | SGO |
+| SBS | (blank) | BCH | SGO |
+
+The 4 `PRS`/`AR001` rows are contingent on Step 4 (`changeRole` for
+`DBS` → `TEAM_LEAD`) actually running — until then they'd also silently
+zero, same mechanism.
+
 **Read-only dry-run tool added and deployed 2026-09-10:**
 `runSupervisorBonusByAccountDryRun(periodId, asOfDate)`
 (`src/12-migration/SupervisorBonusByAccountDryRun.gs:54`) — previews
