@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-09-10 Session (Phase 1.5 — product-scoped account supervision — code-complete, deployed to PROD source)
+
+### Work Completed
+- Executed `docs/superpowers/plans/2026-09-10-product-scoped-supervision-phase1.5.md` via subagent-driven-development in worktree `.claude/worktrees/product-scoped-supervision`: 7 tasks (StaffOnboarding.changeRole(), REF_ACCOUNT_SUPERVISION schema patch script, product_code param on assignAccountSupervisor(), 3-level hours aggregation, buildJobToClientProductMap_() rename, product-scoped matching rewrite of buildSupervisorBonusMapByAccount_(), filterUnexpectedBlockedPairs_() accepted-exceptions gate). 1 fix round each on 3 tasks; final whole-branch review found 2 Important + 6 Minor findings, all fixed in one bundled wave, re-review clean.
+- Merged to `main` and pushed to `origin/main` (`d80e965`); re-ran the full test suite fresh in the primary checkout (48/48 suites, 651/651 tests) before deploying.
+- Ran `npm run push:prod` from the primary checkout — 168 files pushed to PROD's Apps Script source cleanly, no errors. R5 grep swept clean (only pre-existing `Config.isDev()`-gated dev actors).
+
+### Files Changed
+- `src/08-staff/StaffOnboarding.gs` (changeRole, assignAccountSupervisor productCode param)
+- `src/setup/SetupScript.gs` (schema patch script)
+- `src/06-handlers/WorkLogAggregation.gs` (aggregateNetWorkLogHoursByAccount, 3-level bucketing)
+- `src/10-payroll/PayrollEngine.gs` (buildJobToClientProductMap_, buildSupervisorBonusMapByAccount_ rewrite, filterUnexpectedBlockedPairs_)
+- Full ledger: `.claude/worktrees/product-scoped-supervision/.superpowers/sdd/2026-09-10-product-scoped-supervision-phase1.5/progress.md`
+
+### Tests Run
+- 651/651 passing (48 suites), verified both in the implementation worktree and freshly in the primary checkout immediately before the PROD push.
+
+### Issues Found
+- None outstanding — 2 Important findings from final review (silent-wildcard schema gap on assignAccountSupervisor; missing test pinning date-filter-before-tier-split ordering) both fixed and re-reviewed clean.
+
+### Next Recommended Step
+- Run `runPatchAccountSupervisionSchema()` in the Apps Script editor: DEV first (confirm header), then PROD. No `clasp run` wiring exists in this repo, so this is a manual editor step.
+- This branch touched zero portal files — no New Version redeploy needed for this change.
+- Deliberately NOT done (per the plan, same separation as Phase 1): Deb Sen's `changeRole` call, the 15-row `assignAccountSupervisor` backfill (spec §9), `blockedPairs` review against real August data, and the `runBonusRun`/`previewPayoutStatement` cutover. See `CTO_TASK_QUEUE.md` TASK RB-3.5 for full detail.
+
+---
+
 ## 2026-08-31 Session (ClientFeedback.gs duplicate-form bug found + fixed, real lost client response found, cleanup in progress — TASK CF-1)
 
 ### Work Completed

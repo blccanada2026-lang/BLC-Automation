@@ -31,7 +31,44 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-09-09)
+## Session State (last updated: end of turn, 2026-09-10)
+
+**TASK RB-3.5 — Phase 1.5 (product-scoped account supervision) CODE-COMPLETE
+and DEPLOYED TO PROD's Apps Script source 2026-09-10 (168 files, no
+errors).** Built via subagent-driven-development in worktree
+`.claude/worktrees/product-scoped-supervision` (branch
+`worktree-product-scoped-supervision`): 7 tasks, 1 fix round on 3 of them,
+1 final whole-branch review (2 Important + 6 Minor findings, all fixed in
+one bundled wave, re-reviewed clean). 651/651 tests passing (48 suites),
+re-verified fresh in the primary checkout right before deploy. Merged to
+`main` and pushed to `origin/main` (`d80e965`) before the PROD push — see
+`.claude/worktrees/product-scoped-supervision/.superpowers/sdd/2026-09-10-product-scoped-supervision-phase1.5/progress.md`
+for the full task-by-task ledger, and
+`docs/superpowers/plans/2026-09-10-product-scoped-supervision-phase1.5.md`
+(Task 8) for the plan this executed.
+**What shipped:** `StaffOnboarding.changeRole()` (new, mirrors
+`changeSupervisor()`'s SCD-2 shape); `product_code` added as an optional
+6th param on `assignAccountSupervisor()` (blank = wildcard, existing
+callers unaffected); `REF_ACCOUNT_SUPERVISION` schema-patch script
+(`runPatchAccountSupervisionSchema()`, not yet executed against either
+sheet — see below); `buildJobToClientMap_()` renamed to
+`buildJobToClientProductMap_()` (now returns `{client_code, product_code}`
+per job); `aggregateNetWorkLogHoursByAccount()` now buckets by product too;
+`buildSupervisorBonusMapByAccount_()` rewritten for exact-product-wins-
+over-wildcard matching, still hard-throws on genuine ambiguity, still
+surfaces zero-match as a visible blocked pair; new
+`filterUnexpectedBlockedPairs_()` gate (accepted-exceptions list is a plain
+code constant, not a table, per explicit user choice this session).
+**Still open, NOT done yet, blocks any real use of this code:**
+(1) run `runPatchAccountSupervisionSchema()` in the DEV Apps Script editor,
+confirm the `product_code` header, then repeat against PROD — Task 8 Step 5,
+needs the Apps Script editor (no `clasp run` wiring in this repo); (2) this
+branch touched zero `PortalView.html`/`Portal.gs` files, so no New Version
+redeploy is needed for this change specifically. Deliberately **NOT** part
+of this task, per the plan's own Step 6 (same separation as Phase 1): Deb
+Sen's `changeRole` call, the 15-row `assignAccountSupervisor` backfill from
+spec §9, reviewing `blockedPairs` against real August 2026 data, and the
+actual `runBonusRun`/`previewPayoutStatement` cutover.
 
 **TASK RB-3 — rate corrections CLOSED 2026-09-08; Phase 1 of the
 account-supervision redesign CLOSED and LIVE in PROD 2026-09-09; Phase 2

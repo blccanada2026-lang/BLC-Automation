@@ -249,6 +249,7 @@ Major milestones only. Full history: `.claude/context/backlog.md §Completed`.
   - `MigratedQCApprovalFixer` — 121 migrated QC_REVIEW jobs → COMPLETED_BILLABLE
   - Dashboard: DS1/UNKNOWN/BTD/SNA retired codes excluded from all panels
   - DBS role → QC; RKU added to REF_ACCOUNT_DESIGNER_MAP (data fixes by user)
+- **2026-09-10**: Product-scoped account supervision (Phase 1.5, TASK RB-3.5) — code-complete, deployed to PROD's Apps Script source. `StaffOnboarding.changeRole()`, optional `product_code` on `assignAccountSupervisor()` (blank = wildcard), `buildJobToClientProductMap_()`, product-aware `buildSupervisorBonusMapByAccount_()` (exact-product wins over wildcard), `filterUnexpectedBlockedPairs_()` accepted-exceptions gate. Not yet wired into `runBonusRun`/`previewPayoutStatement`; schema patch and real-data backfill still pending — see `CTO_TASK_QUEUE.md` TASK RB-3.5.
 
 ---
 
