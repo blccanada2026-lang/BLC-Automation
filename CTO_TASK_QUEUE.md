@@ -84,23 +84,29 @@ tabs/headers, never touch existing content), created the tab with
 `product_code` already in its header (baked into current `SCHEMAS`), plus
 9 unrelated `FACT_*|2026-09` partitions DEV was simply behind on.
 
-**CORRECTION, later 2026-09-10 — PROD schema is NOT done.** The "SKIP —
-already has product_code" result logged above was from re-running the
-patch in **DEV** (already patched via `runSetupSchemas()` minutes
-earlier), not PROD — a tab mix-up, confirmed by the user directly dumping
-PROD's real header via a temporary `dbgDumpAccountSupervision()` function
-and the user confirming the script ID matched `.clasp.prod.json`
-(`1HzRiDrQJ6z-BxPzk-MHgm4pUb5enabsEA9Hg16OoRzpOhGjv9FyeiQQ0`). PROD's
-actual `REF_ACCOUNT_SUPERVISION` header, confirmed live: `lastRow=1
+**CORRECTION, later 2026-09-10 — PROD schema WAS NOT done at the time,
+NOW IS, verified twice.** The "SKIP — already has product_code" result
+logged earlier turned out to be from re-running the patch in **DEV**
+(already patched via `runSetupSchemas()` minutes earlier), not PROD — a
+tab mix-up, caught by the user directly dumping PROD's real header via a
+temporary `dbgDumpAccountSupervision()` function (script ID confirmed
+matching `.clasp.prod.json`: `1HzRiDrQJ6z-BxPzk-MHgm4pUb5enabsEA9Hg16OoRzpOhGjv9FyeiQQ0`).
+That first dump showed PROD's real (unpatched) header: `lastRow=1
 lastCol=6`, `["client_code","designer_code","supervisor_code",
-"effective_from","effective_to","notes"]` — the OLD pre-Phase-1.5 header,
-`product_code` never added. **`runPatchAccountSupervisionSchema()` still
-needs to be run for real against PROD** — it should log `PATCHED
-REF_ACCOUNT_SUPERVISION — added product_code column` when it actually
-runs there, not `SKIP`. Task 8 of the Phase 1.5 plan is code-complete but
-**not yet schema-complete on PROD.** No New Version redeploy needed
-regardless — this branch touched zero `PortalView.html`/`Portal.gs`
-files.
+"effective_from","effective_to","notes"]`. Ran
+`runPatchAccountSupervisionSchema()` for real against PROD this time —
+logged `PATCHED REF_ACCOUNT_SUPERVISION — added product_code column`.
+**Re-verified with a second direct dump** (not just trusting the log,
+given the earlier mismatch): `lastRow=1 lastCol=7`,
+`["client_code","designer_code","supervisor_code","effective_from",
+"effective_to","notes","product_code"]` — column genuinely present,
+table still empty (no pre-existing rows, as expected). Note:
+`product_code` landed appended at the end, not in DEV's canonical
+position (`insertColumnAfter`, not a full rewrite) — harmless, DAL is
+header-keyed not position-keyed, just a cosmetic DEV/PROD difference.
+**Task 8 of the Phase 1.5 plan is now genuinely complete: code + schema,
+both DEV and PROD, independently verified.** No New Version redeploy
+needed — this branch touched zero `PortalView.html`/`Portal.gs` files.
 
 **Blank-product-code check for August, run against PROD 2026-09-10:**
 `runBlankProductAudit('2026-08A')` and `('2026-08B')` both returned 0 —
