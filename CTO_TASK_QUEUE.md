@@ -31,7 +31,17 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-09-10)
+## Session State (last updated: end of turn, 2026-09-11)
+
+**2026-09-11 session, most recent first — all shipped to PROD except the
+last item (committed, not yet pushed/deployed):**
+- **My Hours panel collapsed by default** (`worktree-paystub-hr-review-and-myhours-collapse`, commit `fd24041`) — reuses the Invoiced tier panel's arrow/click-to-expand pattern; long periods (e.g. 2026-09) were rendering as one long open table. Search/filter force it open. **Not yet pushed to origin/main or deployed — next step.**
+- **Individual paystub/bonus emails routed to HR for review** (same worktree, commit `13b07d9`) — `PayrollEngine.gs`'s new `PAYSTUB_ROUTE_TO_HR_ = true` module constant (next to `SUPERVISOR_BONUS_INR`) sends every per-consultant paystub and per-supervisor bonus email to HR instead of the person, so HR can verify and forward manually while the new product-scoped bonus calc is being trusted. **Open follow-up, target ~December 2026 (3 payroll cycles): flip `PAYSTUB_ROUTE_TO_HR_` back to `false` once the numbers have been verified — deliberately a code constant (reviewed/deployed like any other payroll change), not a Script Property or auto-expiring date, so it can't silently revert unnoticed either way. Don't let this vanish — nobody else will remember it.**
+- **Portal "Run Payroll" month-picker + review-surfacing**, deployed to PROD (`06ae207`) — Run Payroll/Run Bonus/Approve All Payroll now prompt for a period instead of always targeting "current period," and Run Payroll/Run Bonus show real preview numbers (staff/supervisor counts, unattributed-pair warnings) in the confirm dialog before committing. All three now reject a malformed period (regex `YYYY-MM` or blank) before reaching any run/approve call — added after independent review flagged `approveAllPayroll`'s new picker as the one place a typo could silently target the wrong month on an irreversible write. HR's access is still preview-only (`previewPayoutStatement`, unchanged); CEO-only commit is unchanged. `previewPayoutStatement()` gained an additive `options.silent` flag (default false) so the confirm-dialog preview fetch doesn't also fire HR's separate review email.
+- **`buildSupervisorBonusMapByAccount_()`'s silent non-TEAM_LEAD skip made visible**, deployed to PROD (`dac9832`) — the PM-fallback skip rule (spec §4.5) was the only one of its three skip/block paths with no log/no return-value trace; now logged as `SUPERVISOR_BONUS_NON_TEAM_LEAD_SKIP` and surfaced in a new non-gating `skippedNonTeamLead` field (dry-run script + HR preview email), without changing the skip behavior itself.
+- All of the above verified via `runHealthCheck()`/`runProdContaminationCheck()` post-deploy — clean.
+
+---
 
 **TASK RB-3.5 — Phase 1.5 (product-scoped account supervision) CODE
 COMPLETE on both DEV and PROD, 2026-09-10. Schema is done on DEV, still
