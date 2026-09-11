@@ -108,6 +108,49 @@ header-keyed not position-keyed, just a cosmetic DEV/PROD difference.
 both DEV and PROD, independently verified.** No New Version redeploy
 needed — this branch touched zero `PortalView.html`/`Portal.gs` files.
 
+**August 2026 real-data backfill worklist — derived 2026-09-10 from
+running the dry-run tool against real PROD `FACT_WORK_LOGS` data (empty
+`REF_ACCOUNT_SUPERVISION` table, so every real bucket shows up as
+blocked — see the dry-run's own log for the raw 34-line output this was
+grouped from). Corrects the earlier "15-row backfill" assumption from
+the design spec: the real August data has 15 distinct designers, but 3
+of them work multiple accounts (needing a separate supervision row per
+account each — this is in fact exactly why account-scoping matters for
+them) and 2 need product-split rows, so the real backfill needs MORE
+than 15 rows once modeled correctly. NOT YET WRITTEN to PROD — this is
+the worklist, not the completed backfill.**
+
+Known — Deb Sen's product-scoped rows (4 rows, `effective_from
+2026-08-01`, per the 2026-09-10 design spec's whole reason for
+existing):
+
+| client_code | product_code | designer_code | supervisor_code |
+|---|---|---|---|
+| ALBERTA TRUSS | ROOF_TRUSS | PRS | DBS |
+| ALBERTA TRUSS | FLOOR_TRUSS | PRS | DBS |
+| NELSON | ROOF_TRUSS | AR001 | DBS |
+| NELSON | FLOOR_TRUSS | AR001 | DBS |
+
+(FLOOR_JOIST for PRS/AR001 deliberately stays unsupervised — already on
+`ACCEPTED_UNSUPERVISED_PAIRS_`, `PayrollEngine.gs:523-529`.)
+
+Multi-account designers — need one row per account, real supervisor per
+account NOT YET CONFIRMED (their `DIM_STAFF_ROSTER.supervisor_code` only
+gives one flat value across all accounts, not useful here — has to be
+confirmed manually per account):
+
+| designer_code | accounts needing separate rows |
+|---|---|
+| BCH | NORSPAN-MB, SBS |
+| DBG | MATIX-SK, SBS |
+| SGO | ALBERTA TRUSS, MATIX-SK, SBS, NELSON |
+
+Single-account designers — one wildcard (blank `product_code`) row each
+expected, supervisor likely = their current
+`DIM_STAFF_ROSTER.supervisor_code`, NOT YET CONFIRMED against that
+sheet: PBG, JYS, VKV, RKG, BIT, SDA, MARV, ABB, SYR, SVN (all single
+real-August-hours account each, mostly SBS; VKV/RKG on NORSPAN-MB).
+
 **Read-only dry-run tool added and deployed 2026-09-10:**
 `runSupervisorBonusByAccountDryRun(periodId, asOfDate)`
 (`src/12-migration/SupervisorBonusByAccountDryRun.gs:54`) — previews
