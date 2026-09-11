@@ -13,8 +13,7 @@
 - Ran `npm run push:prod` from the primary checkout — 168 files pushed to PROD's Apps Script source cleanly, no errors. R5 grep swept clean (only pre-existing `Config.isDev()`-gated dev actors).
 
 ### Files Changed
-- `src/08-staff/StaffOnboarding.gs` (changeRole, assignAccountSupervisor productCode param)
-- `src/setup/SetupScript.gs` (schema patch script)
+- `src/08-staff/StaffOnboarding.gs` (changeRole, assignAccountSupervisor productCode param, runPatchAccountSupervisionSchema())
 - `src/06-handlers/WorkLogAggregation.gs` (aggregateNetWorkLogHoursByAccount, 3-level bucketing)
 - `src/10-payroll/PayrollEngine.gs` (buildJobToClientProductMap_, buildSupervisorBonusMapByAccount_ rewrite, filterUnexpectedBlockedPairs_)
 - Full ledger: `.claude/worktrees/product-scoped-supervision/.superpowers/sdd/2026-09-10-product-scoped-supervision-phase1.5/progress.md`
