@@ -108,6 +108,25 @@ header-keyed not position-keyed, just a cosmetic DEV/PROD difference.
 both DEV and PROD, independently verified.** No New Version redeploy
 needed — this branch touched zero `PortalView.html`/`Portal.gs` files.
 
+**Read-only dry-run tool added and deployed 2026-09-10:**
+`runSupervisorBonusByAccountDryRun(periodId, asOfDate)`
+(`src/12-migration/SupervisorBonusByAccountDryRun.gs:54`) — previews
+`blockedPairs` against real `FACT_WORK_LOGS` data for a period, ahead of
+the backfill/cutover (Task 8 Step 6). Mirrors `AggregationFixDryRun.gs`'s
+read-only pattern, reuses `PayrollEngine`'s already-exposed helpers
+(no logic duplication). Independent code review: clean, no
+Critical/Important findings. TDD: 6/6 new tests, full suite 657/657.
+Hit the same editor-tab-autosave-reverts-a-push bug documented in
+`SESSION_LOG.md`'s 2026-08-31 entry (a stale open `test.gs` tab silently
+wiped the pushed file from DEV, twice) — resolved by closing all editor
+tabs before pushing and independently verifying via a scratch `clasp
+pull` after each push, both DEV and PROD. Live-verified in DEV against a
+real GAS runtime: ran clean against real `FACT_WORK_LOGS` data (1 row,
+`TEST-CLIENT`/`A26D1` — DEV's own leftover synthetic test data, correctly
+shown as a blocked pair since DEV's `REF_ACCOUNT_SUPERVISION` is empty).
+Independently confirmed present on PROD via a fresh `clasp pull` (113
+lines, byte match) after deploy.
+
 **Blank-product-code check for August, run against PROD 2026-09-10:**
 `runBlankProductAudit('2026-08A')` and `('2026-08B')` both returned 0 —
 zero SBS/Norspan jobs with blank `product_code` in August (scoped to just
