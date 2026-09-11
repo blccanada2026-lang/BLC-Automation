@@ -59,12 +59,26 @@ over-wildcard matching, still hard-throws on genuine ambiguity, still
 surfaces zero-match as a visible blocked pair; new
 `filterUnexpectedBlockedPairs_()` gate (accepted-exceptions list is a plain
 code constant, not a table, per explicit user choice this session).
+**2026-09-10, later same day:** discovered DEV's Apps Script project had
+never received Phase 1 OR Phase 1.5 (only PROD had been pushed to) — user
+found this by checking DEV's `StaffOnboarding.gs` directly (ended at
+`changeSupervisor()`, no `assignAccountSupervisor`/`changeRole` at all).
+Confirmed via `clasp pull` against both `.clasp.dev.json` and
+`.clasp.prod.json` scriptIds independently (not cached) that PROD's live
+source was correct (1563-line `StaffOnboarding.gs`, byte-identical to git
+HEAD) and DEV's was stale. Ran `npm run push:dev` — 168 files, clean. DEV's
+only prior divergence from `main` was one disposable 4-line scratch file
+(`src/test.js`, leftover one-off verification for the already-closed
+feedback-status-RBAC fix) — lost on push as expected, nothing of value.
+DEV and PROD now both match current `main`.
+
 **Still open, NOT done yet, blocks any real use of this code:**
-(1) run `runPatchAccountSupervisionSchema()` in the DEV Apps Script editor,
-confirm the `product_code` header, then repeat against PROD — Task 8 Step 5,
-needs the Apps Script editor (no `clasp run` wiring in this repo); (2) this
-branch touched zero `PortalView.html`/`Portal.gs` files, so no New Version
-redeploy is needed for this change specifically. Deliberately **NOT** part
+(1) run `runPatchAccountSupervisionSchema()` (`src/08-staff/StaffOnboarding.gs:1537`)
+in the DEV Apps Script editor, confirm the `product_code` header, then
+repeat against PROD — Task 8 Step 5, needs the Apps Script editor (no
+`clasp run` wiring in this repo); (2) this branch touched zero
+`PortalView.html`/`Portal.gs` files, so no New Version redeploy is needed
+for this change specifically. Deliberately **NOT** part
 of this task, per the plan's own Step 6 (same separation as Phase 1): Deb
 Sen's `changeRole` call, the 15-row `assignAccountSupervisor` backfill from
 spec §9, reviewing `blockedPairs` against real August 2026 data, and the

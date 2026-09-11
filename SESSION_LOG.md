@@ -24,8 +24,10 @@
 ### Issues Found
 - None outstanding — 2 Important findings from final review (silent-wildcard schema gap on assignAccountSupervisor; missing test pinning date-filter-before-tier-split ordering) both fixed and re-reviewed clean.
 
+- **Later same session:** user reported not finding the new functions in DEV or PROD. Investigation traced this to DEV never having received a `push:dev` at all (only `push:prod` had run) — DEV's `StaffOnboarding.gs` still ended at `changeSupervisor()`, missing all of Phase 1 and 1.5. Verified PROD was actually correct via a fresh `clasp pull` against `.clasp.prod.json`'s scriptId (1563 lines, byte-identical to git HEAD) before concluding DEV was the actual gap. Ran `npm run push:dev` (168 files, clean) — DEV's only prior divergence was a disposable 4-line scratch file, no real loss. DEV and PROD now both match `main`.
+
 ### Next Recommended Step
-- Run `runPatchAccountSupervisionSchema()` in the Apps Script editor: DEV first (confirm header), then PROD. No `clasp run` wiring exists in this repo, so this is a manual editor step.
+- Run `runPatchAccountSupervisionSchema()` (`src/08-staff/StaffOnboarding.gs:1537`) in the Apps Script editor: DEV first (confirm header), then PROD. No `clasp run` wiring exists in this repo, so this is a manual editor step.
 - This branch touched zero portal files — no New Version redeploy needed for this change.
 - Deliberately NOT done (per the plan, same separation as Phase 1): Deb Sen's `changeRole` call, the 15-row `assignAccountSupervisor` backfill (spec §9), `blockedPairs` review against real August data, and the `runBonusRun`/`previewPayoutStatement` cutover. See `CTO_TASK_QUEUE.md` TASK RB-3.5 for full detail.
 
