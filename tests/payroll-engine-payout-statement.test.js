@@ -548,4 +548,26 @@ describe('PayrollEngine.sendTestPaystubEmail() — on-demand single-person check
     expect(mocks.RBAC.enforcePermission).toHaveBeenCalledWith(expect.any(Object), 'PAYROLL_PREVIEW');
     expect(mocks.RBAC.enforceFinancialAccess).toHaveBeenCalledWith(expect.any(Object), 'PAYROLL_PREVIEW');
   });
+
+  // Once PAYSTUB_ROUTE_TO_HR_ flips to false (the ~December revert tracked
+  // in CTO_TASK_QUEUE.md), this same call would email a real "Action
+  // Required" payout statement directly to the designer with no ledger row
+  // behind it and no confirm() anywhere in the path — the function must
+  // refuse outright rather than silently doing that. Since the flag is a
+  // module-private constant (deliberately not a Script Property — see its
+  // own comment), the only way to exercise the "off" branch is to reload
+  // the real source with that one line patched, so this is testing the
+  // actual guard, not a reimplementation of it.
+  test('refuses outright when PAYSTUB_ROUTE_TO_HR_ is false, instead of emailing the designer directly with no confirm', () => {
+    var patchedSrc = fs.readFileSync(path.join(__dirname, '../src/10-payroll/PayrollEngine.gs'), 'utf8')
+      .replace('var PAYSTUB_ROUTE_TO_HR_ = true;', 'var PAYSTUB_ROUTE_TO_HR_ = false;');
+    expect(patchedSrc).toContain('var PAYSTUB_ROUTE_TO_HR_ = false;'); // guards against the replace silently no-op'ing
+    (0, eval)(patchedSrc);
+
+    seedRoster([{ person_code: 'DES1', name: 'Rita Nair', role: 'DESIGNER', email: 'des1@test.blc.internal' }]);
+
+    expect(() => PayrollEngine.sendTestPaystubEmail('test-ceo@test.blc.internal', 'DES1', '2026-08'))
+      .toThrow(/PAYSTUB_ROUTE_TO_HR_ is false/);
+    expect(MailApp.sendEmail).not.toHaveBeenCalled();
+  });
 });

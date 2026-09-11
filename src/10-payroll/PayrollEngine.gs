@@ -1693,9 +1693,12 @@ var PayrollEngine = (function () {
   //
   // Fires ONE real sendPaystubEmail_ for a single person using their actual
   // computed pay for the period. No FACT write, fully repeatable — lets the
-  // exact email HR (or, once PAYSTUB_ROUTE_TO_HR_ is false, the designer)
-  // will receive be checked on demand, instead of only being visible after
-  // a real payroll run.
+  // exact email HR will receive be checked on demand, instead of only being
+  // visible after a real payroll run. Only meaningful while
+  // PAYSTUB_ROUTE_TO_HR_ is true (refuses otherwise — see the guard below):
+  // once routing flips to direct-send, this same call would email the
+  // designer a real "Action Required" statement with no ledger row behind
+  // it, so this tool has no safe use until it's revisited alongside that flip.
   // ============================================================
 
   /**
@@ -1703,6 +1706,7 @@ var PayrollEngine = (function () {
    * @param {string} personCode
    * @param {string} periodId  'YYYY-MM', blank = current period
    * @returns {{ sent: boolean, period_id: string, person_code: string, name: string, row: Object }}
+   * @throws {Error} if PAYSTUB_ROUTE_TO_HR_ is false (see guard comment below)
    */
   function sendTestPaystubEmail(actorEmail, personCode, periodId) {
     HealthMonitor.startExecution(MODULE);
@@ -1710,6 +1714,18 @@ var PayrollEngine = (function () {
       var actor = RBAC.resolveActor(actorEmail);
       RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_PREVIEW);
       RBAC.enforceFinancialAccess(actor, RBAC.ACTIONS.PAYROLL_PREVIEW);
+
+      // Safe today only because sendPaystubEmail_ routes to HR while
+      // PAYSTUB_ROUTE_TO_HR_ is true. The moment that flips to direct-send,
+      // this same call would fire a real "Action Required" payout email —
+      // with no ledger row behind it — straight at the designer, with no
+      // confirm() anywhere in the path. Refuse outright instead, so
+      // whoever flips the flag is forced to also revisit this function.
+      if (!PAYSTUB_ROUTE_TO_HR_) {
+        throw new Error('PayrollEngine.sendTestPaystubEmail: refusing — PAYSTUB_ROUTE_TO_HR_ is false, ' +
+          'so this would send a real "Action Required" paystub email directly to the person with no ' +
+          'payroll row behind it. Use a real runPayrollRun() instead, or re-enable this tool deliberately.');
+      }
 
       if (!personCode) {
         throw new Error('PayrollEngine.sendTestPaystubEmail: personCode is required.');
