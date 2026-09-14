@@ -4,12 +4,20 @@
  * Tests for PayrollEngine.gs's PM bonus split (Phase B1, Item 3 —
  * payroll automation). Per PAYROLL_AUTOMATION_ARCHITECTURE.md §2.3
  * (decision already made, not re-litigated here): the PM bonus rule
- * becomes a SEPARATE, flat, roster-wide sum — INR 25 × Σ(design_hours
- * of every staff member whose role !== 'PM') — architecturally
+ * is a SEPARATE, flat, roster-wide sum — INR 25 × Σ(design_hours +
+ * qc_hours of every staff member whose role !== 'PM') — architecturally
  * distinct from the TL path (direct-report sum via supervisor_code).
  * NOT recursive, NOT a tree walk, and specifically NOT scoped by the
  * pm_code field the way the old, now-removed PM branch of
  * buildSupervisorBonusMap_ was.
+ *
+ * Design+QC-hours-count-equally updated 2026-09-13 (Sarty/SGO Aug-2026
+ * bonus audit): user's rule is that ClientTimesheetEngine bills clients
+ * identically for design and QC hours, so the PM bonus pool must mirror
+ * that — previously design_hours only, which undercounted anyone who
+ * logged QC hours. The TL path (buildSupervisorBonusMapByAccount_) is
+ * NOT part of this change and still counts design_hours only — a
+ * separate, not-yet-decided question.
  *
  * buildSupervisorBonusMap_ (TL-only after this change) and the new
  * buildPmBonusMap_ are both exposed on the public API, same precedent
@@ -109,7 +117,7 @@ describe('PayrollEngine.buildPmBonusMap_() — flat, roster-wide, non-recursive'
     expect(bonusMap.PM1).toBe(250);
   });
 
-  test('only counts design_hours, never qc_hours', () => {
+  test('counts design_hours and qc_hours equally (2026-09-13 rule change: clients are billed the same for both, so the PM bonus pool no longer excludes QC hours)', () => {
     var staffCache = {
       PM1: staff({ role: 'PM' }),
       QC1: staff({ role: 'QC' })
@@ -118,7 +126,7 @@ describe('PayrollEngine.buildPmBonusMap_() — flat, roster-wide, non-recursive'
 
     var bonusMap = PayrollEngine.buildPmBonusMap_(staffCache, hoursMap);
 
-    expect(bonusMap.PM1).toBe(100); // 4 × 25, not 104 × 25
+    expect(bonusMap.PM1).toBe(2600); // (4 + 100) × 25, not 4 × 25
   });
 
   test('a PM with zero non-PM design hours is excluded from the returned map entirely', () => {

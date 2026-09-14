@@ -45,6 +45,23 @@ function seedSupervision(rows) {
 }
 
 describe('PayrollEngine.buildSupervisorBonusMapByAccount_()', () => {
+  test('design_hours and qc_hours count equally toward the TL bonus pool (2026-09-13 rule: clients are billed the same for both)', () => {
+    seedSupervision([
+      { client_code: 'SBS', designer_code: 'RKG', supervisor_code: 'BCH' }
+    ]);
+    const staffCache = {
+      BCH: staff({ role: 'TEAM_LEAD' }),
+      RKG: staff({ role: 'QC_REVIEWER' }) // e.g. Rajkumar — a designer who is also a QC reviewer
+    };
+    const hoursMapByAccount = {
+      RKG: { SBS: { 'ROOF_TRUSS': { design_hours: 10, qc_hours: 15 } } }
+    };
+
+    const result = PayrollEngine.buildSupervisorBonusMapByAccount_(staffCache, hoursMapByAccount, '2026-09-01');
+
+    expect(result.bonusMap.BCH).toBe(625); // (10 + 15) x 25, not 10 x 25
+  });
+
   test('Deb Sen -> Priyanka S, Alberta Truss: credits Deb Sen, not Pabitra, for her Alberta Truss hours', () => {
     seedSupervision([
       { client_code: 'ALBERTA TRUSS', designer_code: 'PRS', supervisor_code: 'DBS' }

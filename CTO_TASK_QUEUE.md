@@ -31,7 +31,348 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-09-11)
+## Session State (last updated: end of turn, 2026-09-13)
+
+**2026-09-13, latest — PUSHED TO DEV.** User said "push to dev now" once
+the manual-audit thread below fully closed (Rajkumar's `REF_ACCOUNT_SUPERVISION`
+row applied in PROD, Deb Sen's number confirmed correct, no other open
+questions). Pre-push: full Jest suite green (4,757 tests; same 2
+pre-existing unrelated TS parse failures in vendored `code-review-graph/`
+fixtures, untouched). Ran `npm run push:dev` → `cp .clasp.dev.json
+.clasp.json && clasp push --force` → **169 files pushed successfully**
+to the DEV Apps Script project. This carries everything from this
+session: both design+QC-parity bonus changes (PM path `buildPmBonusMap_`,
+TL path `buildSupervisorBonusMapByAccount_`) — the AR001
+`ACCEPTED_UNSUPERVISED_PAIRS_` addition was added and then fully
+reverted earlier this session, confirmed NOT present in what was pushed.
+
+**Not yet done — explicit next steps:**
+1. DEV smoke-test/verification (R10) — nothing run against DEV yet this
+   turn to confirm the push landed correctly beyond the push command's
+   own success output.
+2. PROD push (`npm run push:prod`) — NOT done, only DEV. Needs R5/R6
+   checklist + explicit user go-ahead separately; this session has not
+   been asked to push PROD yet.
+3. August `FACT_PAYROLL_LEDGER` adjustments for Bharath (his 179.5h
+   supervised figure needs to become 319.5h once Rajkumar's 140h flows
+   through) and Sarty/SGO (PM figure needs recomputing under the
+   design+QC-parity rule) — existing rows are `PENDING_CONFIRMATION`,
+   need an explicit adjustment event per Rule A5, not an overwrite. Not
+   started — still waiting on this to be sequenced with the user. Deb
+   Sen's row is confirmed correct and should NOT be touched.
+4. Git commit — NOT done. Per this session's standing instruction, only
+   commit when the user explicitly asks; nothing asked yet this session.
+   Working tree still has the same 5 modified files as before the push
+   (`.claude/rules/data-integrity.md`, `CTO_TASK_QUEUE.md`,
+   `src/10-payroll/PayrollEngine.gs`,
+   `tests/payroll-engine-pm-bonus.test.js`,
+   `tests/payroll-engine-supervisor-bonus-by-account.test.js`).
+
+---
+
+**2026-09-13, later same session — user's manual audit surfaced 3 more
+Aug 2026 discrepancies; DEV PUSH ON HOLD pending clarification, nothing
+in this entry acted on yet.** User reported, verbatim as given (typos
+kept for traceability): Priyanka "Design hours -28.75"; Deb Sen (DBS)
+"Design 120 - Super Bonus - 28.75"; Bharath (BCH) "Design hrs -173 Sup
+hours - 319.5". User's own theory: BCH/DBS's supervisor-bonus figures
+are off because both supervise designers across MULTIPLE client
+accounts; unsure why Priyanka's design hours differ.
+
+**Ground-truth reading CONFIRMED by user 2026-09-13.** BCH (Bharath):
+own design hours 173, supervised total 319.5 across his 2 accounts. DBS
+(Deb Sen): own design hours 120, supervised total 28.75. PRS (Priyanka):
+own design hours 28.75.
+
+**Real dry-run pulled from PROD (`runSupervisorBonusByAccountDryRun('2026-08')`,
+run by user 2026-09-13 11:40am) resolved most of this — two confirmed-
+correct, one confirmed-fixed, one reopened:**
+
+- **BCH's own 173 confirmed exactly correct, not a discrepancy at all:**
+  his `skippedNonTeamLead` entries (NORSPAN-MB/ROOF_TRUSS 34.5 +
+  SBS/ROOF_TRUSS 91.5 + SBS/FLOOR_TRUSS 47) sum to exactly 173.0 —
+  matches the user's ground truth exactly. His own hours are correctly
+  excluded from his own supervised total (a TL never supervises himself)
+  and correctly still flow into SGO's PM bonus.
+- **`blockedPairs` (123.0h total) confirmed as exactly SGO's own personal
+  hours**, matching the original "123" figure from the very start of
+  this audit. Correctly excluded from TL tier, correctly covered by
+  `ACCEPTED_UNSUPERVISED_PAIRS_`, correctly still in the PM pool.
+- **BCH's 140h shortfall (179.5 system vs 319.5 ground truth) — ROOT
+  CAUSE FOUND: not a code bug, a missing `REF_ACCOUNT_SUPERVISION` row,
+  now RESOLVED.** Cross-referencing the full per-designer/client/product
+  breakdown (from a second, custom read-only diagnostic —
+  `tempDiagBCHandDBS_Aug2026`, not a repo file, pasted into `temp.gs`)
+  found `RKU` (Rajkumar) logged exactly 140.0h of 100%-QC hours on SBS
+  (22.75 Floor Truss + 117.25 Roof Truss, 0 design) with **NO**
+  `REF_ACCOUNT_SUPERVISION` row at all. **Explains why he was invisible
+  in the dry-run** (not blocked, not skipped, not counted anywhere): PROD
+  is still running the OLD `pairHours = design_hours`-only formula (the
+  design+QC-parity fix below is local-only, not pushed) — his `pairHours`
+  computed to 0 under that formula and got silently `continue`'d before
+  ever reaching the supervision lookup. So no third TL's Aug bonus is
+  currently inflated by his hours — they've never been credited to
+  anyone. **User confirmed 2026-09-13: Rajkumar reports to Bharath.**
+  **DONE 2026-09-13 12:11pm** — user ran
+  `StaffOnboarding.assignAccountSupervisor('raj.nair@bluelotuscanada.ca', 'SBS', 'RKU', 'BCH', '2026-08-01')`
+  in PROD, confirmed result `{"newRowCreated":true,"changed":true,"reason":"applied"}`.
+  `REF_ACCOUNT_SUPERVISION` now correctly has SBS/RKU→BCH effective
+  2026-08-01. This alone does NOT yet change Bharath's August bonus
+  figure — `aggregateNetWorkLogHoursByAccount`/`buildSupervisorBonusMapByAccount_`
+  still won't count Rajkumar's hours until the design+QC-parity code
+  (below) is actually deployed and the bonus is re-run/adjusted; until
+  then this is correct data sitting inert.
+- **DBS's apparent 17.25h "overage" — CLOSED 2026-09-13, confirmed
+  correct, no bug, no fix.** Went through a false start: user first said
+  "exclude AR001" (code change made, then reverted same turn after user
+  corrected "AR001 is reporting to Deb Sen so its correct" — confirmed
+  via git diff, 137/137 affected tests green after revert;
+  `PayrollEngine.gs` back to having only the two design+QC-parity
+  changes). User then confirmed their manual "Super Bonus 28.75" figure
+  never included Abhisek/AR001's Nelson hours in the first place — it
+  was Priyanka-only. Full reconciliation: PRS 25.5+3.5=29.0h + AR001
+  15+2=17.0h = **46.0h, an exact match to the system's ₹1,150.** 28.75
+  (Priyanka-only, ground truth) + 17.0 (AR001, never tallied) = 45.75,
+  landing right next to the system's 46.0 (same ~0.25h rounding gap seen
+  elsewhere in this audit). **Deb Sen's ₹1,150 August bonus is correct
+  as computed — do not adjust it, and do not re-add an AR001 exception
+  to `ACCEPTED_UNSUPERVISED_PAIRS_`.**
+- **PRS (Priyanka) 28.75 vs system 29.0 (25.5 + 3.5, Alberta Truss Roof+
+  Floor Truss)** — 0.25h gap, almost certainly rounding in the manual
+  tally, not a system error. Not pursued further as a standalone issue.
+- Dropped: a nickname-collision hypothesis (`SARTY_DATA_`/
+  `SartyReconAudit.gs`) considered and ruled out — that matching is
+  internal to that one old audit script only; the real aggregation keys
+  on `actor_code`/`designer_code`, never a nickname.
+
+**Not yet done:** Rajkumar's `assignAccountSupervisor` call (above, not
+yet run by user); DBS/AR001 question still open; DEV push still on hold
+per user's explicit instruction; nothing pushed, nothing re-run against
+real payroll data yet. August's already-written `FACT_PAYROLL_LEDGER`
+bonus rows (BCH, DBS, SGO, SDA, SVN — all `PENDING_CONFIRMATION`) still
+need an explicit adjustment event once the full, final set of
+corrections is settled — not started, deliberately held until this
+audit closes rather than corrected piecemeal.
+
+---
+
+**2026-09-13 — Sarty's (SGO, PM) Aug 2026 bonus AMOUNT questioned, then
+baseline-error CONFIRMED (not a code bug).** User expected ₹56,450 (2,258
+hrs = 2,381 total hours billed, minus SGO's own 123) vs. actual ₹48,343.75
+(1,933.75 hrs). **User confirmed 2026-09-13: the 2,381 figure is
+design+QC combined, not design-only.** That withdraws the 2,258 target —
+it was never valid to compare against `buildPmBonusMap_`'s design-hours-
+only formula (`src/10-payroll/PayrollEngine.gs:619-621,632`, flat
+`INR 25 × Σ(design_hours)` for every non-PM `staffCache` member as-of
+`2026-08-01`). Revised arithmetic: 2,381 (design+QC, all staff incl. SGO)
+− 1,933.75 (design-only, non-PM, SGO's 123 already excluded by `:641`) =
+447.25, of which SGO's own 123 accounts for part, leaving **~324.25 that
+should be ≈ August `qc_hours` of non-PM staff** (Deb Sen's 120 QC hours,
+already known from thread #0, is one piece of it).
+
+- **Single discriminating check, not yet run (no Sheets/Apps Script
+  access from this session):** total August `qc_hours` across non-PM
+  staff in `aggregateHours_('2026-08')`. If ≈324.25 → ₹48,343.75 is
+  correct, audit closes. If materially below → the shortfall is the
+  `staffCache` silent-drop at `:642` (see next bullet), and only then is
+  the `aggregateHours_` vs `buildStaffCache_` set-difference check worth
+  running.
+- **Real open question this surfaced — a spec decision, not a defect:**
+  should the PM bonus pool include hours logged by QC-role staff? Code
+  today says no (thread #0: QC/design classification is role-based, not
+  work-type-based — may not match the user's "total team hours" mental
+  model). If the answer should be yes, August is understated by
+  `25 × (non-PM QC hours)` — roughly ₹8,100 if that lands near 324.25 —
+  which is a bonus restatement + spec change, not a code fix. **Needs to
+  be put to the user as a decision, not resolved unilaterally.**
+- **Separate latent defect, independent of the above — report but don't
+  treat as this month's explanation:** `buildPmBonusMap_` (`:635-644`)
+  iterates `Object.keys(staffCache)`, looks up `hoursMap[code]`, and
+  silently skips (`if (memberHours)`, no `else`, no log) anyone with Aug
+  hours who isn't in `staffCache` as of `2026-08-01` (inactive, or
+  `effective_from` after Aug 1 — e.g. someone onboarded mid-August).
+  Contrast `buildSupervisorBonusMapByAccount_` (TL path only, `:433`),
+  which pushes unattributable hours to `blockedPairs` and **aborts the
+  whole run** (`:1270`) instead of silently dropping them. The PM path
+  has no equivalent guard — worth fixing on its own merits.
+- No code changed this session — did not touch `PayrollEngine.gs` (R9:
+  payroll changes beyond approved scope require explicit stop-and-ask;
+  this was audit-only, as requested).
+
+---
+
+**2026-09-12, later same session — August unified statements sent as a
+one-off bridge.** Ran a hand-written (not the reviewed/tested thread #1
+code) `dbgResendUnifiedAug2026Statements` script via `temp.gs`: read the
+already-committed `FACT_PAYROLL_LEDGER` rows for `2026-08` (17
+`PAYROLL_CALCULATED` + 5 `PAYROLL_BONUS_SUPERVISOR`) and sent HR 17
+individual emails, each showing Design/QC hours+pay and, for the 5
+supervisors, an added Supervisor Bonus line + Grand Total. All 17 sent
+successfully (confirmed via Execution log, no skips); bonus additions
+verified correct (e.g. SGO 61,500+48,343.75=109,843.75, DBS
+42,000+1,150=43,150). **No FACT writes — read + email only, safe to
+consider done.** HR still needs to forward each to the named person; staff
+confirm; then CEO `approveAllPayroll` for `2026-08`. The *permanent* version
+of this format (built into `PayrollEngine.gs` for all future months) is
+still thread #1 below, untouched by this one-off send.
+
+**2026-09-12 session, four open threads queued from the same session,
+none started yet, not yet sequenced against each other:**
+0. **QC vs Design hour classification is role-based, not workflow-based —
+   RULE CHANGED AND IMPLEMENTED 2026-09-13 (code only — NOT deployed,
+   NOT re-run against PROD data yet).** Superseded the "TEAM_LEAD QC
+   only" framing from earlier the same day: **user's final rule (stated
+   2026-09-13) is that design and QC hours are billed to clients equally,
+   so the PM bonus pool must count both equally too, for every non-PM
+   staff member regardless of role** (not just TEAM_LEADs) — minus the
+   PM's own hours (design + QC), which the existing `role === 'PM'`
+   filter already excludes as a whole person, so no separate handling
+   was needed for that half of the rule.
+   - **Implemented — PM path:** `buildPmBonusMap_`
+     (`src/10-payroll/PayrollEngine.gs:632-657`) now sums
+     `memberHours.design_hours + memberHours.qc_hours` (was: design_hours
+     only) into what's now named `nonPmBillableHours`. Header comment
+     (`:619-629`) rewritten to state the new rule.
+   - **Implemented — TL path too (user confirmed 2026-09-13, same
+     session):** `buildSupervisorBonusMapByAccount_`
+     (`src/10-payroll/PayrollEngine.gs:433-553`, the function
+     `runBonusRun` actually uses for TL bonus — the older non-account
+     `buildSupervisorBonusMap_` is dead code in the real pipeline, not
+     called from `runBonusRun`, left untouched) now computes
+     `pairHours = pairBucket.design_hours + pairBucket.qc_hours` instead
+     of `design_hours` alone (`:456-458`). Header comment (`:406-424`)
+     updated with the same rule + user's own caveat: in practice this
+     rarely changes anything, since regular designers essentially never
+     log QC hours — only an actual QC_REVIEWER-role person does (e.g.
+     Rajkumar today), and QC reviewers aren't usually counted as a TL's
+     own team member. Kept for billing-parity consistency with the PM
+     path regardless.
+   - New regression test added:
+     `tests/payroll-engine-supervisor-bonus-by-account.test.js` — a
+     QC_REVIEWER-role designer with nonzero `qc_hours` now correctly
+     adds to their TL's bonus pool (no prior test fixture in this file
+     exercised nonzero `qc_hours` at all).
+   - **Deliberately did NOT touch `aggregateNetWorkLogHours`/hour
+     classification itself** — that split also drives
+     `computePersonPay_`'s design-vs-QC-rate base pay math (`:340-341`),
+     and Aug base pay is already confirmed/approved separately;
+     re-bucketing there would retroactively change already-approved pay.
+     Stamped FACT rows untouched either way (Rule A5).
+   - **User noted 2026-09-13: `pay_design` == `pay_qc` for every
+     TEAM_LEAD and QC_REVIEWER role** (not verified against live
+     `DIM_STAFF_ROSTER` this session — user-stated fact, not
+     independently confirmed). Relevant, not yet acted on: if true, it
+     means reclassifying a TL's/QC reviewer's hours between design and
+     QC buckets would NOT change their base pay at all for those two
+     roles — the retroactive-base-pay risk flagged above doesn't apply
+     to them specifically (may still apply to other roles with differing
+     rates, not checked). Does NOT by itself imply the TL bonus path
+     should now also count QC hours equally (that's still a separate,
+     unasked-for decision) — but it does remove the main reason to be
+     cautious about reclassification for these two roles if the user
+     asks for that next.
+   - **Tests updated and passing:** `tests/payroll-engine-pm-bonus.test.js`
+     — one test asserting the old design-only behavior rewritten to
+     assert the new combined behavior; full suite green (4,757 tests,
+     the only 2 failing suites are pre-existing unrelated TS parse errors
+     in the vendored `code-review-graph/` fixtures, untouched by this
+     change).
+   - **NOT done yet — explicit next steps, none authorized so far:**
+     (1) DEV push + smoke test (R10 — this session made local/git changes
+     only, no `clasp push` run); (2) re-running `runBonusRun('2026-08')`
+     won't naturally correct SGO's figure — `hasEvent_`'s idempotency key
+     (`PAYROLL_BONUS|SGO|2026-08`) already exists from the original run,
+     so a plain re-run will skip him; a correction needs an explicit
+     adjustment event per Rule A5, not an overwrite — sequence this with
+     the user, don't design it unilaterally; (3) PROD deploy only after
+     DEV verification, per standard R4/R10 flow. **Timing still favorable:**
+     Aug bonus rows are still `PENDING_CONFIRMATION`,
+     `approveAllPayroll('2026-08')` has not run.
+   - Expected outcome once re-run against real Aug data: corrected PM
+     bonus ≈ `48,343.75 + 25 × (Aug non-PM qc_hours)`, plausibly close to
+     the user's original ₹56,450 expectation if their 123-hour figure for
+     Sarty was his own total (design+QC) personal hours — not confirmed
+     against live numbers yet, this session had no Sheets/Apps Script
+     access.
+
+   Original framing retained below for context:
+   Today: `WorkLogHandler.gs:216` stamps `actor_role` from the submitter's
+   OWN roster role at logging time; `aggregateNetWorkLogHours()`
+   (`WorkLogAggregation.gs:70`) buckets 100% of a person's hours as QC
+   only if their role is literally `QC`/`QC_REVIEWER` — there is NO
+   per-entry "type of work" field, and job workflow state (e.g. a job
+   sitting in a QC-review step) has zero influence on the classification
+   (confirmed by reading `WorkLogHandler.gs`'s full `handle()` — job state
+   is only checked to reject logging against closed jobs, `:293-305`).
+   So a TEAM_LEAD/PM who spends time reviewing their team's work has that
+   time counted as design hours, not QC — the system cannot track
+   "time a supervisor spent on QC for their team" as a distinct thing
+   today. User wants this scoped as a real feature later — needs its own
+   design conversation (what workflow states should count, what happens
+   to jobs that flip between design/QC repeatedly, etc.) before any code.
+   Surfaced by investigating Deb Sen's Aug 0h-design/120h-QC split — that
+   specific case is NOT a bug (her Aug work-log rows correctly, immutably
+   reflect her real role at the time she logged, `QC_REVIEWER`; her
+   `TEAM_LEAD` promotion was only backdated into the roster on 2026-09-10
+   for pay-rate/bonus purposes, never rewriting historical FACT rows per
+   Rule A5) — but it's a real latent risk for anyone else whose
+   design/QC rates differ and whose role gets backdated across a period.
+1. **Payout statement format rework (Option B, user-approved):** base pay
+   email unchanged; when `runBonusRun` fires, supervisors get a full
+   replacement statement (design + QC + bonus + grand total) instead of
+   today's separate bonus-only email. Non-supervisors unaffected.
+2. **Merged "Run Payroll + Run Bonus" portal button + bonus-aware confirm
+   gate (user-approved).** One button: base pay runs first always: if it
+   fails, stop. Bonus attempts second in its own try/catch — an
+   `unexpectedBlockedPairs` abort must NOT roll back or block the already-
+   committed base pay. `confirmPaystub`/`approveAllPayroll` must refuse to
+   treat someone as confirmed if a `PAYROLL_BONUS_SUPERVISOR` row exists
+   for the period with a timestamp AFTER their `PAYROLL_CONFIRMED` row.
+   **Open question, not yet answered by user:** does "remove the other 2
+   buttons" include Approve All Payroll, or just Run Payroll+Run Bonus?
+   Assume NOT (Approve All stays separate/manual) until user confirms
+   otherwise — it writes an irreversible `PAYROLL_PROCESSED` event.
+   Touches `Portal.gs`+`PortalView.html` → needs a manual "New Version"
+   redeploy after push, not just `npm run push:prod` (R4.7).
+3. **D7 data-integrity rule added** (`.claude/rules/data-integrity.md`) —
+   total PAID hours (design+QC combined) per designer/team lead per period
+   must reconcile to total hours BILLED to the client for that person over
+   that period. User confirmed this exact framing. Two concrete divergence
+   risks already found between `PayrollEngine`'s hour aggregation and
+   `ClientTimesheetEngine`'s: (a) orphaned job_numbers — paid but not
+   billed; (b) unparseable `work_date` rows — same direction. **Doc-only so
+   far — no automated enforcement gate built yet.** Next step, not yet
+   started: an automated pre-payroll reconciliation check that aborts
+   `runPayrollRun` on divergence, same pattern as `runBonusRun`'s existing
+   `unexpectedBlockedPairs` abort (`PayrollEngine.gs:1270`).
+
+**All three are separate workstreams — don't bundle into one worktree/PR.**
+#3 is the largest (touches billing + payroll); sequence with the user
+before starting any of them.
+
+---
+
+**2026-09-12 session — August 2026 supervisor/PM bonus run executed in
+PROD.** User reported Sarty's (SGO, PM) August bonus missing. Investigated
+two false leads first (SGO's `role` field — confirmed exactly `PM` on both
+historical and current roster rows, not a bug; Deb Sen's carried-forward
+350/hr `TEAM_LEAD` rate from her prior `QC_REVIEWER` row — user confirmed
+350 is correct, no rate change needed) before finding the real cause:
+`PayrollEngine.runBonusRun()` had simply never been invoked for `2026-08` —
+only `runPayrollRun` (base pay) had run, and `sendPaystubEmail_`'s template
+never includes bonus (bonus is a separate ledger row + separate email by
+design). Re-ran `runSupervisorBonusByAccountDryRun('2026-08')` to confirm
+no drift since the 2026-09-10 dry run (clean, `unexpectedBlockedPairs: 0`,
+DBS still ₹1,150 for Roof Truss+Floor Truss only), then ran
+`PayrollEngine.runBonusRun('raj.nair@bluelotuscanada.ca', {periodId:'2026-08'})`
+for real in PROD via a pasted `temp.gs` wrapper. **Result: 5 processed,
+INR 76,225 total** — SDA ₹8,550, SVN ₹13,693.75, BCH ₹4,487.50, DBS ₹1,150,
+SGO (PM) ₹48,343.75. Bonus emails sent (routed to HR per
+`PAYSTUB_ROUTE_TO_HR_`). No code changed this session — `git status` clean,
+nothing to commit/push/deploy. **Next step, not yet done: HR needs to
+forward the bonus emails, staff confirm via portal, then CEO
+`approveAllPayroll` for 2026-08** (base pay was already confirmed/approved
+separately, per Step 8 of the Phase 1.5 plan referenced below).
 
 **2026-09-11 session, most recent first — all shipped to PROD except the
 last item (committed, not yet pushed/deployed — pending: DEV smoke test

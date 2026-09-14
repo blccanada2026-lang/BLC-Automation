@@ -414,6 +414,16 @@ var PayrollEngine = (function () {
   // has been backfilled with every active designer's real current
   // account/supervisor pairing (spec §7 — the table starts empty, and
   // this function blocks any pair with no assignment row).
+  //
+  // Design and QC hours count equally here (user rule, 2026-09-13,
+  // matching the same change made to buildPmBonusMap_ the same day):
+  // clients are billed identically for both, so a TL's bonus pool is
+  // each of their designers' design_hours + qc_hours, not design_hours
+  // alone. In practice this rarely changes anything — per the user, a
+  // regular designer essentially never logs QC hours; only someone with
+  // an actual QC_REVIEWER role does (e.g. Rajkumar today), and QC
+  // reviewers aren't usually a TL's own team member being counted here.
+  // Kept anyway for the same billing-parity reason as the PM path.
   // ============================================================
 
   /**
@@ -454,7 +464,8 @@ var PayrollEngine = (function () {
 
         for (var p = 0; p < productCodes.length; p++) {
           var productCode = productCodes[p];
-          var pairHours   = hoursMapByAccount[designerCode][clientCode][productCode].design_hours;
+          var pairBucket  = hoursMapByAccount[designerCode][clientCode][productCode];
+          var pairHours   = pairBucket.design_hours + pairBucket.qc_hours;
           if (!pairHours) continue;
 
           var candidateRows = [];
@@ -616,11 +627,22 @@ var PayrollEngine = (function () {
   //
   // Returns: { personCode → bonusAmountINR }
   //
-  // PM: bonus = INR 25 × Σ(design_hours of every staff member in
-  //     staffCache whose role !== 'PM') — company-wide, flat, no
+  // PM: bonus = INR 25 × Σ(design_hours + qc_hours of every staff member
+  //     in staffCache whose role !== 'PM') — company-wide, flat, no
   //     supervisor_code/pm_code lookup. Deliberately NOT a superset
   //     of buildSupervisorBonusMap_'s TL logic and NOT recursive —
   //     see PAYROLL_AUTOMATION_ARCHITECTURE.md §2.3.
+  //
+  // Design and QC hours count equally here (user rule, 2026-09-13,
+  // Sarty Aug-2026 bonus audit): ClientTimesheetEngine bills clients for
+  // both at the same rate with no role split, so the PM bonus pool
+  // mirrors that — everyone's total billable hours, not just the
+  // subset that happened to be logged under a non-QC role. Prior to
+  // this, the pool was design_hours only, which undercounted anyone who
+  // logged QC hours (e.g. a TEAM_LEAD or QC_REVIEWER) even though those
+  // hours were billed identically to design hours. The TL bonus path
+  // (buildSupervisorBonusMapByAccount_, see its own header comment) got
+  // the same design+QC-parity treatment the same day, user-confirmed.
   //
   // Consequence of "flat, company-wide" worth restating here (not a
   // bug): if more than one PM is active simultaneously, EVERY PM is
@@ -632,20 +654,20 @@ var PayrollEngine = (function () {
   function buildPmBonusMap_(staffCache, hoursMap) {
     var bonusMap = {};
 
-    var staffCodes    = Object.keys(staffCache);
-    var nonPmDesignHours = 0;
+    var staffCodes        = Object.keys(staffCache);
+    var nonPmBillableHours = 0;
 
     for (var j = 0; j < staffCodes.length; j++) {
       var code   = staffCodes[j];
       var member = staffCache[code];
-      if (member.role === 'PM') continue; // excludes every PM's own hours, not just "this" PM's
+      if (member.role === 'PM') continue; // excludes every PM's own hours (design + QC), not just "this" PM's
       var memberHours = hoursMap[code];
-      if (memberHours) nonPmDesignHours += memberHours.design_hours;
+      if (memberHours) nonPmBillableHours += memberHours.design_hours + memberHours.qc_hours;
     }
 
-    if (nonPmDesignHours <= 0) return bonusMap;
+    if (nonPmBillableHours <= 0) return bonusMap;
 
-    var bonusAmount = Math.round(nonPmDesignHours * SUPERVISOR_BONUS_INR * 100) / 100;
+    var bonusAmount = Math.round(nonPmBillableHours * SUPERVISOR_BONUS_INR * 100) / 100;
 
     for (var i = 0; i < staffCodes.length; i++) {
       var supervisorCode = staffCodes[i];
