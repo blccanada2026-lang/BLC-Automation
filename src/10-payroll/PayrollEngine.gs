@@ -830,6 +830,60 @@ var PayrollEngine = (function () {
   }
 
   // ============================================================
+  // SECTION 7b: BONUS ADJUSTMENT EMAIL
+  //
+  // Correction email for a PAYROLL_BONUS_ADJUSTED row (2026-09-14 —
+  // see docs/superpowers/specs/2026-09-14-payroll-bonus-adjustment-design.md).
+  // Distinct from sendBonusEmail_ above: this shows OLD -> NEW and a
+  // reason, not a fresh bonus notice — sending sendBonusEmail_ with the
+  // new total would read as a duplicate, not a correction, to whoever
+  // opens it. Same PAYSTUB_ROUTE_TO_HR_/resolveHrReviewRecipient_
+  // HR-routing convention as every other payout email in this file.
+  // ============================================================
+
+  function sendBonusAdjustmentEmail_(staff, personCode, periodId, oldAmount, newAmount, correctionNote) {
+    if (!PAYSTUB_ROUTE_TO_HR_ && !staff.email) return;
+
+    try {
+      var recipient = PAYSTUB_ROUTE_TO_HR_ ? resolveHrReviewRecipient_() : staff.email;
+      var subject   = 'BLC Supervisor Bonus CORRECTION — ' + staff.name + ' — ' + periodId;
+      var bodyLines = [
+        'Hi ' + staff.name + ',',
+        '',
+        'Your supervisor bonus for period ' + periodId + ' has been corrected.',
+        '',
+        'BONUS CORRECTION',
+        '───────────────────────────────',
+        'Period:            ' + periodId,
+        'Previous amount:   INR ' + oldAmount.toFixed(2),
+        'Corrected amount:  INR ' + newAmount.toFixed(2),
+        '───────────────────────────────',
+        '',
+        correctionNote,
+        ''
+      ];
+      if (PAYSTUB_ROUTE_TO_HR_) {
+        bodyLines.push(
+          '(HR review copy — forward to ' + staff.name + ' <' + (staff.email || 'no email on file') + '> after checking.)',
+          ''
+        );
+      }
+      bodyLines.push(
+        'ACTION REQUIRED:',
+        'Please confirm your corrected payout statement in the BLC Portal.',
+        '',
+        '— BLC Payroll System'
+      );
+
+      MailApp.sendEmail({ to: recipient, subject: subject, body: bodyLines.join('\n') });
+    } catch (e) {
+      Logger.warn('PAYROLL_BONUS_ADJUSTMENT_EMAIL_FAILED', {
+        module: MODULE, person_code: personCode, error: e.message
+      });
+    }
+  }
+
+  // ============================================================
   // SECTION 8b: PAYOUT STATEMENT SUMMARY EMAIL
   //
   // Sends one combined review email to PAYOUT_STATEMENT_REVIEW_RECIPIENT
@@ -1878,9 +1932,10 @@ var PayrollEngine = (function () {
 
     // Exposed 2026-09-14 (Aug-2026 bonus-adjustment correction) — so the
     // one-off migration script in src/12-migration/Aug2026BonusAdjustment.gs
-    // can rebuild the summary after writing correction rows, same
-    // precedent as every other function exposed above.
-    refreshMartPayrollSummary_: refreshMartPayrollSummary_
+    // can rebuild the summary and send the correction email after writing
+    // correction rows, same precedent as every other function exposed above.
+    refreshMartPayrollSummary_:   refreshMartPayrollSummary_,
+    sendBonusAdjustmentEmail_:    sendBonusAdjustmentEmail_
   };
 
 }());

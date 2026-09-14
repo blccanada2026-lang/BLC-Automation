@@ -77,3 +77,39 @@ describe('PayrollEngine.refreshMartPayrollSummary_() — sums PAYROLL_BONUS_ADJU
     expect(row.supervisor_bonus).toBe(1150);
   });
 });
+
+describe('PayrollEngine.sendBonusAdjustmentEmail_() — HR-routed correction email', () => {
+  function staff(overrides) {
+    return Object.assign({ name: 'Bharath Chandran', email: 'bch@test.blc.internal', role: 'TEAM_LEAD' }, overrides);
+  }
+
+  test('subject is labeled CORRECTION, body shows old and new amounts and the correction note', () => {
+    PayrollEngine.sendBonusAdjustmentEmail_(
+      staff(), 'BCH', '2026-08', 4487.50, 7987.50,
+      'Aug 2026 supervisor bonus correction: +140 supervised hrs (Rajkumar, SBS) newly attributed. INR 4,487.50 -> INR 7,987.50.'
+    );
+
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(1);
+    const call = MailApp.sendEmail.mock.calls[0][0];
+    expect(call.subject).toBe('BLC Supervisor Bonus CORRECTION — Bharath Chandran — 2026-08');
+    expect(call.body).toContain('4487.50');
+    expect(call.body).toContain('7987.50');
+    expect(call.body).toContain('Aug 2026 supervisor bonus correction: +140 supervised hrs');
+  });
+
+  test('routes to HR (PAYSTUB_ROUTE_TO_HR_ is true), not directly to staff, with a forward instruction naming the person', () => {
+    PayrollEngine.sendBonusAdjustmentEmail_(staff(), 'BCH', '2026-08', 4487.50, 7987.50, 'note');
+
+    const call = MailApp.sendEmail.mock.calls[0][0];
+    expect(call.to).toBe('HR@bluelotuscanada.ca');
+    expect(call.body).toContain('forward to Bharath Chandran <bch@test.blc.internal>');
+  });
+
+  test('a MailApp failure is non-fatal — logs a warning, does not throw', () => {
+    global.MailApp.sendEmail = jest.fn(() => { throw new Error('quota exceeded'); });
+
+    expect(() => {
+      PayrollEngine.sendBonusAdjustmentEmail_(staff(), 'BCH', '2026-08', 4487.50, 7987.50, 'note');
+    }).not.toThrow();
+  });
+});
