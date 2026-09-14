@@ -113,3 +113,122 @@ describe('PayrollEngine.sendBonusAdjustmentEmail_() — HR-routed correction ema
     }).not.toThrow();
   });
 });
+
+describe('Aug2026BonusAdjustment.gs — the one-off correction script', () => {
+  beforeEach(() => {
+    loadSrc('../src/12-migration/Aug2026BonusAdjustment.gs');
+  });
+
+  function seedAugState() {
+    seedLedger([
+      bonusRow('BCH', 4487.50),
+      bonusRow('SGO', 48343.75, { event_id: 'ORIG-SGO' }),
+      bonusRow('DBS', 1150, { event_id: 'ORIG-DBS' })
+    ]);
+    mocks.store['DIM_STAFF_ROSTER'] = [
+      { person_code: 'BCH', name: 'Bharath Chandran', email: 'bch@test.blc.internal', role: 'TEAM_LEAD',
+        supervisor_code: '', pm_code: '', pay_currency: 'INR', pay_design: 350, pay_qc: 350,
+        bonus_eligible: 'TRUE', active: 'TRUE', effective_from: '2025-01-01', effective_to: '' },
+      { person_code: 'SGO', name: 'Sarty Gosh', email: 'sgo@test.blc.internal', role: 'PM',
+        supervisor_code: '', pm_code: '', pay_currency: 'INR', pay_design: 350, pay_qc: 350,
+        bonus_eligible: 'TRUE', active: 'TRUE', effective_from: '2025-01-01', effective_to: '' },
+      { person_code: 'DBS', name: 'Deb Sen', email: 'dbs@test.blc.internal', role: 'TEAM_LEAD',
+        supervisor_code: '', pm_code: '', pay_currency: 'INR', pay_design: 350, pay_qc: 350,
+        bonus_eligible: 'TRUE', active: 'TRUE', effective_from: '2025-01-01', effective_to: '' }
+    ];
+  }
+
+  test('dry run: reports both corrections, applies nothing, sends no email', () => {
+    seedAugState();
+
+    const result = runAug2026BonusAdjustmentDryRun();
+
+    expect(result.results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ person_code: 'BCH', old_amount: 4487.50, new_amount: 7987.50, delta: 3500.00 }),
+      expect.objectContaining({ person_code: 'SGO', old_amount: 48343.75, new_amount: 54843.75, delta: 6500.00 })
+    ]));
+    expect(mocks.store['FACT_PAYROLL_LEDGER'].filter(r => r.event_type === 'PAYROLL_BONUS_ADJUSTED')).toHaveLength(0);
+    expect(MailApp.sendEmail).not.toHaveBeenCalled();
+  });
+
+  test('real run: appends one PAYROLL_BONUS_ADJUSTED row per person with the correct delta, references the original event_id', () => {
+    seedAugState();
+
+    runAug2026BonusAdjustment('raj.nair@bluelotuscanada.ca');
+
+    const adjustments = mocks.store['FACT_PAYROLL_LEDGER'].filter(r => r.event_type === 'PAYROLL_BONUS_ADJUSTED');
+    expect(adjustments).toHaveLength(2);
+
+    const bch = adjustments.find(r => r.person_code === 'BCH');
+    expect(bch.bonus_amount).toBe(3500.00);
+    expect(bch.idempotency_key).toBe('PAYROLL_BONUS_ADJUSTED|BCH|2026-08');
+    expect(JSON.parse(bch.payload_json).adjustment_of).toBe('ORIG-BCH');
+    expect(JSON.parse(bch.payload_json).old_amount).toBe(4487.50);
+    expect(JSON.parse(bch.payload_json).new_amount).toBe(7987.50);
+
+    const sgo = adjustments.find(r => r.person_code === 'SGO');
+    expect(sgo.bonus_amount).toBe(6500.00);
+  });
+
+  test('real run: sends exactly one correction email per corrected person, none for DBS', () => {
+    seedAugState();
+
+    runAug2026BonusAdjustment('raj.nair@bluelotuscanada.ca');
+
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(2);
+    const subjects = MailApp.sendEmail.mock.calls.map(c => c[0].subject);
+    expect(subjects.some(s => s.indexOf('Bharath Chandran') !== -1)).toBe(true);
+    expect(subjects.some(s => s.indexOf('Sarty Gosh') !== -1)).toBe(true);
+    expect(subjects.some(s => s.indexOf('Deb Sen') !== -1)).toBe(false);
+  });
+
+  test('real run: MART_PAYROLL_SUMMARY reflects the corrected totals afterward', () => {
+    seedAugState();
+
+    runAug2026BonusAdjustment('raj.nair@bluelotuscanada.ca');
+
+    const bch = mocks.store['MART_PAYROLL_SUMMARY'].find(r => r.person_code === 'BCH');
+    const sgo = mocks.store['MART_PAYROLL_SUMMARY'].find(r => r.person_code === 'SGO');
+    expect(bch.supervisor_bonus).toBe(7987.50);
+    expect(sgo.supervisor_bonus).toBe(54843.75);
+  });
+
+  test('DBS is never written to and never emailed', () => {
+    seedAugState();
+
+    runAug2026BonusAdjustment('raj.nair@bluelotuscanada.ca');
+
+    const dbsRows = mocks.store['FACT_PAYROLL_LEDGER'].filter(r => r.person_code === 'DBS');
+    expect(dbsRows).toHaveLength(1); // only the original ORIG-DBS row — untouched
+    expect(dbsRows[0].event_type).toBe('PAYROLL_BONUS_SUPERVISOR');
+  });
+
+  test('idempotent: a second real run does not double-write or double-email', () => {
+    seedAugState();
+
+    runAug2026BonusAdjustment('raj.nair@bluelotuscanada.ca');
+    MailApp.sendEmail.mockClear();
+    runAug2026BonusAdjustment('raj.nair@bluelotuscanada.ca');
+
+    const adjustments = mocks.store['FACT_PAYROLL_LEDGER'].filter(r => r.event_type === 'PAYROLL_BONUS_ADJUSTED');
+    expect(adjustments).toHaveLength(2); // still 2, not 4
+    expect(MailApp.sendEmail).not.toHaveBeenCalled();
+  });
+
+  test('safety guard: aborts with NO writes if the current bonus total no longer matches the expected old amount', () => {
+    seedLedger([
+      bonusRow('BCH', 9999.99), // does not match the hardcoded expected 4487.50
+      bonusRow('SGO', 48343.75, { event_id: 'ORIG-SGO' })
+    ]);
+    mocks.store['DIM_STAFF_ROSTER'] = [
+      { person_code: 'BCH', name: 'Bharath Chandran', email: 'bch@test.blc.internal', role: 'TEAM_LEAD',
+        supervisor_code: '', pm_code: '', pay_currency: 'INR', pay_design: 350, pay_qc: 350,
+        bonus_eligible: 'TRUE', active: 'TRUE', effective_from: '2025-01-01', effective_to: '' }
+    ];
+
+    expect(() => runAug2026BonusAdjustment('raj.nair@bluelotuscanada.ca')).toThrow(/BCH/);
+    expect(() => runAug2026BonusAdjustment('raj.nair@bluelotuscanada.ca')).toThrow(/9999\.99/);
+    expect(mocks.store['FACT_PAYROLL_LEDGER'].filter(r => r.event_type === 'PAYROLL_BONUS_ADJUSTED')).toHaveLength(0);
+    expect(MailApp.sendEmail).not.toHaveBeenCalled();
+  });
+});
