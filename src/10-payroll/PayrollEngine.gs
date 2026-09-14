@@ -1021,7 +1021,7 @@ var PayrollEngine = (function () {
       if (etype === 'PAYROLL_CALCULATED') {
         personData[code].design_pay += parseFloat(row.design_pay) || 0;
         personData[code].qc_pay     += parseFloat(row.qc_pay)     || 0;
-      } else if (etype === 'PAYROLL_BONUS_SUPERVISOR') {
+      } else if (etype === 'PAYROLL_BONUS_SUPERVISOR' || etype === 'PAYROLL_BONUS_ADJUSTED') {
         personData[code].supervisor_bonus += parseFloat(row.bonus_amount) || 0;
       } else if (etype === 'PAYROLL_CONFIRMED') {
         personData[code].status = 'CONFIRMED';
@@ -1874,7 +1874,13 @@ var PayrollEngine = (function () {
     // computePersonPay_ above, so the Jest suite can test the real email
     // builder both previewPayoutStatement (Task 3) and the runPayrollRun/
     // runBonusRun commit-path wiring (Task 4) use.
-    sendPayoutStatementSummary_: sendPayoutStatementSummary_
+    sendPayoutStatementSummary_: sendPayoutStatementSummary_,
+
+    // Exposed 2026-09-14 (Aug-2026 bonus-adjustment correction) — so the
+    // one-off migration script in src/12-migration/Aug2026BonusAdjustment.gs
+    // can rebuild the summary after writing correction rows, same
+    // precedent as every other function exposed above.
+    refreshMartPayrollSummary_: refreshMartPayrollSummary_
   };
 
 }());
