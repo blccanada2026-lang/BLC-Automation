@@ -82,6 +82,10 @@ CEO/PM triggers PayrollEngine.runPayroll(periodId)
   → MART_PAYROLL_SUMMARY updated
 ```
 
+`Aug2026BonusAdjustment.gs` (`src/12-migration/`) — a one-off Aug-2026 bonus correction
+script — is also authorized to write `FACT_PAYROLL_LEDGER`; see `WRITE_PERMISSIONS` in
+`src/01-dal/DAL.gs`.
+
 ## Module Dependency Matrix
 | Module | Depends On |
 |--------|-----------|

@@ -115,7 +115,7 @@ var DAL = (function () {
                               'GenerateTimesheetPdfDevRehearsal'],
     'FACT_QC_EVENTS':        ['QCHandler', 'QCReassignHandler', 'MigrationEngine', 'MigratedQCApprovalFixer'],
     'FACT_BILLING_LEDGER':   ['BillingEngine', 'MigrationEngine', 'MigrationReplayEngine'],
-    'FACT_PAYROLL_LEDGER':   ['PayrollEngine', 'MigrationEngine', 'MigrationReplayEngine'],
+    'FACT_PAYROLL_LEDGER':   ['PayrollEngine', 'MigrationEngine', 'MigrationReplayEngine', 'Aug2026BonusAdjustment'],
     'FACT_SOP_AUDITS':       ['SopChecklistHandler', 'MigrationEngine'],
     'FACT_SOP_CURRENT_STATUS': ['SopChecklistHandler'],
     'DIM_SOP_TEMPLATES':     ['SopAdminEngine'],

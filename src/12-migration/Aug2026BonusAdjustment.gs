@@ -96,7 +96,11 @@ function aug2026RunCorrections_(write, actorEmail) {
     RBAC.enforcePermission(actor, RBAC.ACTIONS.PAYROLL_VIEW);
   }
 
+  var actualScriptId = ScriptApp.getScriptId();
   console.log('=== Aug 2026 bonus adjustment — ' + (write ? 'REAL RUN (writes + emails)' : 'DRY RUN (read-only)') + ' ===');
+  console.log('Script ID: ' + actualScriptId + ' — confirm this matches the project you intend to ' +
+              (write ? 'write to' : 'check') + ' (DEV: 1smkj0mmUqcWDDJPq... / PROD: 1HzRiDrQJ6z-BxPzk...) before ' +
+              (write ? 'this script appends FACT_PAYROLL_LEDGER rows and sends HR correction emails.' : 'trusting this output.'));
 
   var staffCache = PayrollEngine.buildStaffCache_(AUG2026_ADJUSTMENT_PERIOD_ID_ + '-01');
 
@@ -141,6 +145,7 @@ function aug2026RunCorrections_(write, actorEmail) {
     console.log('  ' + pc.personCode + ': ' + pc.expectedOldAmount.toFixed(2) + ' -> ' + newAmount.toFixed(2) + ' (delta ' + pc.deltaAmount.toFixed(2) + ')' +
                 (write ? '' : ' [DRY RUN — not written]'));
 
+    var emailSent = false;
     if (write) {
       var adjustmentRow = {
         event_id:        Identifiers.generateId(),
@@ -173,10 +178,13 @@ function aug2026RunCorrections_(write, actorEmail) {
       var staff = staffCache[pc.personCode];
       if (staff) {
         PayrollEngine.sendBonusAdjustmentEmail_(staff, pc.personCode, AUG2026_ADJUSTMENT_PERIOD_ID_, pc.expectedOldAmount, newAmount, pc.notes);
+        emailSent = true;
+      } else {
+        console.log('  WARNING: ' + pc.personCode + ' not found in staff cache as of asOfDate — ledger row written but NO EMAIL SENT.');
       }
     }
 
-    results.push({ person_code: pc.personCode, old_amount: pc.expectedOldAmount, new_amount: newAmount, delta: pc.deltaAmount, applied: write, reason: write ? 'applied' : 'dry_run' });
+    results.push({ person_code: pc.personCode, old_amount: pc.expectedOldAmount, new_amount: newAmount, delta: pc.deltaAmount, applied: write, reason: write ? (emailSent ? 'applied' : 'applied_no_email') : 'dry_run' });
   }
 
   if (write) {

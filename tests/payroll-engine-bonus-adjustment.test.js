@@ -32,6 +32,7 @@ beforeEach(() => {
   global.PropertiesService = {
     getScriptProperties: function () { return { getProperty: function () { return null; } }; }
   };
+  global.ScriptApp = { getScriptId: function () { return 'TEST-SCRIPT-ID'; } };
   mocks.DAL.ensurePartition = function () {};
   mocks.DAL.appendRows      = function (t, rows) { rows.forEach(function (r) { mocks.DAL.appendRow(t, r); }); };
   // refreshMartPayrollSummary_ calls DAL.clearSheet, wrapped in a try/catch
@@ -252,5 +253,43 @@ describe('Aug2026BonusAdjustment.gs — the one-off correction script', () => {
     // BCH (or anyone) was written or emailed because SGO's guard failed.
     expect(mocks.store['FACT_PAYROLL_LEDGER'].filter(r => r.event_type === 'PAYROLL_BONUS_ADJUSTED')).toHaveLength(0);
     expect(MailApp.sendEmail).not.toHaveBeenCalled();
+  });
+
+  test('RBAC denial: enforceFinancialAccess throwing blocks the run — zero ledger writes, zero emails', () => {
+    seedAugState();
+    global.RBAC.enforceFinancialAccess = function () { throw new Error('TEST: financial access denied'); };
+
+    expect(() => runAug2026BonusAdjustment('raj.nair@bluelotuscanada.ca')).toThrow(/financial access denied/);
+    expect(mocks.store['FACT_PAYROLL_LEDGER'].filter(r => r.event_type === 'PAYROLL_BONUS_ADJUSTED')).toHaveLength(0);
+    expect(MailApp.sendEmail).not.toHaveBeenCalled();
+  });
+
+  test('missing staff-cache entry: ledger row is still written, but no email sent and reason is applied_no_email', () => {
+    seedLedger([
+      bonusRow('BCH', 4487.50),
+      bonusRow('SGO', 48343.75, { event_id: 'ORIG-SGO' })
+    ]);
+    // BCH deliberately has no DIM_STAFF_ROSTER row — not resolvable as of asOfDate.
+    mocks.store['DIM_STAFF_ROSTER'] = [
+      { person_code: 'SGO', name: 'Sarty Gosh', email: 'sgo@test.blc.internal', role: 'PM',
+        supervisor_code: '', pm_code: '', pay_currency: 'INR', pay_design: 350, pay_qc: 350,
+        bonus_eligible: 'TRUE', active: 'TRUE', effective_from: '2025-01-01', effective_to: '' }
+    ];
+
+    const result = runAug2026BonusAdjustment('raj.nair@bluelotuscanada.ca');
+
+    const bchAdjustment = mocks.store['FACT_PAYROLL_LEDGER'].find(
+      r => r.event_type === 'PAYROLL_BONUS_ADJUSTED' && r.person_code === 'BCH'
+    );
+    expect(bchAdjustment).toBeDefined(); // ledger row still written despite missing staff-cache entry
+
+    const bchResult = result.results.find(r => r.person_code === 'BCH');
+    expect(bchResult.applied).toBe(true);
+    expect(bchResult.reason).toBe('applied_no_email');
+
+    // Only SGO gets an email; BCH's missing staff record must not throw or
+    // silently send to a bad address.
+    expect(MailApp.sendEmail).toHaveBeenCalledTimes(1);
+    expect(MailApp.sendEmail.mock.calls[0][0].subject).toContain('Sarty Gosh');
   });
 });
