@@ -823,7 +823,16 @@ var QuarterlyBonusEngine = (function () {
     // Exposed 2026-07-24 (Task 2, supervisor_code effective-dating) — same
     // precedent as above — lets the Jest suite test the real date-filtering
     // logic runQuarterlyBonus()/previewQuarterlyBonus() actually use.
-    buildStaffCache_: buildStaffCache_
+    buildStaffCache_: buildStaffCache_,
+
+    // Exposed 2026-09-15 (Quarterly Readiness Check feature) — same
+    // precedent as above — QuarterlyReadinessEngine.gs reads ratings
+    // completeness through the REAL function computeBonuses_ relies on
+    // (getInternalRatings_), and needs toIsoDate_ to build the same
+    // as-of-quarter-start date getInternalRatings_ itself uses for
+    // buildStaffCache_, rather than re-deriving either independently.
+    getInternalRatings_: getInternalRatings_,
+    toIsoDate_:          toIsoDate_
   };
 
 }());
@@ -2637,10 +2646,27 @@ function runQ2MajorReworkJobCheck() {
 }
 
 /**
- * ONE-TIME Q2 2026 rework_cycle backfill — reads QC_MAJOR_REWORK /
+ * ONE-TIME Q2 2026 entrypoint — thin wrapper over reworkCycleBackfillCore_
+ * (below), kept exactly as originally shipped so its existing behavior and
+ * any editor bookmarks/history referencing this name are unaffected.
+ * @param {boolean} [dryRun]  Pass exactly `false` to write. Anything else
+ *   (including omitted) previews without writing.
+ * @returns {{dryRun:boolean, affected:number, updated:number, notFound:number}}
+ */
+function runQ2ReworkCycleBackfill(dryRun) {
+  return reworkCycleBackfillCore_('Q2', 2026, dryRun);
+}
+
+/**
+ * rework_cycle backfill, generalized by quarter/year — reads QC_MAJOR_REWORK /
  * QC_REWORK_REQUESTED (legacy) events directly from FACT_QC_EVENTS (the
  * authoritative event log) and writes the correct count to
- * VW_JOB_CURRENT_STATE.rework_cycle for every affected job_number.
+ * VW_JOB_CURRENT_STATE.rework_cycle for every affected job_number in the
+ * given quarter. Added 2026-09-15 for the Quarterly Readiness Check
+ * feature (portal-run, any quarter) — generalizes the original Q2 2026
+ * one-time script (runQ2ReworkCycleBackfill, above, now a thin wrapper
+ * calling this with ('Q2', 2026)) so the same fix applies every quarter
+ * without a new one-off script each time.
  *
  * Root cause this works around (does NOT fix): EventReplayEngine.gs's
  * rebuildJobView_() never reads FACT_QC_EVENTS at all — see commit
@@ -2648,8 +2674,6 @@ function runQ2MajorReworkJobCheck() {
  * this backfill exists because historical events predate that being
  * understood, and a full EventReplayEngine.gs fix was deliberately
  * deferred (proposed but not implemented, per the fix-proposal writeup).
- * This is a targeted patch scoped to Q2 2026 only, for the Q2 bonus
- * calculation — not a general-purpose repair tool.
  *
  * SAFE BY DEFAULT: dryRun defaults to true, the OPPOSITE of this
  * codebase's other dry-run functions (e.g. DataSelfHealing.gs's
@@ -2666,22 +2690,25 @@ function runQ2MajorReworkJobCheck() {
  * append-only FACT table; this updates a mutable VW row instead).
  *
  * Requires QuarterlyBonusEngine to be authorized in DAL.gs's
- * WRITE_PERMISSIONS for VW_JOB_CURRENT_STATE — added in this same commit.
+ * WRITE_PERMISSIONS for VW_JOB_CURRENT_STATE — already granted for the
+ * original Q2 script; unchanged by this generalization.
  *
+ * @param {string} quarter  'Q1'..'Q4'
+ * @param {number} year
  * @param {boolean} [dryRun]  Pass exactly `false` to write. Anything else
  *   (including omitted) previews without writing.
  * @returns {{dryRun:boolean, affected:number, updated:number, notFound:number}}
  */
-function runQ2ReworkCycleBackfill(dryRun) {
+function reworkCycleBackfillCore_(quarter, year, dryRun) {
   dryRun = (dryRun === false) ? false : true;
   var CALLER = 'QuarterlyBonusEngine';
 
-  var range = QuarterlyBonusEngine.quarterDateRange_('Q2', 2026);
+  var range = QuarterlyBonusEngine.quarterDateRange_(quarter, year);
   var MAJOR_TYPES = { QC_MAJOR_REWORK: true, QC_REWORK_REQUESTED: true };
 
-  console.log('\n══════ Q2 2026 rework_cycle backfill — ' +
+  console.log('\n══════ ' + quarter + ' ' + year + ' rework_cycle backfill — ' +
               (dryRun ? 'DRY RUN (preview only, nothing written)' : 'LIVE — WRITING') + ' ══════');
-  console.log('Q2 range: ' + range.start.toDateString() + ' – ' + range.end.toDateString() + ' (exclusive)');
+  console.log(quarter + ' ' + year + ' range: ' + range.start.toDateString() + ' – ' + range.end.toDateString() + ' (exclusive)');
 
   // ── Step 1: count major rework events per job_number, from FACT_QC_EVENTS ──
   var sheets = DAL.listSheets();
@@ -2766,9 +2793,9 @@ function runQ2ReworkCycleBackfill(dryRun) {
   console.log('\n' + (dryRun ? 'DRY RUN complete' : 'LIVE run complete') + ' — ' + updated + ' job(s) ' +
               (dryRun ? 'would be updated' : 'updated') + ', ' + notFound + ' not found in VW.');
   if (dryRun) {
-    console.log('Nothing was written. Review the output above, then run runQ2ReworkCycleBackfill(false) to write.');
+    console.log('Nothing was written. Review the output above, then re-run with dryRun=false to write.');
   } else {
-    console.log('Run runQ2ErrorScorePreview() now to confirm affected designers show reduced error_scores.');
+    console.log('Run runQ2ErrorScorePreview() (Q2 2026 only) or re-read VW_JOB_CURRENT_STATE now to confirm affected designers show reduced error_scores.');
   }
   console.log('══════ End backfill ══════\n');
 

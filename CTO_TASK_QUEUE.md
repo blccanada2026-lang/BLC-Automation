@@ -33,6 +33,67 @@ lacks, that silently deletes it from DEV.
 
 ## Session State (last updated: end of turn, 2026-09-15)
 
+**2026-09-15, NEW THREAD OPENED, Socratic mode — not yet started, question
+phase.** User asked: check whether Q2 bonus calculations and the
+client/supervisor feedback-form flow are "wired fully" (scope not yet
+clarified — could mean code exists / mechanically connected / populated
+with real Q2 data / a specific deadline concern), consult advisor as part
+of it. **User explicitly invoked two standing operating modes for this
+task** (now also saved as memory `feedback_socratic_ceo_mindset.md`):
+(1) Socratic — ask one clarifying question at a time before investigating,
+don't dump an answer; (2) CEO mindset — once answering, surface only 2-3
+strategic calls that would move the needle, skip small stuff, not an
+exhaustive audit trail (opposite style from this session's payroll audit,
+which was deliberately thorough). User also asked: if context usage
+exceeds ~70%, proactively compact/refresh without losing this task's
+state — this file is the continuity mechanism for that. **Status: first
+clarifying question asked, awaiting answer — no investigation started yet,
+no files read yet beyond this note.**
+
+---
+
+**2026-09-15, later — PUSHED TO DEV THEN PROD.** After the git push to
+origin (`bfe09e1`), user said "move to dev": `npm run push:dev` → 170
+files, DEV script ID confirmed, both `PayrollEngine.gs` and the new
+`Aug2026BonusAdjustment.gs` confirmed in the pushed set. Then "npm run
+push:prod": git re-checked clean, `npm run push:prod` → **170 files
+live in PROD** 10:13:14am, script ID confirmed
+(`1HzRiDrQJ6z-BxPzk...`). No `PortalView.html`/`Portal.gs` touched, so
+no manual New Version redeploy needed (R4.7 N/A).
+
+**DRY RUN + REAL RUN executed 2026-09-15, 10:18-10:19am — CORRECTIONS
+APPLIED IN PROD.** Dry run confirmed: script ID PROD, both BCH and SGO
+still `PENDING_CONFIRMATION` (no drift since 2026-09-13/14), deltas
+exactly as expected. Real run (`runAug2026BonusAdjustment('raj.nair@bluelotuscanada.ca')`)
+completed cleanly — no errors, no "NO EMAIL SENT" warnings (both
+staff resolved in `staffCache`, both correction emails sent via HR
+routing). **BCH: ₹4,487.50 → ₹7,987.50 (PAYROLL_BONUS_ADJUSTED row
+written). SGO: ₹48,343.75 → ₹54,843.75 (PAYROLL_BONUS_ADJUSTED row
+written).** `MART_PAYROLL_SUMMARY` refreshed. Deb Sen's row untouched
+throughout, as designed.
+
+**2026-09-15, 10:32am — full team unified-statement resend to HR
+(read-only, one-off `temp.gs` script, same pattern as the 2026-09-12
+send, not committed to the repo).** User asked to resend all individual
+payout statements to HR for a final check now that the corrections are
+in. Read `FACT_PAYROLL_LEDGER` for `2026-08`, summed
+`PAYROLL_CALCULATED` (base) + `PAYROLL_BONUS_SUPERVISOR` +
+`PAYROLL_BONUS_ADJUSTED` (bonus, now correctly including both
+corrections) per person, sent 17 HR-routed emails (Design/QC hours+pay,
+Supervisor Bonus line where nonzero, Grand Total). **All 17 sent
+successfully, no errors.** Confirmed the two corrected figures came
+through exactly right: **BCH bonus 7,987.50, SGO bonus 54,843.75** — both
+matching the `runAug2026BonusAdjustment` run above. Deb Sen unchanged at
+1,150. No FACT writes — read + email only.
+
+**Not yet done — 2 manual steps left, not scriptable, need the user:**
+(1) HR reviews and forwards all 17 (or at minimum the corrected 2) to
+each named person; staff re-confirm via the portal; (2) only after
+that, run `approveAllPayroll('2026-08')`. This closes out the entire
+Sarty-bonus-audit thread that opened this session.
+
+---
+
 **2026-09-15 — Aug-2026 bonus adjustment mechanism BUILT (subagent-driven,
 not yet deployed).** User said "let's work through the adjustment
 mechanism" for the two now-confirmed-wrong Aug bonus rows (Bharath
@@ -1642,7 +1703,21 @@ timesheet; Abhisek Rit — Nelson, job BLC-01070, 2026-08-24, byte-identical
 - **Payroll Automation Phase B1 (Items 2–3)** — status last checked 2026-07-29, not revisited since. Item 1 (RBAC/`HR_ACCOUNTING`) is live in PROD. Items 2 (onboarding proof) and 3 (PM bonus, fixed twice on real DEV findings) — **needs a status check**, may be stale/paused or simply forgotten. Branch `payroll-automation/phase-b1`. **Correction (2026-08-12): DEV was NOT actually holding this branch** — see DEV state note below; this item's "pushed to DEV" claim was stale/inaccurate and should be re-verified once DEV is repointed back to phase-b2.
 - **DEV environment state (2026-08-12):** DEV had been running the **uncommitted working tree** of `payroll-automation/phase-b2` (found via `clasp pull` comparison — not any committed branch). That work is now committed (`payroll-automation/phase-b2` `0786b49`, not yet pushed to origin) plus backed up to `~/blc-nexus-dev-snapshot-2026-08-12.tar.gz`. DEV now holds `qc-findings-picker`/`main` post-merge. **To restore DEV to the phase-b2/Aug2026-partition-recovery state:** run `npm run push:dev` from `.worktrees/payroll-automation-phase-b2`.
 - **Two real bugs found by W2-3's first-ever live test execution (2026-08-12), both fixed, merged in PR #21:** (1) `FACT_QC_FINDINGS` was missing from `DAL.gs`'s `PARTITIONED_TABLES` map, so every read/write resolved to a bare, never-created tab instead of a monthly partition (`FACT_QC_REVIEW_SESSIONS`/`FACT_QC_REVIEW_CHECKLISTS` have the identical latent gap, not fixed — no writer yet, will bite their first writer the same way). (2) Google Sheets silently coerces a `"TRUE"` string into a real boolean on write; `String(true) === 'true'` (lowercase) failed a strict `=== 'TRUE'` check on `DIM_QC_FINDING_TYPES.active_flag`, rejecting every finding code as inactive despite correct seed data. Fixed in `QCHandler.gs` and `Portal.gs` (`.toUpperCase()` before compare). **Standing gotcha:** any future `DIM_*`/`FACT_*` table with a `TRUE`/`FALSE` column will hit this same coercion.
-- **Q2 ratings** — blocked on data collection, not code. `Q2RatingsPreflightCheck.gs` last showed 0/13 active staff confirmed for `2026-Q2`. Re-run to check current progress before any Q2 bonus dry-run.
+- **Q2 bonus wiring check (2026-09-15, two forks + advisor, YELLOW verdict)** — calculation code is real and correctly wired end-to-end (feedback + TL/PM/CEO ratings genuinely feed `QuarterlyBonusEngine.gs`, 312 tests passing, no `DAL.gs` write-permission gaps). Exposure is entirely in unconfirmed operational follow-through — same pattern as the Aug2026 bonus bug (Rajkumar/Deb Sen supervision rows) and the `Aug2026BonusAdjustment` write-permission gap: code shipped, the data-side step it depended on was never confirmed done. **Run in this order — each gates the next:**
+  1. **BLOCKER — run first:** `runQ2RatingsPreflightCheck()` in `src/12-migration/Q2RatingsPreflightCheck.gs:41`. Last known value "0/13 active staff confirmed" is a stale mid-August read, not current — nobody knows today's real number. If it's still near-zero, there is no Q2 bonus to calculate yet (`getInternalRatings_`, `QuarterlyBonusEngine.gs:319`, requires TL+PM scores for designers / CEO scores for TLs+PMs — missing ratings means missing bonuses, not wrong ones). The other two items below are precision problems that only matter once this one clears.
+  2. `runQ2ReworkCycleBackfill(false)` in `src/10-payroll/QuarterlyBonusEngine.gs:2676` — fixes a `rework_cycle` data bug affecting ≥4 real jobs' QC error rates feeding the Q2 calc. Written and committed with `dryRun=true` default; no record it was ever run live. Run only after step 1 confirms there's real data to protect.
+  3. `runQ2RatingsPeriodIdCheck()` (`QuarterlyBonusEngine.gs:2400`) and `runQ2BonusLedgerPeriodIdCheck()` (`QuarterlyBonusEngine.gs:2428`) — read-only diagnostics for a documented `period_id` corruption risk, confirmed unconfirmed for `FACT_PERFORMANCE_RATINGS`, never even checked for `FACT_CLIENT_FEEDBACK` (`QuarterlyBonusEngine.gs:306-318`). Never run.
+  - **Unverified, not clean:** `installFeedbackTrigger()` (`src/09-feedback/ClientFeedbackTrigger.gs:187`) — fork ran out of budget confirming this fired this quarter. If it never ran, client feedback collection may not have fired at all, independently explaining thin Q2 data. Flagged, not chased.
+  - **Systemic takeaway (advisor):** this is the third time in one quarter that code shipped ahead of an unconfirmed data step. Worth one line in the payroll/bonus run checklist: every `dryRun` default flipped and logged, every migration script's `WRITE_PERMISSIONS` entry present, before calling a bonus run "ready."
+
+- **"Full quarterly cycle automation" feature check (2026-09-15, advisor-reviewed)** — user asked whether the portal auto-sends feedback/rating requests every quarter and auto-generates the bonus statement, per "requirements/architecture." Checked both source docs directly, not just current code:
+  - `docs/superpowers/specs/2026-04-06-quarterly-bonus-engine-design.md` (the original approved spec) never specifies an unattended cycle — step 1 is "prompt for quarter/year," step 11 is "show summary alert," §4.4 is "Raj reviews BONUS_LEDGER → approves." The only "automatic" in the whole doc (line 208) is annual bonus auto-chaining after a quarterly run, not scheduling.
+  - `.worktrees/payroll-automation-phase-b1/PAYROLL_AUTOMATION_ARCHITECTURE.md` (the actual architecture doc — not in `main`, only in two worktrees) states outright: **"Payroll itself has zero triggers... No `ScriptApp.newTrigger` for payroll automation"** (line 236-241), and its trigger inventory (row 10) explicitly logs the quarterly rating request/reminder as "manual CEO action," same for the client feedback request (row 12, `ClientFeedback.gs:565`).
+  - **Conclusion: nothing was missed. The requirements never called for a fully unattended cycle** — a human-triggered send + explicit review/approve was the intended design from day one, not a shortcut taken under deadline pressure.
+  - **What IS genuinely built and CEO-reachable today** (confirmed via `PortalView.html:443-444`, real buttons wired to live backend, not editor-only): "✉ Send Feedback Requests" → `ClientFeedback.gs` flow (form → `onFeedbackFormSubmit` → queue → `FACT_CLIENT_FEEDBACK`) and "📋 Send Rating Requests" → `PortalData.sendRatingRequests()`, which does include the CEO as a rater (`RatingRequestPreview.gs`'s `isCeo` branch) — TL/PM/CEO are all covered, not just TL/PM. `getRatingsGaps`/`sendRatingReminder` (`PortalData.gs:1132,1249`) already exist to chase stragglers, also manual.
+  - **What's genuinely absent:** (1) any time-based trigger to fire those two sends automatically each quarter (confirmed via full-repo `ScriptApp.newTrigger` sweep — none exists for this); (2) auto-commit of the bonus once data is complete — and this one is a **deliberate ADR, not a gap**: `SOP_DECISIONS.md:454`, dry-run-only by design, checksum-gated runId enforcing "can't commit what wasn't previewed," put in place after the Q1 2026 bonus was computed over 616h+215h of contaminated migrated hours and needed a full amendment. A "statement generator" partially exists too — `previewPayoutStatement` (`docs/superpowers/specs/2026-08-26-payout-statement-design.md`) can include quarterly bonus as an opt-in preview section, but by design never sums it into a total, because quarterly/annual bonus "has no confirmation mechanism at all today."
+  - **Recommended next-quarter build (not started, not scoped):** a scheduled trigger that fires the two existing portal-send functions automatically each quarter, plus surfaces `getRatingsGaps` output to the CEO — gets nearly all the value of "automatic" with none of the risk. Explicitly do **not** automate the commit step; that gate stays manual per the standing ADR.
+  - **Not a Q2-payout blocker** — this is a next-quarter build question, doesn't touch the imminent Q2 run. `runQ2RatingsPreflightCheck()` (see item above) remains the actual next action.
 - **First-ever supervised HR_ACCOUNTING/ADMIN Run Billing click** and **CEO smoke-test of Generate Timesheet with a real range** — both still open from the 2026-08-06 PR #15 thread, not yet confirmed done.
 - `runSendOnboardingEmailToARN()` — harmless one-off sitting in `StaffOnboardingMailer.gs`, safe to delete whenever that file is next touched.
 - **19 truly orphaned job_numbers** (post-cutover, don't resolve via normalization) — needs a manual decision: create VW rows for them, or write them off. See `PROJECT_MEMORY.md` §12 ADR-WL-001.

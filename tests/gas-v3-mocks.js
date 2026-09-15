@@ -46,6 +46,20 @@ function makeV3Mocks() {
     rows.forEach(function (r) { appendRow(tableName, r, opts); });
   }
 
+  function updateWhere(tableName, conditions, updates, opts) {
+    var rows = store[sheetKey_(tableName, opts)] || [];
+    var updated = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var matches = Object.keys(conditions).every(function (k) { return rows[i][k] === conditions[k]; });
+      if (matches) {
+        Object.assign(rows[i], updates);
+        updated++;
+      }
+    }
+    // Matches real DAL.updateWhere's { updated: N } return shape.
+    return { updated: updated };
+  }
+
   function listSheets() {
     return Object.keys(store);
   }
@@ -65,6 +79,7 @@ function makeV3Mocks() {
       readWhere: function (tableName, conditions, opts) { return readWhere(tableName, conditions, opts); },
       appendRow: function (tableName, row, opts) { return appendRow(tableName, row, opts); },
       appendRows: function (tableName, rows, opts) { return appendRows(tableName, rows, opts); },
+      updateWhere: function (tableName, conditions, updates, opts) { return updateWhere(tableName, conditions, updates, opts); },
       listSheets: function () { return listSheets(); }
     },
     Config: {
@@ -80,6 +95,7 @@ function makeV3Mocks() {
       info: function () {}, warn: function () {}, error: function () {}
     },
     Identifiers: { generateId: generateId },
+    Session: { getScriptTimeZone: function () { return 'UTC'; } },
     HealthMonitor: { isApproachingLimit: function () { return false; } },
     CacheService: {
       getScriptCache: function () {
@@ -98,6 +114,14 @@ function makeV3Mocks() {
         var bytes = [];
         for (var i = 0; i < str.length; i++) bytes.push(str.charCodeAt(i) % 256);
         return bytes.slice(0, 16);
+      },
+      // Not a real formatter — sufficient for the yyyy-MM-dd pattern this
+      // codebase's toIsoDate_() helpers actually use.
+      formatDate: function (date, tz, pattern) {
+        var y = date.getFullYear();
+        var m = String(date.getMonth() + 1); if (m.length < 2) m = '0' + m;
+        var d = String(date.getDate());      if (d.length < 2) d = '0' + d;
+        return y + '-' + m + '-' + d;
       }
     }
   };
@@ -110,6 +134,7 @@ function installV3Mocks() {
   global.RBAC          = mocks.RBAC;
   global.Logger        = mocks.Logger;
   global.Identifiers   = mocks.Identifiers;
+  global.Session       = mocks.Session;
   global.HealthMonitor = mocks.HealthMonitor;
   global.CacheService  = mocks.CacheService;
   global.Utilities     = mocks.Utilities;

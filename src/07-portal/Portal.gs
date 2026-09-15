@@ -993,6 +993,36 @@ function portal_sendRatingReminder(ptoken, quarterPeriodId, raterCode) {
   return PortalData.sendRatingReminder(email, quarterPeriodId, raterCode, null);
 }
 
+// ============================================================
+// portal_runQuarterlyReadinessCheck / portal_applyReworkCycleBackfill
+// See QuarterlyReadinessEngine.gs — bundled ratings-completeness +
+// rework-cycle-backfill-preview + period_id-integrity report for any
+// quarter, plus the one separate write action. CEO/HR_ACCOUNTING can run
+// the check (PAYROLL_VIEW); only CEO can apply the backfill.
+// ============================================================
+
+/**
+ * @param {string} quarter  'Q1'..'Q4'
+ * @param {number|string} year
+ * @returns {string}  JSON — see QuarterlyReadinessEngine.runQuarterlyReadinessCheck
+ */
+function portal_runQuarterlyReadinessCheck(ptoken, quarter, year) {
+  var email = PortalAuth.resolveEmail(ptoken);
+  var result = QuarterlyReadinessEngine.runQuarterlyReadinessCheck(email, quarter, year);
+  return JSON.stringify(result);
+}
+
+/**
+ * @param {string} quarter  'Q1'..'Q4'
+ * @param {number|string} year
+ * @returns {string}  JSON: { dryRun, affected, updated, notFound }
+ */
+function portal_applyReworkCycleBackfill(ptoken, quarter, year) {
+  var email = PortalAuth.resolveEmail(ptoken);
+  var result = QuarterlyReadinessEngine.applyReworkCycleBackfill(email, quarter, year);
+  return JSON.stringify(result);
+}
+
 /**
  * One-time setup: stores the web app /exec URL in Script Properties.
  * Run this manually from the Apps Script editor after deploying.
