@@ -31,7 +31,131 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-09-13)
+## Session State (last updated: end of turn, 2026-09-15)
+
+**2026-09-15 — Aug-2026 bonus adjustment mechanism BUILT (subagent-driven,
+not yet deployed).** User said "let's work through the adjustment
+mechanism" for the two now-confirmed-wrong Aug bonus rows (Bharath
+₹4,487.50→₹7,987.50, Sarty/PM ₹48,343.75→₹54,843.75). Full cycle: brainstorm
+(architectural path) → spec at
+`docs/superpowers/specs/2026-09-14-payroll-bonus-adjustment-design.md`
+(advisor-reviewed, 4 fixes applied) → plan at
+`docs/superpowers/plans/2026-09-14-payroll-bonus-adjustment.md` →
+subagent-driven-development execution, directly on `main` (user's
+explicit choice, no worktree — consistent with this whole session).
+
+- **New mechanism:** `PAYROLL_BONUS_ADJUSTED` event type — a delta-only
+  row, `refreshMartPayrollSummary_` now sums it alongside
+  `PAYROLL_BONUS_SUPERVISOR` (`PayrollEngine.gs:1024-1025`,1078`). New
+  `sendBonusAdjustmentEmail_` (HR-routed correction email,
+  `PayrollEngine.gs:~839`). Both exposed on the public API.
+- **One-off script:** `src/12-migration/Aug2026BonusAdjustment.gs` —
+  `runAug2026BonusAdjustmentDryRun()` / `runAug2026BonusAdjustment(actorEmail)`,
+  hardcoded to exactly the two corrections. Two-pass structure (verify
+  ALL corrections' guards before writing ANY — a real gap found and
+  fixed during task review; the first version let one person's write
+  proceed before the second's mismatch check could abort). Prints
+  script ID before any write (DEV/PROD confirmation). Silently-skipped
+  emails now surface as `reason: 'applied_no_email'` plus a console
+  warning, not silent success.
+- **Critical bug found and fixed during final review:** the script's
+  `callerModule` identity (`'Aug2026BonusAdjustment'`) was never added
+  to `DAL.gs`'s `WRITE_PERMISSIONS['FACT_PAYROLL_LEDGER']` array — the
+  real run would have thrown `WRITE_GUARD_DENIED` on its first write in
+  PROD (fails safe — zero writes — but couldn't do its job). Invisible
+  to Jest because the shared mock's `appendRow` drops the `callerModule`
+  argument entirely. Fixed: identity added to the matrix
+  (`DAL.gs:118`), noted in `docs/SYSTEM_ARCHITECTURE.md`.
+- **6 commits, all local, NOT pushed to origin yet:** `70f57b9` (spec) →
+  `1dc415c` (MART sum) → `9e5043c` (correction email) → `a479c29`
+  (script) → `13a6a9f` (whole-batch safety fix) → `ecc60b6` (final-review
+  fixes: write-permission, script-ID print, silent-email fix, RBAC-denial
+  test). Full test suite: 4,772 passing (same 2 pre-existing unrelated
+  `code-review-graph/` fixture failures throughout).
+- **Not yet done:** git push to origin, `npm run push:dev`/`push:prod`,
+  and the actual PROD run sequence (dry-run → real run → confirm HR
+  forwarded both correction emails → only then `approveAllPayroll('2026-08')`).
+  Full SDD ledger with all review findings (including 5 parked Minor
+  items) at `.superpowers/sdd/2026-09-14-payroll-bonus-adjustment/progress.md`
+  until the workspace is cleaned up per `finishing-a-development-branch`.
+
+---
+
+**2026-09-14 — PUSHED TO PROD.** User asked to run the R5/R6 pre-PROD
+checklist, one blocker found (`git status` dirty — R9 stop condition),
+user said "yes, commit and push": committed `db3b810` ("Count design and
+QC hours equally in supervisor/PM bonus pools") covering the 5 files
+changed this session, pushed to `origin/main` — confirmed `git status`
+clean and `git log origin/main..HEAD` empty afterward. User then said
+"npm run push:prod" directly — ran it, **169 files pushed to PROD**
+11:10:31am, `.clasp.json` confirmed pointing to the PROD script ID
+(`1HzRiDrQJ6z-BxPzk...`) after the push. Neither `PortalView.html` nor
+`Portal.gs` touched this session, so no manual "New Version" redeploy
+needed (R4.7 N/A).
+
+**Post-deploy confirmation run (same day, 1:51-2:00pm) — fix verified
+live in PROD, one new gap found and fixed:**
+
+- First confirmation run (1:51pm) came back byte-for-byte IDENTICAL to
+  the pre-fix numbers — investigated, found no actual problem (re-ran
+  `npm run push:prod` again as a precaution, confirmed `PayrollEngine.gs`
+  present in the pushed file list, no `.claspignore` exclusion); second
+  run (1:55pm) showed the fix live. Root cause of the first stale-looking
+  run not conclusively identified (Apps Script editor/propagation
+  quirk suspected) — not investigated further since re-running resolved
+  it; flag if it recurs.
+- **BCH (Bharath) CONFIRMED: ₹7,987.50 = 319.5h — exact match to ground
+  truth** (179.5 old + Rajkumar's 140).
+- **SGO (Sarty) PM bonus CONFIRMED via direct computation
+  (`PayrollEngine.buildPmBonusMap_`, dry-run tool doesn't cover PM):
+  ₹54,843.75 = 2,193.75h** (1,933.75 old + Deb Sen's 120 QC + Rajkumar's
+  140 QC — arithmetic checks out exactly).
+- **New gap surfaced by the fix itself (not a code bug — same blind spot
+  as Rajkumar's, now fixed):** pre-cutover gate went NOT CLEAN — 6
+  unexpected blocked pairs, all Deb Sen's own personal hours (120h
+  total across Matix-SK/Alberta Truss/Nelson, 100% QC, invisible under
+  the old design-only formula same as Rajkumar's were). Had this not
+  been fixed, `runBonusRun` would ABORT ENTIRELY (paying nobody, not
+  just Deb Sen) the next time it's actually run. **FIXED 2026-09-14
+  2:00pm** — user confirmed same pattern as Bharath's own-hours setup;
+  ran `assignAccountSupervisor` for DBS→SGO on all 3 clients
+  (Matix-SK, Alberta Truss, Nelson), all three confirmed
+  `newRowCreated:true`.
+- **Not yet re-verified:** need one more dry-run pass to confirm
+  `unexpectedBlockedPairs: 0` again after this latest fix, before
+  treating the picture as fully closed.
+
+**Final re-verification DONE 2026-09-14 2:02pm — AUDIT FULLY CLOSED,
+numbers locked.** Re-ran `tempConfirmAug2026BonusFix`:
+- **`PRE-CUTOVER GATE: CLEAN — 0 unexpected blocked pairs`** confirmed.
+- Deb Sen's 6 own-hours pairs now correctly appear in
+  `skippedNonTeamLead` (rolling up to SGO, same as BCH's own-hours
+  pattern) instead of `blockedPairs`. Her own `bonusMap` figure
+  unchanged at ₹1,150 (46h, PRS+AR001) — correct, she is never credited
+  for her own hours.
+- **BCH final: ₹7,987.50 (319.5h)** — stable, exact match to ground
+  truth.
+- **SGO (PM) final: ₹54,843.75 (2,193.75h)** — stable.
+- **DBS final: ₹1,150 (46h)** — unchanged, confirmed correct earlier
+  this session, not touched.
+
+**Not yet done:**
+1. **PROD health verification** — per `testing-policy.md`, never run a
+   test suite against PROD; the sanctioned checks (`runHealthCheck()`,
+   confirm no new `HealthMonitor` alerts, portal loads, a real job
+   round-trips) still haven't been run this session.
+2. **The actual August correction — still not started.** Bharath's and
+   Sarty's `FACT_PAYROLL_LEDGER` rows for 2026-08 are still sitting at
+   their OLD (pre-fix) figures: BCH was ₹4,487.50 (needs to become
+   ₹7,987.50, +₹3,500), SGO was ₹48,343.75 (needs to become ₹54,843.75,
+   +₹6,500). None of today's `REF_ACCOUNT_SUPERVISION` data fixes or the
+   code deploy retroactively rewrite already-written ledger rows. Needs
+   an explicit adjustment event (Rule A5 — never an overwrite) once the
+   user wants to proceed. Deb Sen's row is correct and must NOT be
+   touched. No design for this adjustment mechanism has been discussed
+   yet — next thing to work through with the user.
+
+---
 
 **2026-09-13, latest — PUSHED TO DEV.** User said "push to dev now" once
 the manual-audit thread below fully closed (Rajkumar's `REF_ACCOUNT_SUPERVISION`
