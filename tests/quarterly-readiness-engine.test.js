@@ -30,9 +30,25 @@ beforeEach(() => {
   mocks.Config.TABLES.FACT_QC_EVENTS           = 'FACT_QC_EVENTS';
   mocks.Config.TABLES.VW_JOB_CURRENT_STATE     = 'VW_JOB_CURRENT_STATE';
   mocks.Config.TABLES.DIM_STAFF_ROSTER         = 'DIM_STAFF_ROSTER';
+  // ClientFeedback is a separate, large module (FormApp-dependent) — mocked
+  // at the boundary rather than loaded, same thin-wrapper precedent as the
+  // Portal.gs tests. Default: no responses for any month; tests override
+  // per-call via feedbackStatusByMonth.
+  global.ClientFeedback = {
+    getFeedbackStatus: jest.fn(function (actorEmail, periodId) {
+      return { period_id: periodId, quarter: '', responses_received: 0, per_designer: [] };
+    })
+  };
   loadSrc('../src/10-payroll/QuarterlyBonusEngine.gs');
   loadSrc('../src/12-migration/QuarterlyReadinessEngine.gs');
 });
+
+function mockFeedbackByMonth(byPeriod) {
+  global.ClientFeedback.getFeedbackStatus = jest.fn(function (actorEmail, periodId) {
+    var responses = byPeriod[periodId] || 0;
+    return { period_id: periodId, quarter: '', responses_received: responses, per_designer: [] };
+  });
+}
 
 function seedRoster(rows) {
   mocks.store['DIM_STAFF_ROSTER'] = rows.map(r => Object.assign({
@@ -51,7 +67,7 @@ function ratingRow(overrides) {
 }
 
 describe('QuarterlyReadinessEngine.runQuarterlyReadinessCheck', () => {
-  test('happy path — bundles ratings completeness, rework preview, and period_id integrity into one report', () => {
+  test('happy path — bundles ratings completeness, client feedback, rework preview, and period_id integrity into one report', () => {
     seedRoster([
       { person_code: 'DS1', name: 'Designer One', role: 'DESIGNER' },
       { person_code: 'DS2', name: 'Designer Two', role: 'DESIGNER' },
@@ -61,6 +77,7 @@ describe('QuarterlyReadinessEngine.runQuarterlyReadinessCheck', () => {
       ratingRow({ ratee_code: 'DS1', rater_code: 'TL1', rater_role: 'TEAM_LEAD' })
       // DS2 has no rating at all; TL1 has no CEO rating — both PENDING/missing
     ];
+    mockFeedbackByMonth({ '2026-04': 3, '2026-05': 0, '2026-06': 2 });
     mocks.store['FACT_QC_EVENTS|2026-04'] = [
       { event_type: 'QC_MAJOR_REWORK', job_number: 'BLC-100', timestamp: '2026-04-15T10:00:00.000Z' }
     ];
@@ -75,6 +92,12 @@ describe('QuarterlyReadinessEngine.runQuarterlyReadinessCheck', () => {
     expect(report.ratings.staff_confirmed).toBe(1); // only DS1
     expect(report.ratings.staff_missing.map(m => m.code).sort()).toEqual(['DS2', 'TL1']);
 
+    expect(report.client_feedback.total_responses).toBe(5);
+    expect(report.client_feedback.by_month.map(m => m.period_id)).toEqual(['2026-04', '2026-05', '2026-06']);
+    expect(ClientFeedback.getFeedbackStatus).toHaveBeenCalledWith('ceo@test.blc.internal', '2026-04');
+    expect(ClientFeedback.getFeedbackStatus).toHaveBeenCalledWith('ceo@test.blc.internal', '2026-05');
+    expect(ClientFeedback.getFeedbackStatus).toHaveBeenCalledWith('ceo@test.blc.internal', '2026-06');
+
     expect(report.rework_backfill.dryRun).toBe(true);
     expect(report.rework_backfill.affected).toBe(1);
     expect(report.rework_backfill.updated).toBe(1);
@@ -83,6 +106,16 @@ describe('QuarterlyReadinessEngine.runQuarterlyReadinessCheck', () => {
 
     expect(report.period_id_integrity.ratings.corruptedCount).toBe(0);
     expect(report.period_id_integrity.ledger.corruptedCount).toBe(0);
+  });
+
+  test('client feedback totals zero across all three months when nothing has come in', () => {
+    seedRoster([]);
+    // Default mock (installed in beforeEach) returns 0 for every month.
+    const report = QuarterlyReadinessEngine.runQuarterlyReadinessCheck('ceo@test.blc.internal', 'Q2', 2026);
+
+    expect(report.client_feedback.total_responses).toBe(0);
+    expect(report.client_feedback.by_month).toHaveLength(3);
+    report.client_feedback.by_month.forEach(m => expect(m.responses_received).toBe(0));
   });
 
   test('reports zero rework jobs and full confirmation when everything is clean', () => {

@@ -4879,6 +4879,13 @@ function renderQuarterlyReadiness_(quarter, year, r) {
     : '<div style="color:#b45309">⚠ Rework-cycle data: ' + r.rework_backfill.affected +
       ' job(s) would be updated — click "Apply Rework Backfill" to write.</div>';
 
+  var feedbackByMonthText = r.client_feedback.by_month.map(function(m) {
+    return m.period_id + ': ' + m.responses_received;
+  }).join(', ');
+  var feedbackHtml = r.client_feedback.total_responses === 0
+    ? '<div style="color:#c62828">✗ Client feedback: 0 responses received (' + feedbackByMonthText + ').</div>'
+    : '<div>✓ Client feedback: ' + r.client_feedback.total_responses + ' response(s) total (' + feedbackByMonthText + ').</div>';
+
   var ratingsCorrupted = r.period_id_integrity.ratings.corruptedCount > 0;
   var ledgerCorrupted  = r.period_id_integrity.ledger.corruptedCount > 0;
   var integrityHtml =
@@ -4889,13 +4896,15 @@ function renderQuarterlyReadiness_(quarter, year, r) {
 
   document.getElementById('qr-panel-body').innerHTML =
     '<div><strong>Ratings:</strong> ' + r.ratings.staff_confirmed + '/' + r.ratings.staff_total + ' confirmed.' + missingHtml + '</div>' +
+    '<div style="margin-top:8px">' + feedbackHtml + '</div>' +
     '<div style="margin-top:8px">' + reworkHtml + '</div>' +
     '<div style="margin-top:8px">' + integrityHtml + '</div>';
 
   document.getElementById('btn-apply-rework-backfill').style.display = r.rework_backfill.affected > 0 ? 'inline-block' : 'none';
   document.getElementById('quarterly-readiness-panel').style.display = 'block';
 
-  showToast('Readiness check complete for ' + r.period_id + '.', r.ratings.staff_confirmed < r.ratings.staff_total ? 'warning' : 'success');
+  var hasGaps = r.ratings.staff_confirmed < r.ratings.staff_total || r.client_feedback.total_responses === 0;
+  showToast('Readiness check complete for ' + r.period_id + '.', hasGaps ? 'warning' : 'success');
 }
 
 function applyReworkCycleBackfill() {

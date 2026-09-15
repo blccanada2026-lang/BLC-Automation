@@ -831,8 +831,14 @@ var QuarterlyBonusEngine = (function () {
     // (getInternalRatings_), and needs toIsoDate_ to build the same
     // as-of-quarter-start date getInternalRatings_ itself uses for
     // buildStaffCache_, rather than re-deriving either independently.
+    // monthPeriodIds_ is exposed for the same reason, added same day —
+    // QuarterlyReadinessEngine's client-feedback-completeness section
+    // needs the same quarter→3-months split getClientScores_ uses
+    // internally, so it queries the same three periods, not a
+    // re-derivation that could drift from QUARTER_MONTHS.
     getInternalRatings_: getInternalRatings_,
-    toIsoDate_:          toIsoDate_
+    toIsoDate_:          toIsoDate_,
+    monthPeriodIds_:     monthPeriodIds_
   };
 
 }());

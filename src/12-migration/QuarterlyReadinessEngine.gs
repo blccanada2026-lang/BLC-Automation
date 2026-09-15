@@ -13,6 +13,11 @@
 //   - QuarterlyBonusEngine.gs's runQ2RatingsPeriodIdCheck /
 //     runQ2BonusLedgerPeriodIdCheck (already quarter-agnostic; reused
 //     via a shared local helper instead of duplicated)
+// Plus one check with no prior one-off precedent, added 2026-09-15 on
+// direct request: client feedback response completeness per month of the
+// quarter, via the REAL ClientFeedback.getFeedbackStatus — feedback and
+// ratings are the two inputs QuarterlyBonusEngine.computeBonuses_ needs,
+// but only ratings had ever had a preflight tool before this.
 //
 // Deliberately dropped: Q2RatingsPreflightCheck.gs's second check
 // (getMyRatees() resolution against the pre-2026-07-01 supervisor
@@ -77,6 +82,7 @@ var QuarterlyReadinessEngine = (function () {
    * @returns {{
    *   period_id: string,
    *   ratings: { staff_total:number, staff_confirmed:number, staff_missing:Array },
+   *   client_feedback: { total_responses:number, by_month:Array },
    *   rework_backfill: { dryRun:boolean, affected:number, updated:number, notFound:number },
    *   period_id_integrity: { ratings:Object, ledger:Object }
    * }}
@@ -107,10 +113,20 @@ var QuarterlyReadinessEngine = (function () {
       }
     });
 
-    // ── 2. Rework-cycle backfill — dry run only in a readiness check ──
+    // ── 2. Client feedback completeness — via the REAL ClientFeedback.getFeedbackStatus,
+    // one call per month of the quarter (client feedback is tracked per-month, not
+    // per-quarter — same 3-month split getClientScores_ uses internally). ──
+    var monthIds  = QuarterlyBonusEngine.monthPeriodIds_(period.quarter, period.year);
+    var byMonth   = monthIds.map(function (pid) {
+      var status = ClientFeedback.getFeedbackStatus(actorEmail, pid);
+      return { period_id: pid, responses_received: status.responses_received, per_designer: status.per_designer };
+    });
+    var totalFeedbackResponses = byMonth.reduce(function (sum, m) { return sum + m.responses_received; }, 0);
+
+    // ── 3. Rework-cycle backfill — dry run only in a readiness check ──
     var reworkPreview = reworkCycleBackfillCore_(period.quarter, period.year, true);
 
-    // ── 3. period_id coercion — both tables the Q2 investigation flagged ──
+    // ── 4. period_id coercion — both tables the Q2 investigation flagged ──
     var ratingsIntegrity = periodIdCoercionCheck_(Config.TABLES.FACT_PERFORMANCE_RATINGS, 'period_id');
     var ledgerIntegrity  = periodIdCoercionCheck_(Config.TABLES.FACT_QUARTERLY_BONUS, 'quarter_period_id');
 
@@ -120,6 +136,10 @@ var QuarterlyReadinessEngine = (function () {
         staff_total:     codes.length,
         staff_confirmed: codes.length - missing.length,
         staff_missing:   missing
+      },
+      client_feedback: {
+        total_responses: totalFeedbackResponses,
+        by_month:         byMonth
       },
       rework_backfill: reworkPreview,
       period_id_integrity: {
@@ -133,6 +153,8 @@ var QuarterlyReadinessEngine = (function () {
     if (missing.length > 0) {
       console.log('  Missing: ' + missing.map(function (m) { return m.code + ' (' + m.name + ')'; }).join(', '));
     }
+    console.log('Client feedback: ' + totalFeedbackResponses + ' response(s) across ' + monthIds.join(', ') +
+                (totalFeedbackResponses === 0 ? ' — NONE received yet' : ''));
     console.log('Rework backfill: ' + reworkPreview.affected + ' job(s) would be updated' +
                 (reworkPreview.affected > 0 ? ' — apply via applyReworkCycleBackfill()' : ' — none needed'));
     console.log('period_id integrity: ratings ' +
