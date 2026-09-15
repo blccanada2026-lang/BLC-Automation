@@ -231,4 +231,26 @@ describe('Aug2026BonusAdjustment.gs — the one-off correction script', () => {
     expect(mocks.store['FACT_PAYROLL_LEDGER'].filter(r => r.event_type === 'PAYROLL_BONUS_ADJUSTED')).toHaveLength(0);
     expect(MailApp.sendEmail).not.toHaveBeenCalled();
   });
+
+  test('safety guard is whole-batch: a mismatch on SGO (checked second) still blocks BCH (checked first, individually correct) from being written or emailed', () => {
+    seedLedger([
+      bonusRow('BCH', 4487.50), // matches expected — BCH's own guard would pass on its own
+      bonusRow('SGO', 11111.11, { event_id: 'ORIG-SGO' }) // does not match the hardcoded expected 48343.75
+    ]);
+    mocks.store['DIM_STAFF_ROSTER'] = [
+      { person_code: 'BCH', name: 'Bharath Chandran', email: 'bch@test.blc.internal', role: 'TEAM_LEAD',
+        supervisor_code: '', pm_code: '', pay_currency: 'INR', pay_design: 350, pay_qc: 350,
+        bonus_eligible: 'TRUE', active: 'TRUE', effective_from: '2025-01-01', effective_to: '' },
+      { person_code: 'SGO', name: 'Sarty Gosh', email: 'sgo@test.blc.internal', role: 'PM',
+        supervisor_code: '', pm_code: '', pay_currency: 'INR', pay_design: 350, pay_qc: 350,
+        bonus_eligible: 'TRUE', active: 'TRUE', effective_from: '2025-01-01', effective_to: '' }
+    ];
+
+    expect(() => runAug2026BonusAdjustment('raj.nair@bluelotuscanada.ca')).toThrow(/SGO/);
+    // Whole-batch guarantee: even though BCH's own current total matched and
+    // would have been written first under a per-item guard, nothing for
+    // BCH (or anyone) was written or emailed because SGO's guard failed.
+    expect(mocks.store['FACT_PAYROLL_LEDGER'].filter(r => r.event_type === 'PAYROLL_BONUS_ADJUSTED')).toHaveLength(0);
+    expect(MailApp.sendEmail).not.toHaveBeenCalled();
+  });
 });

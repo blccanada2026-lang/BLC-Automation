@@ -99,8 +99,12 @@ function aug2026RunCorrections_(write, actorEmail) {
   console.log('=== Aug 2026 bonus adjustment — ' + (write ? 'REAL RUN (writes + emails)' : 'DRY RUN (read-only)') + ' ===');
 
   var staffCache = PayrollEngine.buildStaffCache_(AUG2026_ADJUSTMENT_PERIOD_ID_ + '-01');
-  var results = [];
 
+  // Pass 1 — gather + verify EVERY correction before writing ANY of them.
+  // If any correction fails its mismatch guard, this throws before a
+  // single row has been appended or a single email sent for the whole
+  // batch — not just for whichever correction happens to be checked first.
+  var prepared = [];
   for (var i = 0; i < AUG2026_ADJUSTMENT_CORRECTIONS_.length; i++) {
     var c = AUG2026_ADJUSTMENT_CORRECTIONS_[i];
     var state = aug2026GatherPersonState_(c.personCode);
@@ -117,15 +121,24 @@ function aug2026RunCorrections_(write, actorEmail) {
                        'this script was written. Aborting with NO writes. Re-verify before re-running.');
     }
 
-    var newAmount = Math.round((c.expectedOldAmount + c.deltaAmount) * 100) / 100;
+    prepared.push({ correction: c, state: state });
+  }
 
-    if (state.alreadyAdjusted) {
-      console.log('  ' + c.personCode + ': already adjusted (idempotency_key=' + state.idempotencyKey + ') — skipping.');
-      results.push({ person_code: c.personCode, old_amount: c.expectedOldAmount, new_amount: newAmount, delta: c.deltaAmount, applied: false, reason: 'already_adjusted' });
+  // Pass 2 — every guard above passed, so it's now safe to write (or, for
+  // a dry run, just report) each correction.
+  var results = [];
+  for (var j = 0; j < prepared.length; j++) {
+    var pc = prepared[j].correction;
+    var pstate = prepared[j].state;
+    var newAmount = Math.round((pc.expectedOldAmount + pc.deltaAmount) * 100) / 100;
+
+    if (pstate.alreadyAdjusted) {
+      console.log('  ' + pc.personCode + ': already adjusted (idempotency_key=' + pstate.idempotencyKey + ') — skipping.');
+      results.push({ person_code: pc.personCode, old_amount: pc.expectedOldAmount, new_amount: newAmount, delta: pc.deltaAmount, applied: false, reason: 'already_adjusted' });
       continue;
     }
 
-    console.log('  ' + c.personCode + ': ' + c.expectedOldAmount.toFixed(2) + ' -> ' + newAmount.toFixed(2) + ' (delta ' + c.deltaAmount.toFixed(2) + ')' +
+    console.log('  ' + pc.personCode + ': ' + pc.expectedOldAmount.toFixed(2) + ' -> ' + newAmount.toFixed(2) + ' (delta ' + pc.deltaAmount.toFixed(2) + ')' +
                 (write ? '' : ' [DRY RUN — not written]'));
 
     if (write) {
@@ -136,20 +149,20 @@ function aug2026RunCorrections_(write, actorEmail) {
         timestamp:       new Date().toISOString(),
         actor_code:      actor.personCode || '',
         actor_role:      actor.role || '',
-        person_code:     c.personCode,
+        person_code:     pc.personCode,
         design_hours:    0,
         qc_hours:        0,
         design_pay:      0,
         qc_pay:          0,
-        bonus_amount:    c.deltaAmount,
-        total_pay:       c.deltaAmount,
+        bonus_amount:    pc.deltaAmount,
+        total_pay:       pc.deltaAmount,
         status:          'PENDING_CONFIRMATION',
-        notes:           c.notes,
-        idempotency_key: state.idempotencyKey,
+        notes:           pc.notes,
+        idempotency_key: pstate.idempotencyKey,
         payload_json:    JSON.stringify({
-                            adjustment_of: state.originalEventId,
+                            adjustment_of: pstate.originalEventId,
                             reason:        'Aug 2026 supervisor/PM bonus audit correction',
-                            old_amount:    c.expectedOldAmount,
+                            old_amount:    pc.expectedOldAmount,
                             new_amount:    newAmount
                           })
       };
@@ -157,13 +170,13 @@ function aug2026RunCorrections_(write, actorEmail) {
         callerModule: 'Aug2026BonusAdjustment', periodId: AUG2026_ADJUSTMENT_PERIOD_ID_
       });
 
-      var staff = staffCache[c.personCode];
+      var staff = staffCache[pc.personCode];
       if (staff) {
-        PayrollEngine.sendBonusAdjustmentEmail_(staff, c.personCode, AUG2026_ADJUSTMENT_PERIOD_ID_, c.expectedOldAmount, newAmount, c.notes);
+        PayrollEngine.sendBonusAdjustmentEmail_(staff, pc.personCode, AUG2026_ADJUSTMENT_PERIOD_ID_, pc.expectedOldAmount, newAmount, pc.notes);
       }
     }
 
-    results.push({ person_code: c.personCode, old_amount: c.expectedOldAmount, new_amount: newAmount, delta: c.deltaAmount, applied: write, reason: write ? 'applied' : 'dry_run' });
+    results.push({ person_code: pc.personCode, old_amount: pc.expectedOldAmount, new_amount: newAmount, delta: pc.deltaAmount, applied: write, reason: write ? 'applied' : 'dry_run' });
   }
 
   if (write) {
