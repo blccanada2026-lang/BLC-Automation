@@ -5108,11 +5108,16 @@ function sendDailyBriefing() {
 }
 
 function sendFeedbackRequests() {
+  var periodId = window.prompt('Period to send feedback requests for (YYYY-MM), blank = current period:', '');
+  if (periodId === null) return; // cancelled
+  periodId = periodId.trim();
+  if (!isValidPeriodId_(periodId)) { showToast('Invalid period — use YYYY-MM (e.g. 2026-04), or leave blank for the current period.', 'error'); return; }
+
   var testEmail = getTestEmail_();
   var isTest    = !!testEmail;
   var msg = isTest
     ? 'TEST MODE: All feedback emails will go to ' + testEmail + ' (not real clients).\n\nProceed?'
-    : 'Send quarterly feedback emails to all active clients?\n\nThis will email each client a rating link for their assigned designers.';
+    : 'Send feedback emails for ' + (periodId || 'the current period') + ' to all active clients?\n\nThis will email each client a rating link for their assigned designers.';
   if (!confirm(msg)) return;
   var btn = document.getElementById('btn-send-feedback');
   btn.textContent = 'Sending…';
@@ -5123,7 +5128,7 @@ function sendFeedbackRequests() {
       btn.disabled = false;
       try {
         var r = JSON.parse(json);
-        showToast(r.emails_sent + ' emails sent' + (isTest ? ' (TEST)' : ' to clients') + ' (' + r.designer_client_pairs + ' designer links).', 'success');
+        showToast(r.emails_sent + ' emails sent for ' + r.period_id + (isTest ? ' (TEST)' : ' to clients') + ' (' + r.designer_client_pairs + ' designer links).', 'success');
         loadFeedbackStatus();
       } catch(e) { showToast('Feedback emails sent.', 'success'); }
     })
@@ -5132,7 +5137,7 @@ function sendFeedbackRequests() {
       btn.disabled = false;
       showToast('Error: ' + (err.message || String(err)), 'error');
     })
-    .portal_sendFeedbackRequests('', testEmail);
+    .portal_sendFeedbackRequests(periodId, testEmail);
 }
 
 function loadRatingsStatus(overridePid) {
