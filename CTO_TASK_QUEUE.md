@@ -47,7 +47,12 @@ pre-check bug (date-filtered vs real partition), fixed in `cd33de5`. Team Hours 
 DBS +PRS via the supervision table). **2026-10-20 ~19:47 pushed to DEV only** (172 files, verified with
 clasp pull). DEV `runWorkLogCorrectionTests()` ran twice (19:50, 19:52) and BOTH runs failed with Google
 "Service Spreadsheets timed out" on the DEV sheet, from test setup onward, so no correction code was
-exercised. **PROD NOT pushed.** Waiting on a clean DEV run. Then push:dev →
+exercised. Re-run at 20:11 got through tests 1-6 (all PASS) before the 6-minute limit; tests 7-10 at 20:23:
+12 pass, 1 fail. The failure is pre-existing and unrelated: testWLC_negativeHoursGuard_reject expects the
+"below zero" wording, but the 2026-09-04 already-voided guard (c448971) fires first. The behaviour still holds;
+only the assertion is stale (follow-up: update the DEV test). **20:30 pushed to PROD** (172 files); a scratch
+`clasp pull` matched all 168 .gs files to HEAD. **Remaining:** Raj does a New Version redeploy NOW, then
+reloads the editor. Then push:dev →
 DEV `WorkLogCorrectionHandlerTest` suite → push origin/prod → New Version redeploy IMMEDIATELY
 (the old My Hours still shows Edit buttons the new handler rejects) → reload editor (§3.10) →
 `clasp pull` diff. Previous thread (Sandy SBS Team Hours) is DONE and verified.
