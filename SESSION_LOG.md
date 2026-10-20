@@ -14,7 +14,9 @@
   and WorkLogCorrectionHandler. Direct reports are now date-aware (closed roster rows no longer
   grant scope). Tests: `team-lead-scope`, `portal-data-get-my-hours-tl-scope`,
   `work-log-correction-handler-tl-scope`.
-- **Pending:** PROD impact report review → deploy.
+- **Deployed 2026-10-20 20:30 + New Version.** DEV suite: TL tests 3/4/9 pass. One stale pre-existing assertion
+  (negativeHoursGuard wording) failed. Advisor recheck caught a pre-check bug before deploy (`cd33de5`).
+  PROD verified with a `clasp pull` diff after the redeploy.
 
 ---
 

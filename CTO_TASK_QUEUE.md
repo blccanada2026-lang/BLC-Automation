@@ -31,31 +31,17 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-10-20, later)
+## Session State (last updated: end of turn, 2026-10-20, ~20:35)
 
-**NEW THREAD 2026-10-20: TL My Hours / correction scope. Raj chose "match Team Hours".** Code
-committed locally, Jest green, **NOT pushed to DEV/PROD**. New shared rule `TeamLeadScope.forPeriod()`
-(`src/06-handlers/TeamLeadScope.gs`): own entries, plus direct reports (roster row valid during the
-period, now date-aware), plus REF_ACCOUNT_SUPERVISION entries (bonus-engine matching). Used by
-`getLeaderDashboard()`, `getMyHours()` (`src/07-portal/PortalData.gs`) and
-`WorkLogCorrectionHandler` (cheap pre-check in `checkCorrectionScope_`, exact
-`enforceTlEntryScope_` after the entry is found; reassign target job must also be in scope).
-Job list (`buildTeamCodes_`) unchanged. `RBAC.buildTeamCodes()` is now unused by production code
-(left in place, tests reference it). **Status:** My Hours/corrections impact reviewed in PROD (no TL has corrected anyone else's hours since
-Aug; BCH's 5 voids were his own). Raj approved the deploy, pending an advisor recheck. The recheck found a
-pre-check bug (date-filtered vs real partition), fixed in `cd33de5`. Team Hours impact confirmed in PROD (all changes explained by closed 2026-06-30 roster rows, plus
-DBS +PRS via the supervision table). **2026-10-20 ~19:47 pushed to DEV only** (172 files, verified with
-clasp pull). DEV `runWorkLogCorrectionTests()` ran twice (19:50, 19:52) and BOTH runs failed with Google
-"Service Spreadsheets timed out" on the DEV sheet, from test setup onward, so no correction code was
-exercised. Re-run at 20:11 got through tests 1-6 (all PASS) before the 6-minute limit; tests 7-10 at 20:23:
-12 pass, 1 fail. The failure is pre-existing and unrelated: testWLC_negativeHoursGuard_reject expects the
-"below zero" wording, but the 2026-09-04 already-voided guard (c448971) fires first. The behaviour still holds;
-only the assertion is stale (follow-up: update the DEV test). **20:30 pushed to PROD** (172 files); a scratch
-`clasp pull` matched all 168 .gs files to HEAD. **Remaining:** Raj does a New Version redeploy NOW, then
-reloads the editor. Then push:dev →
-DEV `WorkLogCorrectionHandlerTest` suite → push origin/prod → New Version redeploy IMMEDIATELY
-(the old My Hours still shows Edit buttons the new handler rejects) → reload editor (§3.10) →
-`clasp pull` diff. Previous thread (Sandy SBS Team Hours) is DONE and verified.
+**TL My Hours / correction scope: DONE and live in PROD.** Pushed 20:30, New Version deployed by Raj,
+re-verified with a scratch `clasp pull` afterwards (all 168 .gs and the .html files match HEAD; no temp
+files). TL Team Hours, My Hours and corrections now all use `TeamLeadScope.forPeriod()`
+(`src/06-handlers/TeamLeadScope.gs`). Earlier today: Sandy's SBS Team Hours fix (also live).
+**Follow-ups, not started:** (1) fix the stale DEV assertion in `testWLC_negativeHoursGuard_reject`;
+(2) replace the `@blclotus.com` address in the DEV test (testing-policy violation); (3) split
+`runWorkLogCorrectionTests` (exceeds 6 min on the slow DEV sheet); (4) `RBAC.buildTeamCodes()` is
+now unused in production code; (5) DBG has no TL, Raj to decide; (6) Raj to delete `temp.gs` in DEV.
+**Q2 bonus still waiting on Sarty's 3 ratings** (thread below).
 
 ---
 
