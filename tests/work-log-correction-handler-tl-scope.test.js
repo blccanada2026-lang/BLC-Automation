@@ -68,7 +68,8 @@ beforeEach(() => {
   store['DIM_STAFF_ROSTER|undefined'] = [
     { person_code: 'PBG',   supervisor_code: 'SDA', active: true },
     { person_code: 'AR001', supervisor_code: 'SGO', active: true },
-    { person_code: 'BCH',   supervisor_code: 'SGO', active: true }
+    { person_code: 'BCH',   supervisor_code: 'SGO', active: true },
+    { person_code: 'NEW',   supervisor_code: 'SDA', active: true, effective_from: '2026-10-15', effective_to: '' }
   ];
   store['REF_ACCOUNT_SUPERVISION|undefined'] = [
     { client_code: 'SBS', product_code: '', designer_code: 'AR001', supervisor_code: 'SDA', effective_from: '2026-10-01', effective_to: '' }
@@ -84,9 +85,9 @@ beforeEach(() => {
   ];
 });
 
-function seed(actorCode, jobNumber) {
+function seed(actorCode, jobNumber, workDate) {
   var row = { event_id: 'EVT-' + actorCode + jobNumber, job_number: jobNumber, actor_code: actorCode,
-              actor_role: 'DESIGNER', hours: 4, work_date: '2026-10-10', event_type: 'WORK_LOG_SUBMITTED', notes: '' };
+              actor_role: 'DESIGNER', hours: 4, work_date: workDate || '2026-10-10', event_type: 'WORK_LOG_SUBMITTED', notes: '' };
   var k = 'FACT_WORK_LOGS|2026-10';
   store[k] = (store[k] || []).concat([row]);
 }
@@ -141,6 +142,14 @@ describe('WorkLogCorrectionHandler — TEAM_LEAD correction scope matches Team H
   test('TL can reassign account-supervised hours onto another in-scope job', () => {
     seed('AR001', 'J-SBS');
     expect(() => WorkLogCorrectionHandler.handleReassign(reassign('AR001', 'J-SBS', 'J-SBS2'), SANDY)).not.toThrow();
+  });
+
+  test('late entry: a report who joined Oct 15 logged a Sept 30 entry into the Oct partition — My Hours shows it, so amend must be allowed', () => {
+    seed('NEW', 'J-NEL', '2026-09-30');
+    var item = { queue_id: 'Q-LATE', payload_json: JSON.stringify({
+      actor_code: 'NEW', job_number: 'J-NEL', work_date: '2026-09-30',
+      original_hours: 4, new_hours: 3, reason: 'test' }) };
+    expect(() => WorkLogCorrectionHandler.handleAmend(item, SANDY)).not.toThrow();
   });
 
   test('PM (ALL scope) is unchanged — can amend anyone', () => {

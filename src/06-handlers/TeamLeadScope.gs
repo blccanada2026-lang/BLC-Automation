@@ -61,10 +61,12 @@ var TeamLeadScope = (function () {
     var periodStart = periodId + '-01';
     var periodLast  = periodEnd_(periodId);
 
-    var direct = {};
+    var direct     = {}; // reports during this period — decides inScope
+    var everDirect = {}; // reports at any date — only for the cheap couldBeInScope pre-check
     readAll_(Config.TABLES.DIM_STAFF_ROSTER).forEach(function (r) {
       if (up_(r.supervisor_code) !== tl) return;
       if (r.active !== true && up_(r.active) !== 'TRUE') return;
+      if (up_(r.person_code)) everDirect[up_(r.person_code)] = true;
       var from = iso_(r.effective_from);
       var to   = iso_(r.effective_to);
       if (from && from > periodLast)  return;
@@ -91,9 +93,12 @@ var TeamLeadScope = (function () {
       return jobMap[String(jobNumber || '').trim()];
     }
 
+    // Date-independent on purpose: a caller may pre-check with a different
+    // period than the entry's real partition (late entries), so this must
+    // never reject anything inScope() would allow for some period.
     function couldBeInScope(actorCode) {
       var a = up_(actorCode);
-      return !!a && (a === tl || !!direct[a] || !!supervisedDesigners[a]);
+      return !!a && (a === tl || !!everDirect[a] || !!supervisedDesigners[a]);
     }
 
     function inScope(actorCode, jobNumber) {
