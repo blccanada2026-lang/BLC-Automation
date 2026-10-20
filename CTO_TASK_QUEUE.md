@@ -41,8 +41,11 @@ period, now date-aware), plus REF_ACCOUNT_SUPERVISION entries (bonus-engine matc
 `WorkLogCorrectionHandler` (cheap pre-check in `checkCorrectionScope_`, exact
 `enforceTlEntryScope_` after the entry is found; reassign target job must also be in scope).
 Job list (`buildTeamCodes_`) unchanged. `RBAC.buildTeamCodes()` is now unused by production code
-(left in place, tests reference it). **Waiting on:** Raj runs the read-only
-`tlScopeImpactReport()` (scratchpad) in PROD and approves the per-TL impact. Then push:dev →
+(left in place, tests reference it). **Status:** My Hours/corrections impact reviewed in PROD (no TL has corrected anyone else's hours since
+Aug; BCH's 5 voids were his own). Raj approved the deploy, pending an advisor recheck. The recheck found a
+pre-check bug (date-filtered vs real partition), fixed in `cd33de5`. **Waiting on:** Raj runs the read-only
+`tlTeamHoursImpact()` (scratchpad) in PROD. Team Hours also changes (e.g. Sandy loses SVN), and
+SVN's roster dates need confirming. Then push:dev →
 DEV `WorkLogCorrectionHandlerTest` suite → push origin/prod → New Version redeploy IMMEDIATELY
 (the old My Hours still shows Edit buttons the new handler rejects) → reload editor (§3.10) →
 `clasp pull` diff. Previous thread (Sandy SBS Team Hours) is DONE and verified.
