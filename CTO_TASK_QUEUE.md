@@ -61,9 +61,10 @@ October 2026** (Nelson stays with Deb/Sarty; roster supervisor_code stays SGO).
   **Separate finding, not fixed (RBAC scope):** Sandy's My Hours shows 13 people's entries
   (incl. SGO, BCH, DBG), because `buildTeamCodes_()` path 1 shares ANY REF_ACCOUNT_DESIGNER_MAP account
   (SBS is shared widely). It also means Sandy would see AR001's future Nelson entries there.
-- **Next:** approval → push:dev (check no DEV-only branch content first) →
-  verify as Sandy in DEV → push origin + push:prod → New Version redeploy →
-  run Part A in PROD → Sandy checks Team Hours.
+- **2026-10-20 DEPLOYED:** push:dev (171 files) → git push origin (aa71d16) → push:prod (171 files,
+  run by Raj via `!`). **Remaining:** (1) New Version redeploy in PROD editor; (2) Raj runs
+  `runAssignAbhisekSbsToSandy()` (Part A, approved); (3) re-run `tempDiagAbhisekSandyTeam()`, expect
+  DASHBOARD_AS_SANDY to include AR001 with 26.5h; (4) delete the temp script files from the PROD editor.
 (Q2 bonus readiness thread below is still open: waiting on Sarty's 3 ratings.)
 
 ---
