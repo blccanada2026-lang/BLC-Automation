@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-10-20 Session (Sandy's Team Hours: show Abhisek's SBS hours only)
+
+- **Problem:** Abhisek Rit (AR001) joined SBS in Oct 2026 under Sandy (SDA), SBS work only.
+  Sandy's Team Hours didn't show him, because `getLeaderDashboard()` scoped TLs by
+  roster `supervisor_code` only (his is SGO, and stays SGO; Nelson stays with Deb/Sarty).
+- **Code (commit 5e3048a, local only):** TL Team Hours also adds the rows REF_ACCOUNT_SUPERVISION
+  assigns to the TL, via `accountSupervisedLogs_()` (`src/07-portal/PortalData.gs:446`).
+  Matching is the bonus engine's: as of period-01, exact product beats wildcard.
+  New test file: `tests/portal-data-leader-dashboard-account-supervision.test.js`.
+- **Data, not run, awaiting approval:** REF_ACCOUNT_SUPERVISION row SBS/AR001/SDA/all products/2026-10-01
+  via `assignAccountSupervisor()`. Also needed so October's supervisor-bonus run doesn't abort.
+- **Open:** confirm which screen Sandy uses. My Hours (`buildTeamCodes_`) is unchanged; whether
+  it shows AR001 depends on REF_ACCOUNT_DESIGNER_MAP, and the read-only diagnostic will tell.
+
+---
+
 ## 2026-09-10 Session (Phase 1.5 — product-scoped account supervision — code-complete, deployed to PROD source)
 
 ### Work Completed
