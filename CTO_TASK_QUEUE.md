@@ -43,9 +43,11 @@ period, now date-aware), plus REF_ACCOUNT_SUPERVISION entries (bonus-engine matc
 Job list (`buildTeamCodes_`) unchanged. `RBAC.buildTeamCodes()` is now unused by production code
 (left in place, tests reference it). **Status:** My Hours/corrections impact reviewed in PROD (no TL has corrected anyone else's hours since
 Aug; BCH's 5 voids were his own). Raj approved the deploy, pending an advisor recheck. The recheck found a
-pre-check bug (date-filtered vs real partition), fixed in `cd33de5`. **Waiting on:** Raj runs the read-only
-`tlTeamHoursImpact()` (scratchpad) in PROD. Team Hours also changes (e.g. Sandy loses SVN), and
-SVN's roster dates need confirming. Then push:dev →
+pre-check bug (date-filtered vs real partition), fixed in `cd33de5`. Team Hours impact confirmed in PROD (all changes explained by closed 2026-06-30 roster rows, plus
+DBS +PRS via the supervision table). **2026-10-20 ~19:47 pushed to DEV only** (172 files, verified with
+clasp pull). DEV `runWorkLogCorrectionTests()` ran twice (19:50, 19:52) and BOTH runs failed with Google
+"Service Spreadsheets timed out" on the DEV sheet, from test setup onward, so no correction code was
+exercised. **PROD NOT pushed.** Waiting on a clean DEV run. Then push:dev →
 DEV `WorkLogCorrectionHandlerTest` suite → push origin/prod → New Version redeploy IMMEDIATELY
 (the old My Hours still shows Edit buttons the new handler rejects) → reload editor (§3.10) →
 `clasp pull` diff. Previous thread (Sandy SBS Team Hours) is DONE and verified.
