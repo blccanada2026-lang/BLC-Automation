@@ -31,13 +31,32 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-10-10)
+## Session State (last updated: end of turn, 2026-10-20)
 
-**2026-10-10:** Committed the Q2 Bonus Readiness + Dead Letter Queue notes
-(see "ACTIVE — Q2 2026 Bonus Readiness" near the end of this file); deleted
-the 4 one-off Q2 diagnostic `.gs.txt` scratch files. **Next:** confirm
-Sarty (SGO) submitted DBG/AR001/DBS ratings → re-run "🔍 Check Quarter
-Readiness" for 2026-Q2 → only at 16/16, click "🏆 Run Quarterly Bonus".
+**2026-10-20, NEW THREAD — Abhisek Rit (AR001) hours not showing in Sandy
+(SDA)'s team.** Code traced, not yet confirmed against data. There are three
+separate "team" sources: (1) Leader Dashboard Team Hours,
+`getLeaderDashboard()` `src/07-portal/PortalData.gs:431`, uses only
+`DIM_STAFF_ROSTER.supervisor_code` (trim, no uppercase, ignores
+effective_to) and only the current month; (2) My Hours team scope,
+`buildTeamCodes_()` `PortalData.gs:101`, roster plus REF_ACCOUNT_DESIGNER_MAP;
+(3) supervisor bonus, REF_ACCOUNT_SUPERVISION. **Raj decided 2026-10-20: Sandy supervises AR001 ONLY for SBS work, from
+October 2026** (Nelson stays with Deb/Sarty; roster supervisor_code stays SGO).
+- **Part B (code), DONE locally, Jest green, NOT yet in DEV/PROD:**
+  `getLeaderDashboard()` (`src/07-portal/PortalData.gs:491`) now also adds,
+  for a TEAM_LEAD, the work-log rows REF_ACCOUNT_SUPERVISION assigns to them
+  (`accountSupervisedLogs_()` `PortalData.gs:446`, same matching as the bonus
+  engine: as of period-01, exact product beats wildcard). Test:
+  `tests/portal-data-leader-dashboard-account-supervision.test.js`.
+- **Part A (data), NOT run, needs Raj's approval:** `runAssignAbhisekSbsToSandy()`
+  (scratchpad file, calls `StaffOnboarding.assignAccountSupervisor()`
+  `src/08-staff/StaffOnboarding.gs:1368` with SBS/AR001/SDA/''/2026-10-01).
+  This is also required for October's supervisor-bonus run, which aborts on an
+  unassigned SBS/AR001 pair.
+- **Next:** approval → push:dev (check no DEV-only branch content first) →
+  verify as Sandy in DEV → push origin + push:prod → New Version redeploy →
+  run Part A in PROD → Sandy checks Team Hours.
+(Q2 bonus readiness thread below is still open: waiting on Sarty's 3 ratings.)
 
 ---
 

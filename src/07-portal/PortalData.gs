@@ -424,6 +424,66 @@ var PortalData = (function () {
   // Requires CEO / PM / TEAM_LEAD role.
   // ============================================================
 
+  function addDashHours_(hoursMap, code, row) {
+    var hrs = parseFloat(row.hours) || 0;
+    if (!hoursMap[code]) hoursMap[code] = { design: 0, qc: 0 };
+    if (String(row.actor_role || '').toUpperCase() === 'QC') hoursMap[code].qc += hrs;
+    else                                                     hoursMap[code].design += hrs;
+  }
+
+  /**
+   * Work-log rows by actors NOT in `excludeCodes` whose job's
+   * client/product is assigned to tlCode in REF_ACCOUNT_SUPERVISION as of
+   * asOfDate. Resolution mirrors PayrollEngine.buildSupervisorBonusMapByAccount_
+   * (exact product_code row beats a wildcard row; as-of the period's 1st),
+   * so a TL's Team Hours matches the hours their supervisor bonus is paid on.
+   * Ambiguous matches (more than one winning row) are skipped, not guessed.
+   */
+  function accountSupervisedLogs_(tlCode, rows, excludeCodes, asOfDate) {
+    var supRows;
+    try {
+      supRows = DAL.readAll(Config.TABLES.REF_ACCOUNT_SUPERVISION, { callerModule: 'PortalData' });
+    } catch (e) { return []; }
+    var tl = String(tlCode || '').trim().toUpperCase();
+    var tlHasRows = supRows.some(function(r) {
+      return String(r.supervisor_code || '').trim().toUpperCase() === tl;
+    });
+    if (!tl || !tlHasRows) return [];
+
+    var jobMap = {};
+    try {
+      DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: 'PortalData' }).forEach(function(j) {
+        var jn = String(j.job_number || '').trim();
+        if (jn) jobMap[jn] = { client: String(j.client_code || '').trim(),
+                               product: String(j.product_code || '').trim().toUpperCase() };
+      });
+    } catch (e) { return []; }
+
+    return rows.filter(function(row) {
+      var actorCode = String(row.actor_code || '').trim();
+      if (excludeCodes[actorCode]) return false;
+      var job = jobMap[String(row.job_number || '').trim()];
+      if (!job) return false;
+      var candidates = supRows.filter(function(r) {
+        if (String(r.client_code || '').trim() !== job.client) return false;
+        if (String(r.designer_code || '').trim() !== actorCode) return false;
+        var p = String(r.product_code || '').trim().toUpperCase();
+        if (p !== '' && p !== job.product) return false;
+        var from = pdToIsoDate_(r.effective_from);
+        var to   = pdToIsoDate_(r.effective_to);
+        return !(from && from > asOfDate) && !(to && to < asOfDate);
+      });
+      var exact = candidates.filter(function(r) {
+        return String(r.product_code || '').trim().toUpperCase() === job.product;
+      });
+      var winners = exact.length > 0 ? exact : candidates.filter(function(r) {
+        return String(r.product_code || '').trim() === '';
+      });
+      return winners.length === 1 &&
+             String(winners[0].supervisor_code || '').trim().toUpperCase() === tl;
+    });
+  }
+
   /**
    * @param {string} email
    * @returns {string}  JSON: { period_id, team_hours[], payroll_status[] }
@@ -466,7 +526,8 @@ var PortalData = (function () {
     // to a list in this file.
     // BTD/SNA: legacy V2 codes still in roster with active jobs — MIGRATED events skipped.
     var SUPERSEDED_CODES  = { 'BTD': true, 'SNA': true };
-    var hoursMap = {};
+    var hoursMap  = {};
+    var keptLogs  = []; // rows that passed the filters above — reused for account scoping
     try {
       var workLogs = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
         callerModule: 'PortalData',
@@ -477,13 +538,31 @@ var PortalData = (function () {
         var wcode = String(wrow.actor_code || '').trim();
         if (!wcode || !staffNameMap[wcode]) continue; // not on active roster
         if (SUPERSEDED_CODES[wcode] && wrow.event_type === 'WORK_LOG_MIGRATED') continue;
-        var wrole = String(wrow.actor_role || '').toUpperCase();
-        var whrs  = parseFloat(wrow.hours) || 0;
-        if (!hoursMap[wcode]) hoursMap[wcode] = { design: 0, qc: 0 };
-        if (wrole === 'QC') hoursMap[wcode].qc += whrs;
-        else                hoursMap[wcode].design += whrs;
+        keptLogs.push(wrow);
+        addDashHours_(hoursMap, wcode, wrow);
       }
     } catch (e) { /* no work logs yet */ }
+
+    // ── Scope by role ─────────────────────────────────────────
+    // TEAM_LEAD sees (a) self + roster direct reports in full, and
+    // (b) for anyone else, only the rows REF_ACCOUNT_SUPERVISION assigns
+    // to this TL (2026-10-20: AR001's SBS hours for SDA, not his Nelson
+    // hours). CEO and PM: no filter — full list returned.
+    if (role === 'ADMIN') {
+      hoursMap = {};
+    } else if (role === 'TEAM_LEAD') {
+      var tlCode = actor.personCode || '';
+      var tlTeam = supervisorMap[tlCode] || {};
+      var scoped = {};
+      Object.keys(hoursMap).forEach(function(c) {
+        if (c === tlCode || tlTeam[c]) scoped[c] = hoursMap[c];
+      });
+      var accountRows = accountSupervisedLogs_(tlCode, keptLogs, scoped, periodId + '-01');
+      for (var ar = 0; ar < accountRows.length; ar++) {
+        addDashHours_(scoped, String(accountRows[ar].actor_code || '').trim(), accountRows[ar]);
+      }
+      hoursMap = scoped;
+    }
 
     var teamHours = [];
     var hoursCodes = Object.keys(hoursMap);
@@ -503,18 +582,6 @@ var PortalData = (function () {
       });
     }
     teamHours.sort(function(a, b) { return b.total_hours - a.total_hours; });
-
-    // ── Scope team_hours by role ──────────────────────────────
-    if (role === 'ADMIN') {
-      teamHours = [];
-    } else if (role === 'TEAM_LEAD') {
-      var tlCode = actor.personCode || '';
-      var tlTeam = supervisorMap[tlCode] || {};
-      teamHours = teamHours.filter(function(e) {
-        return e.person_code === tlCode || !!tlTeam[e.person_code];
-      });
-    }
-    // CEO and PM: no filter — full list returned
 
     // ── 3. Payroll status ──────────────────────────────────────
     // RBAC audit finding, 2026-08-05: was hardcoded `role === 'CEO'` —
