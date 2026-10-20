@@ -432,59 +432,6 @@ var PortalData = (function () {
   }
 
   /**
-   * Work-log rows by actors NOT in `excludeCodes` whose job's
-   * client/product is assigned to tlCode in REF_ACCOUNT_SUPERVISION as of
-   * asOfDate. Resolution mirrors PayrollEngine.buildSupervisorBonusMapByAccount_
-   * (exact product_code row beats a wildcard row; as-of the period's 1st),
-   * so a TL's Team Hours matches the hours their supervisor bonus is paid on.
-   * Ambiguous matches (more than one winning row) are skipped, not guessed.
-   */
-  function accountSupervisedLogs_(tlCode, rows, excludeCodes, asOfDate) {
-    var supRows;
-    try {
-      supRows = DAL.readAll(Config.TABLES.REF_ACCOUNT_SUPERVISION, { callerModule: 'PortalData' });
-    } catch (e) { return []; }
-    var tl = String(tlCode || '').trim().toUpperCase();
-    var tlHasRows = supRows.some(function(r) {
-      return String(r.supervisor_code || '').trim().toUpperCase() === tl;
-    });
-    if (!tl || !tlHasRows) return [];
-
-    var jobMap = {};
-    try {
-      DAL.readAll(Config.TABLES.VW_JOB_CURRENT_STATE, { callerModule: 'PortalData' }).forEach(function(j) {
-        var jn = String(j.job_number || '').trim();
-        if (jn) jobMap[jn] = { client: String(j.client_code || '').trim(),
-                               product: String(j.product_code || '').trim().toUpperCase() };
-      });
-    } catch (e) { return []; }
-
-    return rows.filter(function(row) {
-      var actorCode = String(row.actor_code || '').trim();
-      if (excludeCodes[actorCode]) return false;
-      var job = jobMap[String(row.job_number || '').trim()];
-      if (!job) return false;
-      var candidates = supRows.filter(function(r) {
-        if (String(r.client_code || '').trim() !== job.client) return false;
-        if (String(r.designer_code || '').trim() !== actorCode) return false;
-        var p = String(r.product_code || '').trim().toUpperCase();
-        if (p !== '' && p !== job.product) return false;
-        var from = pdToIsoDate_(r.effective_from);
-        var to   = pdToIsoDate_(r.effective_to);
-        return !(from && from > asOfDate) && !(to && to < asOfDate);
-      });
-      var exact = candidates.filter(function(r) {
-        return String(r.product_code || '').trim().toUpperCase() === job.product;
-      });
-      var winners = exact.length > 0 ? exact : candidates.filter(function(r) {
-        return String(r.product_code || '').trim() === '';
-      });
-      return winners.length === 1 &&
-             String(winners[0].supervisor_code || '').trim().toUpperCase() === tl;
-    });
-  }
-
-  /**
    * @param {string} email
    * @returns {string}  JSON: { period_id, team_hours[], payroll_status[] }
    */
@@ -499,7 +446,6 @@ var PortalData = (function () {
 
     // ── 1. Load staff name map — ACTIVE staff only ───────────
     var staffNameMap  = {};
-    var supervisorMap = {};  // supervisor_code → { member_code: true }
     try {
       var staffRows = DAL.readAll(Config.TABLES.DIM_STAFF_ROSTER, { callerModule: 'PortalData' });
       for (var s = 0; s < staffRows.length; s++) {
@@ -509,11 +455,6 @@ var PortalData = (function () {
         var code = String(sr.person_code || '').trim();
         if (!code) continue;
         staffNameMap[code] = String(sr.name || code);
-        var supCode = String(sr.supervisor_code || '').trim();
-        if (supCode) {
-          if (!supervisorMap[supCode]) supervisorMap[supCode] = {};
-          supervisorMap[supCode][code] = true;
-        }
       }
     } catch (e) { /* table may not exist yet */ }
 
@@ -527,7 +468,7 @@ var PortalData = (function () {
     // BTD/SNA: legacy V2 codes still in roster with active jobs — MIGRATED events skipped.
     var SUPERSEDED_CODES  = { 'BTD': true, 'SNA': true };
     var hoursMap  = {};
-    var keptLogs  = []; // rows that passed the filters above — reused for account scoping
+    var keptLogs  = []; // rows that passed the filters above — reused for TL scoping
     try {
       var workLogs = DAL.readAll(Config.TABLES.FACT_WORK_LOGS, {
         callerModule: 'PortalData',
@@ -544,24 +485,20 @@ var PortalData = (function () {
     } catch (e) { /* no work logs yet */ }
 
     // ── Scope by role ─────────────────────────────────────────
-    // TEAM_LEAD sees (a) self + roster direct reports in full, and
-    // (b) for anyone else, only the rows REF_ACCOUNT_SUPERVISION assigns
-    // to this TL (2026-10-20: AR001's SBS hours for SDA, not his Nelson
-    // hours). CEO and PM: no filter — full list returned.
+    // TEAM_LEAD: per entry via TeamLeadScope — own + direct reports +
+    // account-supervised entries (2026-10-20: AR001's SBS hours for SDA,
+    // not his Nelson hours). Same set as My Hours and corrections.
+    // CEO and PM: no filter — full list returned.
     if (role === 'ADMIN') {
       hoursMap = {};
     } else if (role === 'TEAM_LEAD') {
-      var tlCode = actor.personCode || '';
-      var tlTeam = supervisorMap[tlCode] || {};
-      var scoped = {};
-      Object.keys(hoursMap).forEach(function(c) {
-        if (c === tlCode || tlTeam[c]) scoped[c] = hoursMap[c];
-      });
-      var accountRows = accountSupervisedLogs_(tlCode, keptLogs, scoped, periodId + '-01');
-      for (var ar = 0; ar < accountRows.length; ar++) {
-        addDashHours_(scoped, String(accountRows[ar].actor_code || '').trim(), accountRows[ar]);
+      var tlScope = TeamLeadScope.forPeriod(actor.personCode || '', periodId);
+      hoursMap = {};
+      for (var k = 0; k < keptLogs.length; k++) {
+        var krow  = keptLogs[k];
+        var kcode = String(krow.actor_code || '').trim();
+        if (tlScope.inScope(kcode, krow.job_number)) addDashHours_(hoursMap, kcode, krow);
       }
-      hoursMap = scoped;
     }
 
     var teamHours = [];
@@ -1868,15 +1805,19 @@ var PortalData = (function () {
     var staffNames = buildStaffNameMap_();
 
     // ── Visibility set — null means "no filter" (ALL scope) ──────────
+    // TEAM (TEAM_LEAD) is decided per entry by TeamLeadScope — own +
+    // direct reports + account-supervised entries, the same set as Team
+    // Hours and the same set WorkLogCorrectionHandler lets them correct
+    // (2026-10-20; was shared-account membership via buildTeamCodes_).
     var visibleCodes = null;
+    var tlScope      = null;
     if (scope === RBAC.SCOPES.SELF) {
       visibleCodes = {};
       visibleCodes[personCode] = true;
     } else if (scope === RBAC.SCOPES.TEAM) {
-      visibleCodes = buildTeamCodes_(actor.personCode);
-      visibleCodes[personCode] = true;
+      tlScope = TeamLeadScope.forPeriod(personCode, periodId);
     }
-    // scope === ALL (PM/CEO/ADMIN/SYSTEM) → visibleCodes stays null
+    // scope === ALL (PM/CEO/ADMIN/SYSTEM) → no filter
 
     var entries    = [];
     var totalHours = 0;
@@ -1890,6 +1831,7 @@ var PortalData = (function () {
         var row      = rows[i];
         var rowActor = String(row.actor_code || '').trim().toUpperCase();
         if (visibleCodes && !visibleCodes[rowActor]) continue;
+        if (tlScope && !tlScope.inScope(rowActor, row.job_number)) continue;
         if (!MY_HOURS_VISIBLE_EVENT_TYPES_[String(row.event_type || '')]) continue;
 
         var hrs = parseFloat(row.hours) || 0;

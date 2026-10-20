@@ -54,6 +54,7 @@ let store;
 beforeEach(() => {
   currentPeriod = '2026-10';
   store = installMocks();
+  loadSrc('../src/06-handlers/TeamLeadScope.gs');
   loadSrc('../src/07-portal/PortalData.gs');
 
   store['DIM_STAFF_ROSTER'] = [

@@ -31,15 +31,21 @@ lacks, that silently deletes it from DEV.
 
 ---
 
-## Session State (last updated: end of turn, 2026-10-20)
+## Session State (last updated: end of turn, 2026-10-20, later)
 
-**2026-10-20, DONE + VERIFIED in PROD: Sandy (SDA) now sees Abhisek (AR001) SBS-only hours** in
-Leader Dashboard Team Hours (26.5h, Oct). Code `5e3048a` is live with a New Version deployed. Data
-row SBS/AR001/SDA/''/2026-10-01 applied via `assignAccountSupervisor()`. Stale-editor revert
-incident → PROJECT_MEMORY.md §3.10. **Still open (not started, needs Raj's call):** Sandy's
-My Hours (`buildTeamCodes_()` `src/07-portal/PortalData.gs:101`) shows 13 people's entries
-via shared REF_ACCOUNT_DESIGNER_MAP accounts (an RBAC scope issue). Raj should delete `temp.gs`
-from the PROD editor. Q2 bonus readiness thread (below) is still waiting on Sarty's 3 ratings.
+**NEW THREAD 2026-10-20: TL My Hours / correction scope. Raj chose "match Team Hours".** Code
+committed locally, Jest green, **NOT pushed to DEV/PROD**. New shared rule `TeamLeadScope.forPeriod()`
+(`src/06-handlers/TeamLeadScope.gs`): own entries, plus direct reports (roster row valid during the
+period, now date-aware), plus REF_ACCOUNT_SUPERVISION entries (bonus-engine matching). Used by
+`getLeaderDashboard()`, `getMyHours()` (`src/07-portal/PortalData.gs`) and
+`WorkLogCorrectionHandler` (cheap pre-check in `checkCorrectionScope_`, exact
+`enforceTlEntryScope_` after the entry is found; reassign target job must also be in scope).
+Job list (`buildTeamCodes_`) unchanged. `RBAC.buildTeamCodes()` is now unused by production code
+(left in place, tests reference it). **Waiting on:** Raj runs the read-only
+`tlScopeImpactReport()` (scratchpad) in PROD and approves the per-TL impact. Then push:dev →
+DEV `WorkLogCorrectionHandlerTest` suite → push origin/prod → New Version redeploy IMMEDIATELY
+(the old My Hours still shows Edit buttons the new handler rejects) → reload editor (§3.10) →
+`clasp pull` diff. Previous thread (Sandy SBS Team Hours) is DONE and verified.
 
 ---
 

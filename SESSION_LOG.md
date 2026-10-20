@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-10-20 Session, later (Team Lead My Hours / correction scope)
+
+- **Problem:** Sandy's My Hours showed 13 people, and he could amend/void/reassign their hours
+  (incl. his PM SGO and peer TL BCH). TL scope used shared-account membership (REF_ACCOUNT_DESIGNER_MAP).
+- **Decision (Raj):** match Team Hours: own + direct reports + account-supervised entries.
+- **Code (local, not deployed):** `src/06-handlers/TeamLeadScope.gs` used by the dashboard, My Hours
+  and WorkLogCorrectionHandler. Direct reports are now date-aware (closed roster rows no longer
+  grant scope). Tests: `team-lead-scope`, `portal-data-get-my-hours-tl-scope`,
+  `work-log-correction-handler-tl-scope`.
+- **Pending:** PROD impact report review → deploy.
+
+---
+
 ## 2026-10-20 Session (Sandy's Team Hours: show Abhisek's SBS hours only)
 
 - **Problem:** Abhisek Rit (AR001) joined SBS in Oct 2026 under Sandy (SDA), SBS work only.

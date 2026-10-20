@@ -382,6 +382,22 @@ var WorkLogCorrectionHandler = (function () {
   }
 
   /**
+   * Exact TEAM_LEAD check for one entry, run once its real partition is
+   * known: the entry (actor + job) must be in TeamLeadScope for that
+   * period — the same set the TL sees in Team Hours / My Hours. No-op for
+   * every other scope (SELF/ALL are fully decided by checkCorrectionScope_).
+   * @throws {Error} if the entry is outside the TL's scope
+   */
+  function enforceTlEntryScope_(actor, actorCode, jobNumber, periodId) {
+    if (RBAC.getScopeForRole(actor.role) !== RBAC.SCOPES.TEAM) return;
+    if (TeamLeadScope.forPeriod(actor.personCode, periodId).inScope(actorCode, jobNumber)) return;
+    throw new Error(
+      'WorkLogCorrectionHandler: "' + (actor.displayName || actor.email) + '" may only correct ' +
+      'entries in their team scope. ' + actorCode + ' on job ' + jobNumber + ' (' + periodId + ') is outside it.'
+    );
+  }
+
+  /**
    * Row-level scope check — who may correct WHOSE entry.
    *
    * Raw actor.role (pre-alias-resolution) special case: 'QC' has no
@@ -390,10 +406,11 @@ var WorkLogCorrectionHandler = (function () {
    * true so 'QC_REVIEWER' can pass RBAC.enforcePermission(). This
    * function is what actually enforces the QC vs QC_REVIEWER split.
    *
+   * @param {string} [workDate]  'YYYY-MM-DD' — picks the period for the TEAM pre-check
    * @throws {Error}  if the actor is not allowed to correct targetActorCode's entry
    * @returns {boolean}  true if the actor has ALL-scope (may override period lock)
    */
-  function checkCorrectionScope_(actor, targetActorCode) {
+  function checkCorrectionScope_(actor, targetActorCode, workDate) {
     if (actor.role === 'QC') {
       throw new Error(
         'WorkLogCorrectionHandler: role "QC" has no correction authority. ' +
@@ -409,8 +426,13 @@ var WorkLogCorrectionHandler = (function () {
 
     if (scope === RBAC.SCOPES.TEAM) { // TEAM_LEAD — allowed, but does NOT override period lock
       if (target === self) return false; // TL correcting own entry
-      var team = RBAC.buildTeamCodes(actor.personCode);
-      if (team[target] === true) return false;
+      // Cheap pre-check only (self, direct report, or any account-supervision
+      // row to this TL). The exact per-entry check runs after the original
+      // entry is found — enforceTlEntryScope_ (2026-10-20; was shared-account
+      // membership via RBAC.buildTeamCodes, which let a TL correct anyone on
+      // a shared client account).
+      var workMonth = String(workDate || '').substring(0, 7) || Identifiers.generateCurrentPeriodId();
+      if (TeamLeadScope.forPeriod(self, workMonth).couldBeInScope(target)) return false;
       throw new Error(
         'WorkLogCorrectionHandler: "' + (actor.displayName || actor.email) + '" may only correct ' +
         'their own or their team\'s entries. actor_code "' + targetActorCode + '" is not on their team.'
@@ -496,13 +518,14 @@ var WorkLogCorrectionHandler = (function () {
     var p = ValidationEngine.validate(AMEND_SCHEMA, payload, { module: MODULE, actor: actor });
 
     // ── Step 4: Row-level scope check ───────────────────────────
-    var hasAllScope = checkCorrectionScope_(actor, p.actor_code);
+    var hasAllScope = checkCorrectionScope_(actor, p.actor_code, p.work_date);
 
     // ── Step 5: Locate the original entry (discovers its real partition —
     // may differ from work_date's own month; see candidatePeriodIds_) ────
     var found     = findOriginalEntry_(p.actor_code, p.job_number, p.work_date, p.original_hours);
     var original  = found.row;
     var periodId  = found.periodId;
+    enforceTlEntryScope_(actor, p.actor_code, p.job_number, periodId);
 
     // ── Step 5b: Already-corrected guard ────────────────────────
     var existingCorrection = findExistingCorrection_(original.event_id, periodId);
@@ -599,12 +622,13 @@ var WorkLogCorrectionHandler = (function () {
     var p = ValidationEngine.validate(VOID_SCHEMA, payload, { module: MODULE, actor: actor });
 
     // ── Step 4: Row-level scope check ───────────────────────────
-    var hasAllScope = checkCorrectionScope_(actor, p.actor_code);
+    var hasAllScope = checkCorrectionScope_(actor, p.actor_code, p.work_date);
 
     // ── Step 5: Locate the original entry (discovers its real partition) ──
     var found     = findOriginalEntry_(p.actor_code, p.job_number, p.work_date, p.hours, p.event_id);
     var original  = found.row;
     var periodId  = found.periodId;
+    enforceTlEntryScope_(actor, p.actor_code, p.job_number, periodId);
 
     // ── Step 5b: Already-voided guard ───────────────────────────
     // Only a prior VOID blocks a further void (double-void is nonsensical
@@ -709,13 +733,16 @@ var WorkLogCorrectionHandler = (function () {
     var p = ValidationEngine.validate(REASSIGN_SCHEMA, payload, { module: MODULE, actor: actor });
 
     // ── Step 4: Row-level scope check ───────────────────────────
-    var hasAllScope = checkCorrectionScope_(actor, p.actor_code);
+    var hasAllScope = checkCorrectionScope_(actor, p.actor_code, p.work_date);
 
     // ── Step 5: Locate the original entry (discovers its real partition) ──
     var found        = findOriginalEntry_(p.actor_code, p.job_number, p.work_date, p.hours);
     var original     = found.row;
     var periodId      = found.periodId;      // partition of the ORIGINAL entry — the void event goes here
     var newPeriodId   = Identifiers.generateCurrentPeriodId(); // the new entry is a fresh submission, stamped NOW — matches WorkLogHandler's own convention
+    // A TL may not move in-scope hours onto a job outside their scope (e.g. SBS → Nelson).
+    enforceTlEntryScope_(actor, p.actor_code, p.job_number, periodId);
+    enforceTlEntryScope_(actor, p.actor_code, p.new_job_number, newPeriodId);
 
     // ── Step 5b: Already-corrected guard ────────────────────────
     var existingCorrection = findExistingCorrection_(original.event_id, periodId);

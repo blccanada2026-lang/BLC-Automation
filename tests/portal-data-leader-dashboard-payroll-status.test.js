@@ -53,6 +53,7 @@ let store;
 
 beforeEach(() => {
   store = installMocks();
+  loadSrc('../src/06-handlers/TeamLeadScope.gs');
   loadSrc('../src/07-portal/PortalData.gs');
   store['MART_PAYROLL_SUMMARY'] = [
     { period_id: '2026-08', person_code: 'X2', design_pay: 4000, qc_pay: 0, supervisor_bonus: 0, total_pay: 4000, status: 'PENDING_CONFIRMATION' }
