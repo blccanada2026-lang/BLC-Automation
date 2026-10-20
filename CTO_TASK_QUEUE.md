@@ -33,39 +33,13 @@ lacks, that silently deletes it from DEV.
 
 ## Session State (last updated: end of turn, 2026-10-20)
 
-**2026-10-20, NEW THREAD — Abhisek Rit (AR001) hours not showing in Sandy
-(SDA)'s team.** Code traced, not yet confirmed against data. There are three
-separate "team" sources: (1) Leader Dashboard Team Hours,
-`getLeaderDashboard()` `src/07-portal/PortalData.gs:431`, uses only
-`DIM_STAFF_ROSTER.supervisor_code` (trim, no uppercase, ignores
-effective_to) and only the current month; (2) My Hours team scope,
-`buildTeamCodes_()` `PortalData.gs:101`, roster plus REF_ACCOUNT_DESIGNER_MAP;
-(3) supervisor bonus, REF_ACCOUNT_SUPERVISION. **Raj decided 2026-10-20: Sandy supervises AR001 ONLY for SBS work, from
-October 2026** (Nelson stays with Deb/Sarty; roster supervisor_code stays SGO).
-- **Part B (code), DONE locally, Jest green, NOT yet in DEV/PROD:**
-  `getLeaderDashboard()` (`src/07-portal/PortalData.gs:491`) now also adds,
-  for a TEAM_LEAD, the work-log rows REF_ACCOUNT_SUPERVISION assigns to them
-  (`accountSupervisedLogs_()` `PortalData.gs:446`, same matching as the bonus
-  engine: as of period-01, exact product beats wildcard). Test:
-  `tests/portal-data-leader-dashboard-account-supervision.test.js`.
-- **Part A (data), NOT run, needs Raj's approval:** `runAssignAbhisekSbsToSandy()`
-  (scratchpad file, calls `StaffOnboarding.assignAccountSupervisor()`
-  `src/08-staff/StaffOnboarding.gs:1368` with SBS/AR001/SDA/''/2026-10-01).
-  This is also required for October's supervisor-bonus run, which aborts on an
-  unassigned SBS/AR001 pair.
-- **Diagnostic ran in PROD 2026-10-20, plan confirmed:** SDA resolves as TEAM_LEAD/TEAM;
-  AR001 roster supervisor SGO; Sandy's dashboard omits AR001 while CEO's shows 26.5h. All of
-  AR001's October hours are SBS (18.5 ROOF_TRUSS + 8 FLOOR_TRUSS, first on 2026-10-09). No SBS/AR001
-  REF_ACCOUNT_SUPERVISION row exists, so nothing gets closed and October's bonus run would abort
-  without it. PBG/SYR already use the same SBS wildcard→SDA shape.
-  **Separate finding, not fixed (RBAC scope):** Sandy's My Hours shows 13 people's entries
-  (incl. SGO, BCH, DBG), because `buildTeamCodes_()` path 1 shares ANY REF_ACCOUNT_DESIGNER_MAP account
-  (SBS is shared widely). It also means Sandy would see AR001's future Nelson entries there.
-- **2026-10-20 DEPLOYED:** push:dev (171 files) → git push origin (aa71d16) → push:prod (171 files,
-  run by Raj via `!`). **Remaining:** (1) New Version redeploy in PROD editor; (2) Raj runs
-  `runAssignAbhisekSbsToSandy()` (Part A, approved); (3) re-run `tempDiagAbhisekSandyTeam()`, expect
-  DASHBOARD_AS_SANDY to include AR001 with 26.5h; (4) delete the temp script files from the PROD editor.
-(Q2 bonus readiness thread below is still open: waiting on Sarty's 3 ratings.)
+**2026-10-20, DONE + VERIFIED in PROD: Sandy (SDA) now sees Abhisek (AR001) SBS-only hours** in
+Leader Dashboard Team Hours (26.5h, Oct). Code `5e3048a` is live with a New Version deployed. Data
+row SBS/AR001/SDA/''/2026-10-01 applied via `assignAccountSupervisor()`. Stale-editor revert
+incident → PROJECT_MEMORY.md §3.10. **Still open (not started, needs Raj's call):** Sandy's
+My Hours (`buildTeamCodes_()` `src/07-portal/PortalData.gs:101`) shows 13 people's entries
+via shared REF_ACCOUNT_DESIGNER_MAP accounts (an RBAC scope issue). Raj should delete `temp.gs`
+from the PROD editor. Q2 bonus readiness thread (below) is still waiting on Sarty's 3 ratings.
 
 ---
 

@@ -205,6 +205,19 @@ Four durable lessons from the first real live-DEV testing pass of PR #21/#22, ea
 
 ---
 
+## 3.10 Standing Rule — Reload the Apps Script Editor After Every `push:prod` (2026-10-20 incident)
+
+An Apps Script editor tab opened BEFORE a `clasp push` holds the old copy of the project and will
+write it back when you save anything there. On 2026-10-20, `push:prod` (6:20) shipped the
+`PortalData.gs` Team Hours fix, then a temp script was pasted and saved in an editor tab opened
+earlier (about 6:24). PROD's `PortalData` reverted byte-for-byte to the pre-fix version (`8ce447f`),
+and the temp file survived even though `--force` should have removed it. Caught only because a
+read-only `clasp pull` into a scratch dir was diffed against git HEAD.
+- **Rule:** after any `push:prod`/`push:dev`, close and reopen every editor tab for that project before
+  editing, pasting, saving or deploying a New Version there.
+- **Verify a deploy** with a read-only `clasp pull` into a scratch dir (its own `.clasp.json`, never the repo's)
+  and diff against HEAD, not just the push output.
+
 ## 4. Database / Sheet / Table Structure
 
 Key tables only. Full list in `.claude/context/architecture.md §Key Tables`.

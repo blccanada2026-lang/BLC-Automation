@@ -16,6 +16,10 @@
   New test file: `tests/portal-data-leader-dashboard-account-supervision.test.js`.
 - **Data, not run, awaiting approval:** REF_ACCOUNT_SUPERVISION row SBS/AR001/SDA/all products/2026-10-01
   via `assignAccountSupervisor()`. Also needed so October's supervisor-bonus run doesn't abort.
+- **Done and verified in PROD:** data row applied (`newRowCreated:true`), code pushed, New Version deployed.
+  The PROD diagnostic shows Sandy's dashboard with AR001 at 26.5h (all Oct SBS hours).
+- **Incident:** a stale editor tab reverted PROD `PortalData` after the first push. Re-pushed, verified
+  with `clasp pull` diff. New standing rule: PROJECT_MEMORY.md §3.10.
 - **Open:** confirm which screen Sandy uses. My Hours (`buildTeamCodes_`) is unchanged; whether
   it shows AR001 depends on REF_ACCOUNT_DESIGNER_MAP, and the read-only diagnostic will tell.
 
