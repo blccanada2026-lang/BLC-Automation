@@ -53,6 +53,14 @@ October 2026** (Nelson stays with Deb/Sarty; roster supervisor_code stays SGO).
   `src/08-staff/StaffOnboarding.gs:1368` with SBS/AR001/SDA/''/2026-10-01).
   This is also required for October's supervisor-bonus run, which aborts on an
   unassigned SBS/AR001 pair.
+- **Diagnostic ran in PROD 2026-10-20, plan confirmed:** SDA resolves as TEAM_LEAD/TEAM;
+  AR001 roster supervisor SGO; Sandy's dashboard omits AR001 while CEO's shows 26.5h. All of
+  AR001's October hours are SBS (18.5 ROOF_TRUSS + 8 FLOOR_TRUSS, first on 2026-10-09). No SBS/AR001
+  REF_ACCOUNT_SUPERVISION row exists, so nothing gets closed and October's bonus run would abort
+  without it. PBG/SYR already use the same SBS wildcard→SDA shape.
+  **Separate finding, not fixed (RBAC scope):** Sandy's My Hours shows 13 people's entries
+  (incl. SGO, BCH, DBG), because `buildTeamCodes_()` path 1 shares ANY REF_ACCOUNT_DESIGNER_MAP account
+  (SBS is shared widely). It also means Sandy would see AR001's future Nelson entries there.
 - **Next:** approval → push:dev (check no DEV-only branch content first) →
   verify as Sandy in DEV → push origin + push:prod → New Version redeploy →
   run Part A in PROD → Sandy checks Team Hours.
